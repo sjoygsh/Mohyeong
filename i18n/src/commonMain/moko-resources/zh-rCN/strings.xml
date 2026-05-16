@@ -908,5 +908,4 @@
     <string name="action_webview_close_tab">关闭标签</string>
     <string name="action_filter_excluded_scanlators">筛选排除翻译组</string>
     <string name="download_bookmarked">已添加书签</string>
-    <string name="label_support_us">支持我们</string>
 </resources>

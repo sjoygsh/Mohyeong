@@ -908,5 +908,4 @@
     <string name="action_webview_close_tab">Sekmeyi kapat</string>
     <string name="action_filter_excluded_scanlators">Hariç tutulan Çevirenleri filtrele</string>
     <string name="download_bookmarked">Yer imli</string>
-    <string name="label_support_us">Bizi Destekleyin</string>
 </resources>

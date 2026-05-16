@@ -908,5 +908,4 @@
     <string name="pref_download_concurrent_pages_summary">Число одновременных загрузок страниц с источника</string>
     <string name="action_filter_excluded_scanlators">Фильтровать исключенных переводчиков</string>
     <string name="download_bookmarked">В закладках</string>
-    <string name="label_support_us">Поддержите нас</string>
 </resources>
