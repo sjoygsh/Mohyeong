@@ -59,8 +59,8 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community moderators responsible for enforcement at
-the [Mihon Discord server](https://discord.gg/mihon).
+reported to the project maintainer via a [GitHub issue](https://github.com/sjoygsh/Mohyeong/issues) or
+private contact through the repository's GitHub profile.
 All complaints will be reviewed and investigated promptly and fairly.
 
 All community moderators are obligated to respect the privacy and security of the

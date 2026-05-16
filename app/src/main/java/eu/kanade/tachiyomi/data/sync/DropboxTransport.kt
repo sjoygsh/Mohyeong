@@ -64,7 +64,7 @@ class DropboxTransport(
     }
 
     companion object {
-        private const val REMOTE_PATH = "/mihon-sync.tachibk"
+        private const val REMOTE_PATH = "/mohyeong-sync.tachibk"
         private const val DOWNLOAD_URL = "https://content.dropboxapi.com/2/files/download"
         private const val UPLOAD_URL = "https://content.dropboxapi.com/2/files/upload"
         private val OCTET_STREAM = "application/octet-stream".toMediaTypeOrNull()

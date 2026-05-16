@@ -57,7 +57,7 @@ class GoogleDriveTransport(
         val request = if (existing == null) {
             // Multipart create. The payload is streamed directly from disk inside the multipart
             // body so we never load the backup into memory.
-            val boundary = "mihon_sync_${System.currentTimeMillis()}"
+            val boundary = "mohyeong_sync_${System.currentTimeMillis()}"
             val metadata = JSONObject().apply { put("name", FILE_NAME) }.toString()
             Request.Builder()
                 .url("$UPLOAD_API/files?uploadType=multipart")
@@ -114,7 +114,7 @@ class GoogleDriveTransport(
     }
 
     companion object {
-        private const val FILE_NAME = "mihon-sync.tachibk"
+        private const val FILE_NAME = "mohyeong-sync.tachibk"
         private const val DRIVE_API = "https://www.googleapis.com/drive/v3"
         private const val UPLOAD_API = "https://www.googleapis.com/upload/drive/v3"
         private val OCTET_STREAM = "application/octet-stream".toMediaTypeOrNull()

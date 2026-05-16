@@ -155,7 +155,7 @@ class LibraryUpdateNotifier(
         ) {
             setContentTitle(context.pluralStringResource(MR.plurals.notification_update_error, failed, failed))
             setContentText(context.stringResource(MR.strings.action_show_errors))
-            setSmallIcon(R.drawable.ic_mihon)
+            setSmallIcon(R.drawable.ic_mohyeong_logo)
 
             setContentIntent(NotificationReceiver.openErrorLogPendingActivity(context, uri))
         }
@@ -195,7 +195,7 @@ class LibraryUpdateNotifier(
                 }
             }
 
-            setSmallIcon(R.drawable.ic_mihon)
+            setSmallIcon(R.drawable.ic_mohyeong_logo)
             setLargeIcon(notificationBitmap)
 
             setGroup(Notifications.GROUP_NEW_CHAPTERS)
@@ -231,7 +231,7 @@ class LibraryUpdateNotifier(
             setContentText(description)
             setStyle(NotificationCompat.BigTextStyle().bigText(description))
 
-            setSmallIcon(R.drawable.ic_mihon)
+            setSmallIcon(R.drawable.ic_mohyeong_logo)
 
             if (icon != null) {
                 setLargeIcon(icon)
@@ -379,7 +379,7 @@ class LibraryUpdateNotifier(
 
     companion object {
         const val HELP_WARNING_URL =
-            "https://mihon.app/docs/faq/library#why-am-i-warned-about-large-bulk-updates-and-downloads"
+            "https://sjoygsh.github.io/Mohyeong/help.html#library-faq"
     }
 }
 
