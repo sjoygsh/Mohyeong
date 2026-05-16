@@ -1,8 +1,8 @@
 package tachiyomi.core.common
 
 object Constants {
-    const val URL_HELP = "https://github.com/sjoygsh/Mohyeong"
-    const val URL_HELP_UPCOMING = "https://github.com/sjoygsh/Mohyeong/issues"
+    const val URL_HELP = "https://sjoygsh.github.io/Mohyeong/help.html"
+    const val URL_HELP_UPCOMING = "https://sjoygsh.github.io/Mohyeong/help.html"
     const val URL_GITHUB = "https://github.com/sjoygsh/Mohyeong"
 
     const val MANGA_EXTRA = "manga"
