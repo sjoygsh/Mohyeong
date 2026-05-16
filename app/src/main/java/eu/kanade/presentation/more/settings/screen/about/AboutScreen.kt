@@ -3,12 +3,18 @@ package eu.kanade.presentation.more.settings.screen.about
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -87,6 +93,32 @@ object AboutScreen : Screen() {
                 }
 
                 item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = "Mohyeong (모형) is an enhanced open-source manga reader for " +
+                                "Android. It is a fork of Mihon — itself a continuation of Tachiyomi — " +
+                                "with additional features for power users: linked sources, " +
+                                "multi-backend cloud sync (SyncYomi · WebDAV · Google Drive · Dropbox), " +
+                                "and per-row timestamp-based conflict resolution.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = "Developed with the assistance of Claude AI (Anthropic). " +
+                                "AI collaboration was an intentional and integral part of the " +
+                                "development process — not hidden.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    }
+                }
+
+                item {
                     TextPreferenceWidget(
                         title = stringResource(MR.strings.version),
                         subtitle = getVersionName(withBuildDate = true),
@@ -159,6 +191,16 @@ object AboutScreen : Screen() {
                             .padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.Center,
                     ) {
+                        LinkIcon(
+                            label = "Website",
+                            icon = Icons.Outlined.Language,
+                            url = "https://sjoygsh.github.io/Mohyeong/",
+                        )
+                        LinkIcon(
+                            label = "Help",
+                            icon = Icons.AutoMirrored.Outlined.HelpOutline,
+                            url = Constants.URL_HELP,
+                        )
                         LinkIcon(
                             label = "GitHub",
                             icon = CustomIcons.Github,
