@@ -1,0 +1,2 @@
+-- Migration to add volume number support on chapters
+ALTER TABLE chapters ADD COLUMN volume_number REAL DEFAULT NULL;

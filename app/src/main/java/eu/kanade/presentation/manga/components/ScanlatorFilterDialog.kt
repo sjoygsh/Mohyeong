@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
 import androidx.compose.material.icons.rounded.DisabledByDefault
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,13 +39,22 @@ import tachiyomi.presentation.core.i18n.stringResource
 fun ScanlatorFilterDialog(
     availableScanlators: Set<String>,
     excludedScanlators: Set<String>,
+    currentPriority: List<String> = emptyList(),
     onDismissRequest: () -> Unit,
     onConfirm: (Set<String>) -> Unit,
+    onSetPriority: ((List<String>) -> Unit)? = null,
 ) {
     val sortedAvailableScanlators = remember(availableScanlators) {
         availableScanlators.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
     }
     val mutableExcludedScanlators = remember(excludedScanlators) { excludedScanlators.toMutableStateList() }
+    // Ordered list shown in dialog. Priority-ranked names first (in given order), then remaining names alphabetically.
+    val orderedScanlators = remember(availableScanlators, currentPriority) {
+        val seen = currentPriority.toMutableSet()
+        val head = currentPriority.filter { it in availableScanlators }
+        val tail = sortedAvailableScanlators.filterNot { it in seen }
+        (head + tail).toMutableStateList()
+    }
     AlertDialog(
         onDismissRequest = onDismissRequest,
         title = { Text(text = stringResource(MR.strings.exclude_scanlators)) },
@@ -54,42 +66,71 @@ fun ScanlatorFilterDialog(
             Box {
                 val state = rememberLazyListState()
                 LazyColumn(state = state) {
-                    sortedAvailableScanlators.forEach { scanlator ->
-                        item {
-                            val isExcluded = mutableExcludedScanlators.contains(scanlator)
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clickable {
-                                        if (isExcluded) {
-                                            mutableExcludedScanlators.remove(scanlator)
-                                        } else {
-                                            mutableExcludedScanlators.add(scanlator)
-                                        }
+                    items(count = orderedScanlators.size, key = { orderedScanlators[it] }) { index ->
+                        val scanlator = orderedScanlators[index]
+                        val isExcluded = mutableExcludedScanlators.contains(scanlator)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clickable {
+                                    if (isExcluded) {
+                                        mutableExcludedScanlators.remove(scanlator)
+                                    } else {
+                                        mutableExcludedScanlators.add(scanlator)
                                     }
-                                    .minimumInteractiveComponentSize()
-                                    .clip(MaterialTheme.shapes.small)
-                                    .fillMaxWidth()
-                                    .padding(horizontal = MaterialTheme.padding.small),
-                            ) {
-                                Icon(
-                                    imageVector = if (isExcluded) {
-                                        Icons.Rounded.DisabledByDefault
-                                    } else {
-                                        Icons.Rounded.CheckBoxOutlineBlank
+                                }
+                                .minimumInteractiveComponentSize()
+                                .clip(MaterialTheme.shapes.small)
+                                .fillMaxWidth()
+                                .padding(horizontal = MaterialTheme.padding.small),
+                        ) {
+                            Icon(
+                                imageVector = if (isExcluded) {
+                                    Icons.Rounded.DisabledByDefault
+                                } else {
+                                    Icons.Rounded.CheckBoxOutlineBlank
+                                },
+                                tint = if (isExcluded) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    LocalContentColor.current
+                                },
+                                contentDescription = null,
+                            )
+                            Text(
+                                text = scanlator,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier
+                                    .padding(start = 24.dp)
+                                    .weight(1f),
+                            )
+                            if (onSetPriority != null) {
+                                IconButton(
+                                    enabled = index > 0,
+                                    onClick = {
+                                        val swap = orderedScanlators[index - 1]
+                                        orderedScanlators[index - 1] = scanlator
+                                        orderedScanlators[index] = swap
                                     },
-                                    tint = if (isExcluded) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        LocalContentColor.current
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.KeyboardArrowUp,
+                                        contentDescription = null,
+                                    )
+                                }
+                                IconButton(
+                                    enabled = index < orderedScanlators.size - 1,
+                                    onClick = {
+                                        val swap = orderedScanlators[index + 1]
+                                        orderedScanlators[index + 1] = scanlator
+                                        orderedScanlators[index] = swap
                                     },
-                                    contentDescription = null,
-                                )
-                                Text(
-                                    text = scanlator,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.padding(start = 24.dp),
-                                )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.KeyboardArrowDown,
+                                        contentDescription = null,
+                                    )
+                                }
                             }
                         }
                     }
@@ -124,6 +165,7 @@ fun ScanlatorFilterDialog(
                     TextButton(
                         onClick = {
                             onConfirm(mutableExcludedScanlators.toSet())
+                            onSetPriority?.invoke(orderedScanlators.toList())
                             onDismissRequest()
                         },
                     ) {

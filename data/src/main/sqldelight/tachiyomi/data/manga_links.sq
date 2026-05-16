@@ -1,0 +1,52 @@
+CREATE TABLE manga_links(
+    primary_manga_id INTEGER NOT NULL,
+    linked_manga_id INTEGER NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (primary_manga_id, linked_manga_id),
+    FOREIGN KEY (primary_manga_id) REFERENCES mangas(_id) ON DELETE CASCADE,
+    FOREIGN KEY (linked_manga_id) REFERENCES mangas(_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS manga_links_primary_index ON manga_links(primary_manga_id);
+CREATE INDEX IF NOT EXISTS manga_links_linked_index ON manga_links(linked_manga_id);
+
+getLinksForPrimary:
+SELECT linked_manga_id, priority
+FROM manga_links
+WHERE primary_manga_id = :primaryId
+ORDER BY priority ASC, linked_manga_id ASC;
+
+getAllLinksForBackup:
+SELECT
+P.source AS primarySource,
+P.url AS primaryUrl,
+L.source AS linkedSource,
+L.url AS linkedUrl,
+ML.priority AS priority
+FROM manga_links ML
+JOIN mangas P ON P._id = ML.primary_manga_id
+JOIN mangas L ON L._id = ML.linked_manga_id;
+
+getLinkedMangas:
+SELECT M.*
+FROM mangas M
+JOIN manga_links ML ON M._id = ML.linked_manga_id
+WHERE ML.primary_manga_id = :primaryId
+ORDER BY ML.priority ASC, ML.linked_manga_id ASC;
+
+insertLink:
+INSERT OR IGNORE INTO manga_links(primary_manga_id, linked_manga_id, priority)
+VALUES (:primaryId, :linkedId, :priority);
+
+deleteLink:
+DELETE FROM manga_links
+WHERE primary_manga_id = :primaryId AND linked_manga_id = :linkedId;
+
+deleteAllLinksForManga:
+DELETE FROM manga_links
+WHERE primary_manga_id = :mangaId OR linked_manga_id = :mangaId;
+
+updatePriority:
+UPDATE manga_links
+SET priority = :priority
+WHERE primary_manga_id = :primaryId AND linked_manga_id = :linkedId;

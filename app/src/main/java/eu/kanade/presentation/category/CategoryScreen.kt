@@ -21,6 +21,7 @@ import eu.kanade.tachiyomi.ui.category.CategoryScreenState
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.category.model.CategoryWithDepth
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.components.material.padding
@@ -35,6 +36,7 @@ fun CategoryScreen(
     onClickCreate: () -> Unit,
     onClickRename: (Category) -> Unit,
     onClickDelete: (Category) -> Unit,
+    onClickSetParent: (Category) -> Unit,
     onChangeOrder: (Category, Int) -> Unit,
     navigateUp: () -> Unit,
 ) {
@@ -63,11 +65,12 @@ fun CategoryScreen(
         }
 
         CategoryContent(
-            categories = state.categories,
+            flattened = state.flattened,
             lazyListState = lazyListState,
             paddingValues = paddingValues,
             onClickRename = onClickRename,
             onClickDelete = onClickDelete,
+            onClickSetParent = onClickSetParent,
             onChangeOrder = onChangeOrder,
         )
     }
@@ -75,24 +78,25 @@ fun CategoryScreen(
 
 @Composable
 private fun CategoryContent(
-    categories: List<Category>,
+    flattened: List<CategoryWithDepth>,
     lazyListState: LazyListState,
     paddingValues: PaddingValues,
     onClickRename: (Category) -> Unit,
     onClickDelete: (Category) -> Unit,
+    onClickSetParent: (Category) -> Unit,
     onChangeOrder: (Category, Int) -> Unit,
 ) {
-    val categoriesState = remember { categories.toMutableStateList() }
+    val itemsState = remember { flattened.toMutableStateList() }
     val reorderableState = rememberReorderableLazyListState(lazyListState, paddingValues) { from, to ->
-        val item = categoriesState.removeAt(from.index)
-        categoriesState.add(to.index, item)
-        onChangeOrder(item, to.index)
+        val item = itemsState.removeAt(from.index)
+        itemsState.add(to.index, item)
+        onChangeOrder(item.category, to.index)
     }
 
-    LaunchedEffect(categories) {
+    LaunchedEffect(flattened) {
         if (!reorderableState.isAnyItemDragging) {
-            categoriesState.clear()
-            categoriesState.addAll(categories)
+            itemsState.clear()
+            itemsState.addAll(flattened)
         }
     }
 
@@ -105,15 +109,17 @@ private fun CategoryContent(
         verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
     ) {
         items(
-            items = categoriesState,
-            key = { category -> category.key },
-        ) { category ->
-            ReorderableItem(reorderableState, category.key) {
+            items = itemsState,
+            key = { entry -> entry.category.key },
+        ) { entry ->
+            ReorderableItem(reorderableState, entry.category.key) {
                 CategoryListItem(
                     modifier = Modifier.animateItem(),
-                    category = category,
-                    onRename = { onClickRename(category) },
-                    onDelete = { onClickDelete(category) },
+                    category = entry.category,
+                    depth = entry.depth,
+                    onRename = { onClickRename(entry.category) },
+                    onDelete = { onClickDelete(entry.category) },
+                    onSetParent = { onClickSetParent(entry.category) },
                 )
             }
         }

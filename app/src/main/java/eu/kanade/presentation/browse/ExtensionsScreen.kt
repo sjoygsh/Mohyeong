@@ -387,8 +387,27 @@ private fun ExtensionItemContent(
                 }
                 if (extension is Extension.Installed && !extension.isShared) {
                     if (hasAlreadyShownAnElement) DotSeparatorNoSpaceText()
+                    hasAlreadyShownAnElement = true
                     Text(
                         text = stringResource(MR.strings.ext_installer_private),
+                    )
+                }
+
+                val repoUrl = when (extension) {
+                    is Extension.Available -> extension.repoUrl
+                    is Extension.Installed -> extension.repoUrl
+                    else -> null
+                }
+                if (!repoUrl.isNullOrBlank()) {
+                    if (hasAlreadyShownAnElement) DotSeparatorNoSpaceText()
+                    hasAlreadyShownAnElement = true
+                    Text(
+                        text = repoUrl
+                            .removePrefix("https://")
+                            .removePrefix("http://")
+                            .substringBefore('/'),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 

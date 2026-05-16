@@ -16,7 +16,10 @@ import tachiyomi.domain.category.interactor.DeleteCategory
 import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.interactor.RenameCategory
 import tachiyomi.domain.category.interactor.ReorderCategory
+import tachiyomi.domain.category.interactor.SetCategoryParent
 import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.category.model.CategoryWithDepth
+import tachiyomi.domain.category.model.flattenedHierarchy
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -27,6 +30,7 @@ class CategoryScreenModel(
     private val deleteCategory: DeleteCategory = Injekt.get(),
     private val reorderCategory: ReorderCategory = Injekt.get(),
     private val renameCategory: RenameCategory = Injekt.get(),
+    private val setCategoryParent: SetCategoryParent = Injekt.get(),
 ) : StateScreenModel<CategoryScreenState>(CategoryScreenState.Loading) {
 
     private val _events: Channel<CategoryEvent> = Channel()
@@ -36,11 +40,12 @@ class CategoryScreenModel(
         screenModelScope.launch {
             getCategories.subscribe()
                 .collectLatest { categories ->
+                    val userCategories = categories.filterNot(Category::isSystemCategory)
+                    val flattened = userCategories.flattenedHierarchy()
                     mutableState.update {
                         CategoryScreenState.Success(
-                            categories = categories
-                                .filterNot(Category::isSystemCategory)
-                                .toImmutableList(),
+                            categories = userCategories.toImmutableList(),
+                            flattened = flattened.toImmutableList(),
                         )
                     }
                 }
@@ -83,6 +88,16 @@ class CategoryScreenModel(
         }
     }
 
+    fun setParent(category: Category, parentId: Long?) {
+        screenModelScope.launch {
+            when (setCategoryParent.await(category.id, parentId)) {
+                is SetCategoryParent.Result.WouldCreateCycle -> _events.send(CategoryEvent.CycleRejected)
+                is SetCategoryParent.Result.InternalError -> _events.send(CategoryEvent.InternalError)
+                else -> {}
+            }
+        }
+    }
+
     fun showDialog(dialog: CategoryDialog) {
         mutableState.update {
             when (it) {
@@ -106,11 +121,13 @@ sealed interface CategoryDialog {
     data object Create : CategoryDialog
     data class Rename(val category: Category) : CategoryDialog
     data class Delete(val category: Category) : CategoryDialog
+    data class SetParent(val category: Category) : CategoryDialog
 }
 
 sealed interface CategoryEvent {
     sealed class LocalizedMessage(val stringRes: StringResource) : CategoryEvent
     data object InternalError : LocalizedMessage(MR.strings.internal_error)
+    data object CycleRejected : LocalizedMessage(MR.strings.error_category_cycle)
 }
 
 sealed interface CategoryScreenState {
@@ -121,6 +138,7 @@ sealed interface CategoryScreenState {
     @Immutable
     data class Success(
         val categories: ImmutableList<Category>,
+        val flattened: ImmutableList<CategoryWithDepth>,
         val dialog: CategoryDialog? = null,
     ) : CategoryScreenState {
 

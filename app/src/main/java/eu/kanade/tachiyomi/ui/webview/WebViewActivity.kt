@@ -77,6 +77,7 @@ class WebViewActivity : BaseActivity() {
                 onShare = this::shareWebpage,
                 onOpenInBrowser = this::openInBrowser,
                 onClearCookies = this::clearCookies,
+                onImportCookies = this::importCookies,
             )
         }
     }
@@ -115,6 +116,15 @@ class WebViewActivity : BaseActivity() {
     private fun clearCookies(url: String) {
         val cleared = network.cookieJar.remove(url.toHttpUrl())
         logcat { "Cleared $cleared cookies for: $url" }
+    }
+
+    private fun importCookies(url: String, raw: String): Int? {
+        val httpUrl = okhttp3.HttpUrl.Companion.run { url.toHttpUrlOrNull() } ?: return null
+        val cookies = CookieImportParser.parse(raw, httpUrl)
+        if (cookies.isEmpty()) return 0
+        network.cookieJar.saveFromResponse(httpUrl, cookies)
+        logcat { "Imported ${cookies.size} cookies for: $url" }
+        return cookies.size
     }
 
     companion object {

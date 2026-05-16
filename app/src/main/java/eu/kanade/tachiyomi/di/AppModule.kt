@@ -117,6 +117,8 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { TrackerManager() }
         addSingletonFactory { DelayedTrackingStore(app) }
 
+        addSingletonFactory { eu.kanade.tachiyomi.data.sync.SyncManager(app) }
+
         addSingletonFactory { ImageSaver(app) }
 
         addSingletonFactory { AndroidStorageFolderProvider(app) }

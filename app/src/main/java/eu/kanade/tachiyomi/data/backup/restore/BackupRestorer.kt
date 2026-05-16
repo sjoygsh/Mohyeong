@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.data.backup.BackupNotifier
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupExtensionRepos
 import eu.kanade.tachiyomi.data.backup.models.BackupManga
+import eu.kanade.tachiyomi.data.backup.models.BackupMangaLink
 import eu.kanade.tachiyomi.data.backup.models.BackupPreference
 import eu.kanade.tachiyomi.data.backup.models.BackupSourcePreferences
 import eu.kanade.tachiyomi.data.backup.restore.restorers.CategoriesRestorer
@@ -19,7 +20,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.i18n.stringResource
+import tachiyomi.domain.manga.interactor.GetMangaByUrlAndSourceId
+import tachiyomi.domain.manga.repository.MangaLinkRepository
 import tachiyomi.i18n.MR
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -102,8 +107,29 @@ class BackupRestorer(
             if (options.extensionRepoSettings) {
                 restoreExtensionRepos(backup.backupExtensionRepo)
             }
+            if (options.libraryEntries) {
+                restoreMangaLinks(backup.backupMangaLinks)
+            }
 
             // TODO: optionally trigger online library + tracker update
+        }
+    }
+
+    private fun CoroutineScope.restoreMangaLinks(links: List<BackupMangaLink>) = launch {
+        if (links.isEmpty()) return@launch
+        ensureActive()
+        val getMangaByUrlAndSource = Injekt.get<GetMangaByUrlAndSourceId>()
+        val mangaLinkRepository = Injekt.get<MangaLinkRepository>()
+        links.forEach { link ->
+            try {
+                val primary = getMangaByUrlAndSource.await(link.primaryUrl, link.primarySource)
+                val linked = getMangaByUrlAndSource.await(link.linkedUrl, link.linkedSource)
+                if (primary != null && linked != null && primary.id != linked.id) {
+                    mangaLinkRepository.link(primary.id, linked.id, link.priority)
+                }
+            } catch (e: Exception) {
+                errors.add(Date() to "Link restore failed: ${link.primaryUrl} -> ${link.linkedUrl}: ${e.message}")
+            }
         }
     }
 

@@ -24,7 +24,7 @@ android {
     namespace = "eu.kanade.tachiyomi"
 
     defaultConfig {
-        applicationId = "app.mihon"
+        applicationId = "app.mohyeong"
 
         versionCode = 22
         versionName = "0.19.9"
@@ -209,6 +209,7 @@ dependencies {
     implementation(libs.androidx.annotation)
     implementation(libs.androidx.appCompat)
     implementation(libs.androidx.biometric)
+    implementation(libs.androidx.browser)
     implementation(libs.androidx.constraintLayout)
     implementation(libs.androidx.core)
     implementation(libs.androidx.coreSplashScreen)
@@ -278,6 +279,12 @@ dependencies {
 
     // String similarity
     implementation(libs.stringSimilarity)
+
+    // Supabase (cloud sync)
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.auth)
+    implementation(libs.supabase.postgrest)
+    implementation(libs.ktor.client.okhttp)
 
     // Tests
     testImplementation(libs.bundles.test)

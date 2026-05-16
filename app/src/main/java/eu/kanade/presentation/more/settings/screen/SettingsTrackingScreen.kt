@@ -53,7 +53,7 @@ import eu.kanade.tachiyomi.data.track.anilist.AnilistApi
 import eu.kanade.tachiyomi.data.track.bangumi.BangumiApi
 import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeListApi
 import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
-import eu.kanade.tachiyomi.util.system.openInBrowser
+import eu.kanade.tachiyomi.util.system.openInCustomTab
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -131,6 +131,11 @@ object SettingsTrackingScreen : SearchableSettings {
                 preference = trackPreferences.autoUpdateTrack,
                 title = stringResource(MR.strings.pref_auto_update_manga_sync),
             ),
+            Preference.PreferenceItem.SwitchPreference(
+                preference = trackPreferences.trackByVolume,
+                title = stringResource(MR.strings.pref_track_by_volume),
+                subtitle = stringResource(MR.strings.pref_track_by_volume_summary),
+            ),
             Preference.PreferenceItem.ListPreference(
                 preference = trackPreferences.autoUpdateTrackOnMarkRead,
                 entries = AutoTrackState.entries
@@ -143,12 +148,12 @@ object SettingsTrackingScreen : SearchableSettings {
                 preferenceItems = persistentListOf(
                     Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.myAnimeList,
-                        login = { context.openInBrowser(MyAnimeListApi.authUrl(), forceDefaultBrowser = true) },
+                        login = { context.openInCustomTab(MyAnimeListApi.authUrl()) },
                         logout = { dialog = LogoutDialog(trackerManager.myAnimeList) },
                     ),
                     Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.aniList,
-                        login = { context.openInBrowser(AnilistApi.authUrl(), forceDefaultBrowser = true) },
+                        login = { context.openInCustomTab(AnilistApi.authUrl()) },
                         logout = { dialog = LogoutDialog(trackerManager.aniList) },
                     ),
                     Preference.PreferenceItem.TrackerPreference(
@@ -163,12 +168,12 @@ object SettingsTrackingScreen : SearchableSettings {
                     ),
                     Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.shikimori,
-                        login = { context.openInBrowser(ShikimoriApi.authUrl(), forceDefaultBrowser = true) },
+                        login = { context.openInCustomTab(ShikimoriApi.authUrl()) },
                         logout = { dialog = LogoutDialog(trackerManager.shikimori) },
                     ),
                     Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.bangumi,
-                        login = { context.openInBrowser(BangumiApi.authUrl(), forceDefaultBrowser = true) },
+                        login = { context.openInCustomTab(BangumiApi.authUrl()) },
                         logout = { dialog = LogoutDialog(trackerManager.bangumi) },
                     ),
                     Preference.PreferenceItem.InfoPreference(stringResource(MR.strings.tracking_info)),

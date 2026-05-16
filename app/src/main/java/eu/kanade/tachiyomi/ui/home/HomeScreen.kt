@@ -23,8 +23,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -118,10 +123,35 @@ object HomeScreen : Screen() {
                     },
                     contentWindowInsets = WindowInsets(0),
                 ) { contentPadding ->
+                    val scope = rememberCoroutineScope()
+                    val hideOnScrollConnection = remember {
+                        object : NestedScrollConnection {
+                            private var lastShown = true
+                            override fun onPreScroll(
+                                available: Offset,
+                                source: NestedScrollSource,
+                            ): Offset {
+                                when {
+                                    available.y > 1f && lastShown -> {
+                                        // Scrolling further down the list → hide nav
+                                        lastShown = false
+                                        scope.launch { showBottomNavEvent.send(false) }
+                                    }
+                                    available.y < -1f && !lastShown -> {
+                                        // Scrolling back toward the top → reveal nav
+                                        lastShown = true
+                                        scope.launch { showBottomNavEvent.send(true) }
+                                    }
+                                }
+                                return Offset.Zero
+                            }
+                        }
+                    }
                     Box(
                         modifier = Modifier
                             .padding(contentPadding)
-                            .consumeWindowInsets(contentPadding),
+                            .consumeWindowInsets(contentPadding)
+                            .nestedScroll(hideOnScrollConnection),
                     ) {
                         AnimatedContent(
                             targetState = tabNavigator.current,

@@ -145,13 +145,15 @@ class LibraryScreenModel(
             libraryPreferences.categoryTabs.changes(),
             libraryPreferences.categoryNumberOfItems.changes(),
             libraryPreferences.showContinueReadingButton.changes(),
-        ) { a, b, c -> arrayOf(a, b, c) }
-            .onEach { (showCategoryTabs, showMangaCount, showMangaContinueButton) ->
+            libraryPreferences.showMostReadCarousel.changes(),
+        ) { a, b, c, d -> arrayOf(a, b, c, d) }
+            .onEach { (showCategoryTabs, showMangaCount, showMangaContinueButton, showMostReadCarousel) ->
                 mutableState.update { state ->
                     state.copy(
                         showCategoryTabs = showCategoryTabs,
                         showMangaCount = showMangaCount,
                         showMangaContinueButton = showMangaContinueButton,
+                        showMostReadCarousel = showMostReadCarousel,
                     )
                 }
             }
@@ -770,6 +772,7 @@ class LibraryScreenModel(
         val showCategoryTabs: Boolean = false,
         val showMangaCount: Boolean = false,
         val showMangaContinueButton: Boolean = false,
+        val showMostReadCarousel: Boolean = true,
         val dialog: Dialog? = null,
         val libraryData: LibraryData = LibraryData(),
         private val activeCategoryIndex: Int = 0,
@@ -787,6 +790,21 @@ class LibraryScreenModel(
         val isLibraryEmpty = libraryData.favorites.isEmpty()
 
         val selectionMode = selection.isNotEmpty()
+
+        /**
+         * Top mangas by reading completion percentage (readCount / totalChapters).
+         * Only includes started entries with at least one chapter. Limited to the top 10.
+         */
+        val topReadMangas: List<LibraryManga> by lazy {
+            libraryData.favorites
+                .asSequence()
+                .map { it.libraryManga }
+                .filter { it.totalChapters > 0 && it.readCount > 0 }
+                .distinctBy { it.manga.id }
+                .sortedByDescending { it.readCount.toDouble() / it.totalChapters.toDouble() }
+                .take(5)
+                .toList()
+        }
 
         val selectedManga by lazy { selection.mapNotNull { libraryData.favoritesById[it]?.libraryManga?.manga } }
 

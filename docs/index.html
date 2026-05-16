@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mohyeong — Android Manga Reader</title>
+  <meta name="description" content="Mohyeong is an enhanced open-source manga reader for Android, built on top of Mihon with additional features for power users." />
+  <link rel="icon" href="assets/icon-round.png" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f0f11;
+      --surface:   #18181c;
+      --card:      #222228;
+      --border:    #2e2e38;
+      --accent:    #c0392b;
+      --accent-h:  #e74c3c;
+      --text:      #e8e8ec;
+      --muted:     #8888a0;
+      --radius:    12px;
+      --nav-h:     60px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── NAV ───────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(15,15,17,.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      height: var(--nav-h);
+      display: flex; align-items: center;
+      padding: 0 2rem;
+    }
+    .nav-inner {
+      max-width: 1100px; width: 100%; margin: 0 auto;
+      display: flex; align-items: center; gap: 1.5rem;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: .6rem;
+      text-decoration: none; color: var(--text);
+      font-weight: 700; font-size: 1.1rem;
+    }
+    .nav-logo img { width: 32px; height: 32px; border-radius: 8px; }
+    .nav-links {
+      display: flex; align-items: center; gap: .25rem;
+      margin-left: auto; list-style: none;
+    }
+    .nav-links a {
+      color: var(--muted); text-decoration: none;
+      padding: .4rem .75rem; border-radius: 6px;
+      font-size: .9rem; transition: color .15s, background .15s;
+    }
+    .nav-links a:hover { color: var(--text); background: var(--card); }
+    .nav-links .btn-dl {
+      background: var(--accent); color: #fff !important;
+      font-weight: 600; padding: .4rem 1rem;
+    }
+    .nav-links .btn-dl:hover { background: var(--accent-h); }
+
+    /* ── AI BANNER ─────────────────────────────────── */
+    .ai-banner {
+      background: linear-gradient(90deg, #1a0e0e, #1e1220);
+      border-bottom: 1px solid #3a2030;
+      padding: .55rem 2rem;
+      text-align: center;
+      font-size: .82rem;
+      color: #bb8899;
+    }
+    .ai-banner strong { color: #e8a0b0; }
+    .ai-banner a { color: #e8a0b0; }
+
+    /* ── HERO ──────────────────────────────────────── */
+    .hero {
+      text-align: center;
+      padding: 6rem 2rem 5rem;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .hero-icon {
+      width: 120px; height: 120px; border-radius: 28px;
+      margin-bottom: 2rem;
+      box-shadow: 0 0 60px rgba(192,57,43,.35);
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.2rem);
+      font-weight: 800;
+      letter-spacing: -.02em;
+      background: linear-gradient(135deg, #fff 40%, #c0392b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 1.1rem;
+    }
+    .hero p {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 540px;
+      margin: 0 auto 2.5rem;
+    }
+    .hero-btns {
+      display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: .5rem;
+      padding: .7rem 1.6rem; border-radius: 8px;
+      font-size: .95rem; font-weight: 600;
+      text-decoration: none; transition: all .15s;
+      border: none; cursor: pointer;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-h); transform: translateY(-1px); }
+    .btn-secondary {
+      background: var(--card); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+
+    /* ── BADGE ─────────────────────────────────────── */
+    .version-badge {
+      display: inline-block; margin-bottom: 1.5rem;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 999px; padding: .2rem .9rem;
+      font-size: .8rem; color: var(--muted);
+    }
+    .version-badge span { color: var(--accent); font-weight: 600; }
+
+    /* ── SECTION ───────────────────────────────────── */
+    section { padding: 4rem 2rem; max-width: 1100px; margin: 0 auto; }
+    .section-label {
+      text-align: center; font-size: .8rem; font-weight: 600;
+      letter-spacing: .1em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: .75rem;
+    }
+    .section-title {
+      text-align: center; font-size: clamp(1.6rem, 3vw, 2.1rem);
+      font-weight: 700; margin-bottom: .6rem;
+    }
+    .section-sub {
+      text-align: center; color: var(--muted); font-size: 1rem;
+      max-width: 560px; margin: 0 auto 3rem;
+    }
+
+    /* ── FEATURE CARDS ─────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.75rem;
+      transition: border-color .2s, transform .2s;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-3px); }
+    .card-icon {
+      font-size: 2rem; margin-bottom: 1rem;
+      display: block;
+    }
+    .card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: .5rem; }
+    .card p { font-size: .9rem; color: var(--muted); line-height: 1.6; }
+    .card .tag {
+      display: inline-block; margin-top: .9rem;
+      background: rgba(192,57,43,.15); color: var(--accent);
+      border-radius: 4px; padding: .15rem .5rem;
+      font-size: .75rem; font-weight: 600;
+    }
+
+    /* ── NEW FEATURES HIGHLIGHT ────────────────────── */
+    .new-section {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .new-section section { padding: 4rem 2rem; }
+
+    /* ── ATTRIBUTION ───────────────────────────────── */
+    .attribution {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+    }
+    .attribution section {
+      display: flex; align-items: center; gap: 2.5rem;
+      flex-wrap: wrap;
+    }
+    .attribution-text h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: .6rem; }
+    .attribution-text p { color: var(--muted); font-size: .95rem; max-width: 620px; line-height: 1.7; }
+    .attribution-text a { color: var(--accent); text-decoration: none; }
+    .attribution-text a:hover { text-decoration: underline; }
+    .attribution-badge {
+      flex-shrink: 0; margin-left: auto;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.25rem 1.75rem;
+      text-align: center; min-width: 180px;
+    }
+    .attribution-badge .robot { font-size: 2.5rem; margin-bottom: .4rem; display: block; }
+    .attribution-badge p { font-size: .8rem; color: var(--muted); }
+    .attribution-badge strong { color: var(--text); display: block; margin-top: .2rem; }
+
+    /* ── FOOTER ────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2.5rem 2rem;
+    }
+    .footer-inner {
+      max-width: 1100px; margin: 0 auto;
+      display: flex; justify-content: space-between;
+      align-items: center; flex-wrap: wrap; gap: 1rem;
+    }
+    .footer-logo {
+      display: flex; align-items: center; gap: .5rem;
+      color: var(--muted); font-size: .9rem;
+    }
+    .footer-logo img { width: 24px; height: 24px; border-radius: 6px; opacity: .7; }
+    footer p { color: var(--muted); font-size: .85rem; }
+    footer a { color: var(--muted); text-decoration: none; }
+    footer a:hover { color: var(--text); }
+    .footer-links { display: flex; gap: 1.5rem; }
+
+    /* ── DIVIDER ───────────────────────────────────── */
+    hr { border: none; border-top: 1px solid var(--border); }
+
+    /* ── RESPONSIVE ────────────────────────────────── */
+    @media (max-width: 640px) {
+      .nav-links .hide-mobile { display: none; }
+      .attribution section { flex-direction: column; }
+      .attribution-badge { margin-left: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- AI Disclosure Banner -->
+<div class="ai-banner">
+  <strong>Built with AI assistance</strong> — Mohyeong was developed with the help of
+  <strong><a href="https://claude.ai" target="_blank" rel="noopener">Claude (Anthropic)</a></strong>
+  to extend and improve upon the open-source Mihon project.
+</div>
+
+<!-- Navigation -->
+<nav>
+  <div class="nav-inner">
+    <a class="nav-logo" href="index.html">
+      <img src="assets/icon-round.png" alt="Mohyeong icon" />
+      Mohyeong
+    </a>
+    <ul class="nav-links">
+      <li><a href="help.html" class="hide-mobile">Docs</a></li>
+      <li><a href="https://github.com/sjoygsh/Mohyeong" target="_blank" rel="noopener" class="hide-mobile">GitHub</a></li>
+      <li><a href="https://github.com/sjoygsh/Mohyeong/releases" target="_blank" rel="noopener" class="btn-dl btn">Download</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="version-badge">Based on Mihon <span>v0.19.9</span></div>
+  <img class="hero-icon" src="assets/icon.png" alt="Mohyeong" />
+  <h1>Mohyeong — Enhanced Manga Reader</h1>
+  <p>A powerful open-source manga reader for Android. Everything Mihon does, plus linked sources, multi-backend cloud sync, and smarter conflict resolution.</p>
+  <div class="hero-btns">
+    <a class="btn btn-primary" href="https://github.com/sjoygsh/Mohyeong/releases">
+      ↓ Download APK
+    </a>
+    <a class="btn btn-secondary" href="help.html">
+      Read the docs
+    </a>
+  </div>
+</div>
+
+<hr />
+
+<!-- Core features -->
+<section>
+  <div class="section-label">What's included</div>
+  <h2 class="section-title">Everything you need in a manga reader</h2>
+  <p class="section-sub">All the capabilities of Mihon, plus exclusive enhancements built specifically for Mohyeong.</p>
+  <div class="cards">
+    <div class="card">
+      <span class="card-icon">🔗</span>
+      <h3>Linked Sources</h3>
+      <p>Connect multiple sources to a single manga entry. Chapters from all linked sources appear in one unified list — no duplicates, no juggling.</p>
+      <span class="tag">Mohyeong exclusive</span>
+    </div>
+    <div class="card">
+      <span class="card-icon">☁️</span>
+      <h3>Multi-Backend Sync</h3>
+      <p>Sync your library across devices via SyncYomi, WebDAV, Google Drive, or Dropbox. Pick the backend that fits your setup.</p>
+      <span class="tag">Mohyeong exclusive</span>
+    </div>
+    <div class="card">
+      <span class="card-icon">⚖️</span>
+      <h3>Smart Conflict Resolution</h3>
+      <p>Per-row timestamp-based merging means the most recently changed data always wins — not just the latest full snapshot.</p>
+      <span class="tag">Mohyeong exclusive</span>
+    </div>
+    <div class="card">
+      <span class="card-icon">📚</span>
+      <h3>Tracking</h3>
+      <p>Automatically sync your reading progress with MyAnimeList, AniList, Kitsu, MangaUpdates, and more.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">🎨</span>
+      <h3>Customizable Reader</h3>
+      <p>Multiple reading modes (paged, webtoon, continuous), custom color filters, brightness, and layout controls.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">🔌</span>
+      <h3>Extensions</h3>
+      <p>Bring your own content from hundreds of sources via the extension system. Full control over where you read from.</p>
+    </div>
+  </div>
+</section>
+
+<hr />
+
+<!-- Sync deep dive -->
+<div class="new-section">
+  <section>
+    <div class="section-label">Cloud Sync</div>
+    <h2 class="section-title">Your library, everywhere</h2>
+    <p class="section-sub">Mohyeong supports four sync backends. All use the same bidirectional merge engine with timestamp-based conflict resolution.</p>
+    <div class="cards">
+      <div class="card">
+        <span class="card-icon">🔄</span>
+        <h3>SyncYomi</h3>
+        <p>Self-hosted server sync. Snapshot local → POST to server → server merges → apply merged result.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">📁</span>
+        <h3>WebDAV</h3>
+        <p>Works with Nextcloud, Synology, or any WebDAV server you already run. HTTP Basic auth.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">🟡</span>
+        <h3>Google Drive</h3>
+        <p>Uses your personal Google Drive via OAuth access token (drive.file scope). One file, streamed upload.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">📦</span>
+        <h3>Dropbox</h3>
+        <p>Long-lived personal access token. Stores a single <code>.tachibk</code> file, overwritten on each sync.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<hr />
+
+<!-- Attribution -->
+<div class="attribution">
+  <section>
+    <div class="attribution-text">
+      <h2>Built on the shoulders of giants — with AI help</h2>
+      <p>
+        Mohyeong is a fork of <a href="https://mihon.app" target="_blank" rel="noopener">Mihon</a>,
+        which is itself a continuation of <a href="https://github.com/tachiyomiorg/tachiyomi" target="_blank" rel="noopener">Tachiyomi</a>.
+        Both are open-source under the Apache 2.0 license.
+      </p>
+      <p style="margin-top:.75rem;">
+        The additional features in Mohyeong — linked sources, expanded sync transports, conflict
+        resolution, reactive sync status — were designed and implemented with the direct assistance
+        of <strong>Claude (Anthropic)</strong>. No attempt is made to obscure this; AI collaboration
+        was an intentional and integral part of the development process.
+      </p>
+    </div>
+    <div class="attribution-badge">
+      <span class="robot">🤖</span>
+      <p>Developed with</p>
+      <strong>Claude AI</strong>
+      <p style="margin-top:.4rem; font-size:.75rem;">by Anthropic</p>
+    </div>
+  </section>
+</div>
+
+<!-- Footer -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-logo">
+      <img src="assets/icon-round.png" alt="" />
+      <span>Mohyeong — Apache 2.0 Licensed</span>
+    </div>
+    <div class="footer-links">
+      <a href="help.html">Docs</a>
+      <a href="https://github.com/sjoygsh/Mohyeong" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://mihon.app" target="_blank" rel="noopener">Upstream: Mihon</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

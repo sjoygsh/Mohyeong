@@ -88,10 +88,16 @@ class MangaRestorer(
     }
 
     private suspend fun restoreExistingManga(manga: Manga, dbManga: Manga): Manga {
-        return if (manga.version > dbManga.version) {
-            updateManga(dbManga.copyFrom(manga).copy(id = dbManga.id))
-        } else {
-            updateManga(manga.copyFrom(dbManga).copy(id = dbManga.id))
+        // Prefer timestamp-based conflict resolution when both sides carry lastModifiedAt.
+        val backupModified = manga.lastModifiedAt
+        val dbModified = dbManga.lastModifiedAt
+        val backupNewer = backupModified > 0L && backupModified > dbModified
+        val dbNewer = dbModified > 0L && dbModified > backupModified
+        return when {
+            backupNewer -> updateManga(dbManga.copyFrom(manga).copy(id = dbManga.id))
+            dbNewer -> updateManga(manga.copyFrom(dbManga).copy(id = dbManga.id))
+            manga.version > dbManga.version -> updateManga(dbManga.copyFrom(manga).copy(id = dbManga.id))
+            else -> updateManga(manga.copyFrom(dbManga).copy(id = dbManga.id))
         }
     }
 
@@ -163,22 +169,38 @@ class MangaRestorer(
                     return@mapNotNull null
                 }
 
-                // Update to an existing chapter
+                // Update to an existing chapter. Bookmark is sticky — keep it set if either side has it.
                 var updatedChapter = chapter
                     .copyFrom(dbChapter)
                     .copy(
                         id = dbChapter.id,
                         bookmark = chapter.bookmark || dbChapter.bookmark,
                     )
-                if (dbChapter.read && !updatedChapter.read) {
+
+                // Per-row timestamp-based conflict resolution for mutable user state.
+                // If the DB row was modified after the backup row, prefer the DB's read/progress;
+                // otherwise (or if no timestamp info) fall back to the legacy OR/max behaviour.
+                val backupMod = chapter.lastModifiedAt
+                val dbMod = dbChapter.lastModifiedAt
+                val dbNewer = dbMod > 0L && dbMod > backupMod
+
+                if (dbNewer) {
                     updatedChapter = updatedChapter.copy(
-                        read = true,
+                        read = dbChapter.read,
                         lastPageRead = dbChapter.lastPageRead,
+                        bookmarkNote = dbChapter.bookmarkNote ?: chapter.bookmarkNote,
                     )
-                } else if (updatedChapter.lastPageRead == 0L && dbChapter.lastPageRead != 0L) {
-                    updatedChapter = updatedChapter.copy(
-                        lastPageRead = dbChapter.lastPageRead,
-                    )
+                } else {
+                    if (dbChapter.read && !updatedChapter.read) {
+                        updatedChapter = updatedChapter.copy(
+                            read = true,
+                            lastPageRead = dbChapter.lastPageRead,
+                        )
+                    } else if (updatedChapter.lastPageRead == 0L && dbChapter.lastPageRead != 0L) {
+                        updatedChapter = updatedChapter.copy(
+                            lastPageRead = dbChapter.lastPageRead,
+                        )
+                    }
                 }
                 updatedChapter
             }
@@ -207,6 +229,8 @@ class MangaRestorer(
                     chapter.dateFetch,
                     chapter.dateUpload,
                     chapter.version,
+                    chapter.bookmarkNote,
+                    chapter.volumeNumber,
                 )
             }
         }
@@ -230,6 +254,8 @@ class MangaRestorer(
                     chapterId = chapter.id,
                     version = chapter.version,
                     isSyncing = 0,
+                    bookmarkNote = chapter.bookmarkNote,
+                    volumeNumber = chapter.volumeNumber,
                 )
             }
         }

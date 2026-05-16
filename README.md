@@ -1,86 +1,129 @@
 <div align="center">
 
-<a href="https://mihon.app">
-    <img src="./.github/assets/logo.png" alt="Mihon logo" title="Mihon logo" width="80"/>
-</a>
+<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Mohyeong" width="100" />
 
-# Mihon [App](#)
+# Mohyeong
 
-### Full-featured reader
-Discover and read manga, webtoons, comics, and more – easier than ever on your Android device.
+### Enhanced Android Manga Reader
 
-[![Discord server](https://img.shields.io/discord/1195734228319617024.svg?label=&labelColor=6A7EC2&color=7389D8&logo=discord&logoColor=FFFFFF)](https://discord.gg/mihon)
-[![GitHub downloads](https://img.shields.io/github/downloads/mihonapp/mihon/total?label=downloads&labelColor=27303D&color=0D1117&logo=github&logoColor=FFFFFF&style=flat)](https://mihon.app/download)
+**Mohyeong** is an open-source fork of [Mihon](https://mihon.app) with additional features for power users — linked sources, multi-backend cloud sync, and smarter conflict resolution.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/mihonapp/mihon/build.yml?labelColor=27303D)](https://github.com/mihonapp/mihon/actions/workflows/build_push.yml)
-[![License: Apache-2.0](https://img.shields.io/github/license/mihonapp/mihon?labelColor=27303D&color=0877d2)](/LICENSE)
-[![Translation status](https://img.shields.io/weblate/progress/mihon?labelColor=27303D&color=946300)](https://hosted.weblate.org/engage/mihon/)
+[![Latest Release](https://img.shields.io/github/v/release/sjoygsh/Mohyeong?style=flat-square&label=Download&color=c0392b)](https://github.com/sjoygsh/Mohyeong/releases/latest)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=flat-square)](LICENSE)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-green?style=flat-square)](https://github.com/sjoygsh/Mohyeong/releases)
+[![Built with Claude AI](https://img.shields.io/badge/Built%20with-Claude%20AI-8a2be2?style=flat-square)](https://claude.ai)
 
-## Download
-
-[![Mihon Stable](https://img.shields.io/github/release/mihonapp/mihon.svg?maxAge=3600&label=Stable&labelColor=06599d&color=043b69)](https://mihon.app/download)
-[![Mihon Beta](https://img.shields.io/github/v/release/mihonapp/mihon-preview.svg?maxAge=3600&label=Beta&labelColor=2c2c47&color=1c1c39)](https://mihon.app/download)
-
-*Requires Android 8.0 or higher.*
-
-## Features
-
-<div align="left">
-
-* Local reading of content.
-* A configurable reader with multiple viewers, reading directions and other settings.
-* Tracker support: [MyAnimeList](https://myanimelist.net/), [AniList](https://anilist.co/), [Kitsu](https://kitsu.app/), [MangaUpdates](https://mangaupdates.com), [Shikimori](https://shikimori.one), and [Bangumi](https://bgm.tv/) support.
-* Categories to organize your library.
-* Light and dark themes.
-* Schedule updating your library for new chapters.
-* Create backups locally to read offline or to your desired cloud service.
-* Plus much more...
+[Website](https://sjoygsh.github.io/Mohyeong/) · [Documentation](https://sjoygsh.github.io/Mohyeong/help.html) · [Download](https://github.com/sjoygsh/Mohyeong/releases)
 
 </div>
 
-## Contributing
+---
 
-[Code of conduct](./CODE_OF_CONDUCT.md) · [Contributing guide](./CONTRIBUTING.md)
+## About
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+Mohyeong (모형) is a fork of [Mihon](https://github.com/mihonapp/mihon), which continues the legacy of [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi). It includes everything Mihon offers, plus exclusive enhancements developed with the assistance of **Claude AI (Anthropic)**.
 
-Before reporting a new issue, take a look at the [FAQ](https://mihon.app/docs/faq/general), the [changelog](https://mihon.app/changelogs/) and the already opened [issues](https://github.com/mihonapp/mihon/issues); if you got any questions, join our [Discord server](https://discord.gg/mihon).
+> **Transparency notice:** The additional features in Mohyeong were designed and implemented with direct AI collaboration. This is intentional and not hidden.
 
+---
 
-### Repositories
+## Features
 
-[![mihonapp/website - GitHub](https://github-readme-stats.vercel.app/api/pin/?username=mihonapp&repo=website&bg_color=161B22&text_color=c9d1d9&title_color=0877d2&icon_color=0877d2&border_radius=8&hide_border=true&description_lines_count=2)](https://github.com/mihonapp/website/)
-[![mihonapp/bitmap.kt - GitHub](https://github-readme-stats.vercel.app/api/pin/?username=mihonapp&repo=bitmap.kt&bg_color=161B22&text_color=c9d1d9&title_color=0877d2&icon_color=0877d2&border_radius=8&hide_border=true&description_lines_count=2)](https://github.com/mihonapp/bitmap.kt/)
+### Mohyeong Exclusive
 
-### Credits
+| Feature | Description |
+|---|---|
+| 🔗 **Linked Sources** | Attach multiple sources to one manga entry. Chapters from all linked sources merge into a single unified list. |
+| ☁️ **Multi-Backend Sync** | Sync your library via **SyncYomi**, **WebDAV**, **Google Drive**, or **Dropbox**. |
+| ⚖️ **Smart Conflict Resolution** | Per-row timestamp-based merging — the most recently changed data wins, not just the latest full snapshot. |
+| 🔴 **Live Sync Status** | Reactive sync indicator powered by WorkManager flow — updates in real time, no polling. |
 
-Thank you to all the people who have contributed!
+### From Mihon
 
-<a href="https://github.com/mihonapp/mihon/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=mihonapp/mihon" alt="Mihon app contributors" title="Mihon app contributors" width="800"/>
-</a>
+- 📚 Automatic tracking with MyAnimeList, AniList, Kitsu, MangaUpdates, Shikimori, Bangumi
+- 🎨 Multiple reading modes (webtoon, paged, vertical, continuous)
+- 🔌 Hundreds of sources via the extension system
+- 📁 Full backup and restore (`.tachibk` format — compatible with Mihon)
+- 📂 Categories, bulk actions, smart library filters
+- ⬇️ Offline downloads with queue management
 
-### Disclaimer
+---
 
-The developer(s) of this application does not have any affiliation with the content providers available, and this application hosts zero content.
+## Download
 
-### License
+Get the latest APK from the [Releases page](https://github.com/sjoygsh/Mohyeong/releases/latest).
 
-<pre>
-Copyright © 2015 Javier Tomás
-Copyright © 2024 Mihon Open Source Project
+**Requirements:** Android 8.0 (API 26) or higher · `arm64-v8a` recommended
+
+The release APK uses package ID `app.mohyeong` — it will not conflict with Mihon (`app.mihon`) if both are installed.
+
+---
+
+## Sync Setup
+
+Mohyeong supports four sync backends. All use the same bidirectional merge engine.
+
+| Backend | Auth type | Self-hosted |
+|---|---|---|
+| SyncYomi | API key | ✅ |
+| WebDAV | Username + password | ✅ |
+| Google Drive | OAuth access token | ❌ |
+| Dropbox | Personal access token | ❌ |
+
+Enable in **More → Settings → Sync**. See the [full sync guide](https://sjoygsh.github.io/Mohyeong/help.html#sync-overview) for setup instructions.
+
+---
+
+## Building from Source
+
+```bash
+git clone https://github.com/sjoygsh/Mohyeong.git
+cd Mohyeong
+
+# Debug build
+./gradlew assembleDebug
+
+# Release build (requires signing config)
+./gradlew assembleRelease
+```
+
+Requires Android Studio Iguana or newer and JDK 17+.
+
+---
+
+## Differences from Mihon
+
+Mohyeong diverges from Mihon in the following areas:
+
+- **Package ID:** `app.mohyeong` (vs `app.mihon`)
+- **App name / branding:** Mohyeong (모형)
+- **Linked sources:** new feature, not in upstream
+- **Sync transports:** WebDAV, Google Drive, Dropbox added on top of SyncYomi
+- **Conflict resolution:** per-row timestamp merge instead of last-write-wins
+- **Sync status:** WorkManager flow (reactive) vs snapshot
+
+Mohyeong backup files (`.tachibk`) are fully compatible with Mihon.
+
+---
+
+## Credits
+
+- [Mihon](https://github.com/mihonapp/mihon) — upstream project (Apache 2.0)
+- [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi) — original project
+- [Claude AI by Anthropic](https://claude.ai) — AI assistance for feature development
+
+---
+
+## License
+
+```
+Copyright 2024 Mohyeong Contributors
+Copyright 2024 Mihon Contributors
+Copyright 2015 Javier Tomás
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-</pre>
-
-</div>
+   http://www.apache.org/licenses/LICENSE-2.0
+```

@@ -98,9 +98,21 @@ class SourcesScreenModel(
         mutableState.update { it.copy(dialog = null) }
     }
 
+    fun search(query: String?) {
+        mutableState.update { it.copy(searchQuery = query) }
+    }
+
+    fun toggleSearchMode() {
+        mutableState.update {
+            it.copy(searchMode = if (it.searchMode == SearchMode.Global) SearchMode.FilterList else SearchMode.Global)
+        }
+    }
+
     sealed interface Event {
         data object FailedFetchingSources : Event
     }
+
+    enum class SearchMode { Global, FilterList }
 
     data class Dialog(val source: Source)
 
@@ -109,8 +121,47 @@ class SourcesScreenModel(
         val dialog: Dialog? = null,
         val isLoading: Boolean = true,
         val items: ImmutableList<SourceUiModel> = persistentListOf(),
+        val searchQuery: String? = null,
+        val searchMode: SearchMode = SearchMode.Global,
     ) {
         val isEmpty = items.isEmpty()
+
+        /**
+         * In FilterList mode with a non-blank query, hide headers whose section is empty
+         * and items whose source name doesn't contain the query.
+         */
+        val displayedItems: ImmutableList<SourceUiModel> by lazy {
+            if (searchMode != SearchMode.FilterList || searchQuery.isNullOrBlank()) {
+                return@lazy items
+            }
+            val q = searchQuery.trim()
+            // Group by header, then drop empty groups.
+            val result = mutableListOf<SourceUiModel>()
+            var pendingHeader: SourceUiModel.Header? = null
+            val matchedItems = mutableListOf<SourceUiModel.Item>()
+            fun flush() {
+                if (matchedItems.isNotEmpty()) {
+                    pendingHeader?.let { result += it }
+                    result += matchedItems
+                }
+                matchedItems.clear()
+            }
+            for (model in items) {
+                when (model) {
+                    is SourceUiModel.Header -> {
+                        flush()
+                        pendingHeader = model
+                    }
+                    is SourceUiModel.Item -> {
+                        if (model.source.name.contains(q, ignoreCase = true)) {
+                            matchedItems += model
+                        }
+                    }
+                }
+            }
+            flush()
+            result.toImmutableList()
+        }
     }
 
     companion object {

@@ -10,6 +10,8 @@ class NetworkPreferences(
 
     val verboseLogging: Preference<Boolean> = preferenceStore.getBoolean("verbose_logging", verboseLoggingDefault)
 
+    val autoSolveCloudflare: Preference<Boolean> = preferenceStore.getBoolean("auto_solve_cloudflare", true)
+
     val dohProvider: Preference<Int> = preferenceStore.getInt("doh_provider", -1)
 
     val defaultUserAgent: Preference<String> = preferenceStore.getString(

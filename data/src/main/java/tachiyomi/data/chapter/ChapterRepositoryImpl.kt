@@ -34,6 +34,8 @@ class ChapterRepositoryImpl(
                         chapter.dateFetch,
                         chapter.dateUpload,
                         chapter.version,
+                        chapter.bookmarkNote,
+                        chapter.volumeNumber,
                     )
                         .awaitAsOne()
                     chapter.copy(id = chapterId)
@@ -71,6 +73,8 @@ class ChapterRepositoryImpl(
                     chapterId = chapterUpdate.id,
                     version = chapterUpdate.version,
                     isSyncing = 0,
+                    bookmarkNote = chapterUpdate.bookmarkNote,
+                    volumeNumber = chapterUpdate.volumeNumber,
                 )
             }
         }
@@ -143,6 +147,8 @@ class ChapterRepositoryImpl(
         lastModifiedAt: Long,
         version: Long,
         isSyncing: Long,
+        bookmarkNote: String?,
+        volumeNumber: Double?,
     ): Chapter = Chapter(
         id = id,
         mangaId = mangaId,
@@ -158,5 +164,7 @@ class ChapterRepositoryImpl(
         scanlator = scanlator,
         lastModifiedAt = lastModifiedAt,
         version = version,
+        bookmarkNote = bookmarkNote,
+        volumeNumber = volumeNumber,
     )
 }

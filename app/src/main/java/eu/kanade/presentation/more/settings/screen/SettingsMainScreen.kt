@@ -10,9 +10,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ChromeReaderMode
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.GetApp
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Search
@@ -173,6 +175,12 @@ object SettingsMainScreen : Screen() {
 
     private val items = listOf(
         Item(
+            titleRes = MR.strings.pref_category_account,
+            formatSubtitle = { "Cloud sync (Supabase)" },
+            icon = Icons.Outlined.AccountCircle,
+            screen = SettingsAccountScreen,
+        ),
+        Item(
             titleRes = MR.strings.pref_category_appearance,
             subtitleRes = MR.strings.pref_appearance_summary,
             icon = Icons.Outlined.Palette,
@@ -213,6 +221,12 @@ object SettingsMainScreen : Screen() {
             subtitleRes = MR.strings.pref_backup_summary,
             icon = Icons.Outlined.Storage,
             screen = SettingsDataScreen,
+        ),
+        Item(
+            titleRes = MR.strings.pref_category_sync,
+            subtitleRes = MR.strings.pref_sync_summary,
+            icon = Icons.Outlined.CloudSync,
+            screen = SettingsSyncScreen,
         ),
         Item(
             titleRes = MR.strings.pref_category_security,

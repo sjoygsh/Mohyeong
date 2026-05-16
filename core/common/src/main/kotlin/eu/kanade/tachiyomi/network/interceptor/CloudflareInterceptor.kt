@@ -16,34 +16,41 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
-import org.jsoup.Jsoup
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.i18n.MR
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 
 class CloudflareInterceptor(
     private val context: Context,
     private val cookieManager: AndroidCookieJar,
     defaultUserAgentProvider: () -> String,
+    private val isEnabled: () -> Boolean = { true },
 ) : WebViewInterceptor(context, defaultUserAgentProvider) {
 
     private val executor = ContextCompat.getMainExecutor(context)
 
     override fun shouldIntercept(response: Response): Boolean {
-        // Check if Cloudflare anti-bot is on
-        return if (response.code in ERROR_CODES && response.header("Server") in SERVER_CHECK) {
-            val document = Jsoup.parse(
-                response.peekBody(Long.MAX_VALUE).string(),
-                response.request.url.toString(),
-            )
+        if (!isEnabled()) return false
 
-            // solve with webview only on captcha, not on geo block
-            document.getElementById("challenge-error-title") != null ||
-                document.getElementById("challenge-error-text") != null
-        } else {
-            false
+        // Fast path: explicit Cloudflare mitigation header set by recent edge releases
+        if (response.header("cf-mitigated")?.equals("challenge", ignoreCase = true) == true) {
+            return true
         }
+
+        if (response.code !in ERROR_CODES) return false
+        val server = response.header("Server").orEmpty().lowercase()
+        if (server !in SERVER_CHECK && response.header("cf-ray") == null) return false
+
+        // Inspect body for challenge markers. Caps body read to 256 KiB to avoid
+        // pulling huge non-HTML responses into memory.
+        val body = try {
+            response.peekBody(MAX_BODY_PEEK_BYTES).string()
+        } catch (_: Exception) {
+            return false
+        }
+        return CHALLENGE_BODY_MARKERS.any { it in body }
     }
 
     override fun intercept(
@@ -53,10 +60,24 @@ class CloudflareInterceptor(
     ): Response {
         try {
             response.close()
-            cookieManager.remove(request.url, COOKIE_NAMES, 0)
-            val oldCookie = cookieManager.get(request.url)
+            val host = request.url.host
+            val preCookie = cookieManager.get(request.url)
                 .firstOrNull { it.name == "cf_clearance" }
-            resolveWithWebView(request, oldCookie)
+
+            // Coalesce concurrent solves for the same host onto a single WebView.
+            // Other threads block on this lock; once released, they re-check the cookie jar and
+            // skip the WebView round-trip if the first solver already obtained cf_clearance.
+            val lock = hostLocks.computeIfAbsent(host) { Object() }
+            synchronized(lock) {
+                val nowCookie = cookieManager.get(request.url)
+                    .firstOrNull { it.name == "cf_clearance" }
+                if (nowCookie != null && nowCookie != preCookie) {
+                    // Another waiter solved it while we were queued.
+                    return chain.proceed(request)
+                }
+                cookieManager.remove(request.url, COOKIE_NAMES, 0)
+                resolveWithWebView(request, nowCookie)
+            }
 
             return chain.proceed(request)
         }
@@ -151,8 +172,24 @@ class CloudflareInterceptor(
     }
 }
 
-private val ERROR_CODES = listOf(403, 503)
+private val ERROR_CODES = listOf(403, 503, 429)
 private val SERVER_CHECK = arrayOf("cloudflare-nginx", "cloudflare")
 private val COOKIE_NAMES = listOf("cf_clearance")
+private const val MAX_BODY_PEEK_BYTES = 256L * 1024L
+
+/**
+ * Body fragments that indicate a Cloudflare interactive challenge page rather than a
+ * geo-block / hard ban. Checked with simple substring matching, no DOM parsing.
+ */
+private val CHALLENGE_BODY_MARKERS = arrayOf(
+    "challenge-error-title",
+    "challenge-error-text",
+    "window._cf_chl_opt",
+    "cf_chl_opt",
+    "Just a moment",
+    "/cdn-cgi/challenge-platform/",
+)
+
+private val hostLocks = ConcurrentHashMap<String, Any>()
 
 private class CloudflareBypassException : Exception()

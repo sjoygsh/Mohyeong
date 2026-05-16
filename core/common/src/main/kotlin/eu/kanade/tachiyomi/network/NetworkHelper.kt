@@ -64,7 +64,9 @@ class NetworkHelper(
 
     val client = clientBuilder
         .addInterceptor(
-            CloudflareInterceptor(context, cookieJar, ::defaultUserAgentProvider),
+            CloudflareInterceptor(context, cookieJar, ::defaultUserAgentProvider) {
+                preferences.autoSolveCloudflare.get()
+            },
         )
         .build()
 

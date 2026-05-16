@@ -14,6 +14,7 @@ import eu.kanade.tachiyomi.data.backup.models.Backup
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupExtensionRepos
 import eu.kanade.tachiyomi.data.backup.models.BackupManga
+import eu.kanade.tachiyomi.data.backup.models.BackupMangaLink
 import eu.kanade.tachiyomi.data.backup.models.BackupPreference
 import eu.kanade.tachiyomi.data.backup.models.BackupSource
 import eu.kanade.tachiyomi.data.backup.models.BackupSourcePreferences
@@ -27,6 +28,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.backup.service.BackupPreferences
 import tachiyomi.domain.manga.interactor.GetFavorites
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.repository.MangaLinkRepository
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
@@ -45,6 +47,7 @@ class BackupCreator(
     private val getFavorites: GetFavorites = Injekt.get(),
     private val backupPreferences: BackupPreferences = Injekt.get(),
     private val mangaRepository: MangaRepository = Injekt.get(),
+    private val mangaLinkRepository: MangaLinkRepository = Injekt.get(),
 
     private val categoriesBackupCreator: CategoriesBackupCreator = CategoriesBackupCreator(),
     private val mangaBackupCreator: MangaBackupCreator = MangaBackupCreator(),
@@ -87,6 +90,7 @@ class BackupCreator(
                 backupPreferences = backupAppPreferences(options),
                 backupExtensionRepo = backupExtensionRepos(options),
                 backupSourcePreferences = backupSourcePreferences(options),
+                backupMangaLinks = backupMangaLinks(options),
             )
 
             val byteArray = parser.encodeToByteArray(Backup.serializer(), backup)
@@ -151,6 +155,19 @@ class BackupCreator(
         if (!options.sourceSettings) return emptyList()
 
         return preferenceBackupCreator.createSource(includePrivatePreferences = options.privateSettings)
+    }
+
+    private suspend fun backupMangaLinks(options: BackupOptions): List<BackupMangaLink> {
+        if (!options.libraryEntries) return emptyList()
+        return mangaLinkRepository.getAllForBackup().map { row ->
+            BackupMangaLink(
+                primarySource = row.primarySource,
+                primaryUrl = row.primaryUrl,
+                linkedSource = row.linkedSource,
+                linkedUrl = row.linkedUrl,
+                priority = row.priority,
+            )
+        }
     }
 
     companion object {

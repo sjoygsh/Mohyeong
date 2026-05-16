@@ -1,0 +1,3 @@
+-- Migration to add bookmark notes on chapters
+
+ALTER TABLE chapters ADD COLUMN bookmark_note TEXT DEFAULT NULL;

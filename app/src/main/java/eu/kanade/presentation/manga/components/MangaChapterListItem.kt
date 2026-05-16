@@ -1,5 +1,6 @@
 package eu.kanade.presentation.manga.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FileDownloadOff
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material3.Icon
@@ -26,6 +28,7 @@ import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,6 +56,7 @@ fun MangaChapterListItem(
     scanlator: String?,
     read: Boolean,
     bookmark: Boolean,
+    bookmarkNote: String?,
     selected: Boolean,
     downloadIndicatorEnabled: Boolean,
     downloadStateProvider: () -> Download.State,
@@ -63,8 +67,17 @@ fun MangaChapterListItem(
     onClick: () -> Unit,
     onDownloadClick: ((ChapterDownloadAction) -> Unit)?,
     onChapterSwipe: (LibraryPreferences.ChapterSwipeAction) -> Unit,
+    onBookmarkNoteSave: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    var showNoteDialog by remember { mutableStateOf(false) }
+    if (showNoteDialog) {
+        BookmarkNoteDialog(
+            initialNote = bookmarkNote.orEmpty(),
+            onDismiss = { showNoteDialog = false },
+            onSave = { onBookmarkNoteSave?.invoke(it) },
+        )
+    }
     val start = getSwipeAction(
         action = chapterSwipeStartAction,
         read = read,
@@ -122,9 +135,32 @@ fun MangaChapterListItem(
                             imageVector = Icons.Filled.Bookmark,
                             contentDescription = stringResource(MR.strings.action_filter_bookmarked),
                             modifier = Modifier
-                                .sizeIn(maxHeight = with(LocalDensity.current) { textHeight.toDp() - 2.dp }),
+                                .sizeIn(maxHeight = with(LocalDensity.current) { textHeight.toDp() - 2.dp })
+                                .then(
+                                    if (onBookmarkNoteSave != null) {
+                                        Modifier.clickable { showNoteDialog = true }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                             tint = MaterialTheme.colorScheme.primary,
                         )
+                        if (!bookmarkNote.isNullOrBlank()) {
+                            Icon(
+                                imageVector = Icons.Outlined.EditNote,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .sizeIn(maxHeight = with(LocalDensity.current) { textHeight.toDp() - 2.dp })
+                                    .then(
+                                        if (onBookmarkNoteSave != null) {
+                                            Modifier.clickable { showNoteDialog = true }
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                     Text(
                         text = title,

@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.ui.browse.source
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FilterList
-import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -33,11 +32,6 @@ fun Screen.sourcesTab(): TabContent {
         titleRes = MR.strings.label_sources,
         actions = persistentListOf(
             AppBar.Action(
-                title = stringResource(MR.strings.action_global_search),
-                icon = Icons.Outlined.TravelExplore,
-                onClick = { navigator.push(GlobalSearchScreen()) },
-            ),
-            AppBar.Action(
                 title = stringResource(MR.strings.action_filter),
                 icon = Icons.Outlined.FilterList,
                 onClick = { navigator.push(SourcesFilterScreen()) },
@@ -52,6 +46,9 @@ fun Screen.sourcesTab(): TabContent {
                 },
                 onClickPin = screenModel::togglePin,
                 onLongClickItem = screenModel::showSourceDialog,
+                onChangeSearchQuery = screenModel::search,
+                onToggleSearchMode = screenModel::toggleSearchMode,
+                onSubmitGlobalSearch = { query -> navigator.push(GlobalSearchScreen(query)) },
             )
 
             state.dialog?.let { dialog ->

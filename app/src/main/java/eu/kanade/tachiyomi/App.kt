@@ -158,6 +158,16 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         // Updates widget update
         WidgetManager(Injekt.get(), Injekt.get()).apply { init(scope) }
 
+        // Schedule cross-device sync if enabled, and optionally trigger a one-off sync on app start.
+        eu.kanade.tachiyomi.data.sync.SyncDataJob.setupTask(this)
+        val syncPrefs = Injekt.get<eu.kanade.domain.sync.SyncPreferences>()
+        if (syncPrefs.syncOnAppStart().get() &&
+            eu.kanade.domain.sync.SyncService.fromInt(syncPrefs.service().get()) !=
+            eu.kanade.domain.sync.SyncService.NONE
+        ) {
+            eu.kanade.tachiyomi.data.sync.SyncDataJob.startNow(this)
+        }
+
         if (!LogcatLogger.isInstalled) {
             val minLogPriority = when {
                 networkPreferences.verboseLogging.get() -> LogPriority.VERBOSE

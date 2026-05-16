@@ -1,25 +1,40 @@
 package eu.kanade.presentation.browse
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import eu.kanade.presentation.browse.components.BaseSourceItem
 import eu.kanade.tachiyomi.ui.browse.source.SourcesScreenModel
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreenModel.Listing
@@ -45,6 +60,9 @@ fun SourcesScreen(
     onClickItem: (Source, Listing) -> Unit,
     onClickPin: (Source) -> Unit,
     onLongClickItem: (Source) -> Unit,
+    onChangeSearchQuery: (String?) -> Unit = {},
+    onToggleSearchMode: () -> Unit = {},
+    onSubmitGlobalSearch: (String) -> Unit = {},
 ) {
     when {
         state.isLoading -> LoadingScreen(Modifier.padding(contentPadding))
@@ -53,41 +71,135 @@ fun SourcesScreen(
             modifier = Modifier.padding(contentPadding),
         )
         else -> {
-            ScrollbarLazyColumn(
-                contentPadding = contentPadding + topSmallPaddingValues,
+            Column(
+                modifier = Modifier.padding(
+                    top = contentPadding.calculateTopPadding(),
+                    start = contentPadding.calculateStartPadding(LocalLayoutDirection.current),
+                    end = contentPadding.calculateEndPadding(LocalLayoutDirection.current),
+                ),
             ) {
-                items(
-                    items = state.items,
-                    contentType = {
-                        when (it) {
-                            is SourceUiModel.Header -> "header"
-                            is SourceUiModel.Item -> "item"
-                        }
-                    },
-                    key = {
-                        when (it) {
-                            is SourceUiModel.Header -> it.hashCode()
-                            is SourceUiModel.Item -> "source-${it.source.key()}"
-                        }
-                    },
-                ) { model ->
-                    when (model) {
-                        is SourceUiModel.Header -> {
-                            SourceHeader(
+                SourcesSearchRow(
+                    query = state.searchQuery.orEmpty(),
+                    mode = state.searchMode,
+                    onChangeQuery = { onChangeSearchQuery(it.takeIf { q -> q.isNotEmpty() }) },
+                    onToggleMode = onToggleSearchMode,
+                    onSubmitGlobalSearch = onSubmitGlobalSearch,
+                )
+                ScrollbarLazyColumn(
+                    contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()) + topSmallPaddingValues,
+                ) {
+                    items(
+                        items = state.displayedItems,
+                        contentType = {
+                            when (it) {
+                                is SourceUiModel.Header -> "header"
+                                is SourceUiModel.Item -> "item"
+                            }
+                        },
+                        key = {
+                            when (it) {
+                                is SourceUiModel.Header -> it.hashCode()
+                                is SourceUiModel.Item -> "source-${it.source.key()}"
+                            }
+                        },
+                    ) { model ->
+                        when (model) {
+                            is SourceUiModel.Header -> {
+                                SourceHeader(
+                                    modifier = Modifier.animateItem(),
+                                    language = model.language,
+                                )
+                            }
+                            is SourceUiModel.Item -> SourceItem(
                                 modifier = Modifier.animateItem(),
-                                language = model.language,
+                                source = model.source,
+                                onClickItem = onClickItem,
+                                onLongClickItem = onLongClickItem,
+                                onClickPin = onClickPin,
                             )
                         }
-                        is SourceUiModel.Item -> SourceItem(
-                            modifier = Modifier.animateItem(),
-                            source = model.source,
-                            onClickItem = onClickItem,
-                            onLongClickItem = onLongClickItem,
-                            onClickPin = onClickPin,
-                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SourcesSearchRow(
+    query: String,
+    mode: SourcesScreenModel.SearchMode,
+    onChangeQuery: (String) -> Unit,
+    onToggleMode: () -> Unit,
+    onSubmitGlobalSearch: (String) -> Unit,
+) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    val isGlobal = mode == SourcesScreenModel.SearchMode.Global
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onChangeQuery,
+            modifier = Modifier.weight(1f),
+            placeholder = {
+                Text(
+                    text = stringResource(
+                        if (isGlobal) {
+                            MR.strings.action_global_search_hint
+                        } else {
+                            MR.strings.action_filter_sources_hint
+                        },
+                    ),
+                )
+            },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.None,
+                imeAction = if (isGlobal) ImeAction.Search else ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(
+                onSearch = {
+                    if (isGlobal && query.isNotBlank()) {
+                        onSubmitGlobalSearch(query)
+                        keyboard?.hide()
+                    }
+                },
+                onDone = { keyboard?.hide() },
+            ),
+        )
+        IconButton(
+            onClick = onToggleMode,
+            modifier = Modifier.padding(start = 4.dp),
+        ) {
+            Icon(
+                imageVector = if (isGlobal) Icons.Outlined.TravelExplore else Icons.Outlined.FilterAlt,
+                contentDescription = stringResource(
+                    if (isGlobal) {
+                        MR.strings.action_search_mode_global
+                    } else {
+                        MR.strings.action_search_mode_filter
+                    },
+                ),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+    if (isGlobal && query.isNotBlank()) {
+        // Hint row showing what pressing Enter will do.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = stringResource(MR.strings.action_global_search_press_enter),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

@@ -12,6 +12,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionReposScreen
+import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.util.system.AuthenticatorUtil.authenticate
 import kotlinx.collections.immutable.persistentListOf
 import mihon.domain.extensionrepo.interactor.GetExtensionRepoCount
@@ -34,6 +35,7 @@ object SettingsBrowseScreen : SearchableSettings {
         val navigator = LocalNavigator.currentOrThrow
 
         val sourcePreferences = remember { Injekt.get<SourcePreferences>() }
+        val networkPreferences = remember { Injekt.get<NetworkPreferences>() }
         val getExtensionRepoCount = remember { Injekt.get<GetExtensionRepoCount>() }
 
         val reposCount by getExtensionRepoCount.subscribe().collectAsState(0)
@@ -52,6 +54,16 @@ object SettingsBrowseScreen : SearchableSettings {
                         onClick = {
                             navigator.push(ExtensionReposScreen())
                         },
+                    ),
+                ),
+            ),
+            Preference.PreferenceGroup(
+                title = stringResource(MR.strings.pref_category_cloudflare),
+                preferenceItems = persistentListOf(
+                    Preference.PreferenceItem.SwitchPreference(
+                        preference = networkPreferences.autoSolveCloudflare,
+                        title = stringResource(MR.strings.pref_auto_solve_cloudflare),
+                        subtitle = stringResource(MR.strings.pref_auto_solve_cloudflare_summary),
                     ),
                 ),
             ),

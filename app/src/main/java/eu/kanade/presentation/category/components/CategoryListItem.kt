@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DragHandle
 import androidx.compose.material.icons.outlined.Edit
@@ -16,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import sh.calvin.reorderable.ReorderableCollectionItemScope
 import tachiyomi.domain.category.model.Category
 import tachiyomi.i18n.MR
@@ -27,9 +29,13 @@ fun ReorderableCollectionItemScope.CategoryListItem(
     category: Category,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onSetParent: () -> Unit,
     modifier: Modifier = Modifier,
+    depth: Int = 0,
 ) {
-    ElevatedCard(modifier = modifier) {
+    ElevatedCard(
+        modifier = modifier.padding(start = (depth * 16).dp),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -52,6 +58,12 @@ fun ReorderableCollectionItemScope.CategoryListItem(
                 text = category.name,
                 modifier = Modifier.weight(1f),
             )
+            IconButton(onClick = onSetParent) {
+                Icon(
+                    imageVector = Icons.Outlined.AccountTree,
+                    contentDescription = stringResource(MR.strings.action_set_parent_category),
+                )
+            }
             IconButton(onClick = onRename) {
                 Icon(
                     imageVector = Icons.Outlined.Edit,

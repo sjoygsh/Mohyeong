@@ -1,0 +1,12 @@
+-- Migration to add multi-source linking on manga (#1837)
+CREATE TABLE manga_links(
+    primary_manga_id INTEGER NOT NULL,
+    linked_manga_id INTEGER NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (primary_manga_id, linked_manga_id),
+    FOREIGN KEY (primary_manga_id) REFERENCES mangas(_id) ON DELETE CASCADE,
+    FOREIGN KEY (linked_manga_id) REFERENCES mangas(_id) ON DELETE CASCADE
+);
+
+CREATE INDEX manga_links_primary_index ON manga_links(primary_manga_id);
+CREATE INDEX manga_links_linked_index ON manga_links(linked_manga_id);

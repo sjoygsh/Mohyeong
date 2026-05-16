@@ -15,9 +15,14 @@ data class Chapter(
     val scanlator: String?,
     val lastModifiedAt: Long,
     val version: Long,
+    val bookmarkNote: String? = null,
+    val volumeNumber: Double? = null,
 ) {
     val isRecognizedNumber: Boolean
         get() = chapterNumber >= 0f
+
+    val isRecognizedVolume: Boolean
+        get() = volumeNumber != null && volumeNumber >= 0.0
 
     fun copyFrom(other: Chapter): Chapter {
         return copy(
@@ -45,6 +50,8 @@ data class Chapter(
             scanlator = null,
             lastModifiedAt = 0,
             version = 1,
+            bookmarkNote = null,
+            volumeNumber = null,
         )
     }
 }

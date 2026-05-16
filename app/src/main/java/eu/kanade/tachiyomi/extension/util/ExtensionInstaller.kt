@@ -2,7 +2,9 @@ package eu.kanade.tachiyomi.extension.util
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.net.toUri
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.extension.installer.Installer
@@ -14,6 +16,7 @@ import eu.kanade.tachiyomi.util.system.isPackageInstalled
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,6 +42,7 @@ internal class ExtensionInstaller(
     private val scope = CoroutineScope(Dispatchers.IO)
     private val activeJobs = mutableMapOf<String, Job>()
     private val activeSteps = mutableMapOf<Long, MutableStateFlow<InstallStep>>()
+    private val pollJobs = mutableMapOf<Long, Job>()
     private val extensionInstaller = Injekt.get<BasePreferences>().extensionInstaller
 
     private val httpClient: OkHttpClient = Injekt.get<NetworkHelper>().client
@@ -74,7 +78,7 @@ internal class ExtensionInstaller(
                 }
 
                 step.value = InstallStep.Installing
-                installApk(downloadId, tmpFile)
+                installApk(downloadId, tmpFile, extension.pkgName)
             } catch (e: Exception) {
                 if (e is InterruptedException) {
                     // Canceled
@@ -91,6 +95,7 @@ internal class ExtensionInstaller(
             .onCompletion {
                 activeJobs.remove(extension.pkgName)
                 activeSteps.remove(downloadId)
+                pollJobs.remove(downloadId)?.cancel()
                 job.cancel()
             }
     }
@@ -100,7 +105,7 @@ internal class ExtensionInstaller(
      *
      * @param tempFile The file of the extension to install. Delete after use.
      */
-    private fun installApk(downloadId: Long, tempFile: File) {
+    private fun installApk(downloadId: Long, tempFile: File, pkgName: String) {
         when (val installer = extensionInstaller.get()) {
             BasePreferences.ExtensionInstaller.LEGACY -> {
                 val intent = Intent(context, ExtensionInstallActivity::class.java)
@@ -109,6 +114,7 @@ internal class ExtensionInstaller(
                     .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
 
                 context.startActivity(intent)
+                startInstallVerificationPoll(downloadId, pkgName)
             }
             BasePreferences.ExtensionInstaller.PRIVATE -> {
                 try {
@@ -132,7 +138,54 @@ internal class ExtensionInstaller(
                     installer,
                 )
                 ContextCompat.startForegroundService(context, intent)
+                startInstallVerificationPoll(downloadId, pkgName)
             }
+        }
+    }
+
+    /**
+     * Polls PackageManager for completion of an install initiated via the system installer popup.
+     * This is a fallback for cases where the install-result broadcast is lost — most commonly when
+     * MIUI/HyperOS kills [ExtensionInstallService] while the popup is foregrounded, causing the
+     * registered receiver to be torn down before the system fires its STATUS_SUCCESS broadcast.
+     *
+     * Cancels itself as soon as the step transitions out of [InstallStep.Installing] (e.g. the
+     * broadcast got through normally), to avoid stomping on the broadcast result.
+     */
+    private fun startInstallVerificationPoll(downloadId: Long, pkgName: String) {
+        pollJobs.remove(downloadId)?.cancel()
+        val initialVersion = getInstalledVersionCode(pkgName)
+        val pollJob = scope.launch {
+            val deadline = System.currentTimeMillis() + INSTALL_POLL_TIMEOUT_MS
+            while (System.currentTimeMillis() < deadline) {
+                delay(INSTALL_POLL_INTERVAL_MS)
+                val step = activeSteps[downloadId]?.value
+                // Broadcast already resolved this — bail.
+                if (step == null || step != InstallStep.Installing) return@launch
+
+                val current = getInstalledVersionCode(pkgName)
+                if (current != null && current != initialVersion) {
+                    updateInstallStep(downloadId, InstallStep.Installed)
+                    return@launch
+                }
+            }
+            // Timed out without the package version changing. If we're still in Installing,
+            // surface an error so the UI doesn't stay stuck on the spinner forever.
+            if (activeSteps[downloadId]?.value == InstallStep.Installing) {
+                logcat(LogPriority.WARN) { "Install verification poll timed out for $pkgName" }
+                updateInstallStep(downloadId, InstallStep.Error)
+            }
+        }
+        pollJobs[downloadId] = pollJob
+        pollJob.invokeOnCompletion { pollJobs.remove(downloadId) }
+    }
+
+    private fun getInstalledVersionCode(pkgName: String): Long? {
+        return try {
+            val info = context.packageManager.getPackageInfo(pkgName, 0)
+            PackageInfoCompat.getLongVersionCode(info)
+        } catch (_: PackageManager.NameNotFoundException) {
+            null
         }
     }
 
@@ -140,8 +193,10 @@ internal class ExtensionInstaller(
      * Cancels extension install and remove from download manager and installer.
      */
     fun cancelInstall(pkgName: String) {
+        val downloadId = pkgName.hashCode().toLong()
         activeJobs.remove(pkgName)?.cancel()
-        Installer.cancelInstallQueue(context, pkgName.hashCode().toLong())
+        pollJobs.remove(downloadId)?.cancel()
+        Installer.cancelInstallQueue(context, downloadId)
     }
 
     /**
@@ -174,5 +229,7 @@ internal class ExtensionInstaller(
     companion object {
         const val APK_MIME = "application/vnd.android.package-archive"
         const val EXTRA_DOWNLOAD_ID = "ExtensionInstaller.extra.DOWNLOAD_ID"
+        private const val INSTALL_POLL_INTERVAL_MS = 1_500L
+        private const val INSTALL_POLL_TIMEOUT_MS = 60_000L
     }
 }

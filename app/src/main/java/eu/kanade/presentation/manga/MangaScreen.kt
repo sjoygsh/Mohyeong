@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -68,6 +69,8 @@ import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.i18n.MR
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import tachiyomi.presentation.core.components.TwoPanelBox
 import tachiyomi.presentation.core.components.VerticalFastScroller
 import tachiyomi.presentation.core.components.material.PullRefresh
@@ -110,6 +113,7 @@ fun MangaScreen(
     onEditCategoryClicked: (() -> Unit)?,
     onEditFetchIntervalClicked: (() -> Unit)?,
     onMigrateClicked: (() -> Unit)?,
+    onLinkedSourcesClicked: (() -> Unit)?,
     onEditNotesClicked: () -> Unit,
 
     // For bottom action menu
@@ -120,6 +124,9 @@ fun MangaScreen(
 
     // For chapter swipe
     onChapterSwipe: (ChapterList.Item, LibraryPreferences.ChapterSwipeAction) -> Unit,
+
+    // For bookmark notes
+    onSetBookmarkNote: (Chapter, String) -> Unit,
 
     // Chapter selection
     onChapterSelected: (ChapterList.Item, Boolean, Boolean) -> Unit,
@@ -159,12 +166,14 @@ fun MangaScreen(
             onEditCategoryClicked = onEditCategoryClicked,
             onEditIntervalClicked = onEditFetchIntervalClicked,
             onMigrateClicked = onMigrateClicked,
+            onLinkedSourcesClicked = onLinkedSourcesClicked,
             onEditNotesClicked = onEditNotesClicked,
             onMultiBookmarkClicked = onMultiBookmarkClicked,
             onMultiMarkAsReadClicked = onMultiMarkAsReadClicked,
             onMarkPreviousAsReadClicked = onMarkPreviousAsReadClicked,
             onMultiDeleteClicked = onMultiDeleteClicked,
             onChapterSwipe = onChapterSwipe,
+            onSetBookmarkNote = onSetBookmarkNote,
             onChapterSelected = onChapterSelected,
             onAllChapterSelected = onAllChapterSelected,
             onInvertSelection = onInvertSelection,
@@ -195,12 +204,14 @@ fun MangaScreen(
             onEditCategoryClicked = onEditCategoryClicked,
             onEditIntervalClicked = onEditFetchIntervalClicked,
             onMigrateClicked = onMigrateClicked,
+            onLinkedSourcesClicked = onLinkedSourcesClicked,
             onEditNotesClicked = onEditNotesClicked,
             onMultiBookmarkClicked = onMultiBookmarkClicked,
             onMultiMarkAsReadClicked = onMultiMarkAsReadClicked,
             onMarkPreviousAsReadClicked = onMarkPreviousAsReadClicked,
             onMultiDeleteClicked = onMultiDeleteClicked,
             onChapterSwipe = onChapterSwipe,
+            onSetBookmarkNote = onSetBookmarkNote,
             onChapterSelected = onChapterSelected,
             onAllChapterSelected = onAllChapterSelected,
             onInvertSelection = onInvertSelection,
@@ -241,6 +252,7 @@ private fun MangaScreenSmallImpl(
     onEditCategoryClicked: (() -> Unit)?,
     onEditIntervalClicked: (() -> Unit)?,
     onMigrateClicked: (() -> Unit)?,
+    onLinkedSourcesClicked: (() -> Unit)?,
     onEditNotesClicked: () -> Unit,
 
     // For bottom action menu
@@ -251,6 +263,9 @@ private fun MangaScreenSmallImpl(
 
     // For chapter swipe
     onChapterSwipe: (ChapterList.Item, LibraryPreferences.ChapterSwipeAction) -> Unit,
+
+    // For bookmark notes
+    onSetBookmarkNote: (Chapter, String) -> Unit,
 
     // Chapter selection
     onChapterSelected: (ChapterList.Item, Boolean, Boolean) -> Unit,
@@ -300,6 +315,7 @@ private fun MangaScreenSmallImpl(
                 onClickEditCategory = onEditCategoryClicked,
                 onClickRefresh = onRefresh,
                 onClickMigrate = onMigrateClicked,
+                onClickLinkedSources = onLinkedSourcesClicked,
                 onClickEditNotes = onEditNotesClicked,
                 actionModeCounter = selectedChapterCount,
                 onCancelActionMode = { onAllChapterSelected(false) },
@@ -443,6 +459,7 @@ private fun MangaScreenSmallImpl(
                         onDownloadChapter = onDownloadChapter,
                         onChapterSelected = onChapterSelected,
                         onChapterSwipe = onChapterSwipe,
+                        onSetBookmarkNote = onSetBookmarkNote,
                     )
                 }
             }
@@ -483,6 +500,7 @@ fun MangaScreenLargeImpl(
     onEditCategoryClicked: (() -> Unit)?,
     onEditIntervalClicked: (() -> Unit)?,
     onMigrateClicked: (() -> Unit)?,
+    onLinkedSourcesClicked: (() -> Unit)?,
     onEditNotesClicked: () -> Unit,
 
     // For bottom action menu
@@ -493,6 +511,9 @@ fun MangaScreenLargeImpl(
 
     // For swipe actions
     onChapterSwipe: (ChapterList.Item, LibraryPreferences.ChapterSwipeAction) -> Unit,
+
+    // For bookmark notes
+    onSetBookmarkNote: (Chapter, String) -> Unit,
 
     // Chapter selection
     onChapterSelected: (ChapterList.Item, Boolean, Boolean) -> Unit,
@@ -535,6 +556,7 @@ fun MangaScreenLargeImpl(
                 onClickEditCategory = onEditCategoryClicked,
                 onClickRefresh = onRefresh,
                 onClickMigrate = onMigrateClicked,
+                onClickLinkedSources = onLinkedSourcesClicked,
                 onClickEditNotes = onEditNotesClicked,
                 onCancelActionMode = { onAllChapterSelected(false) },
                 actionModeCounter = selectedChapterCount,
@@ -680,6 +702,7 @@ fun MangaScreenLargeImpl(
                                 onDownloadChapter = onDownloadChapter,
                                 onChapterSelected = onChapterSelected,
                                 onChapterSwipe = onChapterSwipe,
+                                onSetBookmarkNote = onSetBookmarkNote,
                             )
                         }
                     }
@@ -741,13 +764,36 @@ private fun LazyListScope.sharedChapterItems(
     onDownloadChapter: ((List<ChapterList.Item>, ChapterDownloadAction) -> Unit)?,
     onChapterSelected: (ChapterList.Item, Boolean, Boolean) -> Unit,
     onChapterSwipe: (ChapterList.Item, LibraryPreferences.ChapterSwipeAction) -> Unit,
+    onSetBookmarkNote: (Chapter, String) -> Unit,
 ) {
+    val groupByVolume = Injekt.get<LibraryPreferences>()
+        .groupChaptersByVolume
+        .get()
+
+    val rendered: List<Any> = if (groupByVolume) {
+        buildList {
+            var lastVolume: Double? = Double.NaN // sentinel != any real or null value
+            chapters.forEach { entry ->
+                val volume = (entry as? ChapterList.Item)?.chapter?.volumeNumber
+                if (entry is ChapterList.Item && volume != lastVolume) {
+                    add(VolumeHeaderItem(volume))
+                    lastVolume = volume
+                }
+                add(entry)
+            }
+        }
+    } else {
+        chapters
+    }
+
     items(
-        items = chapters,
+        items = rendered,
         key = { item ->
             when (item) {
+                is VolumeHeaderItem -> "volume-header-${item.volumeNumber ?: "none"}"
                 is ChapterList.MissingCount -> "missing-count-${item.id}"
                 is ChapterList.Item -> "chapter-${item.id}"
+                else -> error("Unexpected chapter list entry: $item")
             }
         },
         contentType = { MangaScreenItem.CHAPTER },
@@ -755,6 +801,9 @@ private fun LazyListScope.sharedChapterItems(
         val haptic = LocalHapticFeedback.current
 
         when (item) {
+            is VolumeHeaderItem -> {
+                VolumeHeaderListItem(volumeNumber = item.volumeNumber)
+            }
             is ChapterList.MissingCount -> {
                 MissingChapterCountListItem(count = item.count)
             }
@@ -780,6 +829,7 @@ private fun LazyListScope.sharedChapterItems(
                     scanlator = item.chapter.scanlator.takeIf { !it.isNullOrBlank() },
                     read = item.chapter.read,
                     bookmark = item.chapter.bookmark,
+                    bookmarkNote = item.chapter.bookmarkNote,
                     selected = item.selected,
                     downloadIndicatorEnabled = !isAnyChapterSelected && !manga.isLocal(),
                     downloadStateProvider = { item.downloadState },
@@ -806,10 +856,31 @@ private fun LazyListScope.sharedChapterItems(
                     onChapterSwipe = {
                         onChapterSwipe(item, it)
                     },
+                    onBookmarkNoteSave = { note -> onSetBookmarkNote(item.chapter, note) },
                 )
             }
+            else -> Unit
         }
     }
+}
+
+private data class VolumeHeaderItem(val volumeNumber: Double?)
+
+@Composable
+private fun VolumeHeaderListItem(volumeNumber: Double?) {
+    val label = if (volumeNumber == null) {
+        stringResource(MR.strings.volume_header_unknown)
+    } else {
+        stringResource(MR.strings.volume_header, formatChapterNumber(volumeNumber))
+    }
+    androidx.compose.material3.Text(
+        text = label,
+        style = androidx.compose.material3.MaterialTheme.typography.titleSmall,
+        color = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    )
 }
 
 private fun onChapterItemClick(

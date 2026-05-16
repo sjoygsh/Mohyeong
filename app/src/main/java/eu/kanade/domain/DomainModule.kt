@@ -9,7 +9,9 @@ import eu.kanade.domain.extension.interactor.GetExtensionSources
 import eu.kanade.domain.extension.interactor.GetExtensionsByType
 import eu.kanade.domain.extension.interactor.TrustExtension
 import eu.kanade.domain.manga.interactor.GetExcludedScanlators
+import eu.kanade.domain.manga.interactor.GetScanlatorPriorities
 import eu.kanade.domain.manga.interactor.SetExcludedScanlators
+import eu.kanade.domain.manga.interactor.SetScanlatorPriorities
 import eu.kanade.domain.manga.interactor.SetMangaViewerFlags
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.source.interactor.GetEnabledSources
@@ -40,6 +42,7 @@ import mihon.domain.upcoming.interactor.GetUpcomingManga
 import tachiyomi.data.category.CategoryRepositoryImpl
 import tachiyomi.data.chapter.ChapterRepositoryImpl
 import tachiyomi.data.history.HistoryRepositoryImpl
+import tachiyomi.data.manga.MangaLinkRepositoryImpl
 import tachiyomi.data.manga.MangaRepositoryImpl
 import tachiyomi.data.release.ReleaseServiceImpl
 import tachiyomi.data.source.SourceRepositoryImpl
@@ -52,6 +55,7 @@ import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.interactor.RenameCategory
 import tachiyomi.domain.category.interactor.ReorderCategory
 import tachiyomi.domain.category.interactor.ResetCategoryFlags
+import tachiyomi.domain.category.interactor.SetCategoryParent
 import tachiyomi.domain.category.interactor.SetDisplayMode
 import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.category.interactor.SetSortModeForCategory
@@ -75,13 +79,17 @@ import tachiyomi.domain.manga.interactor.FetchInterval
 import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
 import tachiyomi.domain.manga.interactor.GetFavorites
 import tachiyomi.domain.manga.interactor.GetLibraryManga
+import tachiyomi.domain.manga.interactor.GetLinkedMangas
 import tachiyomi.domain.manga.interactor.GetManga
+import tachiyomi.domain.manga.interactor.LinkManga
 import tachiyomi.domain.manga.interactor.GetMangaByUrlAndSourceId
 import tachiyomi.domain.manga.interactor.GetMangaWithChapters
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.interactor.ResetViewerFlags
 import tachiyomi.domain.manga.interactor.SetMangaChapterFlags
+import tachiyomi.domain.manga.interactor.UnlinkManga
 import tachiyomi.domain.manga.interactor.UpdateMangaNotes
+import tachiyomi.domain.manga.repository.MangaLinkRepository
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.release.interactor.GetApplicationRelease
 import tachiyomi.domain.release.service.ReleaseService
@@ -115,8 +123,13 @@ class DomainModule : InjektModule {
         addFactory { ReorderCategory(get()) }
         addFactory { UpdateCategory(get()) }
         addFactory { DeleteCategory(get(), get(), get()) }
+        addFactory { SetCategoryParent(get()) }
 
         addSingletonFactory<MangaRepository> { MangaRepositoryImpl(get()) }
+        addSingletonFactory<MangaLinkRepository> { MangaLinkRepositoryImpl(get()) }
+        addFactory { GetLinkedMangas(get()) }
+        addFactory { LinkManga(get()) }
+        addFactory { UnlinkManga(get()) }
         addFactory { GetDuplicateLibraryManga(get()) }
         addFactory { GetFavorites(get()) }
         addFactory { GetLibraryManga(get()) }
@@ -136,6 +149,8 @@ class DomainModule : InjektModule {
         addFactory { SetMangaCategories(get()) }
         addFactory { GetExcludedScanlators(get()) }
         addFactory { SetExcludedScanlators(get()) }
+        addFactory { GetScanlatorPriorities(get()) }
+        addFactory { SetScanlatorPriorities(get()) }
         addFactory {
             MigrateMangaUseCase(
                 get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(),

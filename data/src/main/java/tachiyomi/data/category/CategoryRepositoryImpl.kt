@@ -48,6 +48,14 @@ class CategoryRepositoryImpl(
             name = category.name,
             order = category.order,
             flags = category.flags,
+            parentId = category.parentId,
+        )
+    }
+
+    override suspend fun setParent(categoryId: Long, parentId: Long?) {
+        database.categoriesQueries.updateParent(
+            parentId = parentId,
+            categoryId = categoryId,
         )
     }
 
@@ -79,12 +87,14 @@ class CategoryRepositoryImpl(
         name: String,
         order: Long,
         flags: Long,
+        parentId: Long?,
     ): Category {
         return Category(
             id = id,
             name = name,
             order = order,
             flags = flags,
+            parentId = parentId,
         )
     }
 }

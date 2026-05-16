@@ -42,4 +42,13 @@ class TrackPreferences(
         "pref_auto_update_manga_on_mark_read",
         AutoTrackState.ALWAYS,
     )
+
+    /**
+     * When enabled, the parsed volume number of a chapter is sent to the tracker as progress
+     * instead of the chapter number. Useful for releases that bundle entire volumes per entry.
+     */
+    val trackByVolume: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_track_by_volume",
+        false,
+    )
 }

@@ -14,17 +14,32 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults.rememberTooltipPositionProvider
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -35,8 +50,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.stack.mutableStateStackOf
 import com.kevinnzou.web.AccompanistWebChromeClient
 import com.kevinnzou.web.AccompanistWebViewClient
 import com.kevinnzou.web.LoadingState
@@ -76,22 +92,52 @@ fun WebViewScreenContent(
     onShare: (String) -> Unit,
     onOpenInBrowser: (String) -> Unit,
     onClearCookies: (String) -> Unit,
+    onImportCookies: (url: String, raw: String) -> Int? = { _, _ -> null },
     headers: Map<String, String> = emptyMap(),
     onUrlChange: (String) -> Unit = {},
 ) {
     val coroutineScope = rememberCoroutineScope()
 
-    val windowStack = remember {
-        mutableStateStackOf(
+    val windowList = remember {
+        mutableStateListOf(
             WebViewWindow(
                 WebContent.Url(url = url, additionalHttpHeaders = headers),
                 WebViewNavigator(coroutineScope),
             ),
         )
     }
+    var currentTabIndex by remember { mutableIntStateOf(0) }
+    if (currentTabIndex !in windowList.indices) {
+        currentTabIndex = windowList.lastIndex.coerceAtLeast(0)
+    }
 
-    val currentWindow = windowStack.lastItemOrNull!!
+    val currentWindow = windowList[currentTabIndex]
     val navigator = currentWindow.navigator
+    var showTabsMenu by remember { mutableStateOf(false) }
+    var showImportCookiesDialog by remember { mutableStateOf(false) }
+
+    val openNewTab: () -> Unit = {
+        windowList.add(
+            WebViewWindow(
+                WebContent.Url(url = url, additionalHttpHeaders = headers),
+                WebViewNavigator(coroutineScope),
+            ),
+        )
+        currentTabIndex = windowList.lastIndex
+    }
+
+    val switchToTab: (Int) -> Unit = { index ->
+        if (index in windowList.indices) {
+            currentTabIndex = index
+        }
+    }
+
+    val closeTab: (Int) -> Unit = { index ->
+        if (index in windowList.indices && windowList.size > 1) {
+            windowList.removeAt(index)
+            currentTabIndex = currentTabIndex.coerceAtMost(windowList.lastIndex)
+        }
+    }
 
     val uriHandler = LocalUriHandler.current
     val scope = rememberCoroutineScope()
@@ -166,7 +212,8 @@ fun WebViewScreenContent(
             ): Boolean {
                 // if it wasn't initiated by a user gesture, we should ignore it like a normal browser would
                 if (isUserGesture) {
-                    windowStack.push(WebViewWindow(resultMsg, WebViewNavigator(coroutineScope)))
+                    windowList.add(WebViewWindow(resultMsg, WebViewNavigator(coroutineScope)))
+                    currentTabIndex = windowList.lastIndex
                     return true
                 }
                 return false
@@ -213,15 +260,17 @@ fun WebViewScreenContent(
 
     val popState = remember<() -> Unit> {
         {
-            if (windowStack.size == 1) {
+            if (windowList.size == 1) {
                 onNavigateUp()
             } else {
-                windowStack.pop()
+                val removeIndex = currentTabIndex
+                windowList.removeAt(removeIndex)
+                currentTabIndex = currentTabIndex.coerceAtMost(windowList.lastIndex)
             }
         }
     }
 
-    BackHandler(windowStack.size > 1, popState)
+    BackHandler(windowList.size > 1, popState)
 
     Scaffold(
         topBar = {
@@ -233,6 +282,20 @@ fun WebViewScreenContent(
                         navigateUp = onNavigateUp,
                         navigationIcon = Icons.Outlined.Close,
                         actions = {
+                            TabSwitcherButton(
+                                tabCount = windowList.size,
+                                expanded = showTabsMenu,
+                                onToggle = { showTabsMenu = !showTabsMenu },
+                                onDismiss = { showTabsMenu = false },
+                                tabs = windowList,
+                                currentTabIndex = currentTabIndex,
+                                onSelectTab = {
+                                    switchToTab(it)
+                                    showTabsMenu = false
+                                },
+                                onCloseTab = { closeTab(it) },
+                                fallbackTitle = initialTitle,
+                            )
                             AppBarActions(
                                 persistentListOf(
                                     AppBar.Action(
@@ -256,6 +319,10 @@ fun WebViewScreenContent(
                                         enabled = navigator.canGoForward,
                                     ),
                                     AppBar.OverflowAction(
+                                        title = stringResource(MR.strings.action_webview_new_tab),
+                                        onClick = openNewTab,
+                                    ),
+                                    AppBar.OverflowAction(
                                         title = stringResource(MR.strings.action_webview_refresh),
                                         onClick = { navigator.reload() },
                                     ),
@@ -271,8 +338,12 @@ fun WebViewScreenContent(
                                         title = stringResource(MR.strings.pref_clear_cookies),
                                         onClick = { onClearCookies(currentUrl) },
                                     ),
+                                    AppBar.OverflowAction(
+                                        title = stringResource(MR.strings.pref_import_cookies),
+                                        onClick = { showImportCookiesDialog = true },
+                                    ),
                                 ).builder().apply {
-                                    if (windowStack.size > 1) {
+                                    if (windowList.size > 1) {
                                         add(
                                             0,
                                             AppBar.Action(
@@ -346,7 +417,7 @@ fun WebViewScreenContent(
                     }
                 },
                 onDispose = { webView ->
-                    val window = windowStack.items.find { it.webView == webView }
+                    val window = windowList.find { it.webView == webView }
                     if (window == null) {
                         // If we couldn't find any window on the stack that owns this WebView, it means that we can
                         // safely dispose of it because the window containing it has been closed.
@@ -370,6 +441,89 @@ fun WebViewScreenContent(
                         }
                 },
             )
+        }
+    }
+
+    if (showImportCookiesDialog) {
+        ImportCookiesDialog(
+            url = currentUrl,
+            onDismiss = { showImportCookiesDialog = false },
+            onImport = { raw -> onImportCookies(currentUrl, raw) },
+        )
+    }
+}
+
+@Composable
+private fun TabSwitcherButton(
+    tabCount: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onDismiss: () -> Unit,
+    tabs: List<WebViewWindow>,
+    currentTabIndex: Int,
+    onSelectTab: (Int) -> Unit,
+    onCloseTab: (Int) -> Unit,
+    fallbackTitle: String?,
+) {
+    Box {
+        TooltipBox(
+            positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+            tooltip = {
+                PlainTooltip {
+                    Text(stringResource(MR.strings.action_webview_tabs))
+                }
+            },
+            state = rememberTooltipState(),
+            focusable = false,
+        ) {
+            IconButton(onClick = onToggle) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(24.dp)) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp).align(Alignment.TopEnd),
+                    )
+                    Text(
+                        text = tabCount.coerceAtMost(99).toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.BottomStart),
+                    )
+                }
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = onDismiss,
+        ) {
+            tabs.forEachIndexed { index, window ->
+                val title = window.state.pageTitle ?: window.state.lastLoadedUrl ?: fallbackTitle ?: ""
+                val isCurrent = index == currentTabIndex
+                DropdownMenuItem(
+                    onClick = { onSelectTab(index) },
+                    text = {
+                        Text(
+                            text = title.ifBlank { "Tab ${index + 1}" },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.width(220.dp),
+                        )
+                    },
+                    trailingIcon = if (tabs.size > 1) {
+                        {
+                            IconButton(onClick = { onCloseTab(index) }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Close,
+                                    contentDescription = stringResource(MR.strings.action_webview_close_tab),
+                                )
+                            }
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
         }
     }
 }

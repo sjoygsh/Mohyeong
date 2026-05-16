@@ -52,4 +52,23 @@ class WebViewScreenModel(
             logcat { "Cleared $cleared cookies for: $url" }
         }
     }
+
+    /**
+     * Parses a clipboard-friendly cookie blob and stores it for the given URL.
+     *
+     * Accepted formats:
+     *  - Netscape cookies.txt: `domain<TAB>flag<TAB>path<TAB>secure<TAB>expiry<TAB>name<TAB>value`
+     *  - Simple header form:   `name1=value1; name2=value2`
+     *  - One per line:         `name=value` (one pair per line)
+     *
+     * Returns the number of cookies successfully imported, or null on a parse failure.
+     */
+    fun importCookies(url: String, raw: String): Int? {
+        val httpUrl = url.toHttpUrlOrNull() ?: return null
+        val cookies = CookieImportParser.parse(raw, httpUrl)
+        if (cookies.isEmpty()) return 0
+        network.cookieJar.saveFromResponse(httpUrl, cookies)
+        logcat { "Imported ${cookies.size} cookies for: $url" }
+        return cookies.size
+    }
 }

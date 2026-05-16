@@ -260,6 +260,16 @@ object SettingsLibraryScreen : SearchableSettings {
                     preference = libraryPreferences.hideMissingChapters,
                     title = stringResource(MR.strings.pref_hide_missing_chapter_indicators),
                 ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = libraryPreferences.groupChaptersByVolume,
+                    title = stringResource(MR.strings.pref_group_chapters_by_volume),
+                    subtitle = stringResource(MR.strings.pref_group_chapters_by_volume_summary),
+                ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = libraryPreferences.keepDownloadedRemovedChapters,
+                    title = stringResource(MR.strings.pref_keep_downloaded_removed_chapters),
+                    subtitle = stringResource(MR.strings.pref_keep_downloaded_removed_chapters_summary),
+                ),
             ),
         )
     }

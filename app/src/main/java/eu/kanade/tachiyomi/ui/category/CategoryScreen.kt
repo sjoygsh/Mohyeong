@@ -12,6 +12,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.category.CategoryScreen
 import eu.kanade.presentation.category.components.CategoryCreateDialog
 import eu.kanade.presentation.category.components.CategoryDeleteDialog
+import eu.kanade.presentation.category.components.CategoryParentPickerDialog
 import eu.kanade.presentation.category.components.CategoryRenameDialog
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.util.system.toast
@@ -41,6 +42,7 @@ class CategoryScreen : Screen() {
             onClickCreate = { screenModel.showDialog(CategoryDialog.Create) },
             onClickRename = { screenModel.showDialog(CategoryDialog.Rename(it)) },
             onClickDelete = { screenModel.showDialog(CategoryDialog.Delete(it)) },
+            onClickSetParent = { screenModel.showDialog(CategoryDialog.SetParent(it)) },
             onChangeOrder = screenModel::changeOrder,
             navigateUp = navigator::pop,
         )
@@ -67,6 +69,14 @@ class CategoryScreen : Screen() {
                     onDismissRequest = screenModel::dismissDialog,
                     onDelete = { screenModel.deleteCategory(dialog.category.id) },
                     category = dialog.category.name,
+                )
+            }
+            is CategoryDialog.SetParent -> {
+                CategoryParentPickerDialog(
+                    onDismissRequest = screenModel::dismissDialog,
+                    target = dialog.category,
+                    allCategories = successState.categories,
+                    onConfirm = { parentId -> screenModel.setParent(dialog.category, parentId) },
                 )
             }
         }

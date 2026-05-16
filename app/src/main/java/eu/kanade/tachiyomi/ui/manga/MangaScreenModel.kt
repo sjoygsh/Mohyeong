@@ -18,6 +18,8 @@ import eu.kanade.domain.chapter.interactor.GetAvailableScanlators
 import eu.kanade.domain.chapter.interactor.SetReadStatus
 import eu.kanade.domain.chapter.interactor.SyncChaptersWithSource
 import eu.kanade.domain.manga.interactor.GetExcludedScanlators
+import eu.kanade.domain.manga.interactor.GetScanlatorPriorities
+import eu.kanade.domain.manga.interactor.SetScanlatorPriorities
 import eu.kanade.domain.manga.interactor.SetExcludedScanlators
 import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.manga.model.chaptersFiltered
@@ -77,8 +79,12 @@ import tachiyomi.domain.chapter.service.calculateChapterGap
 import tachiyomi.domain.chapter.service.getChapterSort
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
+import tachiyomi.domain.manga.interactor.GetFavorites
+import tachiyomi.domain.manga.interactor.GetLinkedMangas
 import tachiyomi.domain.manga.interactor.GetMangaWithChapters
+import tachiyomi.domain.manga.interactor.LinkManga
 import tachiyomi.domain.manga.interactor.SetMangaChapterFlags
+import tachiyomi.domain.manga.interactor.UnlinkManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaWithChapterCount
 import tachiyomi.domain.manga.model.applyFilter
@@ -108,6 +114,8 @@ class MangaScreenModel(
     private val getAvailableScanlators: GetAvailableScanlators = Injekt.get(),
     private val getExcludedScanlators: GetExcludedScanlators = Injekt.get(),
     private val setExcludedScanlators: SetExcludedScanlators = Injekt.get(),
+    private val getScanlatorPriorities: GetScanlatorPriorities = Injekt.get(),
+    private val setScanlatorPriorities: SetScanlatorPriorities = Injekt.get(),
     private val setMangaChapterFlags: SetMangaChapterFlags = Injekt.get(),
     private val setMangaDefaultChapterFlags: SetMangaDefaultChapterFlags = Injekt.get(),
     private val setReadStatus: SetReadStatus = Injekt.get(),
@@ -120,6 +128,10 @@ class MangaScreenModel(
     private val setMangaCategories: SetMangaCategories = Injekt.get(),
     private val mangaRepository: MangaRepository = Injekt.get(),
     private val filterChaptersForDownload: FilterChaptersForDownload = Injekt.get(),
+    private val getLinkedMangas: GetLinkedMangas = Injekt.get(),
+    private val linkMangaInteractor: LinkManga = Injekt.get(),
+    private val unlinkMangaInteractor: UnlinkManga = Injekt.get(),
+    private val getFavorites: GetFavorites = Injekt.get(),
     val snackbarHostState: SnackbarHostState = SnackbarHostState(),
 ) : StateScreenModel<MangaScreenModel.State>(State.Loading) {
 
@@ -228,6 +240,7 @@ class MangaScreenModel(
                     chapters = chapters,
                     availableScanlators = getAvailableScanlators.await(mangaId),
                     excludedScanlators = getExcludedScanlators.await(mangaId),
+                    scanlatorPriority = getScanlatorPriorities.await(mangaId),
                     isRefreshingData = needRefreshInfo || needRefreshChapter,
                     dialog = null,
                     hideMissingChapters = libraryPreferences.hideMissingChapters.get(),
@@ -550,6 +563,29 @@ class MangaScreenModel(
         }
     }
 
+    private suspend fun tryRefreshLinkedSources(manualFetch: Boolean) {
+        val primary = manga ?: return
+        val linkedList = try {
+            getLinkedMangas.await(primary.id)
+        } catch (_: Throwable) {
+            return
+        }
+        if (linkedList.isEmpty()) return
+        val sourceManager = Injekt.get<SourceManager>()
+        for (linkedManga in linkedList) {
+            val fallbackSource = sourceManager.get(linkedManga.source) ?: continue
+            try {
+                val chapters = fallbackSource.getChapterList(linkedManga.toSManga())
+                syncChaptersWithSource.await(chapters, linkedManga, fallbackSource, manualFetch)
+                break
+            } catch (t: Throwable) {
+                logcat(LogPriority.WARN, t) {
+                    "Linked-source fallback failed for ${linkedManga.url} on ${fallbackSource.name}"
+                }
+            }
+        }
+    }
+
     /**
      * Requests an updated list of chapters from the source.
      */
@@ -576,6 +612,14 @@ class MangaScreenModel(
             } else {
                 logcat(LogPriority.ERROR, e)
                 with(context) { e.formattedMessage }
+            }
+
+            // Auto-fallback: refresh linked-source mirrors in the background so the user has
+            // fresh chapters on the alternate entries when the primary source is broken. Run as
+            // fire-and-forget so we don't block the snackbar/state update behind a long network
+            // walk through every linked entry.
+            screenModelScope.launchNonCancellable {
+                tryRefreshLinkedSources(manualFetch)
             }
 
             screenModelScope.launch {
@@ -762,11 +806,12 @@ class MangaScreenModel(
 
             val tracks = getTracks.await(mangaId)
             val maxChapterNumber = chapters.maxOf { it.chapterNumber }
+            val maxVolumeNumber = chapters.mapNotNull { it.volumeNumber }.maxOrNull()
             val shouldPromptTrackingUpdate = tracks.any { track -> maxChapterNumber > track.lastChapterRead }
 
             if (!shouldPromptTrackingUpdate) return@launchIO
             if (autoTrackState == AutoTrackState.ALWAYS) {
-                trackChapter.await(context, mangaId, maxChapterNumber)
+                trackChapter.await(context, mangaId, maxChapterNumber, volumeNumber = maxVolumeNumber)
                 withUIContext {
                     context.toast(context.stringResource(MR.strings.trackers_updated_summary, maxChapterNumber.toInt()))
                 }
@@ -781,7 +826,7 @@ class MangaScreenModel(
             )
 
             if (result == SnackbarResult.ActionPerformed) {
-                trackChapter.await(context, mangaId, maxChapterNumber)
+                trackChapter.await(context, mangaId, maxChapterNumber, volumeNumber = maxVolumeNumber)
             }
         }
     }
@@ -829,6 +874,12 @@ class MangaScreenModel(
                 .let { updateChapter.awaitAll(it) }
         }
         toggleAllSelection(false)
+    }
+
+    fun setBookmarkNote(chapter: Chapter, note: String) {
+        screenModelScope.launchIO {
+            updateChapter.await(ChapterUpdate(id = chapter.id, bookmarkNote = note))
+        }
     }
 
     /**
@@ -1087,6 +1138,7 @@ class MangaScreenModel(
         data class DuplicateManga(val manga: Manga, val duplicates: List<MangaWithChapterCount>) : Dialog
         data class Migrate(val target: Manga, val current: Manga) : Dialog
         data class SetFetchInterval(val manga: Manga) : Dialog
+        data object LinkedSources : Dialog
         data object SettingsSheet : Dialog
         data object TrackSheet : Dialog
         data object FullCover : Dialog
@@ -1098,6 +1150,42 @@ class MangaScreenModel(
 
     fun showDeleteChapterDialog(chapters: List<Chapter>) {
         updateSuccessState { it.copy(dialog = Dialog.DeleteChapters(chapters)) }
+    }
+
+    fun showLinkedSourcesDialog() {
+        updateSuccessState { it.copy(dialog = Dialog.LinkedSources) }
+    }
+
+    suspend fun loadLinkedMangas(): List<Manga> {
+        val id = manga?.id ?: return emptyList()
+        return getLinkedMangas.await(id)
+    }
+
+    suspend fun loadFavoritesForLinking(): List<Manga> {
+        val current = manga ?: return emptyList()
+        val linkedIds = getLinkedMangas.await(current.id).map { it.id }.toSet()
+        return getFavorites.await().filter { it.id != current.id && it.id !in linkedIds }
+    }
+
+    fun linkSource(targetId: Long) {
+        val id = manga?.id ?: return
+        screenModelScope.launchNonCancellable {
+            linkMangaInteractor.await(id, targetId)
+        }
+    }
+
+    fun unlinkSource(targetId: Long) {
+        val id = manga?.id ?: return
+        screenModelScope.launchNonCancellable {
+            unlinkMangaInteractor.await(id, targetId)
+        }
+    }
+
+    fun refreshLinkedSources() {
+        screenModelScope.launchNonCancellable {
+            tryRefreshLinkedSources(manualFetch = true)
+            snackbarHostState.showSnackbar(context.stringResource(MR.strings.linked_sources_refreshed))
+        }
     }
 
     fun showSettingsDialog() {
@@ -1123,6 +1211,13 @@ class MangaScreenModel(
         }
     }
 
+    fun setScanlatorPriority(orderedScanlators: List<String>) {
+        screenModelScope.launchIO {
+            setScanlatorPriorities.await(mangaId, orderedScanlators)
+            updateSuccessState { it.copy(scanlatorPriority = orderedScanlators) }
+        }
+    }
+
     sealed interface State {
         @Immutable
         data object Loading : State
@@ -1135,6 +1230,7 @@ class MangaScreenModel(
             val chapters: List<ChapterList.Item>,
             val availableScanlators: Set<String>,
             val excludedScanlators: Set<String>,
+            val scanlatorPriority: List<String> = emptyList(),
             val trackingCount: Int = 0,
             val hasLoggedInTrackers: Boolean = false,
             val isRefreshingData: Boolean = false,
@@ -1143,7 +1239,23 @@ class MangaScreenModel(
             val hideMissingChapters: Boolean = false,
         ) : State {
             val processedChapters by lazy {
-                chapters.applyFilters(manga).toList()
+                val filtered = chapters.applyFilters(manga).toList()
+                if (scanlatorPriority.isEmpty()) {
+                    filtered
+                } else {
+                    val priorityIndex = scanlatorPriority.withIndex().associate { it.value to it.index }
+                    // Group by chapter number; keep only the highest-priority scanlator per group.
+                    // Unrecognized numbers and chapters from unranked scanlators (not in priority list)
+                    // fall through unchanged.
+                    val groups = filtered.groupBy { it.chapter.chapterNumber }
+                    groups.flatMap { (_, group) ->
+                        if (group.size <= 1) return@flatMap group
+                        val ranked = group.filter { it.chapter.scanlator in priorityIndex }
+                        if (ranked.isEmpty()) return@flatMap group
+                        val winner = ranked.minByOrNull { priorityIndex.getValue(it.chapter.scanlator!!) }!!
+                        listOf(winner)
+                    }
+                }
             }
 
             val isAnySelected by lazy {

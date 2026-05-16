@@ -18,6 +18,8 @@ interface CategoryRepository {
 
     suspend fun insert(category: Category)
 
+    suspend fun setParent(categoryId: Long, parentId: Long?)
+
     suspend fun updatePartial(update: CategoryUpdate)
 
     suspend fun updatePartial(updates: List<CategoryUpdate>)

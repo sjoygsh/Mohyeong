@@ -11,7 +11,10 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.appcompat.view.ContextThemeWrapper
+import androidx.browser.customtabs.CustomTabColorSchemeParams
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.getSystemService
+import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
 import com.hippo.unifile.UniFile
 import eu.kanade.domain.ui.UiPreferences
@@ -71,6 +74,31 @@ fun Context.openInBrowser(uri: Uri, forceDefaultBrowser: Boolean = false) {
         startActivity(intent)
     } catch (e: Exception) {
         toast(e.message)
+    }
+}
+
+/**
+ * Opens a URL in a Chrome Custom Tab using the user's default browser engine
+ * (Firefox, Chrome, Vivaldi, etc. — whichever supports Custom Tabs).
+ * Falls back to a regular browser intent when no Custom Tabs handler is available.
+ */
+fun Context.openInCustomTab(url: String) {
+    openInCustomTab(url.toUri())
+}
+
+fun Context.openInCustomTab(uri: Uri) {
+    try {
+        val colorScheme = CustomTabColorSchemeParams.Builder()
+            .setToolbarColor("#D85B62".toColorInt())
+            .build()
+        val intent = CustomTabsIntent.Builder()
+            .setDefaultColorSchemeParams(colorScheme)
+            .setShowTitle(true)
+            .setUrlBarHidingEnabled(true)
+            .build()
+        intent.launchUrl(this, uri)
+    } catch (_: Exception) {
+        openInBrowser(uri, forceDefaultBrowser = true)
     }
 }
 

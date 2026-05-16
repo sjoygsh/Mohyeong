@@ -61,9 +61,19 @@ class LibraryPreferences(
         false,
     )
 
+    val groupChaptersByVolume: Preference<Boolean> = preferenceStore.getBoolean(
+        "group_chapters_by_volume",
+        false,
+    )
+
     val markDuplicateReadChapterAsRead: Preference<Set<String>> = preferenceStore.getStringSet(
         "mark_duplicate_read_chapter_read",
         emptySet(),
+    )
+
+    val keepDownloadedRemovedChapters: Preference<Boolean> = preferenceStore.getBoolean(
+        "keep_downloaded_removed_chapters",
+        true,
     )
 
     // region Filter
@@ -129,6 +139,8 @@ class LibraryPreferences(
     val categoryTabs: Preference<Boolean> = preferenceStore.getBoolean("display_category_tabs", true)
 
     val categoryNumberOfItems: Preference<Boolean> = preferenceStore.getBoolean("display_number_of_items", false)
+
+    val showMostReadCarousel: Preference<Boolean> = preferenceStore.getBoolean("show_most_read_carousel", true)
 
     val categorizedDisplaySettings: Preference<Boolean> = preferenceStore.getBoolean("categorized_display", false)
 

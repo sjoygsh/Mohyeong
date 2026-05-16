@@ -95,7 +95,9 @@ class SyncChaptersWithSource(
 
             // Recognize chapter number for the chapter.
             val chapterNumber = ChapterRecognition.parseChapterNumber(manga.title, chapter.name, chapter.chapterNumber)
-            chapter = chapter.copy(chapterNumber = chapterNumber)
+            // Best-effort volume detection from the chapter name.
+            val volumeNumber = tachiyomi.domain.chapter.service.VolumeRecognition.parseVolumeNumber(chapter.name)
+            chapter = chapter.copy(chapterNumber = chapterNumber, volumeNumber = volumeNumber)
 
             val dbChapter = dbChapters.find { it.url == chapter.url }
 
@@ -128,6 +130,7 @@ class SyncChaptersWithSource(
                         chapterNumber = chapter.chapterNumber,
                         scanlator = chapter.scanlator,
                         sourceOrder = chapter.sourceOrder,
+                        volumeNumber = chapter.volumeNumber ?: dbChapter.volumeNumber,
                     )
 
                     if (chapter.dateUpload != 0L) {
@@ -203,8 +206,21 @@ class SyncChaptersWithSource(
         }
 
         if (removedChapters.isNotEmpty()) {
-            val toDeleteIds = removedChapters.map { it.id }
-            chapterRepository.removeChaptersWithIds(toDeleteIds)
+            val keepDownloaded = libraryPreferences.keepDownloadedRemovedChapters.get()
+            val toDeleteIds = removedChapters
+                .filterNot { c ->
+                    keepDownloaded && downloadManager.isChapterDownloaded(
+                        c.name,
+                        c.scanlator,
+                        c.url,
+                        manga.title,
+                        manga.source,
+                    )
+                }
+                .map { it.id }
+            if (toDeleteIds.isNotEmpty()) {
+                chapterRepository.removeChaptersWithIds(toDeleteIds)
+            }
         }
 
         if (updatedToAdd.isNotEmpty()) {

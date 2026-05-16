@@ -161,12 +161,15 @@ class MangaScreen(
             onMigrateClicked = {
                 navigator.push(MigrationConfigScreen(successState.manga.id))
             }.takeIf { successState.manga.favorite },
+            onLinkedSourcesClicked = screenModel::showLinkedSourcesDialog
+                .takeIf { successState.manga.favorite },
             onEditNotesClicked = { navigator.push(MangaNotesScreen(manga = successState.manga)) },
             onMultiBookmarkClicked = screenModel::bookmarkChapters,
             onMultiMarkAsReadClicked = screenModel::markChaptersRead,
             onMarkPreviousAsReadClicked = screenModel::markPreviousChapterRead,
             onMultiDeleteClicked = screenModel::showDeleteChapterDialog,
             onChapterSwipe = screenModel::chapterSwipe,
+            onSetBookmarkNote = screenModel::setBookmarkNote,
             onChapterSelected = screenModel::toggleSelection,
             onAllChapterSelected = screenModel::toggleAllSelection,
             onInvertSelection = screenModel::invertSelection,
@@ -275,14 +278,27 @@ class MangaScreen(
                         .takeIf { screenModel.isUpdateIntervalEnabled },
                 )
             }
+            MangaScreenModel.Dialog.LinkedSources -> {
+                eu.kanade.presentation.manga.LinkedSourcesDialog(
+                    loadLinked = { screenModel.loadLinkedMangas() },
+                    loadCandidates = { screenModel.loadFavoritesForLinking() },
+                    onLink = screenModel::linkSource,
+                    onUnlink = screenModel::unlinkSource,
+                    onOpenManga = { navigator.push(MangaScreen(it)) },
+                    onRefreshAll = screenModel::refreshLinkedSources,
+                    onDismissRequest = onDismissRequest,
+                )
+            }
         }
 
         if (showScanlatorsDialog) {
             ScanlatorFilterDialog(
                 availableScanlators = successState.availableScanlators,
                 excludedScanlators = successState.excludedScanlators,
+                currentPriority = successState.scanlatorPriority,
                 onDismissRequest = { showScanlatorsDialog = false },
                 onConfirm = screenModel::setExcludedScanlators,
+                onSetPriority = screenModel::setScanlatorPriority,
             )
         }
     }

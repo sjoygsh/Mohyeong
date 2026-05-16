@@ -1,0 +1,11 @@
+-- Migration to add per-manga scanlator priority ordering
+
+CREATE TABLE scanlator_priority(
+    manga_id INTEGER NOT NULL,
+    scanlator TEXT NOT NULL,
+    priority INTEGER NOT NULL,
+    PRIMARY KEY (manga_id, scanlator),
+    FOREIGN KEY(manga_id) REFERENCES mangas (_id) ON DELETE CASCADE
+);
+
+CREATE INDEX scanlator_priority_manga_id_index ON scanlator_priority(manga_id);

@@ -8,7 +8,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.more.NewUpdateScreen
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.updater.AppUpdateDownloadJob
-import eu.kanade.tachiyomi.util.system.openInBrowser
+import eu.kanade.tachiyomi.util.system.openInCustomTab
 
 class NewUpdateScreen(
     private val versionName: String,
@@ -28,7 +28,7 @@ class NewUpdateScreen(
         NewUpdateScreen(
             versionName = versionName,
             changelogInfo = changelogInfoNoChecksum,
-            onOpenInBrowser = { context.openInBrowser(releaseLink) },
+            onOpenInBrowser = { context.openInCustomTab(releaseLink) },
             onRejectUpdate = navigator::pop,
             onAcceptUpdate = {
                 AppUpdateDownloadJob.start(

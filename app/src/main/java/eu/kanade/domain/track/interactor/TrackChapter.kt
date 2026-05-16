@@ -4,6 +4,7 @@ import android.content.Context
 import eu.kanade.domain.track.model.toDbTrack
 import eu.kanade.domain.track.model.toDomainTrack
 import eu.kanade.domain.track.service.DelayedTrackingUpdateJob
+import eu.kanade.domain.track.service.TrackPreferences
 import eu.kanade.domain.track.store.DelayedTrackingStore
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import kotlinx.coroutines.async
@@ -13,6 +14,8 @@ import tachiyomi.core.common.util.lang.withNonCancellableContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.domain.track.interactor.InsertTrack
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 class TrackChapter(
     private val getTracks: GetTracks,
@@ -21,14 +24,25 @@ class TrackChapter(
     private val delayedTrackingStore: DelayedTrackingStore,
 ) {
 
-    suspend fun await(context: Context, mangaId: Long, chapterNumber: Double, setupJobOnFailure: Boolean = true) {
+    private val trackPreferences: TrackPreferences by lazy { Injekt.get() }
+
+    suspend fun await(
+        context: Context,
+        mangaId: Long,
+        chapterNumber: Double,
+        volumeNumber: Double? = null,
+        setupJobOnFailure: Boolean = true,
+    ) {
         withNonCancellableContext {
             val tracks = getTracks.await(mangaId)
             if (tracks.isEmpty()) return@withNonCancellableContext
 
+            val byVolume = trackPreferences.trackByVolume.get()
+            val progress = if (byVolume && volumeNumber != null) volumeNumber else chapterNumber
+
             tracks.mapNotNull { track ->
                 val service = trackerManager.get(track.trackerId)
-                if (service == null || !service.isLoggedIn || chapterNumber <= track.lastChapterRead) {
+                if (service == null || !service.isLoggedIn || progress <= track.lastChapterRead) {
                     return@mapNotNull null
                 }
 
@@ -37,12 +51,12 @@ class TrackChapter(
                         try {
                             val updatedTrack = service.refresh(track.toDbTrack())
                                 .toDomainTrack(idRequired = true)!!
-                                .copy(lastChapterRead = chapterNumber)
+                                .copy(lastChapterRead = progress)
                             service.update(updatedTrack.toDbTrack(), true)
                             insertTrack.await(updatedTrack)
                             delayedTrackingStore.remove(track.id)
                         } catch (e: Exception) {
-                            delayedTrackingStore.add(track.id, chapterNumber)
+                            delayedTrackingStore.add(track.id, progress)
                             if (setupJobOnFailure) {
                                 DelayedTrackingUpdateJob.setupTask(context)
                             }

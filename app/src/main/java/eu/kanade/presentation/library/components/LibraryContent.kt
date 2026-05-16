@@ -34,6 +34,8 @@ fun LibraryContent(
     currentPage: Int,
     hasActiveFilters: Boolean,
     showPageTabs: Boolean,
+    topReadMangas: List<LibraryManga>,
+    showMostReadCarousel: Boolean,
     onChangeCurrentPage: (Int) -> Unit,
     onClickManga: (Long) -> Unit,
     onContinueReadingClicked: ((LibraryManga) -> Unit)?,
@@ -57,6 +59,13 @@ fun LibraryContent(
 
         val scope = rememberCoroutineScope()
         var isRefreshing by remember(pagerState.currentPage) { mutableStateOf(false) }
+
+        if (showMostReadCarousel && searchQuery.isNullOrEmpty() && topReadMangas.isNotEmpty()) {
+            LibraryMostReadCarousel(
+                items = topReadMangas,
+                onClickManga = onClickManga,
+            )
+        }
 
         if (showPageTabs && categories.isNotEmpty() && (categories.size > 1 || !categories.first().isSystemCategory)) {
             LaunchedEffect(categories) {

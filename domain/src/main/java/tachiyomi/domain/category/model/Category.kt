@@ -7,9 +7,12 @@ data class Category(
     val name: String,
     val order: Long,
     val flags: Long,
+    val parentId: Long? = null,
 ) : Serializable {
 
     val isSystemCategory: Boolean = id == UNCATEGORIZED_ID
+
+    val isTopLevel: Boolean = parentId == null || parentId == UNCATEGORIZED_ID
 
     companion object {
         const val UNCATEGORIZED_ID = 0L

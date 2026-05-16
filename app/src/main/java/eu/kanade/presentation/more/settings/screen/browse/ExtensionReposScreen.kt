@@ -14,7 +14,7 @@ import eu.kanade.presentation.more.settings.screen.browse.components.ExtensionRe
 import eu.kanade.presentation.more.settings.screen.browse.components.ExtensionRepoDeleteDialog
 import eu.kanade.presentation.more.settings.screen.browse.components.ExtensionReposScreen
 import eu.kanade.presentation.util.Screen
-import eu.kanade.tachiyomi.util.system.openInBrowser
+import eu.kanade.tachiyomi.util.system.openInCustomTab
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.collections.immutable.toImmutableSet
 import kotlinx.coroutines.flow.collectLatest
@@ -46,7 +46,7 @@ class ExtensionReposScreen(
         ExtensionReposScreen(
             state = successState,
             onClickCreate = { screenModel.showDialog(RepoDialog.Create) },
-            onOpenWebsite = { context.openInBrowser(it.website) },
+            onOpenWebsite = { context.openInCustomTab(it.website) },
             onClickDelete = { screenModel.showDialog(RepoDialog.Delete(it)) },
             onClickRefresh = { screenModel.refreshRepos() },
             navigateUp = navigator::pop,
