@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.FilterAlt
@@ -33,8 +35,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import eu.kanade.presentation.browse.components.BaseSourceItem
 import eu.kanade.tachiyomi.ui.browse.source.SourcesScreenModel
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreenModel.Listing
@@ -86,7 +86,8 @@ fun SourcesScreen(
                     onSubmitGlobalSearch = onSubmitGlobalSearch,
                 )
                 ScrollbarLazyColumn(
-                    contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()) + topSmallPaddingValues,
+                    contentPadding =
+                    PaddingValues(bottom = contentPadding.calculateBottomPadding()) + topSmallPaddingValues,
                 ) {
                     items(
                         items = state.displayedItems,

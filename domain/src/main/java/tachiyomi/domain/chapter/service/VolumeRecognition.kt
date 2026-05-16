@@ -31,8 +31,10 @@ object VolumeRecognition {
     fun parseVolumeNumber(chapterName: String, recognizeSeasonAsVolume: Boolean = false): Double? {
         VOLUME_REGEX.find(chapterName)?.groupValues?.get(1)?.toDoubleOrNull()?.let { return it }
         CJK_VOLUME_REGEX.find(chapterName)?.let { match ->
-            (match.groupValues.getOrNull(1).takeUnless { it.isNullOrEmpty() }
-                ?: match.groupValues.getOrNull(2))
+            (
+                match.groupValues.getOrNull(1).takeUnless { it.isNullOrEmpty() }
+                    ?: match.groupValues.getOrNull(2)
+                )
                 ?.toDoubleOrNull()
                 ?.let { return it }
         }
