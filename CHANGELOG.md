@@ -12,6 +12,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+## [0.19.13]
+
 ### Improved
 - Sync credential encryption is faster on hot paths: the Keystore `SecretKey` is now cached after first lookup (avoids a JNI keystore call per encrypt/decrypt), and decrypt no longer allocates two intermediate `ByteArray`s for the IV/ciphertext split.
 
