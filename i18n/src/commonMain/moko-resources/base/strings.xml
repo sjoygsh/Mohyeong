@@ -192,7 +192,7 @@
     <string name="action_webview_tabs">Tabs</string>
     <string name="pref_category_cloudflare">Cloudflare</string>
     <string name="pref_auto_solve_cloudflare">Auto-solve Cloudflare</string>
-    <string name="pref_auto_solve_cloudflare_summary">Run a hidden WebView to obtain cf_clearance when a source returns a Cloudflare challenge. Disable to fall back to manual \"Open in WebView\".</string>
+    <string name="pref_auto_solve_cloudflare_summary">Automatically pass Cloudflare bot checks for sources that need it. Disable to solve them manually using \"Open in WebView\".</string>
     <string name="action_start_downloading_now">Start downloading now</string>
     <string name="action_not_now">Not now</string>
     <string name="action_add_anyway">Add anyway</string>
@@ -597,7 +597,7 @@
     <string name="tracking_info">One-way sync to update the chapter progress in external tracker services. Set up tracking for individual entries from their tracking button.</string>
     <string name="enhanced_services">Enhanced trackers</string>
     <string name="enhanced_services_not_installed">Available but source not installed: %s</string>
-    <string name="enhanced_tracking_info">Provides enhanced features for specific sources. Entries are automatically tracked when added to your library.</string>
+    <string name="enhanced_tracking_info">Some source extensions include built-in tracking. Install one of the matching extensions below to enable — entries are then tracked automatically when added to your library.</string>
     <string name="track_activity_name">Tracker login</string>
 
       <!-- Browse section -->

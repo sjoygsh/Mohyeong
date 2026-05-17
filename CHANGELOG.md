@@ -12,6 +12,20 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+## [0.19.10]
+
+### Fixed
+- More tab header logo rendering as a white blob (reverted to a monochrome silhouette that respects the theme tint).
+- Notification status-bar icons (library update, backup, extension install) rendering as a solid shape.
+- Splash screen logo rendering.
+- Help page deep links from in-app buttons (`#getting-started`, `#source-migration`, `#library-faq`, `#storage`, `#troubleshooting`) landing at the top of the page instead of the relevant section.
+
+### Improved
+- Cloudflare auto-solve setting now uses plain-English wording instead of the `cf_clearance` jargon.
+- Enhanced trackers info text now explains that the section is populated by installing matching source extensions (Komga, Kavita, Suwayomi).
+
+## [0.19.9]
+
 ### Other
 - Initial Mohyeong release, forked from [Mihon](https://github.com/mihonapp/mihon) v0.19.9.
 - Added linked sources feature.
