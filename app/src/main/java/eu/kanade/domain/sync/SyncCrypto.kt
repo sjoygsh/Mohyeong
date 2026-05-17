@@ -35,7 +35,20 @@ internal object SyncCrypto {
         KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
     }
 
+    // AndroidKeyStore SecretKeys are thin handles to keystore-resident material,
+    // safe to share across threads. Cache to avoid a JNI keystore lookup on
+    // every encrypt/decrypt call.
+    @Volatile
+    private var cachedKey: SecretKey? = null
+
     private fun getOrCreateKey(): SecretKey {
+        cachedKey?.let { return it }
+        return synchronized(this) {
+            cachedKey ?: loadOrGenerateKey().also { cachedKey = it }
+        }
+    }
+
+    private fun loadOrGenerateKey(): SecretKey {
         (keystore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
         val generator = KeyGenerator.getInstance(
             KeyProperties.KEY_ALGORITHM_AES,
@@ -77,12 +90,14 @@ internal object SyncCrypto {
         if (!stored.startsWith(MARKER)) return stored
         return try {
             val combined = Base64.decode(stored.removePrefix(MARKER), Base64.NO_WRAP)
-            val iv = combined.copyOfRange(0, IV_SIZE)
-            val cipherText = combined.copyOfRange(IV_SIZE, combined.size)
             val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-                init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(TAG_BITS, iv))
+                init(
+                    Cipher.DECRYPT_MODE,
+                    getOrCreateKey(),
+                    GCMParameterSpec(TAG_BITS, combined, 0, IV_SIZE),
+                )
             }
-            cipher.doFinal(cipherText).toString(Charsets.UTF_8)
+            cipher.doFinal(combined, IV_SIZE, combined.size - IV_SIZE).toString(Charsets.UTF_8)
         } catch (e: Throwable) {
             logcat { "SyncCrypto decrypt failed: ${e.message}" }
             ""
