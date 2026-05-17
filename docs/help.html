@@ -661,6 +661,41 @@
       <li>Download queue with pause/resume</li>
     </ul>
 
+    <span id="local-source"></span>
+    <h1 id="local" style="margin-top:3rem;">Local Source</h1>
+    <p>
+      The <strong>Local source</strong> lets you read manga stored on your device — no extension required.
+      Put your files in the configured storage folder (<strong>More → Settings → Data and storage → Storage location</strong>),
+      under the <code>local</code> subdirectory. The app scans it the next time you open the Local source.
+    </p>
+    <h3>Folder layout</h3>
+    <pre><code>&lt;Storage&gt;/Mohyeong/local/
+    My Series Title/
+        cover.jpg            (optional cover image)
+        details.json         (optional metadata)
+        Chapter 1/           (folder of images = one chapter)
+            001.jpg
+            002.jpg
+        Chapter 2.cbz        (archive = one chapter)
+        Chapter 3.epub       (EPUB = one chapter)</code></pre>
+    <p>
+      Each top-level folder under <code>local/</code> is one series. Chapters can be either subfolders
+      of images or archive files (<code>.zip</code>, <code>.cbz</code>, <code>.rar</code>, <code>.cbr</code>, <code>.epub</code>).
+    </p>
+    <h3>Metadata (optional <code>details.json</code>)</h3>
+    <p>Drop a <code>details.json</code> next to the chapters to override the title, author, status, description, and genre:</p>
+    <pre><code>{
+  "title": "My Series Title",
+  "author": "Author Name",
+  "artist": "Artist Name",
+  "description": "Short synopsis",
+  "genre": ["Action", "Adventure"],
+  "status": "1",
+  "_status values": ["0 = Unknown", "1 = Ongoing", "2 = Completed", "3 = Licensed", "4 = Publishing finished", "5 = Cancelled", "6 = On hiatus"]
+}</code></pre>
+    <h3>Cover image</h3>
+    <p>Add a <code>cover.jpg</code> (or <code>.png</code>) inside the series folder to set a custom cover. Otherwise the first page of the first chapter is used.</p>
+
     <h1 id="categories" style="margin-top:3rem;">Categories</h1>
     <p>
       Categories help you organise your library. Create them in

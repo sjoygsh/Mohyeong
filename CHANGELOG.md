@@ -12,6 +12,14 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+## [0.19.12]
+
+### Fixed
+- Local source "Local source guide" link and the overflow-menu "Help" button no longer point at Mihon's docs — both now open the Mohyeong help page's new `#local-source` section.
+
+### Added
+- New `Local Source` section in the help page covering the `local/<series>/<chapter>` folder layout, optional `details.json` metadata, and cover image conventions.
+
 ## [0.19.11]
 
 ### Security
