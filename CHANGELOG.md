@@ -12,6 +12,12 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+## [0.19.11]
+
+### Security
+- Sync credentials (WebDAV password & username, SyncYomi API key, Google Drive access token, Dropbox personal access token) are now encrypted at rest using Android Keystore-backed AES-256/GCM. Existing plaintext credentials are migrated automatically on first launch.
+- WebDAV sync now rejects non-`https://` server URLs in settings to prevent credentials being sent in cleartext. Existing configurations are not modified — only new entries are validated.
+
 ## [0.19.10]
 
 ### Fixed

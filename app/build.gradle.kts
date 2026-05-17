@@ -26,8 +26,8 @@ android {
     defaultConfig {
         applicationId = "app.mohyeong"
 
-        versionCode = 23
-        versionName = "0.19.10"
+        versionCode = 24
+        versionName = "0.19.11"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")

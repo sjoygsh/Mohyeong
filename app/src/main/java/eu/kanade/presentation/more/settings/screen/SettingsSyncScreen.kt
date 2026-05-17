@@ -78,6 +78,17 @@ object SettingsSyncScreen : SearchableSettings {
                     title = stringResource(MR.strings.pref_sync_host),
                     subtitle = "%s",
                     enabled = service != SyncService.NONE.value,
+                    onValueChanged = { newValue ->
+                        if (service == SyncService.WEBDAV.value &&
+                            newValue.isNotBlank() &&
+                            !newValue.trim().startsWith("https://", ignoreCase = true)
+                        ) {
+                            context.toast(MR.strings.pref_sync_webdav_https_required)
+                            false
+                        } else {
+                            true
+                        }
+                    },
                 )
             } else {
                 null

@@ -578,6 +578,7 @@
     <string name="sync_service_google_drive">Google Drive</string>
     <string name="sync_service_dropbox">Dropbox</string>
     <string name="pref_sync_host">Server URL</string>
+    <string name="pref_sync_webdav_https_required">WebDAV sync requires an https:// URL to protect your credentials in transit.</string>
     <string name="pref_sync_username">Username</string>
     <string name="pref_sync_password">Password</string>
     <string name="pref_sync_access_token">Access token</string>
