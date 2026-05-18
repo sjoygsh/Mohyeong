@@ -12,6 +12,13 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+## [0.19.14]
+
+### Fixed
+- **Cloudflare auto-solve no longer burns `cf_clearance` on interactive Turnstile pages.** Mohyeong's expanded body-marker list (`"Just a moment"`, `cf_chl_opt`, `/cdn-cgi/challenge-platform/`, etc.) was firing the hidden auto-solve WebView on Turnstile challenges that fundamentally can't be auto-solved (they require a human checkbox click). The hidden WebView would clear the user's existing `cf_clearance` cookie, fail after the 30s timeout, and leave the user trapped in an apparent "verify checkbox loop" on sites like toongod, kunmanga, manhwaclan, readallcomics, aquamanga, hivetoons. Auto-solve is now narrowed to the old non-interactive JS challenge only, matching upstream Mihon's behaviour.
+- **Manual WebView no longer hijacks Cloudflare's Turnstile iframe.** `shouldOverrideUrlLoading` now skips subframe navigations, so the Turnstile iframe (`challenges.cloudflare.com`) can complete its verification handoff without the main frame getting redirected to the iframe URL.
+- **`cf_clearance` cookie is flushed to disk when the WebView Activity closes**, so it survives a process kill instead of waiting for Android's periodic cookie writeback.
+
 ## [0.19.13]
 
 ### Improved

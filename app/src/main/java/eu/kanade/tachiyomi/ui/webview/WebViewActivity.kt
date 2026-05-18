@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.webkit.CookieManager
 import android.widget.Toast
 import androidx.core.net.toUri
 import eu.kanade.presentation.webview.WebViewScreenContent
@@ -88,6 +89,11 @@ class WebViewActivity : BaseActivity() {
     }
 
     override fun finish() {
+        // Persist any cookies set by the user solving a challenge (e.g. cf_clearance)
+        // before the process can be killed. CookieManager otherwise only writes
+        // to disk on a periodic timer.
+        CookieManager.getInstance().flush()
+
         super.finish()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             overrideActivityTransition(

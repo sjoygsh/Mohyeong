@@ -34,14 +34,14 @@ class CloudflareInterceptor(
     override fun shouldIntercept(response: Response): Boolean {
         if (!isEnabled()) return false
 
-        // Fast path: explicit Cloudflare mitigation header set by recent edge releases
-        if (response.header("cf-mitigated")?.equals("challenge", ignoreCase = true) == true) {
-            return true
-        }
-
+        // Only auto-solve the old non-interactive JS challenge (matches upstream
+        // Mihon). Interactive Turnstile challenges require a human gesture, so
+        // running our hidden WebView against them just burns the user's
+        // cf_clearance cookie before timing out. Let those propagate as 403 so
+        // the source surfaces a "use WebView" error and the user can solve them
+        // by hand in the manual WebView.
         if (response.code !in ERROR_CODES) return false
-        val server = response.header("Server").orEmpty().lowercase()
-        if (server !in SERVER_CHECK && response.header("cf-ray") == null) return false
+        if (response.header("Server") !in SERVER_CHECK) return false
 
         // Inspect body for challenge markers. Caps body read to 256 KiB to avoid
         // pulling huge non-HTML responses into memory.
@@ -172,22 +172,20 @@ class CloudflareInterceptor(
     }
 }
 
-private val ERROR_CODES = listOf(403, 503, 429)
+private val ERROR_CODES = listOf(403, 503)
 private val SERVER_CHECK = arrayOf("cloudflare-nginx", "cloudflare")
 private val COOKIE_NAMES = listOf("cf_clearance")
 private const val MAX_BODY_PEEK_BYTES = 256L * 1024L
 
 /**
- * Body fragments that indicate a Cloudflare interactive challenge page rather than a
- * geo-block / hard ban. Checked with simple substring matching, no DOM parsing.
+ * Body fragments that indicate the old non-interactive Cloudflare JS challenge.
+ * Interactive Turnstile pages are intentionally NOT listed — they can't be
+ * auto-solved and triggering the interceptor for them just clears the user's
+ * cf_clearance cookie before the inevitable timeout.
  */
 private val CHALLENGE_BODY_MARKERS = arrayOf(
     "challenge-error-title",
     "challenge-error-text",
-    "window._cf_chl_opt",
-    "cf_chl_opt",
-    "Just a moment",
-    "/cdn-cgi/challenge-platform/",
 )
 
 private val hostLocks = ConcurrentHashMap<String, Any>()

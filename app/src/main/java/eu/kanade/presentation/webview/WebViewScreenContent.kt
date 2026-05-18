@@ -186,6 +186,13 @@ fun WebViewScreenContent(
             ): Boolean {
                 val url = request?.url?.toString() ?: return false
 
+                // Let the WebView handle subframe (iframe) navigations natively.
+                // Cloudflare's interactive Turnstile challenge runs inside a
+                // challenges.cloudflare.com iframe; intercepting its navigations
+                // here would hijack the main frame to the iframe URL and trap
+                // the user in a verify-checkbox loop.
+                if (!request.isForMainFrame) return false
+
                 // Ignore intents urls
                 if (url.startsWith("intent://")) return true
 
