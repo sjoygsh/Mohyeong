@@ -12,6 +12,19 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+## [0.19.15]
+
+### Changed
+- **Linked sources now actually merge into one library entry, as the help page has always promised.** Previously, "linking" two mangas only enabled a fallback chapter list if the primary source failed; both entries stayed visible in the library with separate chapter lists. Now:
+  - **Library updates walk every linked source** under the primary manga. When Asura's mirror of *X* gets a new chapter, it appears under the ManhwaTop entry in your library — even if ManhwaTop itself hasn't updated.
+  - **The chapter list on the primary entry is a merged, deduped view** of the primary + every linked source. Dedupe is by recognized chapter number; the primary always wins ties, then the earliest-linked source fills in any gaps the primary is missing.
+  - **Marking a chapter read mirrors across linked sources by chapter number.** Marking ManhwaTop's Ch.10 as read also marks Asura's Ch.10 as read, so switching the primary source later doesn't reset your progress.
+  - **Downloads go to the correct per-source folder.** Chapters from linked sources are downloaded against their own source's download path with their own URL — they're not silently dumped into the primary's folder.
+  - **Pull-to-refresh on the manga screen** now always walks every linked source, not just when the primary fetch errors out.
+
+### Other
+- Metadata (cover, title, description) still comes from the primary source only. Migrating between linked sources to change which entry is "primary" is not yet supported in-app — for now, unlink and relink in the opposite direction.
+
 ## [0.19.14]
 
 ### Fixed

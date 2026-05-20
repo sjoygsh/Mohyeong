@@ -53,6 +53,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -88,6 +91,7 @@ import tachiyomi.domain.manga.interactor.UnlinkManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaWithChapterCount
 import tachiyomi.domain.manga.model.applyFilter
+import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.track.interactor.GetTracks
@@ -127,6 +131,7 @@ class MangaScreenModel(
     private val addTracks: AddTracks = Injekt.get(),
     private val setMangaCategories: SetMangaCategories = Injekt.get(),
     private val mangaRepository: MangaRepository = Injekt.get(),
+    private val chapterRepository: ChapterRepository = Injekt.get(),
     private val filterChaptersForDownload: FilterChaptersForDownload = Injekt.get(),
     private val getLinkedMangas: GetLinkedMangas = Injekt.get(),
     private val linkMangaInteractor: LinkManga = Injekt.get(),
@@ -179,17 +184,39 @@ class MangaScreenModel(
 
     init {
         screenModelScope.launchIO {
+            val mergedFlow = getLinkedMangas.subscribe(mangaId).flatMapLatest { linked ->
+                val primary = getMangaAndChapters.subscribe(mangaId, applyScanlatorFilter = true)
+                if (linked.isEmpty()) {
+                    primary.map { (m, c) -> MergedChapters(m, c, emptyList()) }
+                } else {
+                    val linkedFlows = linked.map { lm ->
+                        chapterRepository.getChapterByMangaIdAsFlow(lm.id, applyScanlatorFilter = true)
+                            .map { chs -> lm to chs }
+                    }
+                    combine(primary, combine(linkedFlows) { it.toList() }) { (m, c), linkedPairs ->
+                        MergedChapters(m, c, linkedPairs)
+                    }
+                }
+            }.distinctUntilChanged()
+
             combine(
-                getMangaAndChapters.subscribe(mangaId, applyScanlatorFilter = true).distinctUntilChanged(),
+                mergedFlow,
                 downloadCache.changes,
                 downloadManager.queueState,
-            ) { mangaAndChapters, _, _ -> mangaAndChapters }
+            ) { merged, _, _ -> merged }
                 .flowWithLifecycle(lifecycle)
-                .collectLatest { (manga, chapters) ->
+                .collectLatest { merged ->
+                    val mangaById = buildMap<Long, Manga> {
+                        put(merged.primary.id, merged.primary)
+                        merged.linked.forEach { (m, _) -> put(m.id, m) }
+                    }
+                    val (mergedChapters, chaptersByNumber) = mergeChapters(merged)
                     updateSuccessState {
                         it.copy(
-                            manga = manga,
-                            chapters = chapters.toChapterListItems(manga),
+                            manga = merged.primary,
+                            chapters = mergedChapters.toChapterListItems(mangaById),
+                            mangaById = mangaById,
+                            chaptersByNumber = chaptersByNumber,
                         )
                     }
                 }
@@ -221,8 +248,18 @@ class MangaScreenModel(
 
         screenModelScope.launchIO {
             val manga = getMangaAndChapters.awaitManga(mangaId)
-            val chapters = getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = true)
-                .toChapterListItems(manga)
+            val primaryChapters = getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = true)
+            val linkedMangas = getLinkedMangas.await(mangaId)
+            val linkedPairs = linkedMangas.map { lm ->
+                lm to chapterRepository.getChapterByMangaId(lm.id, applyScanlatorFilter = true)
+            }
+            val merged = MergedChapters(manga, primaryChapters, linkedPairs)
+            val mangaById = buildMap<Long, Manga> {
+                put(manga.id, manga)
+                linkedMangas.forEach { put(it.id, it) }
+            }
+            val (mergedChapters, chaptersByNumber) = mergeChapters(merged)
+            val chapters = mergedChapters.toChapterListItems(mangaById)
 
             if (!manga.favorite) {
                 setMangaDefaultChapterFlags.await(manga)
@@ -238,6 +275,8 @@ class MangaScreenModel(
                     source = Injekt.get<SourceManager>().getOrStub(manga.source),
                     isFromSource = isFromSource,
                     chapters = chapters,
+                    mangaById = mangaById,
+                    chaptersByNumber = chaptersByNumber,
                     availableScanlators = getAvailableScanlators.await(mangaId),
                     excludedScanlators = getExcludedScanlators.await(mangaId),
                     scanlatorPriority = getScanlatorPriorities.await(mangaId),
@@ -492,7 +531,7 @@ class MangaScreenModel(
     private fun observeDownloads() {
         screenModelScope.launchIO {
             downloadManager.statusFlow()
-                .filter { it.manga.id == successState?.manga?.id }
+                .filter { it.manga.id in (successState?.mangaById?.keys ?: setOfNotNull(successState?.manga?.id)) }
                 .catch { error -> logcat(LogPriority.ERROR, error) }
                 .flowWithLifecycle(lifecycle)
                 .collect {
@@ -504,7 +543,7 @@ class MangaScreenModel(
 
         screenModelScope.launchIO {
             downloadManager.progressFlow()
-                .filter { it.manga.id == successState?.manga?.id }
+                .filter { it.manga.id in (successState?.mangaById?.keys ?: setOfNotNull(successState?.manga?.id)) }
                 .catch { error -> logcat(LogPriority.ERROR, error) }
                 .flowWithLifecycle(lifecycle)
                 .collect {
@@ -529,9 +568,12 @@ class MangaScreenModel(
         }
     }
 
-    private fun List<Chapter>.toChapterListItems(manga: Manga): List<ChapterList.Item> {
-        val isLocal = manga.isLocal()
+    private fun List<Chapter>.toChapterListItems(mangaById: Map<Long, Manga>): List<ChapterList.Item> {
         return map { chapter ->
+            // Each chapter resolves against its OWN manga (primary or linked source),
+            // so download lookups read from the correct per-source download folder.
+            val owner = mangaById[chapter.mangaId]
+            val isLocal = owner?.isLocal() == true
             val activeDownload = if (isLocal) {
                 null
             } else {
@@ -539,14 +581,16 @@ class MangaScreenModel(
             }
             val downloaded = if (isLocal) {
                 true
-            } else {
+            } else if (owner != null) {
                 downloadManager.isChapterDownloaded(
                     chapter.name,
                     chapter.scanlator,
                     chapter.url,
-                    manga.title,
-                    manga.source,
+                    owner.title,
+                    owner.source,
                 )
+            } else {
+                false
             }
             val downloadState = when {
                 activeDownload != null -> activeDownload.status
@@ -563,65 +607,127 @@ class MangaScreenModel(
         }
     }
 
-    private suspend fun tryRefreshLinkedSources(manualFetch: Boolean) {
-        val primary = manga ?: return
-        val linkedList = try {
-            getLinkedMangas.await(primary.id)
-        } catch (_: Throwable) {
-            return
-        }
-        if (linkedList.isEmpty()) return
-        val sourceManager = Injekt.get<SourceManager>()
-        for (linkedManga in linkedList) {
-            val fallbackSource = sourceManager.get(linkedManga.source) ?: continue
-            try {
-                val chapters = fallbackSource.getChapterList(linkedManga.toSManga())
-                syncChaptersWithSource.await(chapters, linkedManga, fallbackSource, manualFetch)
-                break
-            } catch (t: Throwable) {
-                logcat(LogPriority.WARN, t) {
-                    "Linked-source fallback failed for ${linkedManga.url} on ${fallbackSource.name}"
+    /**
+     * Holds chapters from the primary manga plus any linked-source mangas. Linked chapters
+     * are stored under their own mangaId in the DB; this struct keeps them grouped so we can
+     * merge them for display and propagate read state across sources.
+     */
+    private data class MergedChapters(
+        val primary: Manga,
+        val primaryChapters: List<Chapter>,
+        val linked: List<Pair<Manga, List<Chapter>>>,
+    )
+
+    /**
+     * Builds the display chapter list by deduping across primary + linked sources by recognized
+     * chapter number. Primary always wins; among linked sources, the first one with a given
+     * chapter number wins (stable per manga_links ordering from the repository).
+     *
+     * Also returns a chapter-number → all-matching-chapters index used to mirror read state
+     * across linked sources when the user marks a chapter read on the merged list.
+     */
+    private fun mergeChapters(
+        merged: MergedChapters,
+    ): Pair<List<Chapter>, Map<Double, List<Chapter>>> {
+        val winners = LinkedHashMap<Double, Chapter>()
+        val unrecognized = mutableListOf<Chapter>()
+        val byNumber = mutableMapOf<Double, MutableList<Chapter>>()
+
+        fun ingest(chapters: List<Chapter>, isPrimary: Boolean) {
+            for (c in chapters) {
+                if (c.isRecognizedNumber) {
+                    byNumber.getOrPut(c.chapterNumber) { mutableListOf() }.add(c)
+                    val existing = winners[c.chapterNumber]
+                    // Primary always wins; otherwise first writer wins.
+                    if (existing == null || (isPrimary && existing.mangaId != merged.primary.id)) {
+                        winners[c.chapterNumber] = c
+                    }
+                } else {
+                    unrecognized.add(c)
                 }
             }
         }
+
+        ingest(merged.primaryChapters, isPrimary = true)
+        for ((_, chs) in merged.linked) ingest(chs, isPrimary = false)
+
+        return (winners.values.toList() + unrecognized) to byNumber
     }
 
     /**
-     * Requests an updated list of chapters from the source.
+     * Fetches and syncs chapters from every linked source under its own mangaId. Errors per
+     * source are logged but do not abort the rest — one broken mirror shouldn't stop the
+     * others from refreshing.
+     */
+    private suspend fun refreshLinkedSourceChapters(manualFetch: Boolean): List<Chapter> {
+        val primary = manga ?: return emptyList()
+        val linkedList = try {
+            getLinkedMangas.await(primary.id)
+        } catch (_: Throwable) {
+            return emptyList()
+        }
+        if (linkedList.isEmpty()) return emptyList()
+        val sourceManager = Injekt.get<SourceManager>()
+        val collectedNew = mutableListOf<Chapter>()
+        for (linkedManga in linkedList) {
+            val linkedSource = sourceManager.get(linkedManga.source) ?: continue
+            try {
+                val chapters = linkedSource.getChapterList(linkedManga.toSManga())
+                val newChapters = syncChaptersWithSource.await(chapters, linkedManga, linkedSource, manualFetch)
+                collectedNew.addAll(newChapters)
+            } catch (t: Throwable) {
+                logcat(LogPriority.WARN, t) {
+                    "Linked-source refresh failed for ${linkedManga.url} on ${linkedSource.name}"
+                }
+            }
+        }
+        return collectedNew
+    }
+
+    /**
+     * Requests an updated list of chapters from the primary AND every linked source. Linked
+     * sources run after the primary; a primary failure no longer blocks linked refresh.
      */
     private suspend fun fetchChaptersFromSource(manualFetch: Boolean = false) {
         val state = successState ?: return
+        var primaryNew: List<Chapter> = emptyList()
+        var primaryError: Throwable? = null
         try {
             withIOContext {
                 val chapters = state.source.getChapterList(state.manga.toSManga())
-
-                val newChapters = syncChaptersWithSource.await(
+                primaryNew = syncChaptersWithSource.await(
                     chapters,
                     state.manga,
                     state.source,
                     manualFetch,
                 )
-
-                if (manualFetch) {
-                    downloadNewChapters(newChapters)
-                }
             }
         } catch (e: Throwable) {
-            val message = if (e is NoChaptersException) {
+            primaryError = e
+        }
+
+        // Always walk linked sources on refresh — that's the contract of the linked-sources
+        // feature: their updates appear under the primary library entry.
+        val linkedNew = try {
+            withIOContext { refreshLinkedSourceChapters(manualFetch) }
+        } catch (t: Throwable) {
+            logcat(LogPriority.ERROR, t) { "Linked-source refresh failed" }
+            emptyList()
+        }
+
+        if (manualFetch) {
+            val newChapters = primaryNew + linkedNew
+            if (newChapters.isNotEmpty()) downloadNewChapters(newChapters)
+        }
+
+        if (primaryError != null && linkedNew.isEmpty() && primaryNew.isEmpty()) {
+            // Both primary and linked failed to deliver — surface the primary error.
+            val message = if (primaryError is NoChaptersException) {
                 context.stringResource(MR.strings.no_chapters_error)
             } else {
-                logcat(LogPriority.ERROR, e)
-                with(context) { e.formattedMessage }
+                logcat(LogPriority.ERROR, primaryError)
+                with(context) { primaryError.formattedMessage }
             }
-
-            // Auto-fallback: refresh linked-source mirrors in the background so the user has
-            // fresh chapters on the alternate entries when the primary source is broken. Run as
-            // fire-and-forget so we don't block the snackbar/state update behind a long network
-            // walk through every linked entry.
-            screenModelScope.launchNonCancellable {
-                tryRefreshLinkedSources(manualFetch)
-            }
-
             screenModelScope.launch {
                 snackbarHostState.showSnackbar(message = message)
             }
@@ -793,9 +899,15 @@ class MangaScreenModel(
         toggleAllSelection(false)
         if (chapters.isEmpty()) return
         screenModelScope.launchIO {
+            // Mirror read state across linked sources by chapter number, per design choice 1a
+            // (shared read state). Unrecognized chapter numbers fall through as-is.
+            val byNumber = successState?.chaptersByNumber.orEmpty()
+            val expanded = chapters.flatMap { c ->
+                if (c.isRecognizedNumber) byNumber[c.chapterNumber] ?: listOf(c) else listOf(c)
+            }.distinctBy { it.id }
             setReadStatus.await(
                 read = read,
-                chapters = chapters.toTypedArray(),
+                chapters = expanded.toTypedArray(),
             )
 
             if (!read || successState?.hasLoggedInTrackers == false || autoTrackState == AutoTrackState.NEVER) {
@@ -853,12 +965,16 @@ class MangaScreenModel(
     }
 
     /**
-     * Downloads the given list of chapters with the manager.
-     * @param chapters the list of chapters to download.
+     * Downloads the given list of chapters with the manager. Chapters are grouped by their
+     * owning manga (primary + linked sources) so each download goes to its true source's
+     * download folder with the correct URL.
      */
     private fun downloadChapters(chapters: List<Chapter>) {
-        val manga = successState?.manga ?: return
-        downloadManager.downloadChapters(manga, chapters)
+        val mangaById = successState?.mangaById ?: return
+        chapters.groupBy { it.mangaId }.forEach { (mangaId, group) ->
+            val owner = mangaById[mangaId] ?: return@forEach
+            downloadManager.downloadChapters(owner, group)
+        }
         toggleAllSelection(false)
     }
 
@@ -890,12 +1006,19 @@ class MangaScreenModel(
     fun deleteChapters(chapters: List<Chapter>) {
         screenModelScope.launchNonCancellable {
             try {
-                successState?.let { state ->
-                    downloadManager.deleteChapters(
-                        chapters,
-                        state.manga,
-                        state.source,
-                    )
+                val state = successState ?: return@launchNonCancellable
+                val sourceManager = Injekt.get<SourceManager>()
+                // Group by owning manga so each chapter is deleted from its real source's
+                // download folder (otherwise linked-source chapters leak into the primary's
+                // folder lookups and never get cleaned up).
+                chapters.groupBy { it.mangaId }.forEach { (mangaId, group) ->
+                    val owner = state.mangaById[mangaId] ?: return@forEach
+                    val ownerSource = if (mangaId == state.manga.id) {
+                        state.source
+                    } else {
+                        sourceManager.getOrStub(owner.source)
+                    }
+                    downloadManager.deleteChapters(group, owner, ownerSource)
                 }
             } catch (e: Throwable) {
                 logcat(LogPriority.ERROR, e)
@@ -1183,7 +1306,7 @@ class MangaScreenModel(
 
     fun refreshLinkedSources() {
         screenModelScope.launchNonCancellable {
-            tryRefreshLinkedSources(manualFetch = true)
+            refreshLinkedSourceChapters(manualFetch = true)
             snackbarHostState.showSnackbar(context.stringResource(MR.strings.linked_sources_refreshed))
         }
     }
@@ -1228,6 +1351,12 @@ class MangaScreenModel(
             val source: Source,
             val isFromSource: Boolean,
             val chapters: List<ChapterList.Item>,
+            // primary mangaId + every linked manga, used by toChapterListItems and download
+            // grouping so each chapter resolves to its real source.
+            val mangaById: Map<Long, Manga> = emptyMap(),
+            // chapterNumber → all chapters with that number across primary + linked sources,
+            // used to mirror read state across linked sources.
+            val chaptersByNumber: Map<Double, List<Chapter>> = emptyMap(),
             val availableScanlators: Set<String>,
             val excludedScanlators: Set<String>,
             val scanlatorPriority: List<String> = emptyList(),

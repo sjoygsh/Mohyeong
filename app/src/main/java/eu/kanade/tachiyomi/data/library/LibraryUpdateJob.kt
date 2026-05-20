@@ -59,6 +59,7 @@ import tachiyomi.domain.library.service.LibraryPreferences.Companion.MANGA_NON_R
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.MANGA_OUTSIDE_RELEASE_PERIOD
 import tachiyomi.domain.manga.interactor.FetchInterval
 import tachiyomi.domain.manga.interactor.GetLibraryManga
+import tachiyomi.domain.manga.interactor.GetLinkedMangas
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.model.SourceNotInstalledException
@@ -90,6 +91,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
     private val syncChaptersWithSource: SyncChaptersWithSource = Injekt.get()
     private val fetchInterval: FetchInterval = Injekt.get()
     private val filterChaptersForDownload: FilterChaptersForDownload = Injekt.get()
+    private val getLinkedMangas: GetLinkedMangas = Injekt.get()
 
     private val notifier = LibraryUpdateNotifier(context)
 
@@ -268,7 +270,18 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                             val chaptersToDownload = filterChaptersForDownload.await(manga, newChapters)
 
                                             if (chaptersToDownload.isNotEmpty()) {
-                                                downloadChapters(manga, chaptersToDownload)
+                                                // newChapters may contain chapters from linked sources; route each
+                                                // group of chapters to its owning manga so downloads land in the
+                                                // correct per-source folder.
+                                                chaptersToDownload.groupBy { it.mangaId }
+                                                    .forEach { (chapterMangaId, group) ->
+                                                        val owner = if (chapterMangaId == manga.id) {
+                                                            manga
+                                                        } else {
+                                                            getManga.await(chapterMangaId) ?: return@forEach
+                                                        }
+                                                        downloadChapters(owner, group)
+                                                    }
                                                 hasDownloads.store(true)
                                             }
 
@@ -323,10 +336,12 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
     }
 
     /**
-     * Updates the chapters for the given manga and adds them to the database.
+     * Updates the chapters for the given manga and adds them to the database. Also walks every
+     * linked source under the primary manga so their updates appear under the primary library
+     * entry — see linked-sources feature.
      *
      * @param manga the manga to update.
-     * @return a pair of the inserted and removed chapters.
+     * @return the union of inserted chapters from the primary AND every linked source.
      */
     private suspend fun updateManga(manga: Manga, fetchWindow: Pair<Long, Long>): List<Chapter> {
         val source = sourceManager.getOrStub(manga.source)
@@ -337,13 +352,45 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             updateManga.awaitUpdateFromSource(manga, networkManga, manualFetch = false, coverCache)
         }
 
-        val chapters = source.getChapterList(manga.toSManga())
+        val collected = mutableListOf<Chapter>()
+        var primaryFailed: Throwable? = null
+        try {
+            val chapters = source.getChapterList(manga.toSManga())
+            // Get manga from database to account for if it was removed during the update and
+            // to get latest data so it doesn't get overwritten later on
+            val dbManga = getManga.await(manga.id)?.takeIf { it.favorite }
+            if (dbManga != null) {
+                collected.addAll(syncChaptersWithSource.await(chapters, dbManga, source, false, fetchWindow))
+            }
+        } catch (t: Throwable) {
+            primaryFailed = t
+        }
 
-        // Get manga from database to account for if it was removed during the update and
-        // to get latest data so it doesn't get overwritten later on
-        val dbManga = getManga.await(manga.id)?.takeIf { it.favorite } ?: return emptyList()
+        // Linked sources: one broken mirror should not abort the rest, and a broken primary
+        // should not stop us from picking up updates from a working linked mirror.
+        val linked = try {
+            getLinkedMangas.await(manga.id)
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        for (linkedManga in linked) {
+            val linkedSource = sourceManager.get(linkedManga.source) ?: continue
+            try {
+                val chapters = linkedSource.getChapterList(linkedManga.toSManga())
+                val dbLinked = getManga.await(linkedManga.id) ?: continue
+                collected.addAll(
+                    syncChaptersWithSource.await(chapters, dbLinked, linkedSource, false, fetchWindow),
+                )
+            } catch (t: Throwable) {
+                logcat(LogPriority.WARN, t) {
+                    "Linked-source update failed for ${linkedManga.url} on ${linkedSource.name}"
+                }
+            }
+        }
 
-        return syncChaptersWithSource.await(chapters, dbManga, source, false, fetchWindow)
+        // Only surface the primary error to the user if every source failed to produce updates.
+        if (primaryFailed != null && collected.isEmpty()) throw primaryFailed
+        return collected
     }
 
     private suspend fun withUpdateNotification(
