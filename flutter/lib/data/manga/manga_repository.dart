@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/manga/model/manga.dart';
@@ -57,6 +58,22 @@ class MangaRepository {
 
   Future<void> deleteById(int id) async {
     await (_db.delete(_db.mangas)..where((t) => t.id.equals(id))).go();
+  }
+
+  /// Toggle the library state of an existing manga without touching the
+  /// rest of its row. Adds `dateAdded` when entering the library (matches
+  /// the Kotlin behaviour so categorization-by-date sort works), and
+  /// stamps `favoriteModifiedAt` for sync ordering.
+  Future<void> setFavorite(int id, bool favorite) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.mangas)..where((t) => t.id.equals(id))).write(
+      db.MangasCompanion(
+        favorite: Value(favorite ? 1 : 0),
+        dateAdded: favorite ? Value(nowMs) : const Value.absent(),
+        favoriteModifiedAt: Value(nowMs),
+        lastModifiedAt: Value(nowMs),
+      ),
+    );
   }
 }
 

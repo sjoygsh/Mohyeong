@@ -53,6 +53,17 @@ class MangaDetailsScreen extends ConsumerWidget {
                       background: _HeaderBackdrop(manga: manga),
                     ),
                     actions: [
+                      IconButton(
+                        icon: Icon(
+                          manga.favorite
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                        ),
+                        tooltip: manga.favorite
+                            ? 'Remove from library'
+                            : 'Add to library',
+                        onPressed: () => _toggleFavorite(context, ref, manga),
+                      ),
                       if (manga.favorite)
                         IconButton(
                           icon: const Icon(Icons.label_outline),
@@ -92,6 +103,44 @@ class MangaDetailsScreen extends ConsumerWidget {
         },
       ),
     );
+  }
+}
+
+Future<void> _toggleFavorite(
+  BuildContext context,
+  WidgetRef ref,
+  Manga manga,
+) async {
+  final mangaRepo = ref.read(mangaRepositoryProvider);
+  if (manga.favorite) {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove from library?'),
+        content: const Text(
+          'The manga stays in the database (so your read history is kept) '
+          'but disappears from the Library tab.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+  }
+  await mangaRepo.setFavorite(manga.id, !manga.favorite);
+  // When removing from library, also clear category memberships so the
+  // manga doesn't reappear in a category-filtered view if it's added back.
+  if (manga.favorite) {
+    final categoryRepo = ref.read(categoryRepositoryProvider);
+    await categoryRepo.setCategoriesForManga(manga.id, const <int>{});
   }
 }
 

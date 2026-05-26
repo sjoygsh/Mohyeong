@@ -6,18 +6,84 @@ import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
 import '../manga/manga_details_screen.dart';
 
-/// Streams favourited mangas from the DB and renders them as a grid of
-/// covers. Tapping a cover will eventually navigate to the manga details
-/// screen -- that lives in a follow-up commit.
-class LibraryScreen extends ConsumerWidget {
+enum LibrarySort { titleAsc, dateAddedDesc, lastUpdateDesc }
+
+/// Library tab: streams favorites, filters by an in-AppBar search query,
+/// and sorts client-side per the selected mode.
+class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+  String _query = '';
+  LibrarySort _sort = LibrarySort.titleAsc;
+  bool _searching = false;
+  late final TextEditingController _searchController =
+      TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final repo = ref.watch(mangaRepositoryProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Library')),
+      appBar: AppBar(
+        title: _searching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                onChanged: (v) => setState(() => _query = v.trim()),
+                decoration: const InputDecoration(
+                  hintText: 'Search library',
+                  border: InputBorder.none,
+                ),
+                style: Theme.of(context).textTheme.titleLarge,
+              )
+            : const Text('Library'),
+        actions: [
+          IconButton(
+            icon: Icon(_searching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                if (_searching) {
+                  _searching = false;
+                  _searchController.clear();
+                  _query = '';
+                } else {
+                  _searching = true;
+                }
+              });
+            },
+          ),
+          PopupMenuButton<LibrarySort>(
+            icon: const Icon(Icons.sort),
+            initialValue: _sort,
+            onSelected: (s) => setState(() => _sort = s),
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: LibrarySort.titleAsc,
+                child: Text('Title (A–Z)'),
+              ),
+              PopupMenuItem(
+                value: LibrarySort.dateAddedDesc,
+                child: Text('Recently added'),
+              ),
+              PopupMenuItem(
+                value: LibrarySort.lastUpdateDesc,
+                child: Text('Last update'),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: StreamBuilder<List<Manga>>(
         stream: repo.watchFavorites(),
         builder: (context, snapshot) {
@@ -31,10 +97,36 @@ class LibraryScreen extends ConsumerWidget {
           if (items.isEmpty) {
             return const _EmptyLibrary();
           }
-          return _LibraryGrid(items: items);
+          final filtered = _query.isEmpty
+              ? items
+              : items
+                  .where((m) =>
+                      m.title.toLowerCase().contains(_query.toLowerCase()))
+                  .toList(growable: false);
+          final sorted = [...filtered]..sort(_compare(_sort));
+          if (sorted.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text('No matches for "$_query".'),
+              ),
+            );
+          }
+          return _LibraryGrid(items: sorted);
         },
       ),
     );
+  }
+
+  int Function(Manga, Manga) _compare(LibrarySort sort) {
+    switch (sort) {
+      case LibrarySort.titleAsc:
+        return (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      case LibrarySort.dateAddedDesc:
+        return (a, b) => b.dateAdded.compareTo(a.dateAdded);
+      case LibrarySort.lastUpdateDesc:
+        return (a, b) => b.lastUpdate.compareTo(a.lastUpdate);
+    }
   }
 }
 
