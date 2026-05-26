@@ -1,8 +1,10 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
+import '../manga/manga_details_screen.dart';
 
 /// Streams favourited mangas from the DB and renders them as a grid of
 /// covers. Tapping a cover will eventually navigate to the manga details
@@ -67,21 +69,17 @@ class _MangaCard extends StatelessWidget {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        // TODO(manga-screen): navigate to manga details when that screen
-        // exists. Currently a no-op so taps don't feel broken.
-        onTap: () {},
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => MangaDetailsScreen(mangaId: manga.id),
+            ),
+          );
+        },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: Container(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                alignment: Alignment.center,
-                // Cover image will be wired up via cached_network_image once
-                // the thumbnail-fetching pipeline exists.
-                child: const Icon(Icons.menu_book, size: 48),
-              ),
-            ),
+            Expanded(child: _Cover(manga: manga)),
             Padding(
               padding: const EdgeInsets.all(6),
               child: Text(
@@ -93,6 +91,36 @@ class _MangaCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _Cover extends StatelessWidget {
+  const _Cover({required this.manga});
+
+  final Manga manga;
+
+  @override
+  Widget build(BuildContext context) {
+    final placeholderColor =
+        Theme.of(context).colorScheme.surfaceContainerHighest;
+    final url = manga.thumbnailUrl;
+    if (url == null || url.isEmpty) {
+      return Container(
+        color: placeholderColor,
+        alignment: Alignment.center,
+        child: const Icon(Icons.menu_book, size: 48),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: BoxFit.cover,
+      placeholder: (_, _) => Container(color: placeholderColor),
+      errorWidget: (_, _, _) => Container(
+        color: placeholderColor,
+        alignment: Alignment.center,
+        child: const Icon(Icons.broken_image_outlined, size: 36),
       ),
     );
   }
