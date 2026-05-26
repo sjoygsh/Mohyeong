@@ -80,7 +80,10 @@ class MangaDetailsScreen extends ConsumerWidget {
                   else
                     SliverList.builder(
                       itemCount: chapters.length,
-                      itemBuilder: (_, i) => _ChapterTile(chapter: chapters[i]),
+                      itemBuilder: (_, i) => _ChapterTile(
+                        chapter: chapters[i],
+                        chapterRepo: chapterRepo,
+                      ),
                     ),
                 ],
               );
@@ -333,9 +336,10 @@ class _ChapterListHeader extends StatelessWidget {
 }
 
 class _ChapterTile extends StatelessWidget {
-  const _ChapterTile({required this.chapter});
+  const _ChapterTile({required this.chapter, required this.chapterRepo});
 
   final Chapter chapter;
+  final ChapterRepository chapterRepo;
 
   @override
   Widget build(BuildContext context) {
@@ -365,6 +369,42 @@ class _ChapterTile extends StatelessWidget {
       leading: chapter.bookmark
           ? const Icon(Icons.bookmark, size: 20)
           : null,
+      trailing: PopupMenuButton<_ChapterAction>(
+        onSelected: (action) {
+          switch (action) {
+            case _ChapterAction.markRead:
+              chapterRepo.setRead(chapter.id, true);
+            case _ChapterAction.markUnread:
+              chapterRepo.setRead(chapter.id, false);
+            case _ChapterAction.bookmark:
+              chapterRepo.setBookmark(chapter.id, true);
+            case _ChapterAction.unbookmark:
+              chapterRepo.setBookmark(chapter.id, false);
+          }
+        },
+        itemBuilder: (_) => [
+          if (!chapter.read)
+            const PopupMenuItem(
+              value: _ChapterAction.markRead,
+              child: Text('Mark as read'),
+            ),
+          if (chapter.read)
+            const PopupMenuItem(
+              value: _ChapterAction.markUnread,
+              child: Text('Mark as unread'),
+            ),
+          if (!chapter.bookmark)
+            const PopupMenuItem(
+              value: _ChapterAction.bookmark,
+              child: Text('Bookmark'),
+            ),
+          if (chapter.bookmark)
+            const PopupMenuItem(
+              value: _ChapterAction.unbookmark,
+              child: Text('Remove bookmark'),
+            ),
+        ],
+      ),
       // TODO(reader): push the reader route once it exists.
       onTap: () {},
     );
@@ -381,6 +421,8 @@ class _ChapterTile extends StatelessWidget {
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   }
 }
+
+enum _ChapterAction { markRead, markUnread, bookmark, unbookmark }
 
 class _LoadingScaffold extends StatelessWidget {
   const _LoadingScaffold();

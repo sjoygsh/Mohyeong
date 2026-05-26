@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/chapter/model/chapter.dart';
@@ -25,6 +26,28 @@ class ChapterRepository {
     return _db
         .into(_db.chapters)
         .insertOnConflictUpdate(ChapterMapper.toCompanion(chapter));
+  }
+
+  /// Flip the read flag and (when marking unread) reset the saved page
+  /// position. Bumps `last_modified_at` + `version` so sync clients pick
+  /// up the change.
+  Future<void> setRead(int chapterId, bool read) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.chapters)..where((t) => t.id.equals(chapterId)))
+        .write(db.ChaptersCompanion(
+      read: Value(read ? 1 : 0),
+      lastPageRead: read ? const Value.absent() : const Value(0),
+      lastModifiedAt: Value(nowMs),
+    ));
+  }
+
+  Future<void> setBookmark(int chapterId, bool bookmark) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.chapters)..where((t) => t.id.equals(chapterId)))
+        .write(db.ChaptersCompanion(
+      bookmark: Value(bookmark ? 1 : 0),
+      lastModifiedAt: Value(nowMs),
+    ));
   }
 
   /// Atomically replace the chapter set for a manga (used after fetching the
