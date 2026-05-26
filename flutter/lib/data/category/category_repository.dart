@@ -76,6 +76,29 @@ class CategoryRepository {
   Future<void> updateParent({required int id, int? parentId}) async {
     await _db.updateParent(parentId, id);
   }
+
+  /// Returns the set of category ids the manga is assigned to. The implicit
+  /// system category (id=0) is omitted -- it is the absence-of-category
+  /// state, not an explicit row.
+  Future<Set<int>> getCategoryIdsForManga(int mangaId) async {
+    final categories = await getByMangaId(mangaId);
+    return categories
+        .where((c) => !c.isSystemCategory)
+        .map((c) => c.id)
+        .toSet();
+  }
+
+  /// Replace the manga's category memberships with the given set. The
+  /// trigger on `mangas_categories` will bump `mangas.version` per row,
+  /// matching the Kotlin app's sync semantics.
+  Future<void> setCategoriesForManga(int mangaId, Set<int> categoryIds) async {
+    await _db.transaction(() async {
+      await _db.deleteMangaCategoryByMangaId(mangaId);
+      for (final categoryId in categoryIds) {
+        await _db.insertMangaCategory(mangaId, categoryId);
+      }
+    });
+  }
 }
 
 final categoryRepositoryProvider = Provider<CategoryRepository>((ref) {

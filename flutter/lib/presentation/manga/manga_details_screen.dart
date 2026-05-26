@@ -2,8 +2,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/manga/manga_repository.dart';
+import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
 
@@ -50,6 +52,15 @@ class MangaDetailsScreen extends ConsumerWidget {
                       ),
                       background: _HeaderBackdrop(manga: manga),
                     ),
+                    actions: [
+                      if (manga.favorite)
+                        IconButton(
+                          icon: const Icon(Icons.label_outline),
+                          tooltip: 'Edit categories',
+                          onPressed: () =>
+                              _editCategories(context, ref, manga),
+                        ),
+                    ],
                   ),
                   SliverToBoxAdapter(child: _Metadata(manga: manga)),
                   SliverToBoxAdapter(
@@ -76,6 +87,119 @@ class MangaDetailsScreen extends ConsumerWidget {
             },
           );
         },
+      ),
+    );
+  }
+}
+
+Future<void> _editCategories(
+  BuildContext context,
+  WidgetRef ref,
+  Manga manga,
+) async {
+  final categoryRepo = ref.read(categoryRepositoryProvider);
+  final all = await categoryRepo.getAll();
+  final userCategories =
+      all.where((c) => !c.isSystemCategory).toList(growable: false);
+  if (!context.mounted) return;
+  if (userCategories.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'No categories yet. Create one in More -> Categories first.',
+        ),
+      ),
+    );
+    return;
+  }
+  final initial = await categoryRepo.getCategoryIdsForManga(manga.id);
+  if (!context.mounted) return;
+  final selection = await showModalBottomSheet<Set<int>>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (ctx) => _CategorySelector(
+      categories: userCategories,
+      initiallySelected: initial,
+    ),
+  );
+  if (selection != null) {
+    await categoryRepo.setCategoriesForManga(manga.id, selection);
+  }
+}
+
+class _CategorySelector extends StatefulWidget {
+  const _CategorySelector({
+    required this.categories,
+    required this.initiallySelected,
+  });
+
+  final List<Category> categories;
+  final Set<int> initiallySelected;
+
+  @override
+  State<_CategorySelector> createState() => _CategorySelectorState();
+}
+
+class _CategorySelectorState extends State<_CategorySelector> {
+  late final Set<int> _selected = {...widget.initiallySelected};
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Text(
+                'Categories',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: widget.categories.map((c) {
+                  final checked = _selected.contains(c.id);
+                  return CheckboxListTile(
+                    value: checked,
+                    onChanged: (v) {
+                      setState(() {
+                        if (v == true) {
+                          _selected.add(c.id);
+                        } else {
+                          _selected.remove(c.id);
+                        }
+                      });
+                    },
+                    title: Text(c.name),
+                  );
+                }).toList(growable: false),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(_selected),
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
