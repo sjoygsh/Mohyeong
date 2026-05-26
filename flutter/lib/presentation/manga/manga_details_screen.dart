@@ -8,6 +8,7 @@ import '../../data/manga/manga_repository.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
+import '../reader/reader_screen.dart';
 
 /// Manga details: cover + metadata header followed by the chapter list.
 /// Tapping a chapter is a no-op until the reader screen ships.
@@ -454,8 +455,16 @@ class _ChapterTile extends StatelessWidget {
             ),
         ],
       ),
-      // TODO(reader): push the reader route once it exists.
-      onTap: () {},
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ReaderScreen(
+              mangaId: chapter.mangaId,
+              chapterId: chapter.id,
+            ),
+          ),
+        );
+      },
     );
   }
 
