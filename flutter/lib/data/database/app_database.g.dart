@@ -1145,6 +1145,1938 @@ class MangasCompanion extends UpdateCompanion<Manga> {
   }
 }
 
+class MangaLinks extends Table with TableInfo<MangaLinks, MangaLink> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  MangaLinks(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _primaryMangaIdMeta =
+      const VerificationMeta('primaryMangaId');
+  late final GeneratedColumn<int> primaryMangaId = GeneratedColumn<int>(
+      'primary_manga_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _linkedMangaIdMeta =
+      const VerificationMeta('linkedMangaId');
+  late final GeneratedColumn<int> linkedMangaId = GeneratedColumn<int>(
+      'linked_manga_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _priorityMeta =
+      const VerificationMeta('priority');
+  late final GeneratedColumn<int> priority = GeneratedColumn<int>(
+      'priority', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: 'NOT NULL DEFAULT 0',
+      defaultValue: const CustomExpression('0'));
+  @override
+  List<GeneratedColumn> get $columns =>
+      [primaryMangaId, linkedMangaId, priority];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_links';
+  @override
+  VerificationContext validateIntegrity(Insertable<MangaLink> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('primary_manga_id')) {
+      context.handle(
+          _primaryMangaIdMeta,
+          primaryMangaId.isAcceptableOrUnknown(
+              data['primary_manga_id']!, _primaryMangaIdMeta));
+    } else if (isInserting) {
+      context.missing(_primaryMangaIdMeta);
+    }
+    if (data.containsKey('linked_manga_id')) {
+      context.handle(
+          _linkedMangaIdMeta,
+          linkedMangaId.isAcceptableOrUnknown(
+              data['linked_manga_id']!, _linkedMangaIdMeta));
+    } else if (isInserting) {
+      context.missing(_linkedMangaIdMeta);
+    }
+    if (data.containsKey('priority')) {
+      context.handle(_priorityMeta,
+          priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {primaryMangaId, linkedMangaId};
+  @override
+  MangaLink map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaLink(
+      primaryMangaId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}primary_manga_id'])!,
+      linkedMangaId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}linked_manga_id'])!,
+      priority: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}priority'])!,
+    );
+  }
+
+  @override
+  MangaLinks createAlias(String alias) {
+    return MangaLinks(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const [
+        'PRIMARY KEY(primary_manga_id, linked_manga_id)',
+        'FOREIGN KEY(primary_manga_id)REFERENCES mangas(_id)ON DELETE CASCADE',
+        'FOREIGN KEY(linked_manga_id)REFERENCES mangas(_id)ON DELETE CASCADE'
+      ];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class MangaLink extends DataClass implements Insertable<MangaLink> {
+  final int primaryMangaId;
+  final int linkedMangaId;
+  final int priority;
+  const MangaLink(
+      {required this.primaryMangaId,
+      required this.linkedMangaId,
+      required this.priority});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['primary_manga_id'] = Variable<int>(primaryMangaId);
+    map['linked_manga_id'] = Variable<int>(linkedMangaId);
+    map['priority'] = Variable<int>(priority);
+    return map;
+  }
+
+  MangaLinksCompanion toCompanion(bool nullToAbsent) {
+    return MangaLinksCompanion(
+      primaryMangaId: Value(primaryMangaId),
+      linkedMangaId: Value(linkedMangaId),
+      priority: Value(priority),
+    );
+  }
+
+  factory MangaLink.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaLink(
+      primaryMangaId: serializer.fromJson<int>(json['primary_manga_id']),
+      linkedMangaId: serializer.fromJson<int>(json['linked_manga_id']),
+      priority: serializer.fromJson<int>(json['priority']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'primary_manga_id': serializer.toJson<int>(primaryMangaId),
+      'linked_manga_id': serializer.toJson<int>(linkedMangaId),
+      'priority': serializer.toJson<int>(priority),
+    };
+  }
+
+  MangaLink copyWith(
+          {int? primaryMangaId, int? linkedMangaId, int? priority}) =>
+      MangaLink(
+        primaryMangaId: primaryMangaId ?? this.primaryMangaId,
+        linkedMangaId: linkedMangaId ?? this.linkedMangaId,
+        priority: priority ?? this.priority,
+      );
+  MangaLink copyWithCompanion(MangaLinksCompanion data) {
+    return MangaLink(
+      primaryMangaId: data.primaryMangaId.present
+          ? data.primaryMangaId.value
+          : this.primaryMangaId,
+      linkedMangaId: data.linkedMangaId.present
+          ? data.linkedMangaId.value
+          : this.linkedMangaId,
+      priority: data.priority.present ? data.priority.value : this.priority,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaLink(')
+          ..write('primaryMangaId: $primaryMangaId, ')
+          ..write('linkedMangaId: $linkedMangaId, ')
+          ..write('priority: $priority')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(primaryMangaId, linkedMangaId, priority);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaLink &&
+          other.primaryMangaId == this.primaryMangaId &&
+          other.linkedMangaId == this.linkedMangaId &&
+          other.priority == this.priority);
+}
+
+class MangaLinksCompanion extends UpdateCompanion<MangaLink> {
+  final Value<int> primaryMangaId;
+  final Value<int> linkedMangaId;
+  final Value<int> priority;
+  final Value<int> rowid;
+  const MangaLinksCompanion({
+    this.primaryMangaId = const Value.absent(),
+    this.linkedMangaId = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MangaLinksCompanion.insert({
+    required int primaryMangaId,
+    required int linkedMangaId,
+    this.priority = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : primaryMangaId = Value(primaryMangaId),
+        linkedMangaId = Value(linkedMangaId);
+  static Insertable<MangaLink> custom({
+    Expression<int>? primaryMangaId,
+    Expression<int>? linkedMangaId,
+    Expression<int>? priority,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (primaryMangaId != null) 'primary_manga_id': primaryMangaId,
+      if (linkedMangaId != null) 'linked_manga_id': linkedMangaId,
+      if (priority != null) 'priority': priority,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MangaLinksCompanion copyWith(
+      {Value<int>? primaryMangaId,
+      Value<int>? linkedMangaId,
+      Value<int>? priority,
+      Value<int>? rowid}) {
+    return MangaLinksCompanion(
+      primaryMangaId: primaryMangaId ?? this.primaryMangaId,
+      linkedMangaId: linkedMangaId ?? this.linkedMangaId,
+      priority: priority ?? this.priority,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (primaryMangaId.present) {
+      map['primary_manga_id'] = Variable<int>(primaryMangaId.value);
+    }
+    if (linkedMangaId.present) {
+      map['linked_manga_id'] = Variable<int>(linkedMangaId.value);
+    }
+    if (priority.present) {
+      map['priority'] = Variable<int>(priority.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaLinksCompanion(')
+          ..write('primaryMangaId: $primaryMangaId, ')
+          ..write('linkedMangaId: $linkedMangaId, ')
+          ..write('priority: $priority, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class ExtensionRepos extends Table
+    with TableInfo<ExtensionRepos, ExtensionRepo> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  ExtensionRepos(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _baseUrlMeta =
+      const VerificationMeta('baseUrl');
+  late final GeneratedColumn<String> baseUrl = GeneratedColumn<String>(
+      'base_url', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL PRIMARY KEY');
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _shortNameMeta =
+      const VerificationMeta('shortName');
+  late final GeneratedColumn<String> shortName = GeneratedColumn<String>(
+      'short_name', aliasedName, true,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      $customConstraints: '');
+  static const VerificationMeta _websiteMeta =
+      const VerificationMeta('website');
+  late final GeneratedColumn<String> website = GeneratedColumn<String>(
+      'website', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _signingKeyFingerprintMeta =
+      const VerificationMeta('signingKeyFingerprint');
+  late final GeneratedColumn<String> signingKeyFingerprint =
+      GeneratedColumn<String>('signing_key_fingerprint', aliasedName, false,
+          type: DriftSqlType.string,
+          requiredDuringInsert: true,
+          $customConstraints: 'UNIQUE NOT NULL');
+  @override
+  List<GeneratedColumn> get $columns =>
+      [baseUrl, name, shortName, website, signingKeyFingerprint];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'extension_repos';
+  @override
+  VerificationContext validateIntegrity(Insertable<ExtensionRepo> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('base_url')) {
+      context.handle(_baseUrlMeta,
+          baseUrl.isAcceptableOrUnknown(data['base_url']!, _baseUrlMeta));
+    } else if (isInserting) {
+      context.missing(_baseUrlMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('short_name')) {
+      context.handle(_shortNameMeta,
+          shortName.isAcceptableOrUnknown(data['short_name']!, _shortNameMeta));
+    }
+    if (data.containsKey('website')) {
+      context.handle(_websiteMeta,
+          website.isAcceptableOrUnknown(data['website']!, _websiteMeta));
+    } else if (isInserting) {
+      context.missing(_websiteMeta);
+    }
+    if (data.containsKey('signing_key_fingerprint')) {
+      context.handle(
+          _signingKeyFingerprintMeta,
+          signingKeyFingerprint.isAcceptableOrUnknown(
+              data['signing_key_fingerprint']!, _signingKeyFingerprintMeta));
+    } else if (isInserting) {
+      context.missing(_signingKeyFingerprintMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {baseUrl};
+  @override
+  ExtensionRepo map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ExtensionRepo(
+      baseUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}base_url'])!,
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      shortName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}short_name']),
+      website: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}website'])!,
+      signingKeyFingerprint: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}signing_key_fingerprint'])!,
+    );
+  }
+
+  @override
+  ExtensionRepos createAlias(String alias) {
+    return ExtensionRepos(attachedDatabase, alias);
+  }
+
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class ExtensionRepo extends DataClass implements Insertable<ExtensionRepo> {
+  final String baseUrl;
+  final String name;
+  final String? shortName;
+  final String website;
+  final String signingKeyFingerprint;
+  const ExtensionRepo(
+      {required this.baseUrl,
+      required this.name,
+      this.shortName,
+      required this.website,
+      required this.signingKeyFingerprint});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['base_url'] = Variable<String>(baseUrl);
+    map['name'] = Variable<String>(name);
+    if (!nullToAbsent || shortName != null) {
+      map['short_name'] = Variable<String>(shortName);
+    }
+    map['website'] = Variable<String>(website);
+    map['signing_key_fingerprint'] = Variable<String>(signingKeyFingerprint);
+    return map;
+  }
+
+  ExtensionReposCompanion toCompanion(bool nullToAbsent) {
+    return ExtensionReposCompanion(
+      baseUrl: Value(baseUrl),
+      name: Value(name),
+      shortName: shortName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(shortName),
+      website: Value(website),
+      signingKeyFingerprint: Value(signingKeyFingerprint),
+    );
+  }
+
+  factory ExtensionRepo.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ExtensionRepo(
+      baseUrl: serializer.fromJson<String>(json['base_url']),
+      name: serializer.fromJson<String>(json['name']),
+      shortName: serializer.fromJson<String?>(json['short_name']),
+      website: serializer.fromJson<String>(json['website']),
+      signingKeyFingerprint:
+          serializer.fromJson<String>(json['signing_key_fingerprint']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'base_url': serializer.toJson<String>(baseUrl),
+      'name': serializer.toJson<String>(name),
+      'short_name': serializer.toJson<String?>(shortName),
+      'website': serializer.toJson<String>(website),
+      'signing_key_fingerprint':
+          serializer.toJson<String>(signingKeyFingerprint),
+    };
+  }
+
+  ExtensionRepo copyWith(
+          {String? baseUrl,
+          String? name,
+          Value<String?> shortName = const Value.absent(),
+          String? website,
+          String? signingKeyFingerprint}) =>
+      ExtensionRepo(
+        baseUrl: baseUrl ?? this.baseUrl,
+        name: name ?? this.name,
+        shortName: shortName.present ? shortName.value : this.shortName,
+        website: website ?? this.website,
+        signingKeyFingerprint:
+            signingKeyFingerprint ?? this.signingKeyFingerprint,
+      );
+  ExtensionRepo copyWithCompanion(ExtensionReposCompanion data) {
+    return ExtensionRepo(
+      baseUrl: data.baseUrl.present ? data.baseUrl.value : this.baseUrl,
+      name: data.name.present ? data.name.value : this.name,
+      shortName: data.shortName.present ? data.shortName.value : this.shortName,
+      website: data.website.present ? data.website.value : this.website,
+      signingKeyFingerprint: data.signingKeyFingerprint.present
+          ? data.signingKeyFingerprint.value
+          : this.signingKeyFingerprint,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExtensionRepo(')
+          ..write('baseUrl: $baseUrl, ')
+          ..write('name: $name, ')
+          ..write('shortName: $shortName, ')
+          ..write('website: $website, ')
+          ..write('signingKeyFingerprint: $signingKeyFingerprint')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(baseUrl, name, shortName, website, signingKeyFingerprint);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExtensionRepo &&
+          other.baseUrl == this.baseUrl &&
+          other.name == this.name &&
+          other.shortName == this.shortName &&
+          other.website == this.website &&
+          other.signingKeyFingerprint == this.signingKeyFingerprint);
+}
+
+class ExtensionReposCompanion extends UpdateCompanion<ExtensionRepo> {
+  final Value<String> baseUrl;
+  final Value<String> name;
+  final Value<String?> shortName;
+  final Value<String> website;
+  final Value<String> signingKeyFingerprint;
+  final Value<int> rowid;
+  const ExtensionReposCompanion({
+    this.baseUrl = const Value.absent(),
+    this.name = const Value.absent(),
+    this.shortName = const Value.absent(),
+    this.website = const Value.absent(),
+    this.signingKeyFingerprint = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ExtensionReposCompanion.insert({
+    required String baseUrl,
+    required String name,
+    this.shortName = const Value.absent(),
+    required String website,
+    required String signingKeyFingerprint,
+    this.rowid = const Value.absent(),
+  })  : baseUrl = Value(baseUrl),
+        name = Value(name),
+        website = Value(website),
+        signingKeyFingerprint = Value(signingKeyFingerprint);
+  static Insertable<ExtensionRepo> custom({
+    Expression<String>? baseUrl,
+    Expression<String>? name,
+    Expression<String>? shortName,
+    Expression<String>? website,
+    Expression<String>? signingKeyFingerprint,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (baseUrl != null) 'base_url': baseUrl,
+      if (name != null) 'name': name,
+      if (shortName != null) 'short_name': shortName,
+      if (website != null) 'website': website,
+      if (signingKeyFingerprint != null)
+        'signing_key_fingerprint': signingKeyFingerprint,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ExtensionReposCompanion copyWith(
+      {Value<String>? baseUrl,
+      Value<String>? name,
+      Value<String?>? shortName,
+      Value<String>? website,
+      Value<String>? signingKeyFingerprint,
+      Value<int>? rowid}) {
+    return ExtensionReposCompanion(
+      baseUrl: baseUrl ?? this.baseUrl,
+      name: name ?? this.name,
+      shortName: shortName ?? this.shortName,
+      website: website ?? this.website,
+      signingKeyFingerprint:
+          signingKeyFingerprint ?? this.signingKeyFingerprint,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (baseUrl.present) {
+      map['base_url'] = Variable<String>(baseUrl.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (shortName.present) {
+      map['short_name'] = Variable<String>(shortName.value);
+    }
+    if (website.present) {
+      map['website'] = Variable<String>(website.value);
+    }
+    if (signingKeyFingerprint.present) {
+      map['signing_key_fingerprint'] =
+          Variable<String>(signingKeyFingerprint.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExtensionReposCompanion(')
+          ..write('baseUrl: $baseUrl, ')
+          ..write('name: $name, ')
+          ..write('shortName: $shortName, ')
+          ..write('website: $website, ')
+          ..write('signingKeyFingerprint: $signingKeyFingerprint, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class ScanlatorPriority extends Table
+    with TableInfo<ScanlatorPriority, ScanlatorPriorityData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  ScanlatorPriority(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mangaIdMeta =
+      const VerificationMeta('mangaId');
+  late final GeneratedColumn<int> mangaId = GeneratedColumn<int>(
+      'manga_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _scanlatorMeta =
+      const VerificationMeta('scanlator');
+  late final GeneratedColumn<String> scanlator = GeneratedColumn<String>(
+      'scanlator', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _priorityMeta =
+      const VerificationMeta('priority');
+  late final GeneratedColumn<int> priority = GeneratedColumn<int>(
+      'priority', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  @override
+  List<GeneratedColumn> get $columns => [mangaId, scanlator, priority];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'scanlator_priority';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<ScanlatorPriorityData> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('manga_id')) {
+      context.handle(_mangaIdMeta,
+          mangaId.isAcceptableOrUnknown(data['manga_id']!, _mangaIdMeta));
+    } else if (isInserting) {
+      context.missing(_mangaIdMeta);
+    }
+    if (data.containsKey('scanlator')) {
+      context.handle(_scanlatorMeta,
+          scanlator.isAcceptableOrUnknown(data['scanlator']!, _scanlatorMeta));
+    } else if (isInserting) {
+      context.missing(_scanlatorMeta);
+    }
+    if (data.containsKey('priority')) {
+      context.handle(_priorityMeta,
+          priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta));
+    } else if (isInserting) {
+      context.missing(_priorityMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mangaId, scanlator};
+  @override
+  ScanlatorPriorityData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ScanlatorPriorityData(
+      mangaId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}manga_id'])!,
+      scanlator: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}scanlator'])!,
+      priority: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}priority'])!,
+    );
+  }
+
+  @override
+  ScanlatorPriority createAlias(String alias) {
+    return ScanlatorPriority(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const [
+        'PRIMARY KEY(manga_id, scanlator)',
+        'FOREIGN KEY(manga_id)REFERENCES mangas(_id)ON DELETE CASCADE'
+      ];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class ScanlatorPriorityData extends DataClass
+    implements Insertable<ScanlatorPriorityData> {
+  final int mangaId;
+  final String scanlator;
+  final int priority;
+  const ScanlatorPriorityData(
+      {required this.mangaId, required this.scanlator, required this.priority});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['manga_id'] = Variable<int>(mangaId);
+    map['scanlator'] = Variable<String>(scanlator);
+    map['priority'] = Variable<int>(priority);
+    return map;
+  }
+
+  ScanlatorPriorityCompanion toCompanion(bool nullToAbsent) {
+    return ScanlatorPriorityCompanion(
+      mangaId: Value(mangaId),
+      scanlator: Value(scanlator),
+      priority: Value(priority),
+    );
+  }
+
+  factory ScanlatorPriorityData.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ScanlatorPriorityData(
+      mangaId: serializer.fromJson<int>(json['manga_id']),
+      scanlator: serializer.fromJson<String>(json['scanlator']),
+      priority: serializer.fromJson<int>(json['priority']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'manga_id': serializer.toJson<int>(mangaId),
+      'scanlator': serializer.toJson<String>(scanlator),
+      'priority': serializer.toJson<int>(priority),
+    };
+  }
+
+  ScanlatorPriorityData copyWith(
+          {int? mangaId, String? scanlator, int? priority}) =>
+      ScanlatorPriorityData(
+        mangaId: mangaId ?? this.mangaId,
+        scanlator: scanlator ?? this.scanlator,
+        priority: priority ?? this.priority,
+      );
+  ScanlatorPriorityData copyWithCompanion(ScanlatorPriorityCompanion data) {
+    return ScanlatorPriorityData(
+      mangaId: data.mangaId.present ? data.mangaId.value : this.mangaId,
+      scanlator: data.scanlator.present ? data.scanlator.value : this.scanlator,
+      priority: data.priority.present ? data.priority.value : this.priority,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ScanlatorPriorityData(')
+          ..write('mangaId: $mangaId, ')
+          ..write('scanlator: $scanlator, ')
+          ..write('priority: $priority')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(mangaId, scanlator, priority);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ScanlatorPriorityData &&
+          other.mangaId == this.mangaId &&
+          other.scanlator == this.scanlator &&
+          other.priority == this.priority);
+}
+
+class ScanlatorPriorityCompanion
+    extends UpdateCompanion<ScanlatorPriorityData> {
+  final Value<int> mangaId;
+  final Value<String> scanlator;
+  final Value<int> priority;
+  final Value<int> rowid;
+  const ScanlatorPriorityCompanion({
+    this.mangaId = const Value.absent(),
+    this.scanlator = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ScanlatorPriorityCompanion.insert({
+    required int mangaId,
+    required String scanlator,
+    required int priority,
+    this.rowid = const Value.absent(),
+  })  : mangaId = Value(mangaId),
+        scanlator = Value(scanlator),
+        priority = Value(priority);
+  static Insertable<ScanlatorPriorityData> custom({
+    Expression<int>? mangaId,
+    Expression<String>? scanlator,
+    Expression<int>? priority,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mangaId != null) 'manga_id': mangaId,
+      if (scanlator != null) 'scanlator': scanlator,
+      if (priority != null) 'priority': priority,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ScanlatorPriorityCompanion copyWith(
+      {Value<int>? mangaId,
+      Value<String>? scanlator,
+      Value<int>? priority,
+      Value<int>? rowid}) {
+    return ScanlatorPriorityCompanion(
+      mangaId: mangaId ?? this.mangaId,
+      scanlator: scanlator ?? this.scanlator,
+      priority: priority ?? this.priority,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mangaId.present) {
+      map['manga_id'] = Variable<int>(mangaId.value);
+    }
+    if (scanlator.present) {
+      map['scanlator'] = Variable<String>(scanlator.value);
+    }
+    if (priority.present) {
+      map['priority'] = Variable<int>(priority.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ScanlatorPriorityCompanion(')
+          ..write('mangaId: $mangaId, ')
+          ..write('scanlator: $scanlator, ')
+          ..write('priority: $priority, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class ExcludedScanlators extends Table
+    with TableInfo<ExcludedScanlators, ExcludedScanlator> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  ExcludedScanlators(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mangaIdMeta =
+      const VerificationMeta('mangaId');
+  late final GeneratedColumn<int> mangaId = GeneratedColumn<int>(
+      'manga_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _scanlatorMeta =
+      const VerificationMeta('scanlator');
+  late final GeneratedColumn<String> scanlator = GeneratedColumn<String>(
+      'scanlator', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  @override
+  List<GeneratedColumn> get $columns => [mangaId, scanlator];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'excluded_scanlators';
+  @override
+  VerificationContext validateIntegrity(Insertable<ExcludedScanlator> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('manga_id')) {
+      context.handle(_mangaIdMeta,
+          mangaId.isAcceptableOrUnknown(data['manga_id']!, _mangaIdMeta));
+    } else if (isInserting) {
+      context.missing(_mangaIdMeta);
+    }
+    if (data.containsKey('scanlator')) {
+      context.handle(_scanlatorMeta,
+          scanlator.isAcceptableOrUnknown(data['scanlator']!, _scanlatorMeta));
+    } else if (isInserting) {
+      context.missing(_scanlatorMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => const {};
+  @override
+  ExcludedScanlator map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ExcludedScanlator(
+      mangaId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}manga_id'])!,
+      scanlator: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}scanlator'])!,
+    );
+  }
+
+  @override
+  ExcludedScanlators createAlias(String alias) {
+    return ExcludedScanlators(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints =>
+      const ['FOREIGN KEY(manga_id)REFERENCES mangas(_id)ON DELETE CASCADE'];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class ExcludedScanlator extends DataClass
+    implements Insertable<ExcludedScanlator> {
+  final int mangaId;
+  final String scanlator;
+  const ExcludedScanlator({required this.mangaId, required this.scanlator});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['manga_id'] = Variable<int>(mangaId);
+    map['scanlator'] = Variable<String>(scanlator);
+    return map;
+  }
+
+  ExcludedScanlatorsCompanion toCompanion(bool nullToAbsent) {
+    return ExcludedScanlatorsCompanion(
+      mangaId: Value(mangaId),
+      scanlator: Value(scanlator),
+    );
+  }
+
+  factory ExcludedScanlator.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ExcludedScanlator(
+      mangaId: serializer.fromJson<int>(json['manga_id']),
+      scanlator: serializer.fromJson<String>(json['scanlator']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'manga_id': serializer.toJson<int>(mangaId),
+      'scanlator': serializer.toJson<String>(scanlator),
+    };
+  }
+
+  ExcludedScanlator copyWith({int? mangaId, String? scanlator}) =>
+      ExcludedScanlator(
+        mangaId: mangaId ?? this.mangaId,
+        scanlator: scanlator ?? this.scanlator,
+      );
+  ExcludedScanlator copyWithCompanion(ExcludedScanlatorsCompanion data) {
+    return ExcludedScanlator(
+      mangaId: data.mangaId.present ? data.mangaId.value : this.mangaId,
+      scanlator: data.scanlator.present ? data.scanlator.value : this.scanlator,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExcludedScanlator(')
+          ..write('mangaId: $mangaId, ')
+          ..write('scanlator: $scanlator')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(mangaId, scanlator);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExcludedScanlator &&
+          other.mangaId == this.mangaId &&
+          other.scanlator == this.scanlator);
+}
+
+class ExcludedScanlatorsCompanion extends UpdateCompanion<ExcludedScanlator> {
+  final Value<int> mangaId;
+  final Value<String> scanlator;
+  final Value<int> rowid;
+  const ExcludedScanlatorsCompanion({
+    this.mangaId = const Value.absent(),
+    this.scanlator = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ExcludedScanlatorsCompanion.insert({
+    required int mangaId,
+    required String scanlator,
+    this.rowid = const Value.absent(),
+  })  : mangaId = Value(mangaId),
+        scanlator = Value(scanlator);
+  static Insertable<ExcludedScanlator> custom({
+    Expression<int>? mangaId,
+    Expression<String>? scanlator,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mangaId != null) 'manga_id': mangaId,
+      if (scanlator != null) 'scanlator': scanlator,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ExcludedScanlatorsCompanion copyWith(
+      {Value<int>? mangaId, Value<String>? scanlator, Value<int>? rowid}) {
+    return ExcludedScanlatorsCompanion(
+      mangaId: mangaId ?? this.mangaId,
+      scanlator: scanlator ?? this.scanlator,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mangaId.present) {
+      map['manga_id'] = Variable<int>(mangaId.value);
+    }
+    if (scanlator.present) {
+      map['scanlator'] = Variable<String>(scanlator.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExcludedScanlatorsCompanion(')
+          ..write('mangaId: $mangaId, ')
+          ..write('scanlator: $scanlator, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class Sources extends Table with TableInfo<Sources, Source> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  Sources(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      '_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: 'NOT NULL PRIMARY KEY');
+  static const VerificationMeta _langMeta = const VerificationMeta('lang');
+  late final GeneratedColumn<String> lang = GeneratedColumn<String>(
+      'lang', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  @override
+  List<GeneratedColumn> get $columns => [id, lang, name];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sources';
+  @override
+  VerificationContext validateIntegrity(Insertable<Source> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('_id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['_id']!, _idMeta));
+    }
+    if (data.containsKey('lang')) {
+      context.handle(
+          _langMeta, lang.isAcceptableOrUnknown(data['lang']!, _langMeta));
+    } else if (isInserting) {
+      context.missing(_langMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  Source map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Source(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}_id'])!,
+      lang: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}lang'])!,
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+    );
+  }
+
+  @override
+  Sources createAlias(String alias) {
+    return Sources(attachedDatabase, alias);
+  }
+
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class Source extends DataClass implements Insertable<Source> {
+  final int id;
+  final String lang;
+  final String name;
+  const Source({required this.id, required this.lang, required this.name});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['_id'] = Variable<int>(id);
+    map['lang'] = Variable<String>(lang);
+    map['name'] = Variable<String>(name);
+    return map;
+  }
+
+  SourcesCompanion toCompanion(bool nullToAbsent) {
+    return SourcesCompanion(
+      id: Value(id),
+      lang: Value(lang),
+      name: Value(name),
+    );
+  }
+
+  factory Source.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Source(
+      id: serializer.fromJson<int>(json['_id']),
+      lang: serializer.fromJson<String>(json['lang']),
+      name: serializer.fromJson<String>(json['name']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      '_id': serializer.toJson<int>(id),
+      'lang': serializer.toJson<String>(lang),
+      'name': serializer.toJson<String>(name),
+    };
+  }
+
+  Source copyWith({int? id, String? lang, String? name}) => Source(
+        id: id ?? this.id,
+        lang: lang ?? this.lang,
+        name: name ?? this.name,
+      );
+  Source copyWithCompanion(SourcesCompanion data) {
+    return Source(
+      id: data.id.present ? data.id.value : this.id,
+      lang: data.lang.present ? data.lang.value : this.lang,
+      name: data.name.present ? data.name.value : this.name,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Source(')
+          ..write('id: $id, ')
+          ..write('lang: $lang, ')
+          ..write('name: $name')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, lang, name);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Source &&
+          other.id == this.id &&
+          other.lang == this.lang &&
+          other.name == this.name);
+}
+
+class SourcesCompanion extends UpdateCompanion<Source> {
+  final Value<int> id;
+  final Value<String> lang;
+  final Value<String> name;
+  const SourcesCompanion({
+    this.id = const Value.absent(),
+    this.lang = const Value.absent(),
+    this.name = const Value.absent(),
+  });
+  SourcesCompanion.insert({
+    this.id = const Value.absent(),
+    required String lang,
+    required String name,
+  })  : lang = Value(lang),
+        name = Value(name);
+  static Insertable<Source> custom({
+    Expression<int>? id,
+    Expression<String>? lang,
+    Expression<String>? name,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) '_id': id,
+      if (lang != null) 'lang': lang,
+      if (name != null) 'name': name,
+    });
+  }
+
+  SourcesCompanion copyWith(
+      {Value<int>? id, Value<String>? lang, Value<String>? name}) {
+    return SourcesCompanion(
+      id: id ?? this.id,
+      lang: lang ?? this.lang,
+      name: name ?? this.name,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['_id'] = Variable<int>(id.value);
+    }
+    if (lang.present) {
+      map['lang'] = Variable<String>(lang.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SourcesCompanion(')
+          ..write('id: $id, ')
+          ..write('lang: $lang, ')
+          ..write('name: $name')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class MangaSync extends Table with TableInfo<MangaSync, MangaSyncData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  MangaSync(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      '_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: 'NOT NULL PRIMARY KEY');
+  static const VerificationMeta _mangaIdMeta =
+      const VerificationMeta('mangaId');
+  late final GeneratedColumn<int> mangaId = GeneratedColumn<int>(
+      'manga_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _syncIdMeta = const VerificationMeta('syncId');
+  late final GeneratedColumn<int> syncId = GeneratedColumn<int>(
+      'sync_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _remoteIdMeta =
+      const VerificationMeta('remoteId');
+  late final GeneratedColumn<int> remoteId = GeneratedColumn<int>(
+      'remote_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _libraryIdMeta =
+      const VerificationMeta('libraryId');
+  late final GeneratedColumn<int> libraryId = GeneratedColumn<int>(
+      'library_id', aliasedName, true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: '');
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _lastChapterReadMeta =
+      const VerificationMeta('lastChapterRead');
+  late final GeneratedColumn<double> lastChapterRead = GeneratedColumn<double>(
+      'last_chapter_read', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _totalChaptersMeta =
+      const VerificationMeta('totalChapters');
+  late final GeneratedColumn<int> totalChapters = GeneratedColumn<int>(
+      'total_chapters', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  late final GeneratedColumn<int> status = GeneratedColumn<int>(
+      'status', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _scoreMeta = const VerificationMeta('score');
+  late final GeneratedColumn<double> score = GeneratedColumn<double>(
+      'score', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _remoteUrlMeta =
+      const VerificationMeta('remoteUrl');
+  late final GeneratedColumn<String> remoteUrl = GeneratedColumn<String>(
+      'remote_url', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _startDateMeta =
+      const VerificationMeta('startDate');
+  late final GeneratedColumn<int> startDate = GeneratedColumn<int>(
+      'start_date', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _finishDateMeta =
+      const VerificationMeta('finishDate');
+  late final GeneratedColumn<int> finishDate = GeneratedColumn<int>(
+      'finish_date', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _privateMeta =
+      const VerificationMeta('private');
+  late final GeneratedColumn<int> private = GeneratedColumn<int>(
+      'private', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: 'NOT NULL DEFAULT 0',
+      defaultValue: const CustomExpression('0'));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        mangaId,
+        syncId,
+        remoteId,
+        libraryId,
+        title,
+        lastChapterRead,
+        totalChapters,
+        status,
+        score,
+        remoteUrl,
+        startDate,
+        finishDate,
+        private
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_sync';
+  @override
+  VerificationContext validateIntegrity(Insertable<MangaSyncData> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('_id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['_id']!, _idMeta));
+    }
+    if (data.containsKey('manga_id')) {
+      context.handle(_mangaIdMeta,
+          mangaId.isAcceptableOrUnknown(data['manga_id']!, _mangaIdMeta));
+    } else if (isInserting) {
+      context.missing(_mangaIdMeta);
+    }
+    if (data.containsKey('sync_id')) {
+      context.handle(_syncIdMeta,
+          syncId.isAcceptableOrUnknown(data['sync_id']!, _syncIdMeta));
+    } else if (isInserting) {
+      context.missing(_syncIdMeta);
+    }
+    if (data.containsKey('remote_id')) {
+      context.handle(_remoteIdMeta,
+          remoteId.isAcceptableOrUnknown(data['remote_id']!, _remoteIdMeta));
+    } else if (isInserting) {
+      context.missing(_remoteIdMeta);
+    }
+    if (data.containsKey('library_id')) {
+      context.handle(_libraryIdMeta,
+          libraryId.isAcceptableOrUnknown(data['library_id']!, _libraryIdMeta));
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('last_chapter_read')) {
+      context.handle(
+          _lastChapterReadMeta,
+          lastChapterRead.isAcceptableOrUnknown(
+              data['last_chapter_read']!, _lastChapterReadMeta));
+    } else if (isInserting) {
+      context.missing(_lastChapterReadMeta);
+    }
+    if (data.containsKey('total_chapters')) {
+      context.handle(
+          _totalChaptersMeta,
+          totalChapters.isAcceptableOrUnknown(
+              data['total_chapters']!, _totalChaptersMeta));
+    } else if (isInserting) {
+      context.missing(_totalChaptersMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(_statusMeta,
+          status.isAcceptableOrUnknown(data['status']!, _statusMeta));
+    } else if (isInserting) {
+      context.missing(_statusMeta);
+    }
+    if (data.containsKey('score')) {
+      context.handle(
+          _scoreMeta, score.isAcceptableOrUnknown(data['score']!, _scoreMeta));
+    } else if (isInserting) {
+      context.missing(_scoreMeta);
+    }
+    if (data.containsKey('remote_url')) {
+      context.handle(_remoteUrlMeta,
+          remoteUrl.isAcceptableOrUnknown(data['remote_url']!, _remoteUrlMeta));
+    } else if (isInserting) {
+      context.missing(_remoteUrlMeta);
+    }
+    if (data.containsKey('start_date')) {
+      context.handle(_startDateMeta,
+          startDate.isAcceptableOrUnknown(data['start_date']!, _startDateMeta));
+    } else if (isInserting) {
+      context.missing(_startDateMeta);
+    }
+    if (data.containsKey('finish_date')) {
+      context.handle(
+          _finishDateMeta,
+          finishDate.isAcceptableOrUnknown(
+              data['finish_date']!, _finishDateMeta));
+    } else if (isInserting) {
+      context.missing(_finishDateMeta);
+    }
+    if (data.containsKey('private')) {
+      context.handle(_privateMeta,
+          private.isAcceptableOrUnknown(data['private']!, _privateMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {mangaId, syncId},
+      ];
+  @override
+  MangaSyncData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaSyncData(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}_id'])!,
+      mangaId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}manga_id'])!,
+      syncId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sync_id'])!,
+      remoteId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}remote_id'])!,
+      libraryId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}library_id']),
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      lastChapterRead: attachedDatabase.typeMapping.read(
+          DriftSqlType.double, data['${effectivePrefix}last_chapter_read'])!,
+      totalChapters: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}total_chapters'])!,
+      status: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}status'])!,
+      score: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}score'])!,
+      remoteUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}remote_url'])!,
+      startDate: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}start_date'])!,
+      finishDate: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}finish_date'])!,
+      private: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}private'])!,
+    );
+  }
+
+  @override
+  MangaSync createAlias(String alias) {
+    return MangaSync(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const [
+        'UNIQUE(manga_id, sync_id)ON CONFLICT REPLACE',
+        'FOREIGN KEY(manga_id)REFERENCES mangas(_id)ON DELETE CASCADE'
+      ];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class MangaSyncData extends DataClass implements Insertable<MangaSyncData> {
+  final int id;
+  final int mangaId;
+  final int syncId;
+  final int remoteId;
+  final int? libraryId;
+  final String title;
+  final double lastChapterRead;
+  final int totalChapters;
+  final int status;
+  final double score;
+  final String remoteUrl;
+  final int startDate;
+  final int finishDate;
+  final int private;
+  const MangaSyncData(
+      {required this.id,
+      required this.mangaId,
+      required this.syncId,
+      required this.remoteId,
+      this.libraryId,
+      required this.title,
+      required this.lastChapterRead,
+      required this.totalChapters,
+      required this.status,
+      required this.score,
+      required this.remoteUrl,
+      required this.startDate,
+      required this.finishDate,
+      required this.private});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['_id'] = Variable<int>(id);
+    map['manga_id'] = Variable<int>(mangaId);
+    map['sync_id'] = Variable<int>(syncId);
+    map['remote_id'] = Variable<int>(remoteId);
+    if (!nullToAbsent || libraryId != null) {
+      map['library_id'] = Variable<int>(libraryId);
+    }
+    map['title'] = Variable<String>(title);
+    map['last_chapter_read'] = Variable<double>(lastChapterRead);
+    map['total_chapters'] = Variable<int>(totalChapters);
+    map['status'] = Variable<int>(status);
+    map['score'] = Variable<double>(score);
+    map['remote_url'] = Variable<String>(remoteUrl);
+    map['start_date'] = Variable<int>(startDate);
+    map['finish_date'] = Variable<int>(finishDate);
+    map['private'] = Variable<int>(private);
+    return map;
+  }
+
+  MangaSyncCompanion toCompanion(bool nullToAbsent) {
+    return MangaSyncCompanion(
+      id: Value(id),
+      mangaId: Value(mangaId),
+      syncId: Value(syncId),
+      remoteId: Value(remoteId),
+      libraryId: libraryId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(libraryId),
+      title: Value(title),
+      lastChapterRead: Value(lastChapterRead),
+      totalChapters: Value(totalChapters),
+      status: Value(status),
+      score: Value(score),
+      remoteUrl: Value(remoteUrl),
+      startDate: Value(startDate),
+      finishDate: Value(finishDate),
+      private: Value(private),
+    );
+  }
+
+  factory MangaSyncData.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaSyncData(
+      id: serializer.fromJson<int>(json['_id']),
+      mangaId: serializer.fromJson<int>(json['manga_id']),
+      syncId: serializer.fromJson<int>(json['sync_id']),
+      remoteId: serializer.fromJson<int>(json['remote_id']),
+      libraryId: serializer.fromJson<int?>(json['library_id']),
+      title: serializer.fromJson<String>(json['title']),
+      lastChapterRead: serializer.fromJson<double>(json['last_chapter_read']),
+      totalChapters: serializer.fromJson<int>(json['total_chapters']),
+      status: serializer.fromJson<int>(json['status']),
+      score: serializer.fromJson<double>(json['score']),
+      remoteUrl: serializer.fromJson<String>(json['remote_url']),
+      startDate: serializer.fromJson<int>(json['start_date']),
+      finishDate: serializer.fromJson<int>(json['finish_date']),
+      private: serializer.fromJson<int>(json['private']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      '_id': serializer.toJson<int>(id),
+      'manga_id': serializer.toJson<int>(mangaId),
+      'sync_id': serializer.toJson<int>(syncId),
+      'remote_id': serializer.toJson<int>(remoteId),
+      'library_id': serializer.toJson<int?>(libraryId),
+      'title': serializer.toJson<String>(title),
+      'last_chapter_read': serializer.toJson<double>(lastChapterRead),
+      'total_chapters': serializer.toJson<int>(totalChapters),
+      'status': serializer.toJson<int>(status),
+      'score': serializer.toJson<double>(score),
+      'remote_url': serializer.toJson<String>(remoteUrl),
+      'start_date': serializer.toJson<int>(startDate),
+      'finish_date': serializer.toJson<int>(finishDate),
+      'private': serializer.toJson<int>(private),
+    };
+  }
+
+  MangaSyncData copyWith(
+          {int? id,
+          int? mangaId,
+          int? syncId,
+          int? remoteId,
+          Value<int?> libraryId = const Value.absent(),
+          String? title,
+          double? lastChapterRead,
+          int? totalChapters,
+          int? status,
+          double? score,
+          String? remoteUrl,
+          int? startDate,
+          int? finishDate,
+          int? private}) =>
+      MangaSyncData(
+        id: id ?? this.id,
+        mangaId: mangaId ?? this.mangaId,
+        syncId: syncId ?? this.syncId,
+        remoteId: remoteId ?? this.remoteId,
+        libraryId: libraryId.present ? libraryId.value : this.libraryId,
+        title: title ?? this.title,
+        lastChapterRead: lastChapterRead ?? this.lastChapterRead,
+        totalChapters: totalChapters ?? this.totalChapters,
+        status: status ?? this.status,
+        score: score ?? this.score,
+        remoteUrl: remoteUrl ?? this.remoteUrl,
+        startDate: startDate ?? this.startDate,
+        finishDate: finishDate ?? this.finishDate,
+        private: private ?? this.private,
+      );
+  MangaSyncData copyWithCompanion(MangaSyncCompanion data) {
+    return MangaSyncData(
+      id: data.id.present ? data.id.value : this.id,
+      mangaId: data.mangaId.present ? data.mangaId.value : this.mangaId,
+      syncId: data.syncId.present ? data.syncId.value : this.syncId,
+      remoteId: data.remoteId.present ? data.remoteId.value : this.remoteId,
+      libraryId: data.libraryId.present ? data.libraryId.value : this.libraryId,
+      title: data.title.present ? data.title.value : this.title,
+      lastChapterRead: data.lastChapterRead.present
+          ? data.lastChapterRead.value
+          : this.lastChapterRead,
+      totalChapters: data.totalChapters.present
+          ? data.totalChapters.value
+          : this.totalChapters,
+      status: data.status.present ? data.status.value : this.status,
+      score: data.score.present ? data.score.value : this.score,
+      remoteUrl: data.remoteUrl.present ? data.remoteUrl.value : this.remoteUrl,
+      startDate: data.startDate.present ? data.startDate.value : this.startDate,
+      finishDate:
+          data.finishDate.present ? data.finishDate.value : this.finishDate,
+      private: data.private.present ? data.private.value : this.private,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaSyncData(')
+          ..write('id: $id, ')
+          ..write('mangaId: $mangaId, ')
+          ..write('syncId: $syncId, ')
+          ..write('remoteId: $remoteId, ')
+          ..write('libraryId: $libraryId, ')
+          ..write('title: $title, ')
+          ..write('lastChapterRead: $lastChapterRead, ')
+          ..write('totalChapters: $totalChapters, ')
+          ..write('status: $status, ')
+          ..write('score: $score, ')
+          ..write('remoteUrl: $remoteUrl, ')
+          ..write('startDate: $startDate, ')
+          ..write('finishDate: $finishDate, ')
+          ..write('private: $private')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      mangaId,
+      syncId,
+      remoteId,
+      libraryId,
+      title,
+      lastChapterRead,
+      totalChapters,
+      status,
+      score,
+      remoteUrl,
+      startDate,
+      finishDate,
+      private);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaSyncData &&
+          other.id == this.id &&
+          other.mangaId == this.mangaId &&
+          other.syncId == this.syncId &&
+          other.remoteId == this.remoteId &&
+          other.libraryId == this.libraryId &&
+          other.title == this.title &&
+          other.lastChapterRead == this.lastChapterRead &&
+          other.totalChapters == this.totalChapters &&
+          other.status == this.status &&
+          other.score == this.score &&
+          other.remoteUrl == this.remoteUrl &&
+          other.startDate == this.startDate &&
+          other.finishDate == this.finishDate &&
+          other.private == this.private);
+}
+
+class MangaSyncCompanion extends UpdateCompanion<MangaSyncData> {
+  final Value<int> id;
+  final Value<int> mangaId;
+  final Value<int> syncId;
+  final Value<int> remoteId;
+  final Value<int?> libraryId;
+  final Value<String> title;
+  final Value<double> lastChapterRead;
+  final Value<int> totalChapters;
+  final Value<int> status;
+  final Value<double> score;
+  final Value<String> remoteUrl;
+  final Value<int> startDate;
+  final Value<int> finishDate;
+  final Value<int> private;
+  const MangaSyncCompanion({
+    this.id = const Value.absent(),
+    this.mangaId = const Value.absent(),
+    this.syncId = const Value.absent(),
+    this.remoteId = const Value.absent(),
+    this.libraryId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.lastChapterRead = const Value.absent(),
+    this.totalChapters = const Value.absent(),
+    this.status = const Value.absent(),
+    this.score = const Value.absent(),
+    this.remoteUrl = const Value.absent(),
+    this.startDate = const Value.absent(),
+    this.finishDate = const Value.absent(),
+    this.private = const Value.absent(),
+  });
+  MangaSyncCompanion.insert({
+    this.id = const Value.absent(),
+    required int mangaId,
+    required int syncId,
+    required int remoteId,
+    this.libraryId = const Value.absent(),
+    required String title,
+    required double lastChapterRead,
+    required int totalChapters,
+    required int status,
+    required double score,
+    required String remoteUrl,
+    required int startDate,
+    required int finishDate,
+    this.private = const Value.absent(),
+  })  : mangaId = Value(mangaId),
+        syncId = Value(syncId),
+        remoteId = Value(remoteId),
+        title = Value(title),
+        lastChapterRead = Value(lastChapterRead),
+        totalChapters = Value(totalChapters),
+        status = Value(status),
+        score = Value(score),
+        remoteUrl = Value(remoteUrl),
+        startDate = Value(startDate),
+        finishDate = Value(finishDate);
+  static Insertable<MangaSyncData> custom({
+    Expression<int>? id,
+    Expression<int>? mangaId,
+    Expression<int>? syncId,
+    Expression<int>? remoteId,
+    Expression<int>? libraryId,
+    Expression<String>? title,
+    Expression<double>? lastChapterRead,
+    Expression<int>? totalChapters,
+    Expression<int>? status,
+    Expression<double>? score,
+    Expression<String>? remoteUrl,
+    Expression<int>? startDate,
+    Expression<int>? finishDate,
+    Expression<int>? private,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) '_id': id,
+      if (mangaId != null) 'manga_id': mangaId,
+      if (syncId != null) 'sync_id': syncId,
+      if (remoteId != null) 'remote_id': remoteId,
+      if (libraryId != null) 'library_id': libraryId,
+      if (title != null) 'title': title,
+      if (lastChapterRead != null) 'last_chapter_read': lastChapterRead,
+      if (totalChapters != null) 'total_chapters': totalChapters,
+      if (status != null) 'status': status,
+      if (score != null) 'score': score,
+      if (remoteUrl != null) 'remote_url': remoteUrl,
+      if (startDate != null) 'start_date': startDate,
+      if (finishDate != null) 'finish_date': finishDate,
+      if (private != null) 'private': private,
+    });
+  }
+
+  MangaSyncCompanion copyWith(
+      {Value<int>? id,
+      Value<int>? mangaId,
+      Value<int>? syncId,
+      Value<int>? remoteId,
+      Value<int?>? libraryId,
+      Value<String>? title,
+      Value<double>? lastChapterRead,
+      Value<int>? totalChapters,
+      Value<int>? status,
+      Value<double>? score,
+      Value<String>? remoteUrl,
+      Value<int>? startDate,
+      Value<int>? finishDate,
+      Value<int>? private}) {
+    return MangaSyncCompanion(
+      id: id ?? this.id,
+      mangaId: mangaId ?? this.mangaId,
+      syncId: syncId ?? this.syncId,
+      remoteId: remoteId ?? this.remoteId,
+      libraryId: libraryId ?? this.libraryId,
+      title: title ?? this.title,
+      lastChapterRead: lastChapterRead ?? this.lastChapterRead,
+      totalChapters: totalChapters ?? this.totalChapters,
+      status: status ?? this.status,
+      score: score ?? this.score,
+      remoteUrl: remoteUrl ?? this.remoteUrl,
+      startDate: startDate ?? this.startDate,
+      finishDate: finishDate ?? this.finishDate,
+      private: private ?? this.private,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['_id'] = Variable<int>(id.value);
+    }
+    if (mangaId.present) {
+      map['manga_id'] = Variable<int>(mangaId.value);
+    }
+    if (syncId.present) {
+      map['sync_id'] = Variable<int>(syncId.value);
+    }
+    if (remoteId.present) {
+      map['remote_id'] = Variable<int>(remoteId.value);
+    }
+    if (libraryId.present) {
+      map['library_id'] = Variable<int>(libraryId.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (lastChapterRead.present) {
+      map['last_chapter_read'] = Variable<double>(lastChapterRead.value);
+    }
+    if (totalChapters.present) {
+      map['total_chapters'] = Variable<int>(totalChapters.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<int>(status.value);
+    }
+    if (score.present) {
+      map['score'] = Variable<double>(score.value);
+    }
+    if (remoteUrl.present) {
+      map['remote_url'] = Variable<String>(remoteUrl.value);
+    }
+    if (startDate.present) {
+      map['start_date'] = Variable<int>(startDate.value);
+    }
+    if (finishDate.present) {
+      map['finish_date'] = Variable<int>(finishDate.value);
+    }
+    if (private.present) {
+      map['private'] = Variable<int>(private.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaSyncCompanion(')
+          ..write('id: $id, ')
+          ..write('mangaId: $mangaId, ')
+          ..write('syncId: $syncId, ')
+          ..write('remoteId: $remoteId, ')
+          ..write('libraryId: $libraryId, ')
+          ..write('title: $title, ')
+          ..write('lastChapterRead: $lastChapterRead, ')
+          ..write('totalChapters: $totalChapters, ')
+          ..write('status: $status, ')
+          ..write('score: $score, ')
+          ..write('remoteUrl: $remoteUrl, ')
+          ..write('startDate: $startDate, ')
+          ..write('finishDate: $finishDate, ')
+          ..write('private: $private')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class Chapters extends Table with TableInfo<Chapters, Chapter> {
   @override
   final GeneratedDatabase attachedDatabase;
@@ -1964,11 +3896,850 @@ class ChaptersCompanion extends UpdateCompanion<Chapter> {
   }
 }
 
+class History extends Table with TableInfo<History, HistoryData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  History(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      '_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: 'NOT NULL PRIMARY KEY');
+  static const VerificationMeta _chapterIdMeta =
+      const VerificationMeta('chapterId');
+  late final GeneratedColumn<int> chapterId = GeneratedColumn<int>(
+      'chapter_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL UNIQUE');
+  static const VerificationMeta _lastReadMeta =
+      const VerificationMeta('lastRead');
+  late final GeneratedColumn<int> lastRead = GeneratedColumn<int>(
+      'last_read', aliasedName, true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: '');
+  static const VerificationMeta _timeReadMeta =
+      const VerificationMeta('timeRead');
+  late final GeneratedColumn<int> timeRead = GeneratedColumn<int>(
+      'time_read', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  @override
+  List<GeneratedColumn> get $columns => [id, chapterId, lastRead, timeRead];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'history';
+  @override
+  VerificationContext validateIntegrity(Insertable<HistoryData> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('_id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['_id']!, _idMeta));
+    }
+    if (data.containsKey('chapter_id')) {
+      context.handle(_chapterIdMeta,
+          chapterId.isAcceptableOrUnknown(data['chapter_id']!, _chapterIdMeta));
+    } else if (isInserting) {
+      context.missing(_chapterIdMeta);
+    }
+    if (data.containsKey('last_read')) {
+      context.handle(_lastReadMeta,
+          lastRead.isAcceptableOrUnknown(data['last_read']!, _lastReadMeta));
+    }
+    if (data.containsKey('time_read')) {
+      context.handle(_timeReadMeta,
+          timeRead.isAcceptableOrUnknown(data['time_read']!, _timeReadMeta));
+    } else if (isInserting) {
+      context.missing(_timeReadMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  HistoryData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return HistoryData(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}_id'])!,
+      chapterId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}chapter_id'])!,
+      lastRead: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}last_read']),
+      timeRead: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}time_read'])!,
+    );
+  }
+
+  @override
+  History createAlias(String alias) {
+    return History(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const [
+        'FOREIGN KEY(chapter_id)REFERENCES chapters(_id)ON DELETE CASCADE'
+      ];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class HistoryData extends DataClass implements Insertable<HistoryData> {
+  final int id;
+  final int chapterId;
+  final int? lastRead;
+  final int timeRead;
+  const HistoryData(
+      {required this.id,
+      required this.chapterId,
+      this.lastRead,
+      required this.timeRead});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['_id'] = Variable<int>(id);
+    map['chapter_id'] = Variable<int>(chapterId);
+    if (!nullToAbsent || lastRead != null) {
+      map['last_read'] = Variable<int>(lastRead);
+    }
+    map['time_read'] = Variable<int>(timeRead);
+    return map;
+  }
+
+  HistoryCompanion toCompanion(bool nullToAbsent) {
+    return HistoryCompanion(
+      id: Value(id),
+      chapterId: Value(chapterId),
+      lastRead: lastRead == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastRead),
+      timeRead: Value(timeRead),
+    );
+  }
+
+  factory HistoryData.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return HistoryData(
+      id: serializer.fromJson<int>(json['_id']),
+      chapterId: serializer.fromJson<int>(json['chapter_id']),
+      lastRead: serializer.fromJson<int?>(json['last_read']),
+      timeRead: serializer.fromJson<int>(json['time_read']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      '_id': serializer.toJson<int>(id),
+      'chapter_id': serializer.toJson<int>(chapterId),
+      'last_read': serializer.toJson<int?>(lastRead),
+      'time_read': serializer.toJson<int>(timeRead),
+    };
+  }
+
+  HistoryData copyWith(
+          {int? id,
+          int? chapterId,
+          Value<int?> lastRead = const Value.absent(),
+          int? timeRead}) =>
+      HistoryData(
+        id: id ?? this.id,
+        chapterId: chapterId ?? this.chapterId,
+        lastRead: lastRead.present ? lastRead.value : this.lastRead,
+        timeRead: timeRead ?? this.timeRead,
+      );
+  HistoryData copyWithCompanion(HistoryCompanion data) {
+    return HistoryData(
+      id: data.id.present ? data.id.value : this.id,
+      chapterId: data.chapterId.present ? data.chapterId.value : this.chapterId,
+      lastRead: data.lastRead.present ? data.lastRead.value : this.lastRead,
+      timeRead: data.timeRead.present ? data.timeRead.value : this.timeRead,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('HistoryData(')
+          ..write('id: $id, ')
+          ..write('chapterId: $chapterId, ')
+          ..write('lastRead: $lastRead, ')
+          ..write('timeRead: $timeRead')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, chapterId, lastRead, timeRead);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is HistoryData &&
+          other.id == this.id &&
+          other.chapterId == this.chapterId &&
+          other.lastRead == this.lastRead &&
+          other.timeRead == this.timeRead);
+}
+
+class HistoryCompanion extends UpdateCompanion<HistoryData> {
+  final Value<int> id;
+  final Value<int> chapterId;
+  final Value<int?> lastRead;
+  final Value<int> timeRead;
+  const HistoryCompanion({
+    this.id = const Value.absent(),
+    this.chapterId = const Value.absent(),
+    this.lastRead = const Value.absent(),
+    this.timeRead = const Value.absent(),
+  });
+  HistoryCompanion.insert({
+    this.id = const Value.absent(),
+    required int chapterId,
+    this.lastRead = const Value.absent(),
+    required int timeRead,
+  })  : chapterId = Value(chapterId),
+        timeRead = Value(timeRead);
+  static Insertable<HistoryData> custom({
+    Expression<int>? id,
+    Expression<int>? chapterId,
+    Expression<int>? lastRead,
+    Expression<int>? timeRead,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) '_id': id,
+      if (chapterId != null) 'chapter_id': chapterId,
+      if (lastRead != null) 'last_read': lastRead,
+      if (timeRead != null) 'time_read': timeRead,
+    });
+  }
+
+  HistoryCompanion copyWith(
+      {Value<int>? id,
+      Value<int>? chapterId,
+      Value<int?>? lastRead,
+      Value<int>? timeRead}) {
+    return HistoryCompanion(
+      id: id ?? this.id,
+      chapterId: chapterId ?? this.chapterId,
+      lastRead: lastRead ?? this.lastRead,
+      timeRead: timeRead ?? this.timeRead,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['_id'] = Variable<int>(id.value);
+    }
+    if (chapterId.present) {
+      map['chapter_id'] = Variable<int>(chapterId.value);
+    }
+    if (lastRead.present) {
+      map['last_read'] = Variable<int>(lastRead.value);
+    }
+    if (timeRead.present) {
+      map['time_read'] = Variable<int>(timeRead.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('HistoryCompanion(')
+          ..write('id: $id, ')
+          ..write('chapterId: $chapterId, ')
+          ..write('lastRead: $lastRead, ')
+          ..write('timeRead: $timeRead')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class Categories extends Table with TableInfo<Categories, Category> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  Categories(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      '_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: 'NOT NULL PRIMARY KEY');
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _sortMeta = const VerificationMeta('sort');
+  late final GeneratedColumn<int> sort = GeneratedColumn<int>(
+      'sort', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _flagsMeta = const VerificationMeta('flags');
+  late final GeneratedColumn<int> flags = GeneratedColumn<int>(
+      'flags', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _parentIdMeta =
+      const VerificationMeta('parentId');
+  late final GeneratedColumn<int> parentId = GeneratedColumn<int>(
+      'parent_id', aliasedName, true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints:
+          'DEFAULT NULL REFERENCES categories(_id)ON DELETE SET NULL',
+      defaultValue: const CustomExpression('NULL'));
+  @override
+  List<GeneratedColumn> get $columns => [id, name, sort, flags, parentId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'categories';
+  @override
+  VerificationContext validateIntegrity(Insertable<Category> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('_id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['_id']!, _idMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('sort')) {
+      context.handle(
+          _sortMeta, sort.isAcceptableOrUnknown(data['sort']!, _sortMeta));
+    } else if (isInserting) {
+      context.missing(_sortMeta);
+    }
+    if (data.containsKey('flags')) {
+      context.handle(
+          _flagsMeta, flags.isAcceptableOrUnknown(data['flags']!, _flagsMeta));
+    } else if (isInserting) {
+      context.missing(_flagsMeta);
+    }
+    if (data.containsKey('parent_id')) {
+      context.handle(_parentIdMeta,
+          parentId.isAcceptableOrUnknown(data['parent_id']!, _parentIdMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  Category map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Category(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}_id'])!,
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      sort: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort'])!,
+      flags: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}flags'])!,
+      parentId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}parent_id']),
+    );
+  }
+
+  @override
+  Categories createAlias(String alias) {
+    return Categories(attachedDatabase, alias);
+  }
+
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class Category extends DataClass implements Insertable<Category> {
+  final int id;
+  final String name;
+  final int sort;
+  final int flags;
+  final int? parentId;
+  const Category(
+      {required this.id,
+      required this.name,
+      required this.sort,
+      required this.flags,
+      this.parentId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['_id'] = Variable<int>(id);
+    map['name'] = Variable<String>(name);
+    map['sort'] = Variable<int>(sort);
+    map['flags'] = Variable<int>(flags);
+    if (!nullToAbsent || parentId != null) {
+      map['parent_id'] = Variable<int>(parentId);
+    }
+    return map;
+  }
+
+  CategoriesCompanion toCompanion(bool nullToAbsent) {
+    return CategoriesCompanion(
+      id: Value(id),
+      name: Value(name),
+      sort: Value(sort),
+      flags: Value(flags),
+      parentId: parentId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(parentId),
+    );
+  }
+
+  factory Category.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Category(
+      id: serializer.fromJson<int>(json['_id']),
+      name: serializer.fromJson<String>(json['name']),
+      sort: serializer.fromJson<int>(json['sort']),
+      flags: serializer.fromJson<int>(json['flags']),
+      parentId: serializer.fromJson<int?>(json['parent_id']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      '_id': serializer.toJson<int>(id),
+      'name': serializer.toJson<String>(name),
+      'sort': serializer.toJson<int>(sort),
+      'flags': serializer.toJson<int>(flags),
+      'parent_id': serializer.toJson<int?>(parentId),
+    };
+  }
+
+  Category copyWith(
+          {int? id,
+          String? name,
+          int? sort,
+          int? flags,
+          Value<int?> parentId = const Value.absent()}) =>
+      Category(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        sort: sort ?? this.sort,
+        flags: flags ?? this.flags,
+        parentId: parentId.present ? parentId.value : this.parentId,
+      );
+  Category copyWithCompanion(CategoriesCompanion data) {
+    return Category(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      sort: data.sort.present ? data.sort.value : this.sort,
+      flags: data.flags.present ? data.flags.value : this.flags,
+      parentId: data.parentId.present ? data.parentId.value : this.parentId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Category(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('sort: $sort, ')
+          ..write('flags: $flags, ')
+          ..write('parentId: $parentId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, sort, flags, parentId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Category &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.sort == this.sort &&
+          other.flags == this.flags &&
+          other.parentId == this.parentId);
+}
+
+class CategoriesCompanion extends UpdateCompanion<Category> {
+  final Value<int> id;
+  final Value<String> name;
+  final Value<int> sort;
+  final Value<int> flags;
+  final Value<int?> parentId;
+  const CategoriesCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.sort = const Value.absent(),
+    this.flags = const Value.absent(),
+    this.parentId = const Value.absent(),
+  });
+  CategoriesCompanion.insert({
+    this.id = const Value.absent(),
+    required String name,
+    required int sort,
+    required int flags,
+    this.parentId = const Value.absent(),
+  })  : name = Value(name),
+        sort = Value(sort),
+        flags = Value(flags);
+  static Insertable<Category> custom({
+    Expression<int>? id,
+    Expression<String>? name,
+    Expression<int>? sort,
+    Expression<int>? flags,
+    Expression<int>? parentId,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) '_id': id,
+      if (name != null) 'name': name,
+      if (sort != null) 'sort': sort,
+      if (flags != null) 'flags': flags,
+      if (parentId != null) 'parent_id': parentId,
+    });
+  }
+
+  CategoriesCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? name,
+      Value<int>? sort,
+      Value<int>? flags,
+      Value<int?>? parentId}) {
+    return CategoriesCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      sort: sort ?? this.sort,
+      flags: flags ?? this.flags,
+      parentId: parentId ?? this.parentId,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['_id'] = Variable<int>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (sort.present) {
+      map['sort'] = Variable<int>(sort.value);
+    }
+    if (flags.present) {
+      map['flags'] = Variable<int>(flags.value);
+    }
+    if (parentId.present) {
+      map['parent_id'] = Variable<int>(parentId.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CategoriesCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('sort: $sort, ')
+          ..write('flags: $flags, ')
+          ..write('parentId: $parentId')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class MangasCategories extends Table
+    with TableInfo<MangasCategories, MangasCategory> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  MangasCategories(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      '_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: 'NOT NULL PRIMARY KEY');
+  static const VerificationMeta _mangaIdMeta =
+      const VerificationMeta('mangaId');
+  late final GeneratedColumn<int> mangaId = GeneratedColumn<int>(
+      'manga_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _categoryIdMeta =
+      const VerificationMeta('categoryId');
+  late final GeneratedColumn<int> categoryId = GeneratedColumn<int>(
+      'category_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  @override
+  List<GeneratedColumn> get $columns => [id, mangaId, categoryId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'mangas_categories';
+  @override
+  VerificationContext validateIntegrity(Insertable<MangasCategory> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('_id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['_id']!, _idMeta));
+    }
+    if (data.containsKey('manga_id')) {
+      context.handle(_mangaIdMeta,
+          mangaId.isAcceptableOrUnknown(data['manga_id']!, _mangaIdMeta));
+    } else if (isInserting) {
+      context.missing(_mangaIdMeta);
+    }
+    if (data.containsKey('category_id')) {
+      context.handle(
+          _categoryIdMeta,
+          categoryId.isAcceptableOrUnknown(
+              data['category_id']!, _categoryIdMeta));
+    } else if (isInserting) {
+      context.missing(_categoryIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  MangasCategory map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangasCategory(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}_id'])!,
+      mangaId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}manga_id'])!,
+      categoryId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}category_id'])!,
+    );
+  }
+
+  @override
+  MangasCategories createAlias(String alias) {
+    return MangasCategories(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const [
+        'FOREIGN KEY(category_id)REFERENCES categories(_id)ON DELETE CASCADE',
+        'FOREIGN KEY(manga_id)REFERENCES mangas(_id)ON DELETE CASCADE'
+      ];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class MangasCategory extends DataClass implements Insertable<MangasCategory> {
+  final int id;
+  final int mangaId;
+  final int categoryId;
+  const MangasCategory(
+      {required this.id, required this.mangaId, required this.categoryId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['_id'] = Variable<int>(id);
+    map['manga_id'] = Variable<int>(mangaId);
+    map['category_id'] = Variable<int>(categoryId);
+    return map;
+  }
+
+  MangasCategoriesCompanion toCompanion(bool nullToAbsent) {
+    return MangasCategoriesCompanion(
+      id: Value(id),
+      mangaId: Value(mangaId),
+      categoryId: Value(categoryId),
+    );
+  }
+
+  factory MangasCategory.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangasCategory(
+      id: serializer.fromJson<int>(json['_id']),
+      mangaId: serializer.fromJson<int>(json['manga_id']),
+      categoryId: serializer.fromJson<int>(json['category_id']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      '_id': serializer.toJson<int>(id),
+      'manga_id': serializer.toJson<int>(mangaId),
+      'category_id': serializer.toJson<int>(categoryId),
+    };
+  }
+
+  MangasCategory copyWith({int? id, int? mangaId, int? categoryId}) =>
+      MangasCategory(
+        id: id ?? this.id,
+        mangaId: mangaId ?? this.mangaId,
+        categoryId: categoryId ?? this.categoryId,
+      );
+  MangasCategory copyWithCompanion(MangasCategoriesCompanion data) {
+    return MangasCategory(
+      id: data.id.present ? data.id.value : this.id,
+      mangaId: data.mangaId.present ? data.mangaId.value : this.mangaId,
+      categoryId:
+          data.categoryId.present ? data.categoryId.value : this.categoryId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangasCategory(')
+          ..write('id: $id, ')
+          ..write('mangaId: $mangaId, ')
+          ..write('categoryId: $categoryId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, mangaId, categoryId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangasCategory &&
+          other.id == this.id &&
+          other.mangaId == this.mangaId &&
+          other.categoryId == this.categoryId);
+}
+
+class MangasCategoriesCompanion extends UpdateCompanion<MangasCategory> {
+  final Value<int> id;
+  final Value<int> mangaId;
+  final Value<int> categoryId;
+  const MangasCategoriesCompanion({
+    this.id = const Value.absent(),
+    this.mangaId = const Value.absent(),
+    this.categoryId = const Value.absent(),
+  });
+  MangasCategoriesCompanion.insert({
+    this.id = const Value.absent(),
+    required int mangaId,
+    required int categoryId,
+  })  : mangaId = Value(mangaId),
+        categoryId = Value(categoryId);
+  static Insertable<MangasCategory> custom({
+    Expression<int>? id,
+    Expression<int>? mangaId,
+    Expression<int>? categoryId,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) '_id': id,
+      if (mangaId != null) 'manga_id': mangaId,
+      if (categoryId != null) 'category_id': categoryId,
+    });
+  }
+
+  MangasCategoriesCompanion copyWith(
+      {Value<int>? id, Value<int>? mangaId, Value<int>? categoryId}) {
+    return MangasCategoriesCompanion(
+      id: id ?? this.id,
+      mangaId: mangaId ?? this.mangaId,
+      categoryId: categoryId ?? this.categoryId,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['_id'] = Variable<int>(id.value);
+    }
+    if (mangaId.present) {
+      map['manga_id'] = Variable<int>(mangaId.value);
+    }
+    if (categoryId.present) {
+      map['category_id'] = Variable<int>(categoryId.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangasCategoriesCompanion(')
+          ..write('id: $id, ')
+          ..write('mangaId: $mangaId, ')
+          ..write('categoryId: $categoryId')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final Mangas mangas = Mangas(this);
+  late final MangaLinks mangaLinks = MangaLinks(this);
+  late final Index mangaLinksPrimaryIndex = Index('manga_links_primary_index',
+      'CREATE INDEX IF NOT EXISTS manga_links_primary_index ON manga_links (primary_manga_id)');
+  late final Index mangaLinksLinkedIndex = Index('manga_links_linked_index',
+      'CREATE INDEX IF NOT EXISTS manga_links_linked_index ON manga_links (linked_manga_id)');
+  late final ExtensionRepos extensionRepos = ExtensionRepos(this);
+  late final ScanlatorPriority scanlatorPriority = ScanlatorPriority(this);
+  late final Index scanlatorPriorityMangaIdIndex = Index(
+      'scanlator_priority_manga_id_index',
+      'CREATE INDEX scanlator_priority_manga_id_index ON scanlator_priority (manga_id)');
+  late final ExcludedScanlators excludedScanlators = ExcludedScanlators(this);
+  late final Index excludedScanlatorsMangaIdIndex = Index(
+      'excluded_scanlators_manga_id_index',
+      'CREATE INDEX excluded_scanlators_manga_id_index ON excluded_scanlators (manga_id)');
+  late final Index idxExcludedScanlatorsScanlator = Index(
+      'idx_excluded_scanlators_scanlator',
+      'CREATE INDEX idx_excluded_scanlators_scanlator ON excluded_scanlators (scanlator)');
+  late final Sources sources = Sources(this);
+  late final MangaSync mangaSync = MangaSync(this);
+  late final Index idxMangaSyncMangaId = Index('idx_manga_sync_manga_id',
+      'CREATE INDEX idx_manga_sync_manga_id ON manga_sync (manga_id)');
   late final Chapters chapters = Chapters(this);
+  late final History history = History(this);
+  late final Index historyHistoryChapterIdIndex = Index(
+      'history_history_chapter_id_index',
+      'CREATE INDEX history_history_chapter_id_index ON history (chapter_id)');
+  late final Index idxHistoryLastRead = Index('idx_history_last_read',
+      'CREATE INDEX idx_history_last_read ON history (last_read)');
+  late final Categories categories = Categories(this);
+  late final MangasCategories mangasCategories = MangasCategories(this);
+  late final Index idxMangasCategoriesMangaId = Index(
+      'idx_mangas_categories_manga_id',
+      'CREATE INDEX idx_mangas_categories_manga_id ON mangas_categories (manga_id)');
+  late final Index idxMangasCategoriesCategoryId = Index(
+      'idx_mangas_categories_category_id',
+      'CREATE INDEX idx_mangas_categories_category_id ON mangas_categories (category_id)');
+  late final Trigger insertMangaCategoryUpdateVersion = Trigger(
+      'CREATE TRIGGER insert_manga_category_update_version AFTER INSERT ON mangas_categories BEGIN UPDATE mangas SET version = version + 1 WHERE _id = new.manga_id AND (SELECT is_syncing FROM mangas WHERE _id = new.manga_id) = 0;END',
+      'insert_manga_category_update_version');
+  late final Index categoriesParentIdIndex = Index('categories_parent_id_index',
+      'CREATE INDEX IF NOT EXISTS categories_parent_id_index ON categories (parent_id)');
+  late final Trigger systemCategoryDeleteTrigger = Trigger(
+      'CREATE TRIGGER IF NOT EXISTS system_category_delete_trigger BEFORE DELETE ON categories BEGIN SELECT CASE WHEN old._id <= 0 THEN RAISE (ABORT, \'System category cannot be deleted\') END;END',
+      'system_category_delete_trigger');
   late final Index chaptersMangaIdIndex = Index('chapters_manga_id_index',
       'CREATE INDEX chapters_manga_id_index ON chapters (manga_id)');
   late final Index chaptersUnreadByMangaIndex = Index(
@@ -1997,6 +4768,632 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final Trigger updateMangaVersion = Trigger(
       'CREATE TRIGGER update_manga_version AFTER UPDATE ON mangas BEGIN UPDATE mangas SET version = version + 1 WHERE _id = new._id AND new.is_syncing = 0 AND(new.url != old.url OR new.description != old.description OR new.favorite != old.favorite);END',
       'update_manga_version');
+  Selectable<GetLinksForPrimaryResult> getLinksForPrimary(int primaryId) {
+    return customSelect(
+        'SELECT linked_manga_id, priority FROM manga_links WHERE primary_manga_id = ?1 ORDER BY priority ASC, linked_manga_id ASC',
+        variables: [
+          Variable<int>(primaryId)
+        ],
+        readsFrom: {
+          mangaLinks,
+        }).map((QueryRow row) => GetLinksForPrimaryResult(
+          linkedMangaId: row.read<int>('linked_manga_id'),
+          priority: row.read<int>('priority'),
+        ));
+  }
+
+  Selectable<GetAllLinksForBackupResult> getAllLinksForBackup() {
+    return customSelect(
+        'SELECT P.source AS primarySource, P.url AS primaryUrl, L.source AS linkedSource, L.url AS linkedUrl, ML.priority AS priority FROM manga_links AS ML JOIN mangas AS P ON P._id = ML.primary_manga_id JOIN mangas AS L ON L._id = ML.linked_manga_id',
+        variables: [],
+        readsFrom: {
+          mangas,
+          mangaLinks,
+        }).map((QueryRow row) => GetAllLinksForBackupResult(
+          primarySource: row.read<int>('primarySource'),
+          primaryUrl: row.read<String>('primaryUrl'),
+          linkedSource: row.read<int>('linkedSource'),
+          linkedUrl: row.read<String>('linkedUrl'),
+          priority: row.read<int>('priority'),
+        ));
+  }
+
+  Selectable<Manga> getLinkedMangas(int primaryId) {
+    return customSelect(
+        'SELECT M.* FROM mangas AS M JOIN manga_links AS ML ON M._id = ML.linked_manga_id WHERE ML.primary_manga_id = ?1 ORDER BY ML.priority ASC, ML.linked_manga_id ASC',
+        variables: [
+          Variable<int>(primaryId)
+        ],
+        readsFrom: {
+          mangas,
+          mangaLinks,
+        }).asyncMap(mangas.mapFromRow);
+  }
+
+  Selectable<Manga> getPrimariesOfLinked(int linkedId) {
+    return customSelect(
+        'SELECT M.* FROM mangas AS M JOIN manga_links AS ML ON M._id = ML.primary_manga_id WHERE ML.linked_manga_id = ?1',
+        variables: [
+          Variable<int>(linkedId)
+        ],
+        readsFrom: {
+          mangas,
+          mangaLinks,
+        }).asyncMap(mangas.mapFromRow);
+  }
+
+  Selectable<GetAllLinkedWithPrimaryResult> getAllLinkedWithPrimary() {
+    return customSelect(
+        'SELECT ML.linked_manga_id, M.* FROM manga_links AS ML JOIN mangas AS M ON M._id = ML.primary_manga_id',
+        variables: [],
+        readsFrom: {
+          mangaLinks,
+          mangas,
+        }).map((QueryRow row) => GetAllLinkedWithPrimaryResult(
+          linkedMangaId: row.read<int>('linked_manga_id'),
+          id: row.read<int>('_id'),
+          source: row.read<int>('source'),
+          url: row.read<String>('url'),
+          artist: row.readNullable<String>('artist'),
+          author: row.readNullable<String>('author'),
+          description: row.readNullable<String>('description'),
+          genre: row.readNullable<String>('genre'),
+          title: row.read<String>('title'),
+          status: row.read<int>('status'),
+          thumbnailUrl: row.readNullable<String>('thumbnail_url'),
+          favorite: row.read<int>('favorite'),
+          lastUpdate: row.readNullable<int>('last_update'),
+          nextUpdate: row.readNullable<int>('next_update'),
+          initialized: row.read<int>('initialized'),
+          viewer: row.read<int>('viewer'),
+          chapterFlags: row.read<int>('chapter_flags'),
+          coverLastModified: row.read<int>('cover_last_modified'),
+          dateAdded: row.read<int>('date_added'),
+          updateStrategy: row.read<int>('update_strategy'),
+          calculateInterval: row.read<int>('calculate_interval'),
+          lastModifiedAt: row.read<int>('last_modified_at'),
+          favoriteModifiedAt: row.readNullable<int>('favorite_modified_at'),
+          version: row.read<int>('version'),
+          isSyncing: row.read<int>('is_syncing'),
+          notes: row.read<String>('notes'),
+        ));
+  }
+
+  Future<int> insertLink(int primaryId, int linkedId, int priority) {
+    return customInsert(
+      'INSERT OR IGNORE INTO manga_links (primary_manga_id, linked_manga_id, priority) VALUES (?1, ?2, ?3)',
+      variables: [
+        Variable<int>(primaryId),
+        Variable<int>(linkedId),
+        Variable<int>(priority)
+      ],
+      updates: {mangaLinks},
+    );
+  }
+
+  Future<int> deleteLink(int primaryId, int linkedId) {
+    return customUpdate(
+      'DELETE FROM manga_links WHERE primary_manga_id = ?1 AND linked_manga_id = ?2',
+      variables: [Variable<int>(primaryId), Variable<int>(linkedId)],
+      updates: {mangaLinks},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
+  Future<int> deleteAllLinksForManga(int mangaId) {
+    return customUpdate(
+      'DELETE FROM manga_links WHERE primary_manga_id = ?1 OR linked_manga_id = ?1',
+      variables: [Variable<int>(mangaId)],
+      updates: {mangaLinks},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
+  Future<int> updateLinkPriority(int priority, int primaryId, int linkedId) {
+    return customUpdate(
+      'UPDATE manga_links SET priority = ?1 WHERE primary_manga_id = ?2 AND linked_manga_id = ?3',
+      variables: [
+        Variable<int>(priority),
+        Variable<int>(primaryId),
+        Variable<int>(linkedId)
+      ],
+      updates: {mangaLinks},
+      updateKind: UpdateKind.update,
+    );
+  }
+
+  Selectable<ExtensionRepo> findRepoByBaseUrl(String baseUrl) {
+    return customSelect('SELECT * FROM extension_repos WHERE base_url = ?1',
+        variables: [
+          Variable<String>(baseUrl)
+        ],
+        readsFrom: {
+          extensionRepos,
+        }).asyncMap(extensionRepos.mapFromRow);
+  }
+
+  Selectable<ExtensionRepo> findRepoBySigningKeyFingerprint(
+      String fingerprint) {
+    return customSelect(
+        'SELECT * FROM extension_repos WHERE signing_key_fingerprint = ?1',
+        variables: [
+          Variable<String>(fingerprint)
+        ],
+        readsFrom: {
+          extensionRepos,
+        }).asyncMap(extensionRepos.mapFromRow);
+  }
+
+  Selectable<ExtensionRepo> findAllRepos() {
+    return customSelect('SELECT * FROM extension_repos',
+        variables: [],
+        readsFrom: {
+          extensionRepos,
+        }).asyncMap(extensionRepos.mapFromRow);
+  }
+
+  Selectable<int> countRepos() {
+    return customSelect('SELECT COUNT(*) AS _c0 FROM extension_repos',
+        variables: [],
+        readsFrom: {
+          extensionRepos,
+        }).map((QueryRow row) => row.read<int>('_c0'));
+  }
+
+  Future<int> insertRepo(String baseUrl, String name, String? shortName,
+      String website, String fingerprint) {
+    return customInsert(
+      'INSERT INTO extension_repos (base_url, name, short_name, website, signing_key_fingerprint) VALUES (?1, ?2, ?3, ?4, ?5)',
+      variables: [
+        Variable<String>(baseUrl),
+        Variable<String>(name),
+        Variable<String>(shortName),
+        Variable<String>(website),
+        Variable<String>(fingerprint)
+      ],
+      updates: {extensionRepos},
+    );
+  }
+
+  Future<int> upsertRepo(String baseUrl, String name, String? shortName,
+      String website, String fingerprint) {
+    return customInsert(
+      'INSERT INTO extension_repos (base_url, name, short_name, website, signing_key_fingerprint) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (base_url) DO UPDATE SET name = ?2, short_name = ?3, website = ?4, signing_key_fingerprint = ?5 WHERE base_url = base_url',
+      variables: [
+        Variable<String>(baseUrl),
+        Variable<String>(name),
+        Variable<String>(shortName),
+        Variable<String>(website),
+        Variable<String>(fingerprint)
+      ],
+      updates: {extensionRepos},
+    );
+  }
+
+  Future<int> replaceRepo(String baseUrl, String name, String? shortName,
+      String website, String fingerprint) {
+    return customInsert(
+      'INSERT INTO extension_repos (base_url, name, short_name, website, signing_key_fingerprint) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (signing_key_fingerprint) DO UPDATE SET base_url = ?1, name = ?2, short_name = ?3, website = ?4 WHERE signing_key_fingerprint = signing_key_fingerprint',
+      variables: [
+        Variable<String>(baseUrl),
+        Variable<String>(name),
+        Variable<String>(shortName),
+        Variable<String>(website),
+        Variable<String>(fingerprint)
+      ],
+      updates: {extensionRepos},
+    );
+  }
+
+  Future<int> deleteRepo(String baseUrl) {
+    return customUpdate(
+      'DELETE FROM extension_repos WHERE base_url = ?1',
+      variables: [Variable<String>(baseUrl)],
+      updates: {extensionRepos},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
+  Selectable<GetPrioritiesByMangaIdResult> getPrioritiesByMangaId(int mangaId) {
+    return customSelect(
+        'SELECT scanlator, priority FROM scanlator_priority WHERE manga_id = ?1 ORDER BY priority ASC',
+        variables: [
+          Variable<int>(mangaId)
+        ],
+        readsFrom: {
+          scanlatorPriority,
+        }).map((QueryRow row) => GetPrioritiesByMangaIdResult(
+          scanlator: row.read<String>('scanlator'),
+          priority: row.read<int>('priority'),
+        ));
+  }
+
+  Future<int> clearPrioritiesForManga(int mangaId) {
+    return customUpdate(
+      'DELETE FROM scanlator_priority WHERE manga_id = ?1',
+      variables: [Variable<int>(mangaId)],
+      updates: {scanlatorPriority},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
+  Future<int> insertScanlatorPriority(
+      int mangaId, String scanlator, int priority) {
+    return customInsert(
+      'INSERT INTO scanlator_priority (manga_id, scanlator, priority) VALUES (?1, ?2, ?3)',
+      variables: [
+        Variable<int>(mangaId),
+        Variable<String>(scanlator),
+        Variable<int>(priority)
+      ],
+      updates: {scanlatorPriority},
+    );
+  }
+
+  Future<int> insertExcludedScanlator(int mangaId, String scanlator) {
+    return customInsert(
+      'INSERT INTO excluded_scanlators (manga_id, scanlator) VALUES (?1, ?2)',
+      variables: [Variable<int>(mangaId), Variable<String>(scanlator)],
+      updates: {excludedScanlators},
+    );
+  }
+
+  Future<int> removeExcludedScanlators(int mangaId, List<String> scanlators) {
+    var $arrayStartIndex = 2;
+    final expandedscanlators = $expandVar($arrayStartIndex, scanlators.length);
+    $arrayStartIndex += scanlators.length;
+    return customUpdate(
+      'DELETE FROM excluded_scanlators WHERE manga_id = ?1 AND scanlator IN ($expandedscanlators)',
+      variables: [
+        Variable<int>(mangaId),
+        for (var $ in scanlators) Variable<String>($)
+      ],
+      updates: {excludedScanlators},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
+  Selectable<String> getExcludedScanlatorsByMangaId(int mangaId) {
+    return customSelect(
+        'SELECT scanlator FROM excluded_scanlators WHERE manga_id = ?1',
+        variables: [
+          Variable<int>(mangaId)
+        ],
+        readsFrom: {
+          excludedScanlators,
+        }).map((QueryRow row) => row.read<String>('scanlator'));
+  }
+
+  Selectable<Source> findAllSources() {
+    return customSelect('SELECT * FROM sources', variables: [], readsFrom: {
+      sources,
+    }).asyncMap(sources.mapFromRow);
+  }
+
+  Selectable<Source> findSourceById(int id) {
+    return customSelect('SELECT * FROM sources WHERE _id = ?1', variables: [
+      Variable<int>(id)
+    ], readsFrom: {
+      sources,
+    }).asyncMap(sources.mapFromRow);
+  }
+
+  Future<int> upsertSource(int id, String lang, String name) {
+    return customInsert(
+      'INSERT INTO sources (_id, lang, name) VALUES (?1, ?2, ?3) ON CONFLICT (_id) DO UPDATE SET lang = ?2, name = ?3 WHERE _id = ?1',
+      variables: [
+        Variable<int>(id),
+        Variable<String>(lang),
+        Variable<String>(name)
+      ],
+      updates: {sources},
+    );
+  }
+
+  Future<int> deleteMangaSync(int mangaId, int syncId) {
+    return customUpdate(
+      'DELETE FROM manga_sync WHERE manga_id = ?1 AND sync_id = ?2',
+      variables: [Variable<int>(mangaId), Variable<int>(syncId)],
+      updates: {mangaSync},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
+  Selectable<MangaSyncData> getTracks() {
+    return customSelect('SELECT * FROM manga_sync', variables: [], readsFrom: {
+      mangaSync,
+    }).asyncMap(mangaSync.mapFromRow);
+  }
+
+  Selectable<MangaSyncData> getTrackById(int id) {
+    return customSelect('SELECT * FROM manga_sync WHERE _id = ?1', variables: [
+      Variable<int>(id)
+    ], readsFrom: {
+      mangaSync,
+    }).asyncMap(mangaSync.mapFromRow);
+  }
+
+  Selectable<MangaSyncData> getTracksByMangaId(int mangaId) {
+    return customSelect('SELECT * FROM manga_sync WHERE manga_id = ?1',
+        variables: [
+          Variable<int>(mangaId)
+        ],
+        readsFrom: {
+          mangaSync,
+        }).asyncMap(mangaSync.mapFromRow);
+  }
+
+  Future<int> insertMangaSync(
+      int mangaId,
+      int syncId,
+      int remoteId,
+      int? libraryId,
+      String title,
+      double lastChapterRead,
+      int totalChapters,
+      int status,
+      double score,
+      String remoteUrl,
+      int startDate,
+      int finishDate,
+      int private) {
+    return customInsert(
+      'INSERT INTO manga_sync (manga_id, sync_id, remote_id, library_id, title, last_chapter_read, total_chapters, status, score, remote_url, start_date, finish_date, private) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)',
+      variables: [
+        Variable<int>(mangaId),
+        Variable<int>(syncId),
+        Variable<int>(remoteId),
+        Variable<int>(libraryId),
+        Variable<String>(title),
+        Variable<double>(lastChapterRead),
+        Variable<int>(totalChapters),
+        Variable<int>(status),
+        Variable<double>(score),
+        Variable<String>(remoteUrl),
+        Variable<int>(startDate),
+        Variable<int>(finishDate),
+        Variable<int>(private)
+      ],
+      updates: {mangaSync},
+    );
+  }
+
+  Future<int> updateMangaSync(
+      String mangaId,
+      String syncId,
+      String mediaId,
+      String libraryId,
+      String title,
+      String lastChapterRead,
+      String totalChapter,
+      String status,
+      String score,
+      String trackingUrl,
+      String startDate,
+      String finishDate,
+      String private,
+      int id) {
+    return customUpdate(
+      'UPDATE manga_sync SET manga_id = coalesce(?1, manga_id), sync_id = coalesce(?2, sync_id), remote_id = coalesce(?3, remote_id), library_id = coalesce(?4, library_id), title = coalesce(?5, title), last_chapter_read = coalesce(?6, last_chapter_read), total_chapters = coalesce(?7, total_chapters), status = coalesce(?8, status), score = coalesce(?9, score), remote_url = coalesce(?10, remote_url), start_date = coalesce(?11, start_date), finish_date = coalesce(?12, finish_date), private = coalesce(?13, private) WHERE _id = ?14',
+      variables: [
+        Variable<String>(mangaId),
+        Variable<String>(syncId),
+        Variable<String>(mediaId),
+        Variable<String>(libraryId),
+        Variable<String>(title),
+        Variable<String>(lastChapterRead),
+        Variable<String>(totalChapter),
+        Variable<String>(status),
+        Variable<String>(score),
+        Variable<String>(trackingUrl),
+        Variable<String>(startDate),
+        Variable<String>(finishDate),
+        Variable<String>(private),
+        Variable<int>(id)
+      ],
+      updates: {mangaSync},
+      updateKind: UpdateKind.update,
+    );
+  }
+
+  Selectable<HistoryData> getHistoryByMangaId(int mangaId) {
+    return customSelect(
+        'SELECT H._id, H.chapter_id, H.last_read, H.time_read FROM history AS H JOIN chapters AS C ON H.chapter_id = C._id WHERE C.manga_id = ?1 AND C._id = H.chapter_id',
+        variables: [
+          Variable<int>(mangaId)
+        ],
+        readsFrom: {
+          history,
+          chapters,
+        }).asyncMap(history.mapFromRow);
+  }
+
+  Selectable<HistoryData> getHistoryByChapterUrl(String chapterUrl) {
+    return customSelect(
+        'SELECT H._id, H.chapter_id, H.last_read, H.time_read FROM history AS H JOIN chapters AS C ON H.chapter_id = C._id WHERE C.url = ?1 AND C._id = H.chapter_id',
+        variables: [
+          Variable<String>(chapterUrl)
+        ],
+        readsFrom: {
+          history,
+          chapters,
+        }).asyncMap(history.mapFromRow);
+  }
+
+  Future<int> resetHistoryById(int historyId) {
+    return customUpdate(
+      'UPDATE history SET last_read = 0 WHERE _id = ?1',
+      variables: [Variable<int>(historyId)],
+      updates: {history},
+      updateKind: UpdateKind.update,
+    );
+  }
+
+  Future<int> resetHistoryByMangaId(int mangaId) {
+    return customUpdate(
+      'UPDATE history SET last_read = 0 WHERE _id IN (SELECT H._id FROM mangas AS M INNER JOIN chapters AS C ON M._id = C.manga_id INNER JOIN history AS H ON C._id = H.chapter_id WHERE M._id = ?1)',
+      variables: [Variable<int>(mangaId)],
+      updates: {history},
+      updateKind: UpdateKind.update,
+    );
+  }
+
+  Future<int> removeAllHistory() {
+    return customUpdate(
+      'DELETE FROM history',
+      variables: [],
+      updates: {history},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
+  Future<int> removeResettedHistory() {
+    return customUpdate(
+      'DELETE FROM history WHERE last_read = 0',
+      variables: [],
+      updates: {history},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
+  Future<int> upsertHistory(int chapterId, int? readAt, int timeRead) {
+    return customInsert(
+      'INSERT INTO history (chapter_id, last_read, time_read) VALUES (?1, ?2, ?3) ON CONFLICT (chapter_id) DO UPDATE SET last_read = ?2, time_read = time_read + ?3 WHERE chapter_id = ?1',
+      variables: [
+        Variable<int>(chapterId),
+        Variable<int>(readAt),
+        Variable<int>(timeRead)
+      ],
+      updates: {history},
+    );
+  }
+
+  Selectable<int> getReadDuration() {
+    return customSelect(
+        'SELECT coalesce(sum(time_read), 0) AS _c0 FROM history',
+        variables: [],
+        readsFrom: {
+          history,
+        }).map((QueryRow row) => row.read<int>('_c0'));
+  }
+
+  Future<int> insertMangaCategory(int mangaId, int categoryId) {
+    return customInsert(
+      'INSERT INTO mangas_categories (manga_id, category_id) VALUES (?1, ?2)',
+      variables: [Variable<int>(mangaId), Variable<int>(categoryId)],
+      updates: {mangasCategories},
+    );
+  }
+
+  Future<int> deleteMangaCategoryByMangaId(int mangaId) {
+    return customUpdate(
+      'DELETE FROM mangas_categories WHERE manga_id = ?1',
+      variables: [Variable<int>(mangaId)],
+      updates: {mangasCategories},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
+  Selectable<Category> getCategory(int id) {
+    return customSelect('SELECT * FROM categories WHERE _id = ?1 LIMIT 1',
+        variables: [
+          Variable<int>(id)
+        ],
+        readsFrom: {
+          categories,
+        }).asyncMap(categories.mapFromRow);
+  }
+
+  Selectable<Category> getCategories() {
+    return customSelect(
+        'SELECT _id AS id, name, sort AS categoryOrder, flags, parent_id AS parentId FROM categories ORDER BY sort',
+        variables: [],
+        readsFrom: {
+          categories,
+        }).asyncMap(
+        (QueryRow row) async => categories.mapFromRowWithAlias(row, const {
+              'id': '_id',
+              'name': 'name',
+              'categoryOrder': 'sort',
+              'flags': 'flags',
+              'parentId': 'parent_id',
+            }));
+  }
+
+  Selectable<Category> getCategoriesByMangaId(int mangaId) {
+    return customSelect(
+        'SELECT C._id AS id, C.name, C.sort AS categoryOrder, C.flags, C.parent_id AS parentId FROM categories AS C JOIN mangas_categories AS MC ON C._id = MC.category_id WHERE MC.manga_id = ?1',
+        variables: [
+          Variable<int>(mangaId)
+        ],
+        readsFrom: {
+          categories,
+          mangasCategories,
+        }).asyncMap(
+        (QueryRow row) async => categories.mapFromRowWithAlias(row, const {
+              'id': '_id',
+              'name': 'name',
+              'categoryOrder': 'sort',
+              'flags': 'flags',
+              'parentId': 'parent_id',
+            }));
+  }
+
+  Future<int> insertCategory(String name, int order, int flags, int? parentId) {
+    return customInsert(
+      'INSERT INTO categories (name, sort, flags, parent_id) VALUES (?1, ?2, ?3, ?4)',
+      variables: [
+        Variable<String>(name),
+        Variable<int>(order),
+        Variable<int>(flags),
+        Variable<int>(parentId)
+      ],
+      updates: {categories},
+    );
+  }
+
+  Future<int> deleteCategory(int categoryId) {
+    return customUpdate(
+      'DELETE FROM categories WHERE _id = ?1',
+      variables: [Variable<int>(categoryId)],
+      updates: {categories},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
+  Future<int> updateCategory(
+      String name, String order, String flags, int categoryId) {
+    return customUpdate(
+      'UPDATE categories SET name = coalesce(?1, name), sort = coalesce(?2, sort), flags = coalesce(?3, flags) WHERE _id = ?4',
+      variables: [
+        Variable<String>(name),
+        Variable<String>(order),
+        Variable<String>(flags),
+        Variable<int>(categoryId)
+      ],
+      updates: {categories},
+      updateKind: UpdateKind.update,
+    );
+  }
+
+  Future<int> updateParent(int? parentId, int categoryId) {
+    return customUpdate(
+      'UPDATE categories SET parent_id = ?1 WHERE _id = ?2',
+      variables: [Variable<int>(parentId), Variable<int>(categoryId)],
+      updates: {categories},
+      updateKind: UpdateKind.update,
+    );
+  }
+
+  Future<int> updateAllFlags(String var1) {
+    return customUpdate(
+      'UPDATE categories SET flags = coalesce(?1, flags)',
+      variables: [Variable<String>(var1)],
+      updates: {categories},
+      updateKind: UpdateKind.update,
+    );
+  }
+
   Selectable<Chapter> getChaptersByMangaId(int mangaId) {
     return customSelect(
         'SELECT * FROM chapters WHERE manga_id = ?1 ORDER BY source_order',
@@ -2048,7 +5445,31 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [
         mangas,
+        mangaLinks,
+        mangaLinksPrimaryIndex,
+        mangaLinksLinkedIndex,
+        extensionRepos,
+        scanlatorPriority,
+        scanlatorPriorityMangaIdIndex,
+        excludedScanlators,
+        excludedScanlatorsMangaIdIndex,
+        idxExcludedScanlatorsScanlator,
+        sources,
+        mangaSync,
+        idxMangaSyncMangaId,
         chapters,
+        history,
+        historyHistoryChapterIdIndex,
+        idxHistoryLastRead,
+        categories,
+        mangasCategories,
+        idxMangasCategoriesMangaId,
+        idxMangasCategoriesCategoryId,
+        insertMangaCategoryUpdateVersion,
+        categoriesParentIdIndex,
+        OnCreateQuery(
+            'INSERT OR IGNORE INTO categories (_id, name, sort, flags) VALUES (0, \'\', -1, 0)'),
+        systemCategoryDeleteTrigger,
         chaptersMangaIdIndex,
         chaptersUnreadByMangaIndex,
         idxChaptersUrl,
@@ -2068,8 +5489,76 @@ abstract class _$AppDatabase extends GeneratedDatabase {
             on: TableUpdateQuery.onTableName('mangas',
                 limitUpdateKind: UpdateKind.delete),
             result: [
+              TableUpdate('manga_links', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('mangas',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('manga_links', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('mangas',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('scanlator_priority', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('mangas',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('excluded_scanlators', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('mangas',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('manga_sync', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('mangas',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
               TableUpdate('chapters', kind: UpdateKind.delete),
             ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('chapters',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('history', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('categories',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('mangas_categories', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('mangas',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('mangas_categories', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('mangas_categories',
+                limitUpdateKind: UpdateKind.insert),
+            result: [
+              TableUpdate('mangas', kind: UpdateKind.update),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('categories',
+                limitUpdateKind: UpdateKind.delete),
+            result: [],
           ),
           WritePropagation(
             on: TableUpdateQuery.onTableName('chapters',
@@ -2579,6 +6068,1008 @@ typedef $MangasProcessedTableManager = ProcessedTableManager<
     (Manga, BaseReferences<_$AppDatabase, Mangas, Manga>),
     Manga,
     PrefetchHooks Function()>;
+typedef $MangaLinksCreateCompanionBuilder = MangaLinksCompanion Function({
+  required int primaryMangaId,
+  required int linkedMangaId,
+  Value<int> priority,
+  Value<int> rowid,
+});
+typedef $MangaLinksUpdateCompanionBuilder = MangaLinksCompanion Function({
+  Value<int> primaryMangaId,
+  Value<int> linkedMangaId,
+  Value<int> priority,
+  Value<int> rowid,
+});
+
+class $MangaLinksFilterComposer extends Composer<_$AppDatabase, MangaLinks> {
+  $MangaLinksFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get primaryMangaId => $composableBuilder(
+      column: $table.primaryMangaId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get linkedMangaId => $composableBuilder(
+      column: $table.linkedMangaId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnFilters(column));
+}
+
+class $MangaLinksOrderingComposer extends Composer<_$AppDatabase, MangaLinks> {
+  $MangaLinksOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get primaryMangaId => $composableBuilder(
+      column: $table.primaryMangaId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get linkedMangaId => $composableBuilder(
+      column: $table.linkedMangaId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnOrderings(column));
+}
+
+class $MangaLinksAnnotationComposer
+    extends Composer<_$AppDatabase, MangaLinks> {
+  $MangaLinksAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get primaryMangaId => $composableBuilder(
+      column: $table.primaryMangaId, builder: (column) => column);
+
+  GeneratedColumn<int> get linkedMangaId => $composableBuilder(
+      column: $table.linkedMangaId, builder: (column) => column);
+
+  GeneratedColumn<int> get priority =>
+      $composableBuilder(column: $table.priority, builder: (column) => column);
+}
+
+class $MangaLinksTableManager extends RootTableManager<
+    _$AppDatabase,
+    MangaLinks,
+    MangaLink,
+    $MangaLinksFilterComposer,
+    $MangaLinksOrderingComposer,
+    $MangaLinksAnnotationComposer,
+    $MangaLinksCreateCompanionBuilder,
+    $MangaLinksUpdateCompanionBuilder,
+    (MangaLink, BaseReferences<_$AppDatabase, MangaLinks, MangaLink>),
+    MangaLink,
+    PrefetchHooks Function()> {
+  $MangaLinksTableManager(_$AppDatabase db, MangaLinks table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $MangaLinksFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $MangaLinksOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $MangaLinksAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> primaryMangaId = const Value.absent(),
+            Value<int> linkedMangaId = const Value.absent(),
+            Value<int> priority = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaLinksCompanion(
+            primaryMangaId: primaryMangaId,
+            linkedMangaId: linkedMangaId,
+            priority: priority,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required int primaryMangaId,
+            required int linkedMangaId,
+            Value<int> priority = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaLinksCompanion.insert(
+            primaryMangaId: primaryMangaId,
+            linkedMangaId: linkedMangaId,
+            priority: priority,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $MangaLinksProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    MangaLinks,
+    MangaLink,
+    $MangaLinksFilterComposer,
+    $MangaLinksOrderingComposer,
+    $MangaLinksAnnotationComposer,
+    $MangaLinksCreateCompanionBuilder,
+    $MangaLinksUpdateCompanionBuilder,
+    (MangaLink, BaseReferences<_$AppDatabase, MangaLinks, MangaLink>),
+    MangaLink,
+    PrefetchHooks Function()>;
+typedef $ExtensionReposCreateCompanionBuilder = ExtensionReposCompanion
+    Function({
+  required String baseUrl,
+  required String name,
+  Value<String?> shortName,
+  required String website,
+  required String signingKeyFingerprint,
+  Value<int> rowid,
+});
+typedef $ExtensionReposUpdateCompanionBuilder = ExtensionReposCompanion
+    Function({
+  Value<String> baseUrl,
+  Value<String> name,
+  Value<String?> shortName,
+  Value<String> website,
+  Value<String> signingKeyFingerprint,
+  Value<int> rowid,
+});
+
+class $ExtensionReposFilterComposer
+    extends Composer<_$AppDatabase, ExtensionRepos> {
+  $ExtensionReposFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get baseUrl => $composableBuilder(
+      column: $table.baseUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get shortName => $composableBuilder(
+      column: $table.shortName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get website => $composableBuilder(
+      column: $table.website, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get signingKeyFingerprint => $composableBuilder(
+      column: $table.signingKeyFingerprint,
+      builder: (column) => ColumnFilters(column));
+}
+
+class $ExtensionReposOrderingComposer
+    extends Composer<_$AppDatabase, ExtensionRepos> {
+  $ExtensionReposOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get baseUrl => $composableBuilder(
+      column: $table.baseUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get shortName => $composableBuilder(
+      column: $table.shortName, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get website => $composableBuilder(
+      column: $table.website, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get signingKeyFingerprint => $composableBuilder(
+      column: $table.signingKeyFingerprint,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $ExtensionReposAnnotationComposer
+    extends Composer<_$AppDatabase, ExtensionRepos> {
+  $ExtensionReposAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get baseUrl =>
+      $composableBuilder(column: $table.baseUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get shortName =>
+      $composableBuilder(column: $table.shortName, builder: (column) => column);
+
+  GeneratedColumn<String> get website =>
+      $composableBuilder(column: $table.website, builder: (column) => column);
+
+  GeneratedColumn<String> get signingKeyFingerprint => $composableBuilder(
+      column: $table.signingKeyFingerprint, builder: (column) => column);
+}
+
+class $ExtensionReposTableManager extends RootTableManager<
+    _$AppDatabase,
+    ExtensionRepos,
+    ExtensionRepo,
+    $ExtensionReposFilterComposer,
+    $ExtensionReposOrderingComposer,
+    $ExtensionReposAnnotationComposer,
+    $ExtensionReposCreateCompanionBuilder,
+    $ExtensionReposUpdateCompanionBuilder,
+    (
+      ExtensionRepo,
+      BaseReferences<_$AppDatabase, ExtensionRepos, ExtensionRepo>
+    ),
+    ExtensionRepo,
+    PrefetchHooks Function()> {
+  $ExtensionReposTableManager(_$AppDatabase db, ExtensionRepos table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $ExtensionReposFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $ExtensionReposOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $ExtensionReposAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> baseUrl = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<String?> shortName = const Value.absent(),
+            Value<String> website = const Value.absent(),
+            Value<String> signingKeyFingerprint = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ExtensionReposCompanion(
+            baseUrl: baseUrl,
+            name: name,
+            shortName: shortName,
+            website: website,
+            signingKeyFingerprint: signingKeyFingerprint,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String baseUrl,
+            required String name,
+            Value<String?> shortName = const Value.absent(),
+            required String website,
+            required String signingKeyFingerprint,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ExtensionReposCompanion.insert(
+            baseUrl: baseUrl,
+            name: name,
+            shortName: shortName,
+            website: website,
+            signingKeyFingerprint: signingKeyFingerprint,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $ExtensionReposProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    ExtensionRepos,
+    ExtensionRepo,
+    $ExtensionReposFilterComposer,
+    $ExtensionReposOrderingComposer,
+    $ExtensionReposAnnotationComposer,
+    $ExtensionReposCreateCompanionBuilder,
+    $ExtensionReposUpdateCompanionBuilder,
+    (
+      ExtensionRepo,
+      BaseReferences<_$AppDatabase, ExtensionRepos, ExtensionRepo>
+    ),
+    ExtensionRepo,
+    PrefetchHooks Function()>;
+typedef $ScanlatorPriorityCreateCompanionBuilder = ScanlatorPriorityCompanion
+    Function({
+  required int mangaId,
+  required String scanlator,
+  required int priority,
+  Value<int> rowid,
+});
+typedef $ScanlatorPriorityUpdateCompanionBuilder = ScanlatorPriorityCompanion
+    Function({
+  Value<int> mangaId,
+  Value<String> scanlator,
+  Value<int> priority,
+  Value<int> rowid,
+});
+
+class $ScanlatorPriorityFilterComposer
+    extends Composer<_$AppDatabase, ScanlatorPriority> {
+  $ScanlatorPriorityFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get mangaId => $composableBuilder(
+      column: $table.mangaId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get scanlator => $composableBuilder(
+      column: $table.scanlator, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnFilters(column));
+}
+
+class $ScanlatorPriorityOrderingComposer
+    extends Composer<_$AppDatabase, ScanlatorPriority> {
+  $ScanlatorPriorityOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get mangaId => $composableBuilder(
+      column: $table.mangaId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get scanlator => $composableBuilder(
+      column: $table.scanlator, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnOrderings(column));
+}
+
+class $ScanlatorPriorityAnnotationComposer
+    extends Composer<_$AppDatabase, ScanlatorPriority> {
+  $ScanlatorPriorityAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get mangaId =>
+      $composableBuilder(column: $table.mangaId, builder: (column) => column);
+
+  GeneratedColumn<String> get scanlator =>
+      $composableBuilder(column: $table.scanlator, builder: (column) => column);
+
+  GeneratedColumn<int> get priority =>
+      $composableBuilder(column: $table.priority, builder: (column) => column);
+}
+
+class $ScanlatorPriorityTableManager extends RootTableManager<
+    _$AppDatabase,
+    ScanlatorPriority,
+    ScanlatorPriorityData,
+    $ScanlatorPriorityFilterComposer,
+    $ScanlatorPriorityOrderingComposer,
+    $ScanlatorPriorityAnnotationComposer,
+    $ScanlatorPriorityCreateCompanionBuilder,
+    $ScanlatorPriorityUpdateCompanionBuilder,
+    (
+      ScanlatorPriorityData,
+      BaseReferences<_$AppDatabase, ScanlatorPriority, ScanlatorPriorityData>
+    ),
+    ScanlatorPriorityData,
+    PrefetchHooks Function()> {
+  $ScanlatorPriorityTableManager(_$AppDatabase db, ScanlatorPriority table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $ScanlatorPriorityFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $ScanlatorPriorityOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $ScanlatorPriorityAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> mangaId = const Value.absent(),
+            Value<String> scanlator = const Value.absent(),
+            Value<int> priority = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ScanlatorPriorityCompanion(
+            mangaId: mangaId,
+            scanlator: scanlator,
+            priority: priority,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required int mangaId,
+            required String scanlator,
+            required int priority,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ScanlatorPriorityCompanion.insert(
+            mangaId: mangaId,
+            scanlator: scanlator,
+            priority: priority,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $ScanlatorPriorityProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    ScanlatorPriority,
+    ScanlatorPriorityData,
+    $ScanlatorPriorityFilterComposer,
+    $ScanlatorPriorityOrderingComposer,
+    $ScanlatorPriorityAnnotationComposer,
+    $ScanlatorPriorityCreateCompanionBuilder,
+    $ScanlatorPriorityUpdateCompanionBuilder,
+    (
+      ScanlatorPriorityData,
+      BaseReferences<_$AppDatabase, ScanlatorPriority, ScanlatorPriorityData>
+    ),
+    ScanlatorPriorityData,
+    PrefetchHooks Function()>;
+typedef $ExcludedScanlatorsCreateCompanionBuilder = ExcludedScanlatorsCompanion
+    Function({
+  required int mangaId,
+  required String scanlator,
+  Value<int> rowid,
+});
+typedef $ExcludedScanlatorsUpdateCompanionBuilder = ExcludedScanlatorsCompanion
+    Function({
+  Value<int> mangaId,
+  Value<String> scanlator,
+  Value<int> rowid,
+});
+
+class $ExcludedScanlatorsFilterComposer
+    extends Composer<_$AppDatabase, ExcludedScanlators> {
+  $ExcludedScanlatorsFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get mangaId => $composableBuilder(
+      column: $table.mangaId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get scanlator => $composableBuilder(
+      column: $table.scanlator, builder: (column) => ColumnFilters(column));
+}
+
+class $ExcludedScanlatorsOrderingComposer
+    extends Composer<_$AppDatabase, ExcludedScanlators> {
+  $ExcludedScanlatorsOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get mangaId => $composableBuilder(
+      column: $table.mangaId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get scanlator => $composableBuilder(
+      column: $table.scanlator, builder: (column) => ColumnOrderings(column));
+}
+
+class $ExcludedScanlatorsAnnotationComposer
+    extends Composer<_$AppDatabase, ExcludedScanlators> {
+  $ExcludedScanlatorsAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get mangaId =>
+      $composableBuilder(column: $table.mangaId, builder: (column) => column);
+
+  GeneratedColumn<String> get scanlator =>
+      $composableBuilder(column: $table.scanlator, builder: (column) => column);
+}
+
+class $ExcludedScanlatorsTableManager extends RootTableManager<
+    _$AppDatabase,
+    ExcludedScanlators,
+    ExcludedScanlator,
+    $ExcludedScanlatorsFilterComposer,
+    $ExcludedScanlatorsOrderingComposer,
+    $ExcludedScanlatorsAnnotationComposer,
+    $ExcludedScanlatorsCreateCompanionBuilder,
+    $ExcludedScanlatorsUpdateCompanionBuilder,
+    (
+      ExcludedScanlator,
+      BaseReferences<_$AppDatabase, ExcludedScanlators, ExcludedScanlator>
+    ),
+    ExcludedScanlator,
+    PrefetchHooks Function()> {
+  $ExcludedScanlatorsTableManager(_$AppDatabase db, ExcludedScanlators table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $ExcludedScanlatorsFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $ExcludedScanlatorsOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $ExcludedScanlatorsAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> mangaId = const Value.absent(),
+            Value<String> scanlator = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ExcludedScanlatorsCompanion(
+            mangaId: mangaId,
+            scanlator: scanlator,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required int mangaId,
+            required String scanlator,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ExcludedScanlatorsCompanion.insert(
+            mangaId: mangaId,
+            scanlator: scanlator,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $ExcludedScanlatorsProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    ExcludedScanlators,
+    ExcludedScanlator,
+    $ExcludedScanlatorsFilterComposer,
+    $ExcludedScanlatorsOrderingComposer,
+    $ExcludedScanlatorsAnnotationComposer,
+    $ExcludedScanlatorsCreateCompanionBuilder,
+    $ExcludedScanlatorsUpdateCompanionBuilder,
+    (
+      ExcludedScanlator,
+      BaseReferences<_$AppDatabase, ExcludedScanlators, ExcludedScanlator>
+    ),
+    ExcludedScanlator,
+    PrefetchHooks Function()>;
+typedef $SourcesCreateCompanionBuilder = SourcesCompanion Function({
+  Value<int> id,
+  required String lang,
+  required String name,
+});
+typedef $SourcesUpdateCompanionBuilder = SourcesCompanion Function({
+  Value<int> id,
+  Value<String> lang,
+  Value<String> name,
+});
+
+class $SourcesFilterComposer extends Composer<_$AppDatabase, Sources> {
+  $SourcesFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lang => $composableBuilder(
+      column: $table.lang, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+}
+
+class $SourcesOrderingComposer extends Composer<_$AppDatabase, Sources> {
+  $SourcesOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lang => $composableBuilder(
+      column: $table.lang, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+}
+
+class $SourcesAnnotationComposer extends Composer<_$AppDatabase, Sources> {
+  $SourcesAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get lang =>
+      $composableBuilder(column: $table.lang, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+}
+
+class $SourcesTableManager extends RootTableManager<
+    _$AppDatabase,
+    Sources,
+    Source,
+    $SourcesFilterComposer,
+    $SourcesOrderingComposer,
+    $SourcesAnnotationComposer,
+    $SourcesCreateCompanionBuilder,
+    $SourcesUpdateCompanionBuilder,
+    (Source, BaseReferences<_$AppDatabase, Sources, Source>),
+    Source,
+    PrefetchHooks Function()> {
+  $SourcesTableManager(_$AppDatabase db, Sources table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $SourcesFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $SourcesOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $SourcesAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> lang = const Value.absent(),
+            Value<String> name = const Value.absent(),
+          }) =>
+              SourcesCompanion(
+            id: id,
+            lang: lang,
+            name: name,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String lang,
+            required String name,
+          }) =>
+              SourcesCompanion.insert(
+            id: id,
+            lang: lang,
+            name: name,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $SourcesProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    Sources,
+    Source,
+    $SourcesFilterComposer,
+    $SourcesOrderingComposer,
+    $SourcesAnnotationComposer,
+    $SourcesCreateCompanionBuilder,
+    $SourcesUpdateCompanionBuilder,
+    (Source, BaseReferences<_$AppDatabase, Sources, Source>),
+    Source,
+    PrefetchHooks Function()>;
+typedef $MangaSyncCreateCompanionBuilder = MangaSyncCompanion Function({
+  Value<int> id,
+  required int mangaId,
+  required int syncId,
+  required int remoteId,
+  Value<int?> libraryId,
+  required String title,
+  required double lastChapterRead,
+  required int totalChapters,
+  required int status,
+  required double score,
+  required String remoteUrl,
+  required int startDate,
+  required int finishDate,
+  Value<int> private,
+});
+typedef $MangaSyncUpdateCompanionBuilder = MangaSyncCompanion Function({
+  Value<int> id,
+  Value<int> mangaId,
+  Value<int> syncId,
+  Value<int> remoteId,
+  Value<int?> libraryId,
+  Value<String> title,
+  Value<double> lastChapterRead,
+  Value<int> totalChapters,
+  Value<int> status,
+  Value<double> score,
+  Value<String> remoteUrl,
+  Value<int> startDate,
+  Value<int> finishDate,
+  Value<int> private,
+});
+
+class $MangaSyncFilterComposer extends Composer<_$AppDatabase, MangaSync> {
+  $MangaSyncFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get mangaId => $composableBuilder(
+      column: $table.mangaId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get syncId => $composableBuilder(
+      column: $table.syncId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get remoteId => $composableBuilder(
+      column: $table.remoteId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get libraryId => $composableBuilder(
+      column: $table.libraryId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get lastChapterRead => $composableBuilder(
+      column: $table.lastChapterRead,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get totalChapters => $composableBuilder(
+      column: $table.totalChapters, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get score => $composableBuilder(
+      column: $table.score, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get remoteUrl => $composableBuilder(
+      column: $table.remoteUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get startDate => $composableBuilder(
+      column: $table.startDate, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get finishDate => $composableBuilder(
+      column: $table.finishDate, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get private => $composableBuilder(
+      column: $table.private, builder: (column) => ColumnFilters(column));
+}
+
+class $MangaSyncOrderingComposer extends Composer<_$AppDatabase, MangaSync> {
+  $MangaSyncOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get mangaId => $composableBuilder(
+      column: $table.mangaId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get syncId => $composableBuilder(
+      column: $table.syncId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get remoteId => $composableBuilder(
+      column: $table.remoteId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get libraryId => $composableBuilder(
+      column: $table.libraryId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get lastChapterRead => $composableBuilder(
+      column: $table.lastChapterRead,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get totalChapters => $composableBuilder(
+      column: $table.totalChapters,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get score => $composableBuilder(
+      column: $table.score, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get remoteUrl => $composableBuilder(
+      column: $table.remoteUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get startDate => $composableBuilder(
+      column: $table.startDate, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get finishDate => $composableBuilder(
+      column: $table.finishDate, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get private => $composableBuilder(
+      column: $table.private, builder: (column) => ColumnOrderings(column));
+}
+
+class $MangaSyncAnnotationComposer extends Composer<_$AppDatabase, MangaSync> {
+  $MangaSyncAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get mangaId =>
+      $composableBuilder(column: $table.mangaId, builder: (column) => column);
+
+  GeneratedColumn<int> get syncId =>
+      $composableBuilder(column: $table.syncId, builder: (column) => column);
+
+  GeneratedColumn<int> get remoteId =>
+      $composableBuilder(column: $table.remoteId, builder: (column) => column);
+
+  GeneratedColumn<int> get libraryId =>
+      $composableBuilder(column: $table.libraryId, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<double> get lastChapterRead => $composableBuilder(
+      column: $table.lastChapterRead, builder: (column) => column);
+
+  GeneratedColumn<int> get totalChapters => $composableBuilder(
+      column: $table.totalChapters, builder: (column) => column);
+
+  GeneratedColumn<int> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<double> get score =>
+      $composableBuilder(column: $table.score, builder: (column) => column);
+
+  GeneratedColumn<String> get remoteUrl =>
+      $composableBuilder(column: $table.remoteUrl, builder: (column) => column);
+
+  GeneratedColumn<int> get startDate =>
+      $composableBuilder(column: $table.startDate, builder: (column) => column);
+
+  GeneratedColumn<int> get finishDate => $composableBuilder(
+      column: $table.finishDate, builder: (column) => column);
+
+  GeneratedColumn<int> get private =>
+      $composableBuilder(column: $table.private, builder: (column) => column);
+}
+
+class $MangaSyncTableManager extends RootTableManager<
+    _$AppDatabase,
+    MangaSync,
+    MangaSyncData,
+    $MangaSyncFilterComposer,
+    $MangaSyncOrderingComposer,
+    $MangaSyncAnnotationComposer,
+    $MangaSyncCreateCompanionBuilder,
+    $MangaSyncUpdateCompanionBuilder,
+    (MangaSyncData, BaseReferences<_$AppDatabase, MangaSync, MangaSyncData>),
+    MangaSyncData,
+    PrefetchHooks Function()> {
+  $MangaSyncTableManager(_$AppDatabase db, MangaSync table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $MangaSyncFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $MangaSyncOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $MangaSyncAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int> mangaId = const Value.absent(),
+            Value<int> syncId = const Value.absent(),
+            Value<int> remoteId = const Value.absent(),
+            Value<int?> libraryId = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<double> lastChapterRead = const Value.absent(),
+            Value<int> totalChapters = const Value.absent(),
+            Value<int> status = const Value.absent(),
+            Value<double> score = const Value.absent(),
+            Value<String> remoteUrl = const Value.absent(),
+            Value<int> startDate = const Value.absent(),
+            Value<int> finishDate = const Value.absent(),
+            Value<int> private = const Value.absent(),
+          }) =>
+              MangaSyncCompanion(
+            id: id,
+            mangaId: mangaId,
+            syncId: syncId,
+            remoteId: remoteId,
+            libraryId: libraryId,
+            title: title,
+            lastChapterRead: lastChapterRead,
+            totalChapters: totalChapters,
+            status: status,
+            score: score,
+            remoteUrl: remoteUrl,
+            startDate: startDate,
+            finishDate: finishDate,
+            private: private,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required int mangaId,
+            required int syncId,
+            required int remoteId,
+            Value<int?> libraryId = const Value.absent(),
+            required String title,
+            required double lastChapterRead,
+            required int totalChapters,
+            required int status,
+            required double score,
+            required String remoteUrl,
+            required int startDate,
+            required int finishDate,
+            Value<int> private = const Value.absent(),
+          }) =>
+              MangaSyncCompanion.insert(
+            id: id,
+            mangaId: mangaId,
+            syncId: syncId,
+            remoteId: remoteId,
+            libraryId: libraryId,
+            title: title,
+            lastChapterRead: lastChapterRead,
+            totalChapters: totalChapters,
+            status: status,
+            score: score,
+            remoteUrl: remoteUrl,
+            startDate: startDate,
+            finishDate: finishDate,
+            private: private,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $MangaSyncProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    MangaSync,
+    MangaSyncData,
+    $MangaSyncFilterComposer,
+    $MangaSyncOrderingComposer,
+    $MangaSyncAnnotationComposer,
+    $MangaSyncCreateCompanionBuilder,
+    $MangaSyncUpdateCompanionBuilder,
+    (MangaSyncData, BaseReferences<_$AppDatabase, MangaSync, MangaSyncData>),
+    MangaSyncData,
+    PrefetchHooks Function()>;
 typedef $ChaptersCreateCompanionBuilder = ChaptersCompanion Function({
   Value<int> id,
   required int mangaId,
@@ -2921,11 +7412,552 @@ typedef $ChaptersProcessedTableManager = ProcessedTableManager<
     (Chapter, BaseReferences<_$AppDatabase, Chapters, Chapter>),
     Chapter,
     PrefetchHooks Function()>;
+typedef $HistoryCreateCompanionBuilder = HistoryCompanion Function({
+  Value<int> id,
+  required int chapterId,
+  Value<int?> lastRead,
+  required int timeRead,
+});
+typedef $HistoryUpdateCompanionBuilder = HistoryCompanion Function({
+  Value<int> id,
+  Value<int> chapterId,
+  Value<int?> lastRead,
+  Value<int> timeRead,
+});
+
+class $HistoryFilterComposer extends Composer<_$AppDatabase, History> {
+  $HistoryFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get chapterId => $composableBuilder(
+      column: $table.chapterId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lastRead => $composableBuilder(
+      column: $table.lastRead, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get timeRead => $composableBuilder(
+      column: $table.timeRead, builder: (column) => ColumnFilters(column));
+}
+
+class $HistoryOrderingComposer extends Composer<_$AppDatabase, History> {
+  $HistoryOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get chapterId => $composableBuilder(
+      column: $table.chapterId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lastRead => $composableBuilder(
+      column: $table.lastRead, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get timeRead => $composableBuilder(
+      column: $table.timeRead, builder: (column) => ColumnOrderings(column));
+}
+
+class $HistoryAnnotationComposer extends Composer<_$AppDatabase, History> {
+  $HistoryAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get chapterId =>
+      $composableBuilder(column: $table.chapterId, builder: (column) => column);
+
+  GeneratedColumn<int> get lastRead =>
+      $composableBuilder(column: $table.lastRead, builder: (column) => column);
+
+  GeneratedColumn<int> get timeRead =>
+      $composableBuilder(column: $table.timeRead, builder: (column) => column);
+}
+
+class $HistoryTableManager extends RootTableManager<
+    _$AppDatabase,
+    History,
+    HistoryData,
+    $HistoryFilterComposer,
+    $HistoryOrderingComposer,
+    $HistoryAnnotationComposer,
+    $HistoryCreateCompanionBuilder,
+    $HistoryUpdateCompanionBuilder,
+    (HistoryData, BaseReferences<_$AppDatabase, History, HistoryData>),
+    HistoryData,
+    PrefetchHooks Function()> {
+  $HistoryTableManager(_$AppDatabase db, History table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $HistoryFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $HistoryOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $HistoryAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int> chapterId = const Value.absent(),
+            Value<int?> lastRead = const Value.absent(),
+            Value<int> timeRead = const Value.absent(),
+          }) =>
+              HistoryCompanion(
+            id: id,
+            chapterId: chapterId,
+            lastRead: lastRead,
+            timeRead: timeRead,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required int chapterId,
+            Value<int?> lastRead = const Value.absent(),
+            required int timeRead,
+          }) =>
+              HistoryCompanion.insert(
+            id: id,
+            chapterId: chapterId,
+            lastRead: lastRead,
+            timeRead: timeRead,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $HistoryProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    History,
+    HistoryData,
+    $HistoryFilterComposer,
+    $HistoryOrderingComposer,
+    $HistoryAnnotationComposer,
+    $HistoryCreateCompanionBuilder,
+    $HistoryUpdateCompanionBuilder,
+    (HistoryData, BaseReferences<_$AppDatabase, History, HistoryData>),
+    HistoryData,
+    PrefetchHooks Function()>;
+typedef $CategoriesCreateCompanionBuilder = CategoriesCompanion Function({
+  Value<int> id,
+  required String name,
+  required int sort,
+  required int flags,
+  Value<int?> parentId,
+});
+typedef $CategoriesUpdateCompanionBuilder = CategoriesCompanion Function({
+  Value<int> id,
+  Value<String> name,
+  Value<int> sort,
+  Value<int> flags,
+  Value<int?> parentId,
+});
+
+class $CategoriesFilterComposer extends Composer<_$AppDatabase, Categories> {
+  $CategoriesFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sort => $composableBuilder(
+      column: $table.sort, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get flags => $composableBuilder(
+      column: $table.flags, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get parentId => $composableBuilder(
+      column: $table.parentId, builder: (column) => ColumnFilters(column));
+}
+
+class $CategoriesOrderingComposer extends Composer<_$AppDatabase, Categories> {
+  $CategoriesOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sort => $composableBuilder(
+      column: $table.sort, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get flags => $composableBuilder(
+      column: $table.flags, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get parentId => $composableBuilder(
+      column: $table.parentId, builder: (column) => ColumnOrderings(column));
+}
+
+class $CategoriesAnnotationComposer
+    extends Composer<_$AppDatabase, Categories> {
+  $CategoriesAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get sort =>
+      $composableBuilder(column: $table.sort, builder: (column) => column);
+
+  GeneratedColumn<int> get flags =>
+      $composableBuilder(column: $table.flags, builder: (column) => column);
+
+  GeneratedColumn<int> get parentId =>
+      $composableBuilder(column: $table.parentId, builder: (column) => column);
+}
+
+class $CategoriesTableManager extends RootTableManager<
+    _$AppDatabase,
+    Categories,
+    Category,
+    $CategoriesFilterComposer,
+    $CategoriesOrderingComposer,
+    $CategoriesAnnotationComposer,
+    $CategoriesCreateCompanionBuilder,
+    $CategoriesUpdateCompanionBuilder,
+    (Category, BaseReferences<_$AppDatabase, Categories, Category>),
+    Category,
+    PrefetchHooks Function()> {
+  $CategoriesTableManager(_$AppDatabase db, Categories table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $CategoriesFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $CategoriesOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $CategoriesAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<int> sort = const Value.absent(),
+            Value<int> flags = const Value.absent(),
+            Value<int?> parentId = const Value.absent(),
+          }) =>
+              CategoriesCompanion(
+            id: id,
+            name: name,
+            sort: sort,
+            flags: flags,
+            parentId: parentId,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String name,
+            required int sort,
+            required int flags,
+            Value<int?> parentId = const Value.absent(),
+          }) =>
+              CategoriesCompanion.insert(
+            id: id,
+            name: name,
+            sort: sort,
+            flags: flags,
+            parentId: parentId,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $CategoriesProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    Categories,
+    Category,
+    $CategoriesFilterComposer,
+    $CategoriesOrderingComposer,
+    $CategoriesAnnotationComposer,
+    $CategoriesCreateCompanionBuilder,
+    $CategoriesUpdateCompanionBuilder,
+    (Category, BaseReferences<_$AppDatabase, Categories, Category>),
+    Category,
+    PrefetchHooks Function()>;
+typedef $MangasCategoriesCreateCompanionBuilder = MangasCategoriesCompanion
+    Function({
+  Value<int> id,
+  required int mangaId,
+  required int categoryId,
+});
+typedef $MangasCategoriesUpdateCompanionBuilder = MangasCategoriesCompanion
+    Function({
+  Value<int> id,
+  Value<int> mangaId,
+  Value<int> categoryId,
+});
+
+class $MangasCategoriesFilterComposer
+    extends Composer<_$AppDatabase, MangasCategories> {
+  $MangasCategoriesFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get mangaId => $composableBuilder(
+      column: $table.mangaId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get categoryId => $composableBuilder(
+      column: $table.categoryId, builder: (column) => ColumnFilters(column));
+}
+
+class $MangasCategoriesOrderingComposer
+    extends Composer<_$AppDatabase, MangasCategories> {
+  $MangasCategoriesOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get mangaId => $composableBuilder(
+      column: $table.mangaId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get categoryId => $composableBuilder(
+      column: $table.categoryId, builder: (column) => ColumnOrderings(column));
+}
+
+class $MangasCategoriesAnnotationComposer
+    extends Composer<_$AppDatabase, MangasCategories> {
+  $MangasCategoriesAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get mangaId =>
+      $composableBuilder(column: $table.mangaId, builder: (column) => column);
+
+  GeneratedColumn<int> get categoryId => $composableBuilder(
+      column: $table.categoryId, builder: (column) => column);
+}
+
+class $MangasCategoriesTableManager extends RootTableManager<
+    _$AppDatabase,
+    MangasCategories,
+    MangasCategory,
+    $MangasCategoriesFilterComposer,
+    $MangasCategoriesOrderingComposer,
+    $MangasCategoriesAnnotationComposer,
+    $MangasCategoriesCreateCompanionBuilder,
+    $MangasCategoriesUpdateCompanionBuilder,
+    (
+      MangasCategory,
+      BaseReferences<_$AppDatabase, MangasCategories, MangasCategory>
+    ),
+    MangasCategory,
+    PrefetchHooks Function()> {
+  $MangasCategoriesTableManager(_$AppDatabase db, MangasCategories table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $MangasCategoriesFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $MangasCategoriesOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $MangasCategoriesAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int> mangaId = const Value.absent(),
+            Value<int> categoryId = const Value.absent(),
+          }) =>
+              MangasCategoriesCompanion(
+            id: id,
+            mangaId: mangaId,
+            categoryId: categoryId,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required int mangaId,
+            required int categoryId,
+          }) =>
+              MangasCategoriesCompanion.insert(
+            id: id,
+            mangaId: mangaId,
+            categoryId: categoryId,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $MangasCategoriesProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    MangasCategories,
+    MangasCategory,
+    $MangasCategoriesFilterComposer,
+    $MangasCategoriesOrderingComposer,
+    $MangasCategoriesAnnotationComposer,
+    $MangasCategoriesCreateCompanionBuilder,
+    $MangasCategoriesUpdateCompanionBuilder,
+    (
+      MangasCategory,
+      BaseReferences<_$AppDatabase, MangasCategories, MangasCategory>
+    ),
+    MangasCategory,
+    PrefetchHooks Function()>;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
   $AppDatabaseManager(this._db);
   $MangasTableManager get mangas => $MangasTableManager(_db, _db.mangas);
+  $MangaLinksTableManager get mangaLinks =>
+      $MangaLinksTableManager(_db, _db.mangaLinks);
+  $ExtensionReposTableManager get extensionRepos =>
+      $ExtensionReposTableManager(_db, _db.extensionRepos);
+  $ScanlatorPriorityTableManager get scanlatorPriority =>
+      $ScanlatorPriorityTableManager(_db, _db.scanlatorPriority);
+  $ExcludedScanlatorsTableManager get excludedScanlators =>
+      $ExcludedScanlatorsTableManager(_db, _db.excludedScanlators);
+  $SourcesTableManager get sources => $SourcesTableManager(_db, _db.sources);
+  $MangaSyncTableManager get mangaSync =>
+      $MangaSyncTableManager(_db, _db.mangaSync);
   $ChaptersTableManager get chapters =>
       $ChaptersTableManager(_db, _db.chapters);
+  $HistoryTableManager get history => $HistoryTableManager(_db, _db.history);
+  $CategoriesTableManager get categories =>
+      $CategoriesTableManager(_db, _db.categories);
+  $MangasCategoriesTableManager get mangasCategories =>
+      $MangasCategoriesTableManager(_db, _db.mangasCategories);
+}
+
+class GetLinksForPrimaryResult {
+  final int linkedMangaId;
+  final int priority;
+  GetLinksForPrimaryResult({
+    required this.linkedMangaId,
+    required this.priority,
+  });
+}
+
+class GetAllLinksForBackupResult {
+  final int primarySource;
+  final String primaryUrl;
+  final int linkedSource;
+  final String linkedUrl;
+  final int priority;
+  GetAllLinksForBackupResult({
+    required this.primarySource,
+    required this.primaryUrl,
+    required this.linkedSource,
+    required this.linkedUrl,
+    required this.priority,
+  });
+}
+
+class GetAllLinkedWithPrimaryResult {
+  final int linkedMangaId;
+  final int id;
+  final int source;
+  final String url;
+  final String? artist;
+  final String? author;
+  final String? description;
+  final String? genre;
+  final String title;
+  final int status;
+  final String? thumbnailUrl;
+  final int favorite;
+  final int? lastUpdate;
+  final int? nextUpdate;
+  final int initialized;
+  final int viewer;
+  final int chapterFlags;
+  final int coverLastModified;
+  final int dateAdded;
+  final int updateStrategy;
+  final int calculateInterval;
+  final int lastModifiedAt;
+  final int? favoriteModifiedAt;
+  final int version;
+  final int isSyncing;
+  final String notes;
+  GetAllLinkedWithPrimaryResult({
+    required this.linkedMangaId,
+    required this.id,
+    required this.source,
+    required this.url,
+    this.artist,
+    this.author,
+    this.description,
+    this.genre,
+    required this.title,
+    required this.status,
+    this.thumbnailUrl,
+    required this.favorite,
+    this.lastUpdate,
+    this.nextUpdate,
+    required this.initialized,
+    required this.viewer,
+    required this.chapterFlags,
+    required this.coverLastModified,
+    required this.dateAdded,
+    required this.updateStrategy,
+    required this.calculateInterval,
+    required this.lastModifiedAt,
+    this.favoriteModifiedAt,
+    required this.version,
+    required this.isSyncing,
+    required this.notes,
+  });
+}
+
+class GetPrioritiesByMangaIdResult {
+  final String scanlator;
+  final int priority;
+  GetPrioritiesByMangaIdResult({
+    required this.scanlator,
+    required this.priority,
+  });
 }

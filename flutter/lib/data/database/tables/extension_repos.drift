@@ -1,0 +1,61 @@
+-- Mirrors data/src/main/sqldelight/tachiyomi/data/extension_repos.sq from the Kotlin app.
+-- The upstream upsert/replace had a typo "=: website" (space between = and :);
+-- corrected here to "= :website" since the Drift parser is stricter.
+
+CREATE TABLE extension_repos (
+    base_url TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    short_name TEXT,
+    website TEXT NOT NULL,
+    signing_key_fingerprint TEXT UNIQUE NOT NULL
+);
+
+findRepoByBaseUrl:
+SELECT *
+FROM extension_repos
+WHERE base_url = :base_url;
+
+findRepoBySigningKeyFingerprint:
+SELECT *
+FROM extension_repos
+WHERE signing_key_fingerprint = :fingerprint;
+
+findAllRepos:
+SELECT *
+FROM extension_repos;
+
+countRepos:
+SELECT COUNT(*)
+FROM extension_repos;
+
+insertRepo:
+INSERT INTO extension_repos(base_url, name, short_name, website, signing_key_fingerprint)
+VALUES (:base_url, :name, :short_name, :website, :fingerprint);
+
+upsertRepo:
+INSERT INTO extension_repos(base_url, name, short_name, website, signing_key_fingerprint)
+VALUES (:base_url, :name, :short_name, :website, :fingerprint)
+ON CONFLICT(base_url)
+DO UPDATE
+SET
+    name = :name,
+    short_name = :short_name,
+    website = :website,
+    signing_key_fingerprint = :fingerprint
+WHERE base_url = base_url;
+
+replaceRepo:
+INSERT INTO extension_repos(base_url, name, short_name, website, signing_key_fingerprint)
+VALUES (:base_url, :name, :short_name, :website, :fingerprint)
+ON CONFLICT(signing_key_fingerprint)
+DO UPDATE
+SET
+    base_url = :base_url,
+    name = :name,
+    short_name = :short_name,
+    website = :website
+WHERE signing_key_fingerprint = signing_key_fingerprint;
+
+deleteRepo:
+DELETE FROM extension_repos
+WHERE base_url = :base_url;

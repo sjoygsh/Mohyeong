@@ -1,0 +1,28 @@
+-- Mirrors data/src/main/sqldelight/tachiyomi/data/scanlator_priority.sq from the Kotlin app.
+
+import 'mangas.drift';
+
+CREATE TABLE scanlator_priority(
+    manga_id INTEGER NOT NULL,
+    scanlator TEXT NOT NULL,
+    priority INTEGER NOT NULL,
+    PRIMARY KEY (manga_id, scanlator),
+    FOREIGN KEY(manga_id) REFERENCES mangas (_id)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX scanlator_priority_manga_id_index ON scanlator_priority(manga_id);
+
+getPrioritiesByMangaId:
+SELECT scanlator, priority
+FROM scanlator_priority
+WHERE manga_id = :mangaId
+ORDER BY priority ASC;
+
+clearPrioritiesForManga:
+DELETE FROM scanlator_priority
+WHERE manga_id = :mangaId;
+
+insertScanlatorPriority:
+INSERT INTO scanlator_priority(manga_id, scanlator, priority)
+VALUES (:mangaId, :scanlator, :priority);

@@ -17,6 +17,15 @@ part 'app_database.g.dart';
   include: {
     'tables/mangas.drift',
     'tables/chapters.drift',
+    'tables/categories.drift',
+    'tables/mangas_categories.drift',
+    'tables/history.drift',
+    'tables/manga_sync.drift',
+    'tables/sources.drift',
+    'tables/excluded_scanlators.drift',
+    'tables/scanlator_priority.drift',
+    'tables/extension_repos.drift',
+    'tables/manga_links.drift',
   },
 )
 class AppDatabase extends _$AppDatabase {

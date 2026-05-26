@@ -1,0 +1,83 @@
+-- Mirrors data/src/main/sqldelight/tachiyomi/data/categories.sq from the Kotlin app.
+
+import 'mangas_categories.drift';
+
+CREATE TABLE categories(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    sort INTEGER NOT NULL,
+    flags INTEGER NOT NULL,
+    parent_id INTEGER DEFAULT NULL REFERENCES categories(_id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS categories_parent_id_index ON categories(parent_id);
+
+-- Insert system category. Drift runs @create statements automatically when
+-- onCreate is invoked (i.e. fresh install). For existing users upgrading from
+-- the Kotlin app, this row is already present in their categories table.
+@create: INSERT OR IGNORE INTO categories(_id, name, sort, flags) VALUES (0, '', -1, 0);
+
+-- Disallow deletion of default category
+CREATE TRIGGER IF NOT EXISTS system_category_delete_trigger BEFORE DELETE
+ON categories
+BEGIN SELECT CASE
+    WHEN old._id <= 0 THEN
+        RAISE(ABORT, 'System category cannot be deleted')
+    END;
+END;
+
+getCategory:
+SELECT *
+FROM categories
+WHERE _id = :id
+LIMIT 1;
+
+-- "order" is a SQL keyword; Drift's parser rejects backtick quoting. Aliased
+-- to "categoryOrder" instead — the domain layer maps it back to `order` on the
+-- Dart side.
+getCategories:
+SELECT
+_id AS id,
+name,
+sort AS categoryOrder,
+flags,
+parent_id AS parentId
+FROM categories
+ORDER BY sort;
+
+getCategoriesByMangaId:
+SELECT
+C._id AS id,
+C.name,
+C.sort AS categoryOrder,
+C.flags,
+C.parent_id AS parentId
+FROM categories C
+JOIN mangas_categories MC
+ON C._id = MC.category_id
+WHERE MC.manga_id = :mangaId;
+
+insertCategory:
+INSERT INTO categories(name, sort, flags, parent_id)
+VALUES (:name, :order, :flags, :parentId);
+
+deleteCategory:
+DELETE FROM categories
+WHERE _id = :categoryId;
+
+updateCategory:
+UPDATE categories
+SET name = coalesce(:name, name),
+    sort = coalesce(:order, sort),
+    flags = coalesce(:flags, flags)
+WHERE _id = :categoryId;
+
+-- Sets parent_id explicitly. Pass NULL to make the category top-level.
+updateParent:
+UPDATE categories
+SET parent_id = :parentId
+WHERE _id = :categoryId;
+
+updateAllFlags:
+UPDATE categories SET
+flags = coalesce(?, flags);
