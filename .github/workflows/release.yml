@@ -18,14 +18,34 @@ jobs:
     runs-on: 'ubuntu-24.04'
     outputs:
       tag: ${{ steps.extract.outputs.tag }}
+      # 'kotlin' for v0.x.y (legacy Kotlin/Compose app), 'flutter' for v1+.
+      # The v1.0 release flips the build pipeline; the Kotlin path is kept
+      # functional so v0.19.x bug-fix releases can still ship during the
+      # parallel-development window.
+      track: ${{ steps.extract.outputs.track }}
 
     steps:
-      - name: Get tag name
+      - name: Get tag name and track
         id: extract
-        run: echo "tag=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_OUTPUT
+        run: |
+          set -e
+          TAG="${GITHUB_REF/refs\/tags\//}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          # Strip leading 'v', take chars up to first dot as the major version.
+          MAJOR="${TAG#v}"
+          MAJOR="${MAJOR%%.*}"
+          if [ "${MAJOR}" -ge 1 ] 2>/dev/null; then
+            echo "track=flutter" >> $GITHUB_OUTPUT
+          else
+            echo "track=kotlin" >> $GITHUB_OUTPUT
+          fi
 
+  # ===========================================================================
+  # KOTLIN TRACK -- preserved for v0.19.x bug-fix releases while the Flutter
+  # rewrite is in development. Same jobs as before; gated on track == 'kotlin'.
+  # ===========================================================================
   build:
-    if: github.repository == 'sjoygsh/Mohyeong'
+    if: github.repository == 'sjoygsh/Mohyeong' && needs.get_tag.outputs.track == 'kotlin'
     name: Build
     runs-on: 'ubuntu-24.04'
     needs: get_tag
@@ -79,7 +99,7 @@ jobs:
             mohyeong-x86_64-${{ needs.get_tag.outputs.tag }}.apk
 
   build_foss:
-    if: github.repository == 'sjoygsh/Mohyeong'
+    if: github.repository == 'sjoygsh/Mohyeong' && needs.get_tag.outputs.track == 'kotlin'
     name: Build (FOSS)
     runs-on: ubuntu-24.04
     needs: get_tag
@@ -125,9 +145,110 @@ jobs:
           name: mohyeong-foss
           path: mohyeong-${{ needs.get_tag.outputs.tag }}-foss.apk
 
-  release:
-    if: github.repository == 'sjoygsh/Mohyeong'
-    name: Create GitHub Release
+  # ===========================================================================
+  # FLUTTER TRACK -- v1.0.0 onward. Same applicationId (app.mohyeong) and same
+  # keystore as the Kotlin track, so this ships as an in-place update.
+  # ===========================================================================
+  build_flutter:
+    if: github.repository == 'sjoygsh/Mohyeong' && needs.get_tag.outputs.track == 'flutter'
+    name: Build (Flutter)
+    runs-on: 'ubuntu-24.04'
+    needs: get_tag
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          # Flutter's Android plugin chain requires JDK 17. Reuse the same
+          # .java-version file the Kotlin track uses (currently 21) -- Flutter
+          # tolerates a newer JDK as long as Gradle is happy.
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@e938fdf56512cc96ef2f93601a5a40bde3801046 # v2.21.0
+        with:
+          flutter-version: '3.44.0'
+          channel: stable
+          cache: true
+
+      - name: Verify Flutter setup
+        working-directory: flutter
+        run: flutter --version
+
+      - name: Get dependencies
+        working-directory: flutter
+        run: flutter pub get
+
+      - name: Run static analysis
+        working-directory: flutter
+        run: flutter analyze
+
+      - name: Run unit + widget tests
+        working-directory: flutter
+        run: flutter test
+
+      - name: Build split-per-ABI APKs
+        working-directory: flutter
+        # --split-per-abi produces one APK per arch (arm64-v8a, armeabi-v7a,
+        # x86_64). x86 has been dropped by Flutter -- it isn't a supported
+        # Android target anymore, so we don't ship a 32-bit x86 APK.
+        run: flutter build apk --release --split-per-abi
+
+      - name: Build universal APK
+        working-directory: flutter
+        run: flutter build apk --release
+
+      - name: Stage APKs for signing
+        run: |
+          set -e
+          mkdir -p flutter-apks-to-sign
+          cp flutter/build/app/outputs/flutter-apk/app-release.apk           flutter-apks-to-sign/app-universal-release-unsigned.apk
+          cp flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk flutter-apks-to-sign/app-arm64-v8a-release-unsigned.apk
+          cp flutter/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk flutter-apks-to-sign/app-armeabi-v7a-release-unsigned.apk
+          cp flutter/build/app/outputs/flutter-apk/app-x86_64-release.apk    flutter-apks-to-sign/app-x86_64-release-unsigned.apk
+
+      - name: Sign APKs
+        uses: r0adkll/sign-android-release@a391126403df92c6a0a3988a829dd47f79b89ed7
+        with:
+          releaseDirectory: flutter-apks-to-sign
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: '35.0.1'
+
+      - name: Rename APKs
+        run: |
+          set -e
+          mv flutter-apks-to-sign/app-universal-release-unsigned-signed.apk    mohyeong-${{ needs.get_tag.outputs.tag }}.apk
+          mv flutter-apks-to-sign/app-arm64-v8a-release-unsigned-signed.apk    mohyeong-arm64-v8a-${{ needs.get_tag.outputs.tag }}.apk
+          mv flutter-apks-to-sign/app-armeabi-v7a-release-unsigned-signed.apk  mohyeong-armeabi-v7a-${{ needs.get_tag.outputs.tag }}.apk
+          mv flutter-apks-to-sign/app-x86_64-release-unsigned-signed.apk       mohyeong-x86_64-${{ needs.get_tag.outputs.tag }}.apk
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: mohyeong
+          path: |
+            mohyeong-${{ needs.get_tag.outputs.tag }}.apk
+            mohyeong-arm64-v8a-${{ needs.get_tag.outputs.tag }}.apk
+            mohyeong-armeabi-v7a-${{ needs.get_tag.outputs.tag }}.apk
+            mohyeong-x86_64-${{ needs.get_tag.outputs.tag }}.apk
+
+  # ===========================================================================
+  # RELEASE -- chooses inputs based on which track ran. The job-level `needs`
+  # waits on every potential build job; the ones that didn't run (because their
+  # `if` evaluated false) report 'skipped' which is fine for downstream jobs as
+  # long as we don't gate on `success()`.
+  # ===========================================================================
+  release_kotlin:
+    if: github.repository == 'sjoygsh/Mohyeong' && needs.get_tag.outputs.track == 'kotlin'
+    name: Create GitHub Release (Kotlin)
     runs-on: ubuntu-24.04
     needs: [get_tag, build, build_foss]
 
@@ -168,6 +289,55 @@ jobs:
             mohyeong-arm64-v8a-${{ needs.get_tag.outputs.tag }}.apk
             mohyeong-armeabi-v7a-${{ needs.get_tag.outputs.tag }}.apk
             mohyeong-x86-${{ needs.get_tag.outputs.tag }}.apk
+            mohyeong-x86_64-${{ needs.get_tag.outputs.tag }}.apk
+          draft: true
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  release_flutter:
+    if: github.repository == 'sjoygsh/Mohyeong' && needs.get_tag.outputs.track == 'flutter'
+    name: Create GitHub Release (Flutter)
+    runs-on: ubuntu-24.04
+    needs: [get_tag, build_flutter]
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          merge-multiple: true
+
+      - name: Delete all artifacts
+        uses: geekyeggo/delete-artifact@f275313e70c08f6120db482d7a6b98377786765b # v5.1.0
+        with:
+          failOnError: false
+          name: mohyeong
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          tag_name: ${{ needs.get_tag.outputs.tag }}
+          name: Mohyeong ${{ needs.get_tag.outputs.tag }}
+          body: |
+            Mohyeong ${{ needs.get_tag.outputs.tag }} -- the Flutter rewrite.
+
+            This release ships as an **in-place update** over previous v0.19.x
+            installs. Your library, history, and settings are preserved.
+
+            Check out the [past release notes](https://github.com/sjoygsh/Mohyeong/releases) for the history leading up to v1.0.
+
+            <!-->
+
+
+
+            <!-->
+
+            > [!TIP]
+            >
+            > ### If you are unsure which version to download then go with `mohyeong-${{ needs.get_tag.outputs.tag }}.apk`
+          files: |
+            mohyeong-${{ needs.get_tag.outputs.tag }}.apk
+            mohyeong-arm64-v8a-${{ needs.get_tag.outputs.tag }}.apk
+            mohyeong-armeabi-v7a-${{ needs.get_tag.outputs.tag }}.apk
             mohyeong-x86_64-${{ needs.get_tag.outputs.tag }}.apk
           draft: true
           prerelease: false

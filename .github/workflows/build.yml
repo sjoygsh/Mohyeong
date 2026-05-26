@@ -72,3 +72,49 @@ jobs:
         with:
           name: mapping-${{ github.sha }}
           path: app/build/outputs/mapping/release
+
+  # Parallel-development sanity check for the Flutter rewrite living in
+  # /flutter. Runs analyze + tests + a debug APK build so any breakage shows
+  # up in PRs alongside the Kotlin build.
+  build_flutter:
+    name: Build & Test (Flutter)
+    runs-on: 'ubuntu-24.04'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@e938fdf56512cc96ef2f93601a5a40bde3801046 # v2.21.0
+        with:
+          flutter-version: '3.44.0'
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        working-directory: flutter
+        run: flutter pub get
+
+      - name: Run static analysis
+        working-directory: flutter
+        run: flutter analyze
+
+      - name: Run unit + widget tests
+        working-directory: flutter
+        run: flutter test
+
+      - name: Build debug APK
+        working-directory: flutter
+        run: flutter build apk --debug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: flutter-debug-${{ github.sha }}
+          path: flutter/build/app/outputs/flutter-apk/app-debug.apk
