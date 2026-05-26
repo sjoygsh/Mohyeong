@@ -1,0 +1,67 @@
+name: mohyeong
+description: "Mohyeong - manga reader"
+publish_to: 'none'
+
+# versionName 1.0.0 / versionCode 31 (Kotlin app last shipped versionCode 30 in v0.19.17).
+# Bump versionCode for every release once v1.0 starts shipping.
+version: 1.0.0+31
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Database (Drift = type-safe SQL, closest analog to existing SQLDelight)
+  drift: ^2.18.0
+  drift_flutter: ^0.2.0
+  sqlite3_flutter_libs: ^0.5.24
+  path_provider: ^2.1.2
+  path: ^1.9.0
+
+  # Networking
+  dio: ^5.4.0
+
+  # WebView (for Cloudflare auto-solve reimplementation)
+  webview_flutter: ^4.7.0
+
+  # Encrypted credential storage (replaces SyncCrypto.kt — uses Keystore/Keychain)
+  flutter_secure_storage: ^9.0.0
+
+  # Background work (replaces WorkManager-based LibraryUpdateJob)
+  workmanager: ^0.9.0
+
+  # Plain preferences
+  shared_preferences: ^2.2.2
+
+  # File picker (for backup import, local source folder selection)
+  file_picker: ^10.3.3
+
+  # Image loading + caching (cover art, reader pages)
+  cached_network_image: ^3.3.1
+
+  # Cupertino icons (iOS-style)
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+  # Drift code generation
+  drift_dev: ^2.18.0
+  build_runner: ^2.4.0
+
+  # Riverpod code generation
+  riverpod_generator: ^2.4.0
+  custom_lint: ^0.6.0
+  riverpod_lint: ^2.3.10
+
+flutter:
+  uses-material-design: true
