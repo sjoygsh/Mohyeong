@@ -19,6 +19,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ### Fixed
 - **Unfavoriting the primary now offers to clear downloads from every linked source.** Previously the snackbar prompt and the delete action only walked the primary's per-source download folder, leaving the linked-source folders behind as orphaned downloads. Both `hasDownloads` (whether the snackbar prompt appears) and `deleteDownloads` (what the "Delete" action actually clears) now cover every linked manga, each resolved against its real source.
+- **Updates tab attributes linked-source chapter entries to their cluster's primary.** When a linked source publishes a new chapter, the Updates row now shows the primary's title and cover (instead of the linked source's), and tapping the cover navigates to the primary's library entry instead of a separate linked-only screen. Opening the chapter still routes through the chapter's real (linked) source, so the page loads from the correct mirror.
 
 ### Other
 - Backup / restore for linked sources was already wired up via `BackupMangaLink` (ProtoNumber 107) and `restoreMangaLinks`. Verified that links are preserved across backup round-trips and that missing manga (e.g. an uninstalled source) is skipped gracefully.

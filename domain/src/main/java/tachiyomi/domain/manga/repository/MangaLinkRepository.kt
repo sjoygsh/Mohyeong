@@ -21,6 +21,13 @@ interface MangaLinkRepository {
      */
     suspend fun getPrimariesOfLinked(linkedId: Long): List<Manga>
 
+    /**
+     * Bulk reverse-lookup snapshot of `linkedMangaId -> primary Manga` for every
+     * link row. Used by the Updates tab to attribute linked-source chapter
+     * entries to their cluster's primary library entry.
+     */
+    fun subscribeAllPrimariesByLinked(): Flow<Map<Long, Manga>>
+
     suspend fun link(primaryId: Long, linkedId: Long, priority: Long = 0L)
 
     suspend fun unlink(primaryId: Long, linkedId: Long)

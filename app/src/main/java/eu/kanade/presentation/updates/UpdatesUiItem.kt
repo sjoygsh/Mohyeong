@@ -101,6 +101,8 @@ internal fun LazyListScope.updatesUiItems(
                 UpdatesUiItem(
                     modifier = Modifier.animateItemFastScroll(),
                     update = updatesItem.update,
+                    displayTitle = updatesItem.displayTitle,
+                    displayCover = updatesItem.displayCover,
                     selected = updatesItem.selected,
                     readProgress = updatesItem.update.lastPageRead
                         .takeIf { !updatesItem.update.read && it > 0L }
@@ -134,6 +136,8 @@ internal fun LazyListScope.updatesUiItems(
 @Composable
 private fun UpdatesUiItem(
     update: UpdatesWithRelations,
+    displayTitle: String,
+    displayCover: tachiyomi.domain.manga.model.MangaCover,
     selected: Boolean,
     readProgress: String?,
     onClick: () -> Unit,
@@ -166,7 +170,7 @@ private fun UpdatesUiItem(
             modifier = Modifier
                 .padding(vertical = 6.dp)
                 .fillMaxHeight(),
-            data = update.coverData,
+            data = displayCover,
             onClick = onClickCover,
         )
 
@@ -176,7 +180,7 @@ private fun UpdatesUiItem(
                 .weight(1f),
         ) {
             Text(
-                text = update.mangaTitle,
+                text = displayTitle,
                 maxLines = 1,
                 style = MaterialTheme.typography.bodyMedium,
                 color = LocalContentColor.current.copy(alpha = textAlpha),

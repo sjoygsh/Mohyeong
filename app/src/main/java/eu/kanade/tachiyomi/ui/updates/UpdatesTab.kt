@@ -62,7 +62,11 @@ data object UpdatesTab : Tab {
             state = state,
             snackbarHostState = screenModel.snackbarHostState,
             lastUpdated = screenModel.lastUpdated,
-            onClickCover = { item -> navigator.push(MangaScreen(item.update.mangaId)) },
+            onClickCover = { item ->
+                // Route to the cluster's primary library entry when this update belongs to a
+                // linked-source manga. Falls back to the chapter's owning manga otherwise.
+                navigator.push(MangaScreen(item.primaryMangaId ?: item.update.mangaId))
+            },
             onSelectAll = screenModel::toggleAllSelection,
             onInvertSelection = screenModel::invertSelection,
             onUpdateLibrary = screenModel::updateLibrary,

@@ -43,6 +43,15 @@ FROM mangas M
 JOIN manga_links ML ON M._id = ML.primary_manga_id
 WHERE ML.linked_manga_id = :linkedId;
 
+-- Bulk reverse lookup of every (linked_manga_id -> primary Manga) pair, used by
+-- the Updates tab to attribute linked-source chapter entries to their cluster
+-- primary so the row shows the primary's title/cover and cover-tap navigates
+-- to the primary's library entry.
+getAllLinkedWithPrimary:
+SELECT ML.linked_manga_id, M.*
+FROM manga_links ML
+JOIN mangas M ON M._id = ML.primary_manga_id;
+
 insertLink:
 INSERT OR IGNORE INTO manga_links(primary_manga_id, linked_manga_id, priority)
 VALUES (:primaryId, :linkedId, :priority);

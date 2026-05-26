@@ -45,7 +45,10 @@ import tachiyomi.domain.chapter.interactor.GetChapter
 import tachiyomi.domain.chapter.interactor.UpdateChapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.library.service.LibraryPreferences
+import tachiyomi.domain.manga.interactor.GetLinkedMangas
 import tachiyomi.domain.manga.interactor.GetManga
+import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.manga.model.applyFilter
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.updates.interactor.GetUpdates
@@ -64,6 +67,7 @@ class UpdatesScreenModel(
     private val getUpdates: GetUpdates = Injekt.get(),
     private val getManga: GetManga = Injekt.get(),
     private val getChapter: GetChapter = Injekt.get(),
+    private val getLinkedMangas: GetLinkedMangas = Injekt.get(),
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
     private val updatesPreferences: UpdatesPreferences = Injekt.get(),
     val snackbarHostState: SnackbarHostState = SnackbarHostState(),
@@ -102,9 +106,12 @@ class UpdatesScreenModel(
                 getUpdatesItemPreferenceFlow().distinctUntilChanged { old, new ->
                     old.filterDownloaded == new.filterDownloaded
                 },
-            ) { updates, _, _, itemPreferences ->
+                // linkedMangaId -> primary Manga, used to attribute linked-source updates to
+                // their cluster's primary library entry (title/cover/routing).
+                getLinkedMangas.subscribeAllPrimariesByLinked().distinctUntilChanged(),
+            ) { updates, _, _, itemPreferences, primaryByLinked ->
                 updates
-                    .toUpdateItems()
+                    .toUpdateItems(primaryByLinked)
                     .applyFilters(itemPreferences)
                     .toPersistentList()
             }
@@ -159,9 +166,13 @@ class UpdatesScreenModel(
         }
     }
 
-    private fun List<UpdatesWithRelations>.toUpdateItems(): List<UpdatesItem> {
+    private fun List<UpdatesWithRelations>.toUpdateItems(
+        primaryByLinked: Map<Long, Manga>,
+    ): List<UpdatesItem> {
         return this
             .map { update ->
+                // Download lookup still resolves against the chapter's *owning* (linked or
+                // standalone) manga, since chapters live under their real source's folder.
                 val activeDownload = downloadManager.getQueuedDownloadOrNull(update.chapterId)
                 val downloaded = downloadManager.isChapterDownloaded(
                     update.chapterName,
@@ -175,8 +186,28 @@ class UpdatesScreenModel(
                     downloaded -> Download.State.DOWNLOADED
                     else -> Download.State.NOT_DOWNLOADED
                 }
+                // If this manga is on the linked side of some link row, attribute the row to
+                // its primary: cover/title from primary, and expose primaryMangaId so the
+                // cover-tap routes to the cluster's library entry. The actual chapter open
+                // still uses update.mangaId so ReaderActivity loads from the linked source.
+                val primary = primaryByLinked[update.mangaId]
+                val displayTitle = primary?.title ?: update.mangaTitle
+                val displayCover = if (primary != null) {
+                    MangaCover(
+                        mangaId = primary.id,
+                        sourceId = primary.source,
+                        isMangaFavorite = primary.favorite,
+                        url = primary.thumbnailUrl,
+                        lastModified = primary.coverLastModified,
+                    )
+                } else {
+                    update.coverData
+                }
                 UpdatesItem(
                     update = update,
+                    primaryMangaId = primary?.id,
+                    displayTitle = displayTitle,
+                    displayCover = displayCover,
                     downloadStateProvider = { downloadState },
                     downloadProgressProvider = { activeDownload?.progress ?: 0 },
                     selected = update.chapterId in selectedChapterIds,
@@ -499,4 +530,10 @@ data class UpdatesItem(
     val downloadStateProvider: () -> Download.State,
     val downloadProgressProvider: () -> Int,
     val selected: Boolean = false,
+    // Set when [update]'s manga is the linked side of a link row. Used to route cover/title
+    // taps to the cluster's primary entry while leaving chapter reads attached to the real
+    // (linked) source.
+    val primaryMangaId: Long? = null,
+    val displayTitle: String = update.mangaTitle,
+    val displayCover: MangaCover = update.coverData,
 )

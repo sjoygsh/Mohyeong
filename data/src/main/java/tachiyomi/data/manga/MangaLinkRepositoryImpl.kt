@@ -2,6 +2,7 @@ package tachiyomi.data.manga
 
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import tachiyomi.data.Database
 import tachiyomi.data.subscribeToList
 import tachiyomi.domain.manga.model.Manga
@@ -28,6 +29,47 @@ class MangaLinkRepositoryImpl(
         return database.manga_linksQueries
             .getPrimariesOfLinked(linkedId, MangaMapper::mapManga)
             .awaitAsList()
+    }
+
+    override fun subscribeAllPrimariesByLinked(): Flow<Map<Long, Manga>> {
+        return database.manga_linksQueries
+            .getAllLinkedWithPrimary {
+                    linkedMangaId,
+                    id,
+                    source,
+                    url,
+                    artist,
+                    author,
+                    description,
+                    genre,
+                    title,
+                    status,
+                    thumbnailUrl,
+                    favorite,
+                    lastUpdate,
+                    nextUpdate,
+                    initialized,
+                    viewerFlags,
+                    chapterFlags,
+                    coverLastModified,
+                    dateAdded,
+                    updateStrategy,
+                    calculateInterval,
+                    lastModifiedAt,
+                    favoriteModifiedAt,
+                    version,
+                    isSyncing,
+                    notes,
+                ->
+                linkedMangaId to MangaMapper.mapManga(
+                    id, source, url, artist, author, description, genre, title, status,
+                    thumbnailUrl, favorite, lastUpdate, nextUpdate, initialized, viewerFlags,
+                    chapterFlags, coverLastModified, dateAdded, updateStrategy, calculateInterval,
+                    lastModifiedAt, favoriteModifiedAt, version, isSyncing, notes,
+                )
+            }
+            .subscribeToList()
+            .map { pairs -> pairs.toMap() }
     }
 
     override suspend fun link(primaryId: Long, linkedId: Long, priority: Long) {
