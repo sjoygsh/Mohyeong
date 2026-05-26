@@ -1,9 +1,36 @@
+import 'package:drift/drift.dart' show Variable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/history/model/history.dart';
 import '../database/app_database.dart' as db;
 import '../database/database_provider.dart';
 import 'history_mapper.dart';
+
+/// Joined history-with-context row for the Updates/History feeds. Mirrors
+/// the shape the Kotlin app's HistoryView projects in-memory.
+class HistoryWithContext {
+  const HistoryWithContext({
+    required this.historyId,
+    required this.chapterId,
+    required this.mangaId,
+    required this.mangaTitle,
+    required this.chapterName,
+    required this.chapterNumber,
+    required this.readAt,
+    required this.timeReadMs,
+    required this.thumbnailUrl,
+  });
+
+  final int historyId;
+  final int chapterId;
+  final int mangaId;
+  final String mangaTitle;
+  final String chapterName;
+  final double chapterNumber;
+  final DateTime? readAt;
+  final int timeReadMs;
+  final String? thumbnailUrl;
+}
 
 class HistoryRepository {
   HistoryRepository(this._db);
@@ -41,6 +68,52 @@ class HistoryRepository {
   Future<int> totalReadDurationMs() async {
     final result = await _db.getReadDuration().getSingle();
     return result;
+  }
+
+  /// Streams the most recently read chapters (newest first), joined with
+  /// chapter + manga metadata so the History tab can render directly.
+  /// Rows with last_read = 0 (reset history) are excluded.
+  Stream<List<HistoryWithContext>> watchRecent({int limit = 200}) {
+    final query = _db.customSelect(
+      '''
+      SELECT
+        H._id AS history_id,
+        H.chapter_id,
+        H.last_read,
+        H.time_read,
+        C.name AS chapter_name,
+        C.chapter_number,
+        M._id AS manga_id,
+        M.title AS manga_title,
+        M.thumbnail_url
+      FROM history H
+      JOIN chapters C ON H.chapter_id = C._id
+      JOIN mangas M ON C.manga_id = M._id
+      WHERE H.last_read IS NOT NULL AND H.last_read > 0
+      ORDER BY H.last_read DESC
+      LIMIT ?1
+      ''',
+      variables: [Variable<int>(limit)],
+      readsFrom: {_db.history, _db.chapters, _db.mangas},
+    );
+    return query.watch().map((rows) {
+      return rows.map((r) {
+        final lastRead = r.read<int?>('last_read');
+        return HistoryWithContext(
+          historyId: r.read<int>('history_id'),
+          chapterId: r.read<int>('chapter_id'),
+          mangaId: r.read<int>('manga_id'),
+          mangaTitle: r.read<String>('manga_title'),
+          chapterName: r.read<String>('chapter_name'),
+          chapterNumber: r.read<double>('chapter_number'),
+          readAt: lastRead == null
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(lastRead),
+          timeReadMs: r.read<int>('time_read'),
+          thumbnailUrl: r.read<String?>('thumbnail_url'),
+        );
+      }).toList(growable: false);
+    });
   }
 }
 

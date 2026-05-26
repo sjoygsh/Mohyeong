@@ -20,6 +20,10 @@ class _FakeHistoryRepository implements HistoryRepository {
   Future<int> totalReadDurationMs() async => 0;
 
   @override
+  Stream<List<HistoryWithContext>> watchRecent({int limit = 200}) =>
+      Stream.value(const <HistoryWithContext>[]);
+
+  @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
