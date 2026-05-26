@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../categories/categories_screen.dart';
 import '../settings/settings_screen.dart';
 
 /// "More" hub -- equivalent to the Kotlin MoreTab. Routes to Settings,
@@ -12,7 +13,11 @@ class MoreScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final entries = <_MoreEntry>[
       _MoreEntry(icon: Icons.download_outlined, label: 'Downloads'),
-      _MoreEntry(icon: Icons.category_outlined, label: 'Categories'),
+      _MoreEntry(
+        icon: Icons.category_outlined,
+        label: 'Categories',
+        builder: (_) => const CategoriesScreen(),
+      ),
       _MoreEntry(icon: Icons.cloud_sync_outlined, label: 'Sync'),
       _MoreEntry(icon: Icons.backup_outlined, label: 'Backup & restore'),
       _MoreEntry(
