@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../about/about_screen.dart';
 import '../categories/categories_screen.dart';
 import '../settings/settings_screen.dart';
 
@@ -25,7 +26,11 @@ class MoreScreen extends StatelessWidget {
         label: 'Settings',
         builder: (_) => const SettingsScreen(),
       ),
-      _MoreEntry(icon: Icons.info_outline, label: 'About'),
+      _MoreEntry(
+        icon: Icons.info_outline,
+        label: 'About',
+        builder: (_) => const AboutScreen(),
+      ),
     ];
 
     return Scaffold(
