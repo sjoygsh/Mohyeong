@@ -651,7 +651,19 @@ class MangaScreenModel(
         ingest(merged.primaryChapters, isPrimary = true)
         for ((_, chs) in merged.linked) ingest(chs, isPrimary = false)
 
-        return (winners.values.toList() + unrecognized) to byNumber
+        // Reassign sourceOrder for the merged set: each source assigns its own sourceOrder
+        // independently (newest = 0 in every source), so a naive sort by sourceOrder
+        // interleaves them nonsensically. Resequence by chapter number descending so the
+        // existing "source order" sort produces the right merged order across sources.
+        // Mutation is on Chapter copies that only flow into UI state — DB rows are untouched.
+        val sortedWinners = winners.values.sortedByDescending { it.chapterNumber }
+        val resequenced = sortedWinners.mapIndexed { i, c -> c.copy(sourceOrder = i.toLong()) }
+        val unrecognizedOffset = resequenced.size.toLong()
+        val resequencedUnrecognized = unrecognized.mapIndexed { i, c ->
+            c.copy(sourceOrder = unrecognizedOffset + i)
+        }
+
+        return (resequenced + resequencedUnrecognized) to byNumber
     }
 
     /**

@@ -12,6 +12,11 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+## [0.19.16]
+
+### Fixed
+- **Merged chapter list across linked sources is now sorted correctly.** With the linked-sources merge in 0.19.15, chapters from different sources would interleave nonsensically (e.g. primary's Ch.27 appearing above linked's Ch.28) because each source assigns its own `sourceOrder=0` to its newest chapter, and the default "source order" sort can't compare across sources. Merged chapters are now resequenced by chapter number for display, so the existing sort produces the expected order. Side effect: the spurious "Missing N chapters" separator between out-of-order chapters is gone.
+
 ## [0.19.15]
 
 ### Changed
