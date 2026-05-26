@@ -15,4 +15,9 @@ class GetLinkedMangas(
     fun subscribe(primaryId: Long): Flow<List<Manga>> {
         return mangaLinkRepository.getLinkedMangasAsFlow(primaryId)
     }
+
+    /** Reverse lookup — see [MangaLinkRepository.getPrimariesOfLinked]. */
+    suspend fun primariesOf(linkedId: Long): List<Manga> {
+        return mangaLinkRepository.getPrimariesOfLinked(linkedId)
+    }
 }

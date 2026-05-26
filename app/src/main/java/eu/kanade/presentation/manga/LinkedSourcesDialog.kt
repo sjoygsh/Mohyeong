@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -52,6 +53,7 @@ fun LinkedSourcesDialog(
     loadCandidates: suspend () -> List<Manga>,
     onLink: (Long) -> Unit,
     onUnlink: (Long) -> Unit,
+    onMakePrimary: (Long) -> Unit,
     onOpenManga: (Long) -> Unit,
     onRefreshAll: () -> Unit,
     onDismissRequest: () -> Unit,
@@ -62,6 +64,7 @@ fun LinkedSourcesDialog(
     var candidates by remember { mutableStateOf<List<Manga>>(emptyList()) }
     var refreshTrigger by remember { mutableStateOf(0) }
     var pickerOpen by remember { mutableStateOf(false) }
+    var promoteTarget by remember { mutableStateOf<Manga?>(null) }
 
     LaunchedEffect(refreshTrigger) {
         linked = loadLinked()
@@ -105,6 +108,7 @@ fun LinkedSourcesDialog(
                                     onUnlink(entry.id)
                                     refreshTrigger += 1
                                 },
+                                onMakePrimary = { promoteTarget = entry },
                             )
                         }
                     }
@@ -144,6 +148,32 @@ fun LinkedSourcesDialog(
             }
         },
     )
+
+    promoteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { promoteTarget = null },
+            title = { Text(stringResource(MR.strings.action_make_primary)) },
+            text = {
+                Text(stringResource(MR.strings.linked_sources_make_primary_confirm, target.title))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onMakePrimary(target.id)
+                        promoteTarget = null
+                        onDismissRequest()
+                    },
+                ) {
+                    Text(stringResource(MR.strings.action_make_primary))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { promoteTarget = null }) {
+                    Text(stringResource(MR.strings.action_cancel))
+                }
+            },
+        )
+    }
 
     if (pickerOpen) {
         AlertDialog(
@@ -186,6 +216,7 @@ private fun LinkedRow(
     sourceName: String,
     onClick: () -> Unit,
     onRemove: () -> Unit,
+    onMakePrimary: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -218,6 +249,12 @@ private fun LinkedRow(
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = onMakePrimary) {
+            Icon(
+                imageVector = Icons.Outlined.Star,
+                contentDescription = stringResource(MR.strings.action_make_primary),
             )
         }
         IconButton(onClick = onRemove) {

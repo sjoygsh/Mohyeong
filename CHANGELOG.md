@@ -12,6 +12,18 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+## [0.19.17]
+
+### Added
+- **"Make primary" — swap which linked source owns the cluster.** Each entry in the Linked sources dialog now has a star icon next to the remove button. Tapping it promotes that linked manga to the primary of the cluster: its title, cover, and description take over the library entry, and the old primary becomes a linked entry alongside the rest. Useful when you'd rather have a different source's metadata without re-linking from scratch. If the target isn't favorited yet, it's added to your default category as part of the swap so the library entry doesn't vanish.
+
+### Fixed
+- **Unfavoriting the primary now offers to clear downloads from every linked source.** Previously the snackbar prompt and the delete action only walked the primary's per-source download folder, leaving the linked-source folders behind as orphaned downloads. Both `hasDownloads` (whether the snackbar prompt appears) and `deleteDownloads` (what the "Delete" action actually clears) now cover every linked manga, each resolved against its real source.
+
+### Other
+- Backup / restore for linked sources was already wired up via `BackupMangaLink` (ProtoNumber 107) and `restoreMangaLinks`. Verified that links are preserved across backup round-trips and that missing manga (e.g. an uninstalled source) is skipped gracefully.
+- "Open in browser" / "Share" from a chapter already routes to the correct source — `ReaderViewModel.getChapterUrl()` resolves the source via `manga.source` on the chapter's owning manga, so linked-source chapters share/open with their own source's URL, not the primary's.
+
 ## [0.19.16]
 
 ### Fixed

@@ -24,6 +24,12 @@ class MangaLinkRepositoryImpl(
             .subscribeToList()
     }
 
+    override suspend fun getPrimariesOfLinked(linkedId: Long): List<Manga> {
+        return database.manga_linksQueries
+            .getPrimariesOfLinked(linkedId, MangaMapper::mapManga)
+            .awaitAsList()
+    }
+
     override suspend fun link(primaryId: Long, linkedId: Long, priority: Long) {
         database.manga_linksQueries.insertLink(primaryId, linkedId, priority)
     }

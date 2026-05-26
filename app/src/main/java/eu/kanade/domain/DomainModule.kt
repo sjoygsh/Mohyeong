@@ -84,6 +84,7 @@ import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.interactor.GetMangaByUrlAndSourceId
 import tachiyomi.domain.manga.interactor.GetMangaWithChapters
 import tachiyomi.domain.manga.interactor.LinkManga
+import tachiyomi.domain.manga.interactor.MakeLinkedPrimary
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.interactor.ResetViewerFlags
 import tachiyomi.domain.manga.interactor.SetMangaChapterFlags
@@ -130,6 +131,7 @@ class DomainModule : InjektModule {
         addFactory { GetLinkedMangas(get()) }
         addFactory { LinkManga(get()) }
         addFactory { UnlinkManga(get()) }
+        addFactory { MakeLinkedPrimary(get(), get()) }
         addFactory { GetDuplicateLibraryManga(get()) }
         addFactory { GetFavorites(get()) }
         addFactory { GetLibraryManga(get()) }

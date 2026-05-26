@@ -34,6 +34,15 @@ JOIN manga_links ML ON M._id = ML.linked_manga_id
 WHERE ML.primary_manga_id = :primaryId
 ORDER BY ML.priority ASC, ML.linked_manga_id ASC;
 
+-- Reverse lookup: given a manga that is on the linked side of some link row,
+-- find the primary that points at it. Returns at most one row in practice,
+-- but a manga could theoretically be linked from multiple primaries.
+getPrimariesOfLinked:
+SELECT M.*
+FROM mangas M
+JOIN manga_links ML ON M._id = ML.primary_manga_id
+WHERE ML.linked_manga_id = :linkedId;
+
 insertLink:
 INSERT OR IGNORE INTO manga_links(primary_manga_id, linked_manga_id, priority)
 VALUES (:primaryId, :linkedId, :priority);

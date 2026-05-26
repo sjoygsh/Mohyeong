@@ -125,6 +125,10 @@
     <string name="linked_sources_no_candidates">No other favorites available to link.</string>
     <string name="linked_sources_refreshed">Linked sources refreshed.</string>
     <string name="action_refresh_linked">Refresh linked</string>
+    <string name="action_make_primary">Make primary</string>
+    <string name="linked_sources_make_primary_confirm">Make %1$s the primary entry for this cluster? Its title, cover, and description will replace the current ones.</string>
+    <string name="linked_sources_primary_changed">Primary entry updated.</string>
+    <string name="linked_sources_make_primary_failed">Could not promote linked entry.</string>
     <string name="sync_running">Sync running…</string>
     <string name="sync_last_error">Last error: %1$s</string>
     <string name="action_display_mode">Display mode</string>

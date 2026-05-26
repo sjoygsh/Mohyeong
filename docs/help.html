@@ -427,23 +427,26 @@
     <h1 id="linked-sources" style="margin-top:3rem;">Linked Sources <span class="badge">Mohyeong exclusive</span></h1>
     <p>
       Linked Sources lets you attach multiple source entries to a single manga in your library.
-      When you open that manga, chapters from all linked sources are merged into one unified
-      chapter list — no duplicates, no switching between entries.
+      The entry you originally added is the <strong>primary</strong>; everything else you attach
+      is a <strong>linked source</strong>. When you open the primary, chapters from every linked
+      source are merged into one chapter list — and library updates walk every linked source so
+      their new chapters appear under the primary entry, even when the primary itself hasn't
+      updated.
     </p>
 
     <h2 id="linked-why">Why use linked sources?</h2>
     <p>
       Some titles exist on multiple sources with different translation groups, quality levels,
       or update speeds. Instead of maintaining separate library entries, link them so the fastest
-      or highest-quality chapter always surfaces automatically.
+      or highest-quality chapter always surfaces under one entry.
     </p>
 
     <h2 id="linked-how">How to link sources</h2>
     <ol class="steps">
       <li>
         <div>
-          <strong>Open a manga</strong>
-          Navigate to any manga in your library.
+          <strong>Open the primary manga</strong>
+          Open the entry you want to keep in your library as the primary.
         </div>
       </li>
       <li>
@@ -455,27 +458,70 @@
       <li>
         <div>
           <strong>Tap "Linked Sources"</strong>
-          A dialog will show candidate matches from other sources based on title similarity.
+          The dialog lists favorited entries you can link.
         </div>
       </li>
       <li>
         <div>
           <strong>Select and confirm</strong>
-          Choose which source entries to link. They'll be merged into the chapter list immediately.
+          Choose the source entries to link. The merged chapter list updates immediately.
         </div>
       </li>
     </ol>
 
-    <h3>Chapter deduplication</h3>
-    <p>
-      When multiple linked sources provide the same chapter number, Mohyeong deduplicates by
-      chapter number. The source order in your linked list determines priority when
-      chapters overlap.
-    </p>
+    <h2 id="linked-behavior">How merged chapters behave</h2>
+    <ul>
+      <li>
+        <strong>Library updates walk every linked source.</strong> If Asura's mirror of a title gets
+        a new chapter, it appears under your primary library entry — even if the primary source
+        itself never updated. A broken primary source no longer hides updates from working
+        mirrors; a broken mirror no longer aborts updates from siblings.
+      </li>
+      <li>
+        <strong>Dedupe is by recognized chapter number.</strong> The primary always wins ties; if
+        the primary is missing a chapter number, the earliest-linked source fills the gap.
+      </li>
+      <li>
+        <strong>Read state is mirrored across linked sources by chapter number.</strong> Marking
+        Ch.10 read on the merged list marks Ch.10 read on every linked source's row, so swapping
+        the primary later doesn't reset your progress.
+      </li>
+      <li>
+        <strong>Downloads go to each chapter's true source folder.</strong> A chapter served by
+        Asura is downloaded against Asura's source with Asura's URL — not silently dumped into
+        the primary's folder.
+      </li>
+      <li>
+        <strong>Pull-to-refresh on the manga screen always walks every linked source</strong>, not
+        just on primary failure.
+      </li>
+    </ul>
+
+    <h2 id="linked-limits">Limitations</h2>
+    <ul>
+      <li>
+        <strong>Metadata stays primary-only.</strong> Cover, title, and description always come
+        from the primary entry. Linked-source metadata is ignored.
+      </li>
+      <li>
+        <strong>No in-app way to swap primary ↔ linked.</strong> If you want to flip which entry is
+        primary, unlink and relink in the opposite direction.
+      </li>
+      <li>
+        <strong>Removing the primary from library only prompts about primary's downloads.</strong>
+        Linked-source chapters of the same series stay downloaded — clean them up from each
+        linked entry separately.
+      </li>
+      <li>
+        <strong>Linked entries don't need to stay in your library.</strong> Links live independently
+        of the favorite flag, so you can unfavorite a linked entry and the link still works.
+        Uninstalling the source extension, however, silently skips that source on every refresh.
+      </li>
+    </ul>
 
     <div class="callout warning">
-      <strong>Note:</strong> Linked source relationships are stored locally and are included
-      in sync/backup exports. They are not part of any global database.
+      <strong>Note:</strong> Linked source relationships are stored locally. They are not part of
+      any global database.
     </div>
 
     <!-- ── SYNC OVERVIEW ───────────────────────────── -->

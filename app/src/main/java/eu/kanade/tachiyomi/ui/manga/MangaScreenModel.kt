@@ -87,6 +87,7 @@ import tachiyomi.domain.manga.interactor.GetFavorites
 import tachiyomi.domain.manga.interactor.GetLinkedMangas
 import tachiyomi.domain.manga.interactor.GetMangaWithChapters
 import tachiyomi.domain.manga.interactor.LinkManga
+import tachiyomi.domain.manga.interactor.MakeLinkedPrimary
 import tachiyomi.domain.manga.interactor.SetMangaChapterFlags
 import tachiyomi.domain.manga.interactor.UnlinkManga
 import tachiyomi.domain.manga.model.Manga
@@ -136,6 +137,7 @@ class MangaScreenModel(
     private val getLinkedMangas: GetLinkedMangas = Injekt.get(),
     private val linkMangaInteractor: LinkManga = Injekt.get(),
     private val unlinkMangaInteractor: UnlinkManga = Injekt.get(),
+    private val makeLinkedPrimary: MakeLinkedPrimary = Injekt.get(),
     private val getFavorites: GetFavorites = Injekt.get(),
     val snackbarHostState: SnackbarHostState = SnackbarHostState(),
 ) : StateScreenModel<MangaScreenModel.State>(State.Loading) {
@@ -455,19 +457,31 @@ class MangaScreenModel(
     }
 
     /**
-     * Returns true if the manga has any downloads.
+     * Returns true if the manga or any linked-source manga has downloads. We walk the linked
+     * set because each linked source stores its chapters under its own per-source folder, so
+     * unfavoriting only the primary would otherwise leave orphaned downloads behind.
      */
     private fun hasDownloads(): Boolean {
-        val manga = successState?.manga ?: return false
-        return downloadManager.getDownloadCount(manga) > 0
+        val state = successState ?: return false
+        if (downloadManager.getDownloadCount(state.manga) > 0) return true
+        return state.mangaById.values
+            .any { it.id != state.manga.id && downloadManager.getDownloadCount(it) > 0 }
     }
 
     /**
-     * Deletes all the downloads for the manga.
+     * Deletes downloads for the primary manga plus every linked-source manga. Each linked
+     * manga lives under its own source's download folder, so we resolve each by its real
+     * source rather than reusing the primary's source.
      */
     private fun deleteDownloads() {
         val state = successState ?: return
         downloadManager.deleteManga(state.manga, state.source)
+        val sourceManager = Injekt.get<SourceManager>()
+        state.mangaById.values.forEach { linked ->
+            if (linked.id == state.manga.id) return@forEach
+            val linkedSource = sourceManager.getOrStub(linked.source)
+            downloadManager.deleteManga(linked, linkedSource)
+        }
     }
 
     /**
@@ -1313,6 +1327,38 @@ class MangaScreenModel(
         val id = manga?.id ?: return
         screenModelScope.launchNonCancellable {
             unlinkMangaInteractor.await(id, targetId)
+        }
+    }
+
+    /**
+     * Promotes a linked manga to be the primary of the cluster. The current primary becomes a
+     * linked entry; siblings carry over. The new primary must already be favorited — its
+     * library entry IS the cluster's library entry after the swap, so if it weren't favorited
+     * the cluster would vanish from the library. If unfavorited, we add it via the user's
+     * default category flow before invoking the interactor.
+     */
+    fun makePrimary(targetId: Long) {
+        val currentPrimary = manga ?: return
+        if (targetId == currentPrimary.id) return
+        screenModelScope.launchNonCancellable {
+            val target = mangaRepository.getMangaById(targetId)
+            if (!target.favorite) {
+                val added = updateManga.awaitUpdateFavorite(target.id, true)
+                if (!added) {
+                    snackbarHostState.showSnackbar(
+                        message = context.stringResource(MR.strings.linked_sources_make_primary_failed),
+                    )
+                    return@launchNonCancellable
+                }
+                val defaultCategoryId = libraryPreferences.defaultCategory.get().toLong()
+                if (defaultCategoryId > 0L) {
+                    setMangaCategories.await(target.id, listOf(defaultCategoryId))
+                }
+            }
+            makeLinkedPrimary.await(currentPrimary.id, target.id)
+            snackbarHostState.showSnackbar(
+                message = context.stringResource(MR.strings.linked_sources_primary_changed),
+            )
         }
     }
 

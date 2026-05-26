@@ -284,6 +284,7 @@ class MangaScreen(
                     loadCandidates = { screenModel.loadFavoritesForLinking() },
                     onLink = screenModel::linkSource,
                     onUnlink = screenModel::unlinkSource,
+                    onMakePrimary = screenModel::makePrimary,
                     onOpenManga = { navigator.push(MangaScreen(it)) },
                     onRefreshAll = screenModel::refreshLinkedSources,
                     onDismissRequest = onDismissRequest,

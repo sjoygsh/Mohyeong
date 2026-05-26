@@ -13,6 +13,14 @@ interface MangaLinkRepository {
 
     fun getLinkedMangasAsFlow(primaryId: Long): Flow<List<Manga>>
 
+    /**
+     * Reverse lookup: given a manga that is on the linked side of some link row,
+     * return every manga that has it as a linked entry. Used by callers that
+     * receive a chapter from a linked source and need to route the user back to
+     * the primary library entry.
+     */
+    suspend fun getPrimariesOfLinked(linkedId: Long): List<Manga>
+
     suspend fun link(primaryId: Long, linkedId: Long, priority: Long = 0L)
 
     suspend fun unlink(primaryId: Long, linkedId: Long)
