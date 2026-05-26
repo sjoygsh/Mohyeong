@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../settings/settings_screen.dart';
+
 /// "More" hub -- equivalent to the Kotlin MoreTab. Routes to Settings,
-/// Categories, Data & Storage, About, etc. None of those destinations exist
-/// yet, so each list item is a no-op for now.
+/// Categories, Data & Storage, About, etc. Destinations that don't have
+/// a screen yet are left as no-op tiles.
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
 
@@ -13,7 +15,11 @@ class MoreScreen extends StatelessWidget {
       _MoreEntry(icon: Icons.category_outlined, label: 'Categories'),
       _MoreEntry(icon: Icons.cloud_sync_outlined, label: 'Sync'),
       _MoreEntry(icon: Icons.backup_outlined, label: 'Backup & restore'),
-      _MoreEntry(icon: Icons.settings_outlined, label: 'Settings'),
+      _MoreEntry(
+        icon: Icons.settings_outlined,
+        label: 'Settings',
+        builder: (_) => const SettingsScreen(),
+      ),
       _MoreEntry(icon: Icons.info_outline, label: 'About'),
     ];
 
@@ -23,12 +29,16 @@ class MoreScreen extends StatelessWidget {
         itemCount: entries.length,
         itemBuilder: (context, i) {
           final entry = entries[i];
+          final builder = entry.builder;
           return ListTile(
             leading: Icon(entry.icon),
             title: Text(entry.label),
             trailing: const Icon(Icons.chevron_right),
-            // TODO: route to each subscreen as it's implemented.
-            onTap: () {},
+            onTap: builder == null
+                ? null
+                : () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: builder),
+                    ),
           );
         },
       ),
@@ -37,7 +47,12 @@ class MoreScreen extends StatelessWidget {
 }
 
 class _MoreEntry {
-  const _MoreEntry({required this.icon, required this.label});
+  const _MoreEntry({
+    required this.icon,
+    required this.label,
+    this.builder,
+  });
   final IconData icon;
   final String label;
+  final WidgetBuilder? builder;
 }
