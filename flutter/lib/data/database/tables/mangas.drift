@@ -1,0 +1,84 @@
+-- Mirrors data/src/main/sqldelight/tachiyomi/data/mangas.sq from the Kotlin app.
+-- AS Type annotations (Kotlin-specific) have been dropped; conversion happens
+-- in the domain layer when reading/writing.
+
+CREATE TABLE mangas(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    source INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    artist TEXT,
+    author TEXT,
+    description TEXT,
+    genre TEXT,
+    title TEXT NOT NULL,
+    status INTEGER NOT NULL,
+    thumbnail_url TEXT,
+    favorite INTEGER NOT NULL,
+    last_update INTEGER,
+    next_update INTEGER,
+    initialized INTEGER NOT NULL,
+    viewer INTEGER NOT NULL,
+    chapter_flags INTEGER NOT NULL,
+    cover_last_modified INTEGER NOT NULL,
+    date_added INTEGER NOT NULL,
+    update_strategy INTEGER NOT NULL DEFAULT 0,
+    calculate_interval INTEGER DEFAULT 0 NOT NULL,
+    last_modified_at INTEGER NOT NULL DEFAULT 0,
+    favorite_modified_at INTEGER,
+    version INTEGER NOT NULL DEFAULT 0,
+    is_syncing INTEGER NOT NULL DEFAULT 0,
+    notes TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX library_favorite_index ON mangas(favorite) WHERE favorite = 1;
+CREATE INDEX mangas_url_index ON mangas(url);
+CREATE INDEX idx_mangas_source ON mangas(source);
+
+CREATE TRIGGER update_last_favorited_at_mangas
+AFTER UPDATE OF favorite ON mangas
+BEGIN
+  UPDATE mangas
+  SET favorite_modified_at = strftime('%s', 'now')
+  WHERE _id = new._id;
+END;
+
+CREATE TRIGGER update_last_modified_at_mangas
+AFTER UPDATE ON mangas
+FOR EACH ROW
+BEGIN
+  UPDATE mangas
+  SET last_modified_at = strftime('%s', 'now')
+  WHERE _id = new._id;
+END;
+
+CREATE TRIGGER update_manga_version AFTER UPDATE ON mangas
+BEGIN
+    UPDATE mangas SET version = version + 1
+    WHERE _id = new._id AND new.is_syncing = 0 AND (
+        new.url != old.url OR
+        new.description != old.description OR
+        new.favorite != old.favorite
+    );
+END;
+
+-- Basic queries (more will be added as features come online).
+getMangaById:
+SELECT *
+FROM mangas
+WHERE _id = :id;
+
+getMangaByUrlAndSource:
+SELECT *
+FROM mangas
+WHERE url = :url
+AND source = :source
+LIMIT 1;
+
+getFavorites:
+SELECT *
+FROM mangas
+WHERE favorite = 1;
+
+getAllManga:
+SELECT *
+FROM mangas;
