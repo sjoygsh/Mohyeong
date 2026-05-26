@@ -1,0 +1,50 @@
+-- Materialised as a CREATE VIEW in the Kotlin app's migration 6.sqm.
+-- Used by the Library screen to show per-manga aggregate stats without joining
+-- on every read. Includes a comma-joined list of category ids for filtering.
+--
+-- Chapter counts EXCLUDE chapters whose scanlator is in excluded_scanlators
+-- (joined on (manga_id, scanlator) -- so per-manga exclusions only).
+
+import 'mangas.drift';
+import 'chapters.drift';
+import 'history.drift';
+import 'mangas_categories.drift';
+import 'excluded_scanlators.drift';
+
+CREATE VIEW libraryView AS
+SELECT
+    M.*,
+    coalesce(C.total, 0) AS totalCount,
+    coalesce(C.readCount, 0) AS readCount,
+    coalesce(C.latestUpload, 0) AS latestUpload,
+    coalesce(C.fetchedAt, 0) AS chapterFetchedAt,
+    coalesce(C.lastRead, 0) AS lastRead,
+    coalesce(C.bookmarkCount, 0) AS bookmarkCount,
+    coalesce(MC.categories, '0') AS categories
+FROM mangas M
+LEFT JOIN (
+    SELECT
+        chapters.manga_id,
+        count(*) AS total,
+        sum(read) AS readCount,
+        coalesce(max(chapters.date_upload), 0) AS latestUpload,
+        coalesce(max(history.last_read), 0) AS lastRead,
+        coalesce(max(chapters.date_fetch), 0) AS fetchedAt,
+        sum(chapters.bookmark) AS bookmarkCount
+    FROM chapters
+    LEFT JOIN excluded_scanlators
+    ON chapters.manga_id = excluded_scanlators.manga_id
+    AND chapters.scanlator = excluded_scanlators.scanlator
+    LEFT JOIN history
+    ON chapters._id = history.chapter_id
+    WHERE excluded_scanlators.scanlator IS NULL
+    GROUP BY chapters.manga_id
+) AS C
+ON M._id = C.manga_id
+LEFT JOIN (
+    SELECT manga_id, group_concat(category_id) AS categories
+    FROM mangas_categories
+    GROUP BY manga_id
+) AS MC
+ON MC.manga_id = M._id
+WHERE M.favorite = 1;
