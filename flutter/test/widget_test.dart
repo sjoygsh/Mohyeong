@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mohyeong/data/history/history_repository.dart';
 import 'package:mohyeong/data/manga/manga_repository.dart';
+import 'package:mohyeong/data/updates/updates_repository.dart';
 import 'package:mohyeong/domain/manga/model/manga.dart';
 import 'package:mohyeong/main.dart';
 
@@ -22,6 +23,15 @@ class _FakeHistoryRepository implements HistoryRepository {
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _FakeUpdatesRepository implements UpdatesRepository {
+  @override
+  Stream<List<LibraryUpdate>> watchAll() =>
+      Stream.value(const <LibraryUpdate>[]);
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
   testWidgets('Home shell renders all five top-level tabs',
       (WidgetTester tester) async {
@@ -30,6 +40,7 @@ void main() {
         overrides: [
           mangaRepositoryProvider.overrideWithValue(_FakeMangaRepository()),
           historyRepositoryProvider.overrideWithValue(_FakeHistoryRepository()),
+          updatesRepositoryProvider.overrideWithValue(_FakeUpdatesRepository()),
         ],
         child: const MohyeongApp(),
       ),
