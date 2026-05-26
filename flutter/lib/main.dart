@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'presentation/theme/app_theme.dart';
-import 'presentation/landing/landing_screen.dart';
+import 'presentation/home/home_screen.dart';
 
 void main() {
   runApp(const ProviderScope(child: MohyeongApp()));
@@ -18,7 +18,7 @@ class MohyeongApp extends ConsumerWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
-      home: const LandingScreen(),
+      home: const HomeScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
