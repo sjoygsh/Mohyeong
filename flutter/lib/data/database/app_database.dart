@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
+import 'kotlin_db_migration.dart';
+
 part 'app_database.g.dart';
 
 /// The Mohyeong app database.
@@ -85,11 +87,17 @@ class AppDatabase extends _$AppDatabase {
 }
 
 QueryExecutor _openConnection() {
-  // `name: 'mihon'` resolves to the same on-disk path the Kotlin app used
-  // (`/data/data/app.mohyeong/databases/mihon.db` on Android). Since the
-  // applicationId is unchanged across the v0.19 -> v1.0 in-place update,
-  // existing user data is preserved.
+  // The Kotlin app shipped its SQLDelight database as
+  // `/data/data/app.mohyeong/databases/tachiyomi.db`. Drift's default
+  // location is `<getApplicationDocumentsDirectory()>/mihon.sqlite`, a
+  // different directory. On first launch after the v0.19 -> v1.0
+  // in-place upgrade we copy the legacy file across (see
+  // KotlinDbMigration). Returning the resolved path via `databasePath`
+  // makes drift open the migrated file directly.
   return driftDatabase(
     name: 'mihon',
+    native: DriftNativeOptions(
+      databasePath: KotlinDbMigration.resolveDatabasePath,
+    ),
   );
 }
