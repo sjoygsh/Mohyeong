@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/library/library_updater.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
 import '../manga/manga_details_screen.dart';
@@ -21,6 +22,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _query = '';
   LibrarySort _sort = LibrarySort.titleAsc;
   bool _searching = false;
+  bool _updating = false;
   late final TextEditingController _searchController =
       TextEditingController();
 
@@ -28,6 +30,30 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Runs a foreground library update. Triggered by the "Refresh" action
+  /// or pull-to-refresh — independent of the workmanager schedule (that
+  /// fires in the background even when the app is closed).
+  Future<void> _refreshLibrary() async {
+    if (_updating) return;
+    setState(() => _updating = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final updater = ref.read(libraryUpdaterProvider);
+      final result = await updater.updateAll();
+      if (!mounted) return;
+      final msg = result.newChapters == 0
+          ? 'No new chapters found.'
+          : '${result.newChapters} new chapter'
+              '${result.newChapters == 1 ? '' : 's'} added.';
+      messenger.showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('Refresh failed: $e')));
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
   }
 
   @override
@@ -49,6 +75,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               )
             : const Text('Library'),
         actions: [
+          IconButton(
+            icon: _updating
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            tooltip: 'Refresh library',
+            onPressed: _updating ? null : _refreshLibrary,
+          ),
           IconButton(
             icon: Icon(_searching ? Icons.close : Icons.search),
             onPressed: () {
@@ -112,7 +149,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ),
             );
           }
-          return _LibraryGrid(items: sorted);
+          return RefreshIndicator(
+            onRefresh: _refreshLibrary,
+            child: _LibraryGrid(items: sorted),
+          );
         },
       ),
     );

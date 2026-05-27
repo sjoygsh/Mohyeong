@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'data/library/library_update_preference.dart';
+import 'data/library/library_update_scheduler.dart';
 import 'data/network/app_http_client.dart';
 import 'data/preferences/theme_preference.dart';
 import 'data/source/extension_repository.dart';
@@ -24,12 +26,37 @@ Future<void> main() async {
   );
 }
 
-class MohyeongApp extends ConsumerWidget {
+class MohyeongApp extends ConsumerStatefulWidget {
   const MohyeongApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MohyeongApp> createState() => _MohyeongAppState();
+}
+
+class _MohyeongAppState extends ConsumerState<MohyeongApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Defer until first frame so the workmanager engine doesn't race the
+    // platform channel init.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final scheduler = ref.read(libraryUpdateSchedulerProvider);
+      final interval = ref.read(libraryUpdatePreferenceProvider);
+      scheduler.reschedule(interval);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final themeMode = ref.watch(themePreferenceProvider);
+    // Keep the periodic task in sync with the preference.
+    ref.listen<LibraryUpdateInterval>(
+      libraryUpdatePreferenceProvider,
+      (prev, next) {
+        if (prev == next) return;
+        ref.read(libraryUpdateSchedulerProvider).reschedule(next);
+      },
+    );
     return MaterialApp(
       title: 'Mohyeong',
       theme: AppTheme.light,

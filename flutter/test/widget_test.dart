@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mohyeong/data/history/history_repository.dart';
+import 'package:mohyeong/data/library/library_update_preference.dart';
+import 'package:mohyeong/data/library/library_update_scheduler.dart';
 import 'package:mohyeong/data/manga/manga_repository.dart';
 import 'package:mohyeong/data/source/extension_repository.dart';
 import 'package:mohyeong/data/source/installed_extension.dart';
@@ -39,6 +41,20 @@ class _FakeUpdatesRepository implements UpdatesRepository {
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// Test-only scheduler that swallows reschedule / runOnce calls. Avoids
+/// hitting the workmanager MethodChannel (which has no platform implementation
+/// in the flutter_test environment, so a real call throws).
+class _FakeLibraryUpdateScheduler implements LibraryUpdateScheduler {
+  @override
+  Future<void> reschedule(LibraryUpdateInterval interval) async {}
+
+  @override
+  Future<void> runOnce() async {}
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _FakeExtensionRepository implements ExtensionRepository {
   @override
   Stream<List<InstalledExtension>> watchInstalled() =>
@@ -67,6 +83,8 @@ void main() {
           updatesRepositoryProvider.overrideWithValue(_FakeUpdatesRepository()),
           extensionRepositoryProvider
               .overrideWithValue(_FakeExtensionRepository()),
+          libraryUpdateSchedulerProvider
+              .overrideWithValue(_FakeLibraryUpdateScheduler()),
         ],
         child: const MohyeongApp(),
       ),

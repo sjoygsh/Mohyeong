@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/chapter/model/chapter.dart';
+import '../../domain/source/model/source_chapter.dart';
 import '../database/app_database.dart' as db;
 import '../database/database_provider.dart';
 import 'chapter_mapper.dart';
@@ -63,6 +64,100 @@ class ChapterRepository {
         );
       });
     });
+  }
+
+  /// Reconciles a freshly fetched chapter list against the persisted rows for
+  /// a manga, preserving local state (read/bookmark/lastPageRead) on rows
+  /// that already exist (matched by URL). Returns the chapters that are new
+  /// to the DB — used to surface "you have new updates" entries in the
+  /// Updates tab. Mirrors the Kotlin `syncChaptersWithSource` behaviour.
+  ///
+  /// Mihon parity:
+  /// - chapters keyed by URL within (manga, url) — not deleted if missing
+  ///   from the new fetch (sources sometimes omit older chapters).
+  /// - dateFetch is stamped now() on newly inserted chapters only.
+  /// - sourceOrder is reassigned by index in the fetched list (so the order
+  ///   the source returns wins).
+  Future<List<Chapter>> syncChaptersWithSource(
+    int mangaId,
+    List<SourceChapter> fetched,
+  ) async {
+    if (fetched.isEmpty) return const [];
+    final existing = await getByMangaId(mangaId);
+    final existingByUrl = {for (final c in existing) c.url: c};
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final added = <Chapter>[];
+    final updatedCompanions = <db.ChaptersCompanion>[];
+    // Source returns chapters in display order (typically newest first).
+    // sourceOrder mirrors the index here so the existing ORDER BY
+    // source_order in getChaptersByMangaId works.
+    for (var i = 0; i < fetched.length; i++) {
+      final s = fetched[i];
+      final prior = existingByUrl[s.url];
+      if (prior == null) {
+        final inserted = Chapter(
+          id: -1,
+          mangaId: mangaId,
+          read: false,
+          bookmark: false,
+          lastPageRead: 0,
+          dateFetch: nowMs,
+          sourceOrder: i,
+          url: s.url,
+          name: s.name,
+          dateUpload: s.dateUpload,
+          chapterNumber: s.chapterNumber,
+          scanlator: s.scanlator,
+          lastModifiedAt: nowMs,
+          version: 1,
+          volumeNumber: s.volumeNumber,
+        );
+        final id = await _db.into(_db.chapters).insert(
+              db.ChaptersCompanion.insert(
+                mangaId: mangaId,
+                url: s.url,
+                name: s.name,
+                scanlator: Value(s.scanlator),
+                read: 0,
+                bookmark: 0,
+                lastPageRead: 0,
+                chapterNumber: s.chapterNumber,
+                sourceOrder: i,
+                dateFetch: nowMs,
+                dateUpload: s.dateUpload,
+                lastModifiedAt: Value(nowMs),
+                version: const Value(1),
+                isSyncing: const Value(0),
+                volumeNumber: Value(s.volumeNumber),
+              ),
+            );
+        added.add(inserted.copyWith(id: id));
+      } else {
+        updatedCompanions.add(
+          db.ChaptersCompanion(
+            id: Value(prior.id),
+            name: Value(s.name),
+            scanlator: Value(s.scanlator),
+            chapterNumber: Value(s.chapterNumber),
+            sourceOrder: Value(i),
+            dateUpload: Value(s.dateUpload),
+            volumeNumber: Value(s.volumeNumber),
+          ),
+        );
+      }
+    }
+    if (updatedCompanions.isNotEmpty) {
+      await _db.batch((b) {
+        for (final c in updatedCompanions) {
+          b.update<db.Chapters, db.Chapter>(
+            _db.chapters,
+            c,
+            where: (t) => t.id.equals(c.id.value),
+          );
+        }
+      });
+    }
+    return added;
   }
 }
 
