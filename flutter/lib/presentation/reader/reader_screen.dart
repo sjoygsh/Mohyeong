@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/chapter/chapter_repository.dart';
+import '../../data/download/download_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/source/extension_repository.dart';
 import '../../domain/chapter/model/chapter.dart';
@@ -49,11 +52,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     final chapterRepo = ref.read(chapterRepositoryProvider);
     final mangaRepo = ref.read(mangaRepositoryProvider);
     final extRepo = ref.read(extensionRepositoryProvider);
+    final downloadRepo = ref.read(downloadRepositoryProvider);
     setState(() {
       _data = _loadReaderData(
         chapterRepo,
         mangaRepo,
         extRepo,
+        downloadRepo,
         widget.mangaId,
         _chapterId,
       );
@@ -106,6 +111,7 @@ Future<_ReaderData?> _loadReaderData(
   ChapterRepository chapterRepo,
   MangaRepository mangaRepo,
   ExtensionRepository extRepo,
+  DownloadRepository downloadRepo,
   int mangaId,
   int chapterId,
 ) async {
@@ -121,12 +127,17 @@ Future<_ReaderData?> _loadReaderData(
   }
   if (target == null) return null;
 
+  final localPages =
+      await downloadRepo.localPagePaths(manga.source, manga.id, chapterId);
+
   MangaSource? source;
   Object? sourceError;
-  try {
-    source = await extRepo.getSource(manga.source.toString());
-  } catch (e) {
-    sourceError = e;
+  if (localPages == null) {
+    try {
+      source = await extRepo.getSource(manga.source.toString());
+    } catch (e) {
+      sourceError = e;
+    }
   }
 
   return _ReaderData(
@@ -135,6 +146,7 @@ Future<_ReaderData?> _loadReaderData(
     siblings: siblings,
     source: source,
     sourceError: sourceError,
+    localPagePaths: localPages,
   );
 }
 
@@ -145,6 +157,7 @@ class _ReaderData {
     required this.siblings,
     required this.source,
     required this.sourceError,
+    required this.localPagePaths,
   });
 
   final Chapter chapter;
@@ -152,6 +165,7 @@ class _ReaderData {
   final List<Chapter> siblings;
   final MangaSource? source;
   final Object? sourceError;
+  final List<String>? localPagePaths;
 
   Chapter? get previousChapter {
     final idx = siblings.indexWhere((c) => c.id == chapter.id);
@@ -186,15 +200,17 @@ class _ReaderBody extends StatelessWidget {
         children: [
           _ReaderHeader(manga: data.manga, chapter: data.chapter),
           Expanded(
-            child: data.source == null
-                ? _SourceUnavailable(
-                    mangaSourceId: data.manga.source,
-                    error: data.sourceError,
-                  )
-                : _PageList(
-                    source: data.source!,
-                    chapter: data.chapter,
-                  ),
+            child: data.localPagePaths != null
+                ? _LocalPageList(paths: data.localPagePaths!)
+                : data.source == null
+                    ? _SourceUnavailable(
+                        mangaSourceId: data.manga.source,
+                        error: data.sourceError,
+                      )
+                    : _PageList(
+                        source: data.source!,
+                        chapter: data.chapter,
+                      ),
           ),
           _ReaderControls(
             onPrev: prev == null ? null : () => onJumpToChapter(prev.id),
@@ -306,6 +322,37 @@ class _PageListState extends State<_PageList> {
           },
         );
       },
+    );
+  }
+}
+
+class _LocalPageList extends StatelessWidget {
+  const _LocalPageList({required this.paths});
+
+  final List<String> paths;
+
+  @override
+  Widget build(BuildContext context) {
+    if (paths.isEmpty) {
+      return const Center(
+        child: Text('No pages.', style: TextStyle(color: Colors.white70)),
+      );
+    }
+    return ListView.builder(
+      itemCount: paths.length,
+      itemBuilder: (_, i) => Image.file(
+        File(paths[i]),
+        fit: BoxFit.fitWidth,
+        errorBuilder: (_, error, _) => SizedBox(
+          height: 400,
+          child: Center(
+            child: Text(
+              'Page ${i + 1} failed: $error',
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

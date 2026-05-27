@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
+import '../../data/download/download_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
@@ -93,8 +96,10 @@ class MangaDetailsScreen extends ConsumerWidget {
                     SliverList.builder(
                       itemCount: chapters.length,
                       itemBuilder: (_, i) => _ChapterTile(
+                        manga: manga,
                         chapter: chapters[i],
                         chapterRepo: chapterRepo,
+                        downloadRepo: ref.watch(downloadRepositoryProvider),
                       ),
                     ),
                 ],
@@ -385,14 +390,63 @@ class _ChapterListHeader extends StatelessWidget {
   }
 }
 
-class _ChapterTile extends StatelessWidget {
-  const _ChapterTile({required this.chapter, required this.chapterRepo});
+class _ChapterTile extends StatefulWidget {
+  const _ChapterTile({
+    required this.manga,
+    required this.chapter,
+    required this.chapterRepo,
+    required this.downloadRepo,
+  });
 
+  final Manga manga;
   final Chapter chapter;
   final ChapterRepository chapterRepo;
+  final DownloadRepository downloadRepo;
+
+  @override
+  State<_ChapterTile> createState() => _ChapterTileState();
+}
+
+class _ChapterTileState extends State<_ChapterTile> {
+  late DownloadState _downloadState = DownloadState.deleted;
+  double? _progress;
+  StreamSubscription<DownloadEvent>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshDownloaded();
+    _sub = widget.downloadRepo.events.listen((e) {
+      if (e.chapterId != widget.chapter.id) return;
+      if (!mounted) return;
+      setState(() {
+        _downloadState = e.state;
+        _progress = e.progress;
+      });
+    });
+  }
+
+  Future<void> _refreshDownloaded() async {
+    final done = await widget.downloadRepo.isDownloaded(
+      widget.manga.source,
+      widget.manga.id,
+      widget.chapter.id,
+    );
+    if (!mounted) return;
+    setState(() {
+      _downloadState = done ? DownloadState.completed : DownloadState.deleted;
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final chapter = widget.chapter;
     final title = chapter.name.isEmpty
         ? 'Chapter ${_formatChapterNumber(chapter.chapterNumber)}'
         : chapter.name;
@@ -419,40 +473,67 @@ class _ChapterTile extends StatelessWidget {
       leading: chapter.bookmark
           ? const Icon(Icons.bookmark, size: 20)
           : null,
-      trailing: PopupMenuButton<_ChapterAction>(
-        onSelected: (action) {
-          switch (action) {
-            case _ChapterAction.markRead:
-              chapterRepo.setRead(chapter.id, true);
-            case _ChapterAction.markUnread:
-              chapterRepo.setRead(chapter.id, false);
-            case _ChapterAction.bookmark:
-              chapterRepo.setBookmark(chapter.id, true);
-            case _ChapterAction.unbookmark:
-              chapterRepo.setBookmark(chapter.id, false);
-          }
-        },
-        itemBuilder: (_) => [
-          if (!chapter.read)
-            const PopupMenuItem(
-              value: _ChapterAction.markRead,
-              child: Text('Mark as read'),
-            ),
-          if (chapter.read)
-            const PopupMenuItem(
-              value: _ChapterAction.markUnread,
-              child: Text('Mark as unread'),
-            ),
-          if (!chapter.bookmark)
-            const PopupMenuItem(
-              value: _ChapterAction.bookmark,
-              child: Text('Bookmark'),
-            ),
-          if (chapter.bookmark)
-            const PopupMenuItem(
-              value: _ChapterAction.unbookmark,
-              child: Text('Remove bookmark'),
-            ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _DownloadIndicator(state: _downloadState, progress: _progress),
+          PopupMenuButton<_ChapterAction>(
+            onSelected: (action) {
+              final chapterRepo = widget.chapterRepo;
+              switch (action) {
+                case _ChapterAction.markRead:
+                  chapterRepo.setRead(chapter.id, true);
+                case _ChapterAction.markUnread:
+                  chapterRepo.setRead(chapter.id, false);
+                case _ChapterAction.bookmark:
+                  chapterRepo.setBookmark(chapter.id, true);
+                case _ChapterAction.unbookmark:
+                  chapterRepo.setBookmark(chapter.id, false);
+                case _ChapterAction.download:
+                  widget.downloadRepo.enqueue(widget.manga, chapter);
+                case _ChapterAction.deleteDownload:
+                  widget.downloadRepo.deleteDownload(
+                    widget.manga.source,
+                    widget.manga.id,
+                    chapter.id,
+                  );
+              }
+            },
+            itemBuilder: (_) => [
+              if (!chapter.read)
+                const PopupMenuItem(
+                  value: _ChapterAction.markRead,
+                  child: Text('Mark as read'),
+                ),
+              if (chapter.read)
+                const PopupMenuItem(
+                  value: _ChapterAction.markUnread,
+                  child: Text('Mark as unread'),
+                ),
+              if (!chapter.bookmark)
+                const PopupMenuItem(
+                  value: _ChapterAction.bookmark,
+                  child: Text('Bookmark'),
+                ),
+              if (chapter.bookmark)
+                const PopupMenuItem(
+                  value: _ChapterAction.unbookmark,
+                  child: Text('Remove bookmark'),
+                ),
+              if (_downloadState != DownloadState.completed &&
+                  _downloadState != DownloadState.downloading &&
+                  _downloadState != DownloadState.queued)
+                const PopupMenuItem(
+                  value: _ChapterAction.download,
+                  child: Text('Download'),
+                ),
+              if (_downloadState == DownloadState.completed)
+                const PopupMenuItem(
+                  value: _ChapterAction.deleteDownload,
+                  child: Text('Delete download'),
+                ),
+            ],
+          ),
         ],
       ),
       onTap: () {
@@ -480,7 +561,56 @@ class _ChapterTile extends StatelessWidget {
   }
 }
 
-enum _ChapterAction { markRead, markUnread, bookmark, unbookmark }
+enum _ChapterAction {
+  markRead,
+  markUnread,
+  bookmark,
+  unbookmark,
+  download,
+  deleteDownload,
+}
+
+class _DownloadIndicator extends StatelessWidget {
+  const _DownloadIndicator({required this.state, required this.progress});
+
+  final DownloadState state;
+  final double? progress;
+
+  @override
+  Widget build(BuildContext context) {
+    switch (state) {
+      case DownloadState.queued:
+        return const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4),
+          child: Icon(Icons.hourglass_empty, size: 18),
+        );
+      case DownloadState.downloading:
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              value: progress,
+              strokeWidth: 2,
+            ),
+          ),
+        );
+      case DownloadState.completed:
+        return const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4),
+          child: Icon(Icons.download_done, size: 18),
+        );
+      case DownloadState.failed:
+        return const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4),
+          child: Icon(Icons.error_outline, size: 18, color: Colors.redAccent),
+        );
+      case DownloadState.deleted:
+        return const SizedBox.shrink();
+    }
+  }
+}
 
 class _LoadingScaffold extends StatelessWidget {
   const _LoadingScaffold();
