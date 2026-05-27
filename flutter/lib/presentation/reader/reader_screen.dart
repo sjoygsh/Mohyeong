@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -8,6 +9,7 @@ import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/source/extension_repository.dart';
+import '../../data/track/track_updater.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/source/model/manga_source.dart';
@@ -95,6 +97,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
             onMarkRead: () async {
               final chapterRepo = ref.read(chapterRepositoryProvider);
               await chapterRepo.setRead(data.chapter.id, true);
+              // Fire-and-forget tracker push. Failures are absorbed inside
+              // TrackUpdater; the snackbar below confirms the local write.
+              unawaited(
+                ref.read(trackUpdaterProvider).setLastChapterRead(
+                      mangaId: data.chapter.mangaId,
+                      chapterNumber: data.chapter.chapterNumber,
+                    ),
+              );
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Marked as read.')),

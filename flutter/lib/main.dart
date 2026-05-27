@@ -7,6 +7,7 @@ import 'data/network/app_http_client.dart';
 import 'data/preferences/theme_preference.dart';
 import 'data/source/extension_repository.dart';
 import 'data/source/installed_extension.dart';
+import 'data/track/tracker_registry.dart';
 import 'presentation/theme/app_theme.dart';
 import 'presentation/home/home_screen.dart';
 
@@ -59,6 +60,7 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
     );
     return MaterialApp(
       title: 'Mohyeong',
+      navigatorKey: ref.watch(trackerNavigatorKeyProvider),
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeMode,

@@ -8,10 +8,12 @@ import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/manga/manga_repository.dart';
+import '../../data/track/track_updater.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
 import '../reader/reader_screen.dart';
+import '../track/manga_tracking_sheet.dart';
 
 /// Manga details: cover + metadata header followed by the chapter list.
 /// Tapping a chapter is a no-op until the reader screen ships.
@@ -75,6 +77,11 @@ class MangaDetailsScreen extends ConsumerWidget {
                           onPressed: () =>
                               _editCategories(context, ref, manga),
                         ),
+                      IconButton(
+                        icon: const Icon(Icons.sync_outlined),
+                        tooltip: 'Tracking',
+                        onPressed: () => _openTrackingSheet(context, manga),
+                      ),
                     ],
                   ),
                   SliverToBoxAdapter(child: _Metadata(manga: manga)),
@@ -110,6 +117,15 @@ class MangaDetailsScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+void _openTrackingSheet(BuildContext context, Manga manga) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => MangaTrackingSheet(manga: manga),
+  );
 }
 
 Future<void> _toggleFavorite(
@@ -390,7 +406,7 @@ class _ChapterListHeader extends StatelessWidget {
   }
 }
 
-class _ChapterTile extends StatefulWidget {
+class _ChapterTile extends ConsumerStatefulWidget {
   const _ChapterTile({
     required this.manga,
     required this.chapter,
@@ -404,10 +420,10 @@ class _ChapterTile extends StatefulWidget {
   final DownloadRepository downloadRepo;
 
   @override
-  State<_ChapterTile> createState() => _ChapterTileState();
+  ConsumerState<_ChapterTile> createState() => _ChapterTileState();
 }
 
-class _ChapterTileState extends State<_ChapterTile> {
+class _ChapterTileState extends ConsumerState<_ChapterTile> {
   late DownloadState _downloadState = DownloadState.deleted;
   double? _progress;
   StreamSubscription<DownloadEvent>? _sub;
@@ -483,6 +499,12 @@ class _ChapterTileState extends State<_ChapterTile> {
               switch (action) {
                 case _ChapterAction.markRead:
                   chapterRepo.setRead(chapter.id, true);
+                  unawaited(
+                    ref.read(trackUpdaterProvider).setLastChapterRead(
+                          mangaId: chapter.mangaId,
+                          chapterNumber: chapter.chapterNumber,
+                        ),
+                  );
                 case _ChapterAction.markUnread:
                   chapterRepo.setRead(chapter.id, false);
                 case _ChapterAction.bookmark:

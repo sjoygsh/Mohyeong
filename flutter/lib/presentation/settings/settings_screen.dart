@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/library/library_update_preference.dart';
 import '../../data/preferences/theme_preference.dart';
+import '../track/trackers_settings_screen.dart';
 
 /// Settings screen. Currently exposes appearance + library update interval.
 /// More preference categories (reader, downloads, sync, ...) will live here
@@ -58,6 +59,19 @@ class SettingsScreen extends ConsumerWidget {
               if (picked != null) {
                 await intervalNotifier.setInterval(picked);
               }
+            },
+          ),
+          const _SectionHeader('Tracking'),
+          ListTile(
+            title: const Text('Trackers'),
+            subtitle: const Text('AniList, MyAnimeList, and more'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const TrackersSettingsScreen(),
+                ),
+              );
             },
           ),
         ],

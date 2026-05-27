@@ -34,6 +34,15 @@ class TrackRepository {
   Future<void> delete({required int mangaId, required int trackerId}) async {
     await _db.deleteMangaSync(mangaId, trackerId);
   }
+
+  /// Insert-or-replace a track row. The `manga_sync` table's UNIQUE(manga_id,
+  /// sync_id) ON CONFLICT REPLACE constraint means upserting a track for a
+  /// (manga, tracker) pair that already exists overwrites the prior row.
+  Future<int> upsert(Track track) async {
+    return _db
+        .into(_db.mangaSync)
+        .insertOnConflictUpdate(TrackMapper.toCompanion(track));
+  }
 }
 
 final trackRepositoryProvider = Provider<TrackRepository>((ref) {
