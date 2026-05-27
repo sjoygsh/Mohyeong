@@ -52,24 +52,6 @@ class _StubTracker extends Tracker {
   }
 }
 
-class KitsuTracker extends _StubTracker {
-  KitsuTracker({required super.credentials})
-      : super(
-          id: TrackerIds.kitsu,
-          name: 'Kitsu',
-          category: TrackerCategory.online,
-        );
-}
-
-class ShikimoriTracker extends _StubTracker {
-  ShikimoriTracker({required super.credentials})
-      : super(
-          id: TrackerIds.shikimori,
-          name: 'Shikimori',
-          category: TrackerCategory.online,
-        );
-}
-
 class SuwayomiTracker extends _StubTracker {
   SuwayomiTracker({required super.credentials})
       : super(

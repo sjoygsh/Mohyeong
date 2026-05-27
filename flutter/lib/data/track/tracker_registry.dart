@@ -5,9 +5,11 @@ import '../network/app_http_client.dart';
 import 'track_credential_store.dart';
 import 'tracker.dart';
 import 'trackers/anilist.dart';
+import 'trackers/kitsu.dart';
 import 'trackers/komga.dart';
 import 'trackers/manga_updates.dart';
 import 'trackers/myanimelist.dart';
+import 'trackers/shikimori.dart';
 import 'trackers/stub_trackers.dart';
 
 /// Provides the single shared navigator key all trackers use to surface the
@@ -42,8 +44,8 @@ final trackerRegistryProvider = Provider<TrackerRegistry>((ref) {
   final trackers = <Tracker>[
     MyAnimeListTracker(credentials: credentials, navigatorKey: navigatorKey),
     AniListTracker(credentials: credentials, navigatorKey: navigatorKey),
-    KitsuTracker(credentials: credentials),
-    ShikimoriTracker(credentials: credentials),
+    KitsuTracker(credentials: credentials, navigatorKey: navigatorKey),
+    ShikimoriTracker(credentials: credentials, navigatorKey: navigatorKey),
     MangaUpdatesTracker(
       credentials: credentials,
       navigatorKey: navigatorKey,
