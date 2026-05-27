@@ -60,6 +60,10 @@ dependencies:
   # Opening external URLs (about screen -> source code / changelog).
   url_launcher: ^6.2.0
 
+  # JS runtime for extensions (JavaScriptCore on iOS, QuickJS on Android).
+  # Extensions are loaded as JS files and run in a sandboxed context.
+  flutter_js: ^0.8.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
