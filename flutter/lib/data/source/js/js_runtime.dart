@@ -14,13 +14,13 @@ import 'package:flutter_js/flutter_js.dart';
 /// (the small preamble loaded before every extension). Extensions register
 /// themselves by assigning to the global `__extension` after definition.
 class JsRuntime {
-  JsRuntime({Dio? dio, this.onLog}) : _dio = dio ?? Dio() {
+  JsRuntime({required this.dio, this.onLog}) {
     _runtime = getJavascriptRuntime();
     _setup();
   }
 
   late final JavascriptRuntime _runtime;
-  final Dio _dio;
+  final Dio dio;
   final void Function(String level, String message)? onLog;
 
   void _setup() {
@@ -37,7 +37,7 @@ class JsRuntime {
         final url = req['url'] as String;
         final headers = (req['headers'] as Map?)?.cast<String, dynamic>();
         final body = req['body'];
-        final response = await _dio.request<dynamic>(
+        final response = await dio.request<dynamic>(
           url,
           data: body,
           options: Options(

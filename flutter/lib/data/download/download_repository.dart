@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/source/model/source_chapter.dart';
+import '../network/app_http_client.dart';
 import '../source/extension_repository.dart';
 
 /// Per-architecture-decisions: downloads live inside the app's data
@@ -25,10 +26,11 @@ import '../source/extension_repository.dart';
 /// be re-queued by the user (already-finished chapters are detected via
 /// the `.done` marker).
 class DownloadRepository {
-  DownloadRepository(this._extensions);
+  DownloadRepository(this._extensions, this._http);
 
   final ExtensionRepository _extensions;
-  final Dio _dio = Dio();
+  final AppHttpClient _http;
+  Dio get _dio => _http.dio;
 
   Directory? _rootCache;
   final List<_DownloadJob> _queue = [];
@@ -230,5 +232,6 @@ class DownloadEvent {
 
 final downloadRepositoryProvider = Provider<DownloadRepository>((ref) {
   final ext = ref.watch(extensionRepositoryProvider);
-  return DownloadRepository(ext);
+  final http = ref.watch(appHttpClientProvider);
+  return DownloadRepository(ext, http);
 });

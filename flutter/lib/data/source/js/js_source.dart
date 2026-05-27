@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../domain/source/model/manga_source.dart';
 import '../../../domain/source/model/source_chapter.dart';
 import '../../../domain/source/model/source_manga.dart';
@@ -13,9 +15,10 @@ class JsSource implements MangaSource {
   /// [JsRuntime] and reading the manifest the extension registers.
   static Future<JsSource> load(
     String jsSource, {
+    required Dio dio,
     void Function(String level, String message)? onLog,
   }) async {
-    final runtime = JsRuntime(onLog: onLog);
+    final runtime = JsRuntime(dio: dio, onLog: onLog);
     try {
       await runtime.loadExtensionSource(jsSource);
       final manifest = runtime.readManifest();

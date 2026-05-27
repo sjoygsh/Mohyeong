@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/source/model/manga_source.dart';
+import '../network/app_http_client.dart';
 import 'installed_extension.dart';
 import 'js/js_source.dart';
 
@@ -20,9 +21,10 @@ import 'js/js_source.dart';
 /// the user opens a given source. Uninstalling disposes the runtime and
 /// deletes the on-disk files.
 class ExtensionRepository {
-  ExtensionRepository(this._storage);
+  ExtensionRepository(this._storage, this._http);
 
   final ExtensionStorage _storage;
+  final AppHttpClient _http;
   final Map<String, MangaSource> _loaded = {};
   final _changes = StreamController<List<InstalledExtension>>.broadcast();
 
@@ -41,7 +43,7 @@ class ExtensionRepository {
     final cached = _loaded[id];
     if (cached != null) return cached;
     final source = await _storage.readSource(id);
-    final js = await JsSource.load(source);
+    final js = await JsSource.load(source, dio: _http.dio);
     _loaded[id] = js;
     return js;
   }
@@ -55,7 +57,7 @@ class ExtensionRepository {
 
   /// Installs from a remote URL (raw .js file).
   Future<InstalledExtension> installFromUrl(String url) async {
-    final response = await Dio().get<String>(
+    final response = await _http.dio.get<String>(
       url,
       options: Options(responseType: ResponseType.plain),
     );
@@ -69,7 +71,7 @@ class ExtensionRepository {
   Future<InstalledExtension> installFromString(String code) async {
     // Load once just to read + validate the manifest. The runtime gets
     // disposed; the real runtime spins up on first use.
-    final probe = await JsSource.load(code);
+    final probe = await JsSource.load(code, dio: _http.dio);
     final manifest = probe.manifest;
     await probe.dispose();
     final installed = await _storage.install(

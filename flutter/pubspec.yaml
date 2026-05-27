@@ -31,6 +31,8 @@ dependencies:
 
   # Networking
   dio: ^5.4.0
+  dio_cookie_manager: ^3.1.1
+  cookie_jar: ^4.0.8
 
   # WebView (for Cloudflare auto-solve reimplementation)
   webview_flutter: ^4.7.0

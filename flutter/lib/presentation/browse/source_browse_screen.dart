@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/source/extension_repository.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_manga.dart';
+import '../cloudflare/cloudflare_solver_screen.dart';
 
 /// Browses a single installed source: tabs for Popular / Latest / Search,
 /// each backed by an infinite-scroll grid pulled from the JS extension.
@@ -55,6 +56,21 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen> {
           child: Scaffold(
             appBar: AppBar(
               title: Text(source.name),
+              actions: [
+                if (source.baseUrl.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.shield_outlined),
+                    tooltip: 'Solve Cloudflare challenge',
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              CloudflareSolverScreen(url: source.baseUrl),
+                        ),
+                      );
+                    },
+                  ),
+              ],
               bottom: TabBar(tabs: tabs),
             ),
             body: TabBarView(
