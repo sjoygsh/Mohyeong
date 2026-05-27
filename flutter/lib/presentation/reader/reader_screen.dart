@@ -1,19 +1,26 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/manga/manga_repository.dart';
+import '../../data/source/extension_repository.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
+import '../../domain/source/model/manga_source.dart';
+import '../../domain/source/model/source_chapter.dart';
 
-/// Reader screen scaffold.
+/// Reader screen — fetches the chapter's page list from the manga's source
+/// and displays them in a vertical scroll view.
 ///
-/// The reader UI is intentionally a shell at this stage: page fetching depends
-/// on the source/extension architecture which lands in v1.1+. Until then the
-/// screen loads the chapter metadata, exposes the next/previous chapter
-/// controls, and stamps the chapter as read when the user explicitly marks it
-/// done. Once a page-fetch pipeline exists, the placeholder body is replaced
-/// with the actual PageView of decoded images.
+/// Three failure modes are surfaced explicitly:
+///   * Manga or chapter missing in DB → "Chapter not found".
+///   * Source not installed → tell the user which source they need.
+///   * Page fetch fails → show error + retry.
+///
+/// Mihon ships three reader modes (vertical/webtoon, paged LTR, paged RTL).
+/// v1.0 defaults to vertical scroll; per-manga viewer flags will route to
+/// the right widget once the paged renderer lands.
 class ReaderScreen extends ConsumerStatefulWidget {
   const ReaderScreen({
     super.key,
@@ -30,21 +37,40 @@ class ReaderScreen extends ConsumerStatefulWidget {
 
 class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   late int _chapterId = widget.chapterId;
+  Future<_ReaderData?>? _data;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  void _reload() {
+    final chapterRepo = ref.read(chapterRepositoryProvider);
+    final mangaRepo = ref.read(mangaRepositoryProvider);
+    final extRepo = ref.read(extensionRepositoryProvider);
+    setState(() {
+      _data = _loadReaderData(
+        chapterRepo,
+        mangaRepo,
+        extRepo,
+        widget.mangaId,
+        _chapterId,
+      );
+    });
+  }
+
+  void _jumpToChapter(int id) {
+    _chapterId = id;
+    _reload();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final chapterRepo = ref.watch(chapterRepositoryProvider);
-    final mangaRepo = ref.watch(mangaRepositoryProvider);
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: FutureBuilder<_ReaderData?>(
-        future: _loadReaderData(
-          chapterRepo,
-          mangaRepo,
-          widget.mangaId,
-          _chapterId,
-        ),
+        future: _data,
         builder: (context, snap) {
           if (snap.hasError) {
             return _ReaderError(error: snap.error!);
@@ -60,8 +86,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           }
           return _ReaderBody(
             data: data,
-            onJumpToChapter: (id) => setState(() => _chapterId = id),
+            onJumpToChapter: _jumpToChapter,
             onMarkRead: () async {
+              final chapterRepo = ref.read(chapterRepositoryProvider);
               await chapterRepo.setRead(data.chapter.id, true);
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
@@ -78,6 +105,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 Future<_ReaderData?> _loadReaderData(
   ChapterRepository chapterRepo,
   MangaRepository mangaRepo,
+  ExtensionRepository extRepo,
   int mangaId,
   int chapterId,
 ) async {
@@ -92,7 +120,22 @@ Future<_ReaderData?> _loadReaderData(
     }
   }
   if (target == null) return null;
-  return _ReaderData(chapter: target, manga: manga, siblings: siblings);
+
+  MangaSource? source;
+  Object? sourceError;
+  try {
+    source = await extRepo.getSource(manga.source.toString());
+  } catch (e) {
+    sourceError = e;
+  }
+
+  return _ReaderData(
+    chapter: target,
+    manga: manga,
+    siblings: siblings,
+    source: source,
+    sourceError: sourceError,
+  );
 }
 
 class _ReaderData {
@@ -100,11 +143,15 @@ class _ReaderData {
     required this.chapter,
     required this.manga,
     required this.siblings,
+    required this.source,
+    required this.sourceError,
   });
 
   final Chapter chapter;
   final Manga manga;
   final List<Chapter> siblings;
+  final MangaSource? source;
+  final Object? sourceError;
 
   Chapter? get previousChapter {
     final idx = siblings.indexWhere((c) => c.id == chapter.id);
@@ -138,7 +185,17 @@ class _ReaderBody extends StatelessWidget {
       child: Column(
         children: [
           _ReaderHeader(manga: data.manga, chapter: data.chapter),
-          const Expanded(child: _PendingPipelineNotice()),
+          Expanded(
+            child: data.source == null
+                ? _SourceUnavailable(
+                    mangaSourceId: data.manga.source,
+                    error: data.sourceError,
+                  )
+                : _PageList(
+                    source: data.source!,
+                    chapter: data.chapter,
+                  ),
+          ),
           _ReaderControls(
             onPrev: prev == null ? null : () => onJumpToChapter(prev.id),
             onNext: next == null ? null : () => onJumpToChapter(next.id),
@@ -146,6 +203,152 @@ class _ReaderBody extends StatelessWidget {
             alreadyRead: data.chapter.read,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PageList extends StatefulWidget {
+  const _PageList({required this.source, required this.chapter});
+
+  final MangaSource source;
+  final Chapter chapter;
+
+  @override
+  State<_PageList> createState() => _PageListState();
+}
+
+class _PageListState extends State<_PageList> {
+  Future<List<SourcePage>>? _pages;
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = widget.source.fetchPageList(
+      SourceChapter(url: widget.chapter.url, name: widget.chapter.name),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<SourcePage>>(
+      future: _pages,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white54, size: 64),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Failed to load pages: ${snap.error}',
+                    style: const TextStyle(color: Colors.white70),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _pages = widget.source.fetchPageList(
+                          SourceChapter(
+                            url: widget.chapter.url,
+                            name: widget.chapter.name,
+                          ),
+                        );
+                      });
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        if (!snap.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+        final pages = snap.data!;
+        if (pages.isEmpty) {
+          return const Center(
+            child: Text('No pages.', style: TextStyle(color: Colors.white70)),
+          );
+        }
+        return ListView.builder(
+          itemCount: pages.length,
+          itemBuilder: (_, i) {
+            final page = pages[i];
+            final imageUrl = page.imageUrl ?? page.url;
+            return CachedNetworkImage(
+              imageUrl: imageUrl,
+              fit: BoxFit.fitWidth,
+              httpHeaders: page.headers,
+              placeholder: (_, _) => const SizedBox(
+                height: 400,
+                child: Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+              ),
+              errorWidget: (_, _, error) => SizedBox(
+                height: 400,
+                child: Center(
+                  child: Text(
+                    'Page ${i + 1} failed: $error',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _SourceUnavailable extends StatelessWidget {
+  const _SourceUnavailable({required this.mangaSourceId, required this.error});
+
+  final int mangaSourceId;
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.extension_off_outlined,
+                color: Colors.white54, size: 64),
+            const SizedBox(height: 12),
+            Text(
+              'Source not installed.',
+              style: const TextStyle(color: Colors.white70, fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'This manga was added from source id $mangaSourceId. Install '
+              'the matching extension on the Browse tab to read it.',
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Detail: $error',
+                style: const TextStyle(color: Colors.white38, fontSize: 11),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -190,39 +393,6 @@ class _ReaderHeader extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PendingPipelineNotice extends StatelessWidget {
-  const _PendingPipelineNotice();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.image_not_supported_outlined,
-                color: Colors.white54, size: 64),
-            SizedBox(height: 12),
-            Text(
-              'Page fetching is not implemented yet.',
-              style: TextStyle(color: Colors.white70),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 6),
-            Text(
-              'The reader UI is in place; pages will appear once the '
-              'source/extension pipeline lands.',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
       ),
     );
   }
