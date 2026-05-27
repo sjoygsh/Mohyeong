@@ -1,10 +1,10 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/library/library_updater.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
+import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
 
 enum LibrarySort { titleAsc, dateAddedDesc, lastUpdateDesc }
@@ -245,11 +245,11 @@ class _Cover extends StatelessWidget {
         child: const Icon(Icons.menu_book, size: 48),
       );
     }
-    return CachedNetworkImage(
-      imageUrl: url,
+    return SourceImage(
+      url: url,
       fit: BoxFit.cover,
-      placeholder: (_, _) => Container(color: placeholderColor),
-      errorWidget: (_, _, _) => Container(
+      placeholder: (_) => Container(color: placeholderColor),
+      errorWidget: (_, _) => Container(
         color: placeholderColor,
         alignment: Alignment.center,
         child: const Icon(Icons.broken_image_outlined, size: 36),

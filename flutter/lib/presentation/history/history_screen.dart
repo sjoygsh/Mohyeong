@@ -1,8 +1,8 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/history/history_repository.dart';
+import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
 
 /// History tab. Streams the most recently read chapters with their
@@ -190,11 +190,11 @@ class _Thumb extends StatelessWidget {
       height: 56,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(4),
-        child: CachedNetworkImage(
-          imageUrl: url!,
+        child: SourceImage(
+          url: url!,
           fit: BoxFit.cover,
-          placeholder: (_, _) => fallback,
-          errorWidget: (_, _, _) => fallback,
+          placeholder: (_) => fallback,
+          errorWidget: (_, _) => fallback,
         ),
       ),
     );

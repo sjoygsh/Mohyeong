@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +11,7 @@ import '../../data/track/track_updater.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
+import '../common/source_image.dart';
 import '../reader/reader_screen.dart';
 import '../track/manga_tracking_sheet.dart';
 
@@ -291,11 +291,11 @@ class _HeaderBackdrop extends StatelessWidget {
     final url = manga.thumbnailUrl;
     final image = (url == null || url.isEmpty)
         ? Container(color: placeholderColor)
-        : CachedNetworkImage(
-            imageUrl: url,
+        : SourceImage(
+            url: url,
             fit: BoxFit.cover,
-            placeholder: (_, _) => Container(color: placeholderColor),
-            errorWidget: (_, _, _) => Container(color: placeholderColor),
+            placeholder: (_) => Container(color: placeholderColor),
+            errorWidget: (_, _) => Container(color: placeholderColor),
           );
     return Stack(
       fit: StackFit.expand,
