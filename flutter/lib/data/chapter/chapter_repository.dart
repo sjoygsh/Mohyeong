@@ -51,6 +51,18 @@ class ChapterRepository {
     ));
   }
 
+  /// Save the user's current page within a chapter. Called by the reader
+  /// on every page change; the row also receives a `lastModifiedAt` bump
+  /// so sync clients pick up the position.
+  Future<void> setLastPageRead(int chapterId, int page) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.chapters)..where((t) => t.id.equals(chapterId)))
+        .write(db.ChaptersCompanion(
+      lastPageRead: Value(page),
+      lastModifiedAt: Value(nowMs),
+    ));
+  }
+
   /// Atomically replace the chapter set for a manga (used after fetching the
   /// latest chapter list from a source).
   Future<void> replaceForManga(int mangaId, List<Chapter> chapters) async {

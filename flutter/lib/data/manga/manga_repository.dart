@@ -60,6 +60,20 @@ class MangaRepository {
     await (_db.delete(_db.mangas)..where((t) => t.id.equals(id))).go();
   }
 
+  /// Overwrite the `viewer` bitfield (reading mode + reserved bits) for a
+  /// single manga. Used by the reader's "Reading mode" picker to apply a
+  /// per-manga override. Bumps `last_modified_at` so sync clients pick up
+  /// the change.
+  Future<void> setViewerFlags(int id, int flags) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.mangas)..where((t) => t.id.equals(id))).write(
+      db.MangasCompanion(
+        viewer: Value(flags),
+        lastModifiedAt: Value(nowMs),
+      ),
+    );
+  }
+
   /// Toggle the library state of an existing manga without touching the
   /// rest of its row. Adds `dateAdded` when entering the library (matches
   /// the Kotlin behaviour so categorization-by-date sort works), and

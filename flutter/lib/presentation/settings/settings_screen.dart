@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/library/library_update_preference.dart';
 import '../../data/preferences/theme_preference.dart';
+import '../../data/reader/reader_preferences.dart';
+import '../../domain/reader/model/reading_mode.dart';
 import '../backup/backup_screen.dart';
 import '../sync/sync_settings_screen.dart';
 import '../track/trackers_settings_screen.dart';
@@ -20,6 +22,8 @@ class SettingsScreen extends ConsumerWidget {
     final interval = ref.watch(libraryUpdatePreferenceProvider);
     final intervalNotifier =
         ref.read(libraryUpdatePreferenceProvider.notifier);
+    final readerMode = ref.watch(readerPreferencesProvider);
+    final readerNotifier = ref.read(readerPreferencesProvider.notifier);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -60,6 +64,21 @@ class SettingsScreen extends ConsumerWidget {
               );
               if (picked != null) {
                 await intervalNotifier.setInterval(picked);
+              }
+            },
+          ),
+          const _SectionHeader('Reader'),
+          ListTile(
+            title: const Text('Default reading mode'),
+            subtitle: Text(readerMode.label),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<ReadingMode>(
+                context: context,
+                builder: (_) => _ReadingModePickerDialog(current: readerMode),
+              );
+              if (picked != null) {
+                await readerNotifier.setMode(picked);
               }
             },
           ),
@@ -121,6 +140,36 @@ class _SectionHeader extends StatelessWidget {
         label,
         style: const TextStyle(fontWeight: FontWeight.w600),
       ),
+    );
+  }
+}
+
+class _ReadingModePickerDialog extends StatelessWidget {
+  const _ReadingModePickerDialog({required this.current});
+
+  final ReadingMode current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Default reading mode'),
+      children: [
+        RadioGroup<ReadingMode>(
+          groupValue: current,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final m in ReadingMode.values)
+                if (m != ReadingMode.defaultMode)
+                  RadioListTile<ReadingMode>(
+                    value: m,
+                    title: Text(m.label),
+                  ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
