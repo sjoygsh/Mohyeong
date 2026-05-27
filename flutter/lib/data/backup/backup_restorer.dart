@@ -9,6 +9,7 @@ library;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/manga/model/update_strategy.dart';
 import '../../domain/track/model/track.dart';
@@ -27,12 +28,14 @@ class BackupRestoreResult {
     required this.mangaRestored,
     required this.categoriesRestored,
     required this.extensionReposRestored,
+    required this.preferencesRestored,
     required this.skippedMangaWithoutSource,
   });
 
   final int mangaRestored;
   final int categoriesRestored;
   final int extensionReposRestored;
+  final int preferencesRestored;
 
   /// Mihon backups can reference sources whose extension isn't installed
   /// in this app. The manga row is still restored (the library shows a
@@ -97,12 +100,43 @@ class BackupRestorer {
       repoCount += 1;
     }
 
+    final prefCount = await _restorePreferences(backup.backupPreferences);
+
     return BackupRestoreResult(
       mangaRestored: mangaCount,
       categoriesRestored: restoredCategoryIds.length,
       extensionReposRestored: repoCount,
+      preferencesRestored: prefCount,
       skippedMangaWithoutSource: skipped,
     );
+  }
+
+  /// Replays each [BackupPreference] back into [SharedPreferences].
+  /// Existing values are overwritten — backups are treated as the
+  /// source of truth for app-level settings. Per-source preferences are
+  /// intentionally not restored: they live in the JS extensions that
+  /// haven't shipped yet.
+  Future<int> _restorePreferences(List<BackupPreference> prefs) async {
+    if (prefs.isEmpty) return 0;
+    final store = await SharedPreferences.getInstance();
+    var count = 0;
+    for (final p in prefs) {
+      final value = p.value;
+      final ok = switch (value) {
+        BooleanPreferenceValue() => await store.setBool(p.key, value.value),
+        // SharedPreferences only has int / double — Long and Int collapse
+        // onto setInt. Floats land in setDouble. JS-side Mihon int values
+        // never exceed Dart's safe range so this is a no-op narrowing.
+        IntPreferenceValue() => await store.setInt(p.key, value.value),
+        LongPreferenceValue() => await store.setInt(p.key, value.value),
+        FloatPreferenceValue() => await store.setDouble(p.key, value.value),
+        StringPreferenceValue() => await store.setString(p.key, value.value),
+        StringSetPreferenceValue() =>
+          await store.setStringList(p.key, value.value.toList()),
+      };
+      if (ok) count += 1;
+    }
+    return count;
   }
 
   /// Restore categories, returning a list of local IDs in the same order

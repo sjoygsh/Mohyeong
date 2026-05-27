@@ -3,16 +3,15 @@
 ///
 /// Mirrors `eu.kanade.tachiyomi.data.backup.create.BackupCreator` in the
 /// Kotlin app: we capture every favorited manga, its chapters/history/
-/// tracking/category memberships, plus the small `sources` table and the
-/// configured extension repos. App-wide preferences and per-source
-/// preferences are intentionally NOT included yet — Mohyeong doesn't have
-/// a stable mapping of preference keys to Mihon's keys, and writing a
-/// partial set would surprise the user on restore. Their slot in the
-/// schema is preserved so existing Mihon `.tachibk` files round-trip when
-/// re-encoded after a restore.
+/// tracking/category memberships, the small `sources` table, configured
+/// extension repos, and every app-wide SharedPreferences entry. Per-source
+/// preferences are still skipped — they require the JS extensions to be
+/// loaded to round-trip their values, which we can't do during a
+/// non-interactive export.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../category/category_repository.dart';
 import '../chapter/chapter_repository.dart';
@@ -198,11 +197,49 @@ class BackupCreator {
       backupManga: backupManga,
       backupCategories: backupCategories,
       backupSources: backupSources,
-      backupPreferences: const [],
+      backupPreferences: await _collectAppPreferences(),
       backupSourcePreferences: const [],
       backupExtensionRepo: backupRepos,
       backupMangaLinks: const [],
     );
+  }
+
+  /// Dumps every SharedPreferences key/value into a list of
+  /// [BackupPreference]s. Types are detected by probing each getter — the
+  /// type-detection mirrors how `shared_preferences` stores them, so
+  /// `getBool` is checked before `getInt`/`getDouble` to avoid false
+  /// positives on `0`/`1` integer values that happen to be stored as bools.
+  ///
+  /// Unknown / ambiguous types fall through to a `StringPreferenceValue`
+  /// holding the stringified representation, which keeps the round-trip
+  /// lossless for our own app even if the type is opaque.
+  Future<List<BackupPreference>> _collectAppPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys();
+    final out = <BackupPreference>[];
+    for (final key in keys) {
+      final raw = prefs.get(key);
+      final value = _wrapPreferenceValue(raw);
+      if (value == null) continue;
+      out.add(BackupPreference(key: key, value: value));
+    }
+    return out;
+  }
+
+  /// Maps a raw [SharedPreferences.get] result onto a
+  /// [BackupPreferenceValue]. Returns null if the value can't be encoded
+  /// (e.g. an unsupported runtime type slipped in via a platform plugin).
+  BackupPreferenceValue? _wrapPreferenceValue(Object? raw) {
+    if (raw == null) return null;
+    if (raw is bool) return BooleanPreferenceValue(raw);
+    if (raw is int) return LongPreferenceValue(raw);
+    if (raw is double) return FloatPreferenceValue(raw);
+    if (raw is String) return StringPreferenceValue(raw);
+    if (raw is List<String>) return StringSetPreferenceValue(raw.toSet());
+    if (raw is List && raw.every((e) => e is String)) {
+      return StringSetPreferenceValue(raw.cast<String>().toSet());
+    }
+    return null;
   }
 }
 
