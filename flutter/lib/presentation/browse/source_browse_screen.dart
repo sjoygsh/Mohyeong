@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +5,7 @@ import '../../data/source/extension_repository.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../cloudflare/cloudflare_solver_screen.dart';
+import '../common/source_image.dart';
 
 /// Browses a single installed source: tabs for Popular / Latest / Search,
 /// each backed by an infinite-scroll grid pulled from the JS extension.
@@ -331,11 +331,11 @@ class _MangaCard extends StatelessWidget {
           if (url == null || url.isEmpty)
             Container(color: placeholder)
           else
-            CachedNetworkImage(
-              imageUrl: url,
+            SourceImage(
+              url: url,
               fit: BoxFit.cover,
-              placeholder: (_, _) => Container(color: placeholder),
-              errorWidget: (_, _, _) => Container(color: placeholder),
+              placeholder: (_) => Container(color: placeholder),
+              errorWidget: (_, _) => Container(color: placeholder),
             ),
           DecoratedBox(
             decoration: BoxDecoration(

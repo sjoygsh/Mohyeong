@@ -8,6 +8,8 @@ import '../../domain/source/model/manga_source.dart';
 import '../network/app_http_client.dart';
 import 'installed_extension.dart';
 import 'js/js_source.dart';
+import 'local_source.dart';
+import 'local_source_preferences.dart';
 
 /// In-memory cache of loaded [MangaSource] instances plus the install /
 /// uninstall surface used by the browse / extensions UI.
@@ -21,10 +23,11 @@ import 'js/js_source.dart';
 /// the user opens a given source. Uninstalling disposes the runtime and
 /// deletes the on-disk files.
 class ExtensionRepository {
-  ExtensionRepository(this._storage, this._http);
+  ExtensionRepository(this._storage, this._http, this._localPrefs);
 
   final ExtensionStorage _storage;
   final AppHttpClient _http;
+  final LocalSourcePreferences _localPrefs;
   final Map<String, MangaSource> _loaded = {};
   final _changes = StreamController<List<InstalledExtension>>.broadcast();
 
@@ -38,10 +41,16 @@ class ExtensionRepository {
   Future<List<InstalledExtension>> listInstalled() => _storage.listInstalled();
 
   /// Returns a loaded [MangaSource], spinning up its JS runtime the first
-  /// time it's requested.
+  /// time it's requested. Source id `'0'` is the built-in Local source,
+  /// served from the filesystem rather than the JS extension store.
   Future<MangaSource> getSource(String id) async {
     final cached = _loaded[id];
     if (cached != null) return cached;
+    if (id == LocalSource.sourceId) {
+      final local = LocalSource(_localPrefs);
+      _loaded[id] = local;
+      return local;
+    }
     final source = await _storage.readSource(id);
     final js = await JsSource.load(source, dio: _http.dio);
     _loaded[id] = js;

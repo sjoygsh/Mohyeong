@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/library/library_update_preference.dart';
 import 'data/library/library_update_scheduler.dart';
@@ -7,6 +8,7 @@ import 'data/network/app_http_client.dart';
 import 'data/preferences/theme_preference.dart';
 import 'data/source/extension_repository.dart';
 import 'data/source/installed_extension.dart';
+import 'data/source/local_source_preferences.dart';
 import 'data/track/tracker_registry.dart';
 import 'presentation/theme/app_theme.dart';
 import 'presentation/home/home_screen.dart';
@@ -15,7 +17,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final http = await AppHttpClient.instance();
   final storage = await ExtensionStorage.create();
-  final repo = ExtensionRepository(storage, http);
+  final prefs = await SharedPreferences.getInstance();
+  final localPrefs = LocalSourcePreferences(prefs);
+  final repo = ExtensionRepository(storage, http, localPrefs);
   runApp(
     ProviderScope(
       overrides: [

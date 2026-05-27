@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,6 +15,7 @@ import '../../domain/manga/model/manga.dart';
 import '../../domain/reader/model/reading_mode.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_chapter.dart';
+import '../common/source_image.dart';
 
 /// Reader screen — fetches the chapter's page list from the manga's source
 /// and displays them in either a continuous webtoon scroll or a paged
@@ -385,17 +385,17 @@ class _PageListState extends State<_PageList> {
           itemBuilder: (_, i) {
             final page = pages[i];
             final imageUrl = page.imageUrl ?? page.url;
-            return CachedNetworkImage(
-              imageUrl: imageUrl,
+            return SourceImage(
+              url: imageUrl,
               fit: BoxFit.contain,
-              httpHeaders: page.headers,
-              placeholder: (_, _) => const SizedBox(
+              headers: page.headers,
+              placeholder: (_) => const SizedBox(
                 height: 400,
                 child: Center(
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
               ),
-              errorWidget: (_, _, error) => SizedBox(
+              errorWidget: (_, error) => SizedBox(
                 height: 400,
                 child: Center(
                   child: Text(

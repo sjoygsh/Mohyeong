@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../chapter/chapter_repository.dart';
@@ -10,6 +11,7 @@ import '../manga/manga_repository.dart';
 import '../network/app_http_client.dart';
 import '../source/extension_repository.dart';
 import '../source/installed_extension.dart';
+import '../source/local_source_preferences.dart';
 import 'library_update_preference.dart';
 import 'library_updater.dart';
 
@@ -33,7 +35,9 @@ void libraryUpdateCallbackDispatcher() {
     try {
       final http = await AppHttpClient.instance();
       final storage = await ExtensionStorage.create();
-      final extensions = ExtensionRepository(storage, http);
+      final prefs = await SharedPreferences.getInstance();
+      final localPrefs = LocalSourcePreferences(prefs);
+      final extensions = ExtensionRepository(storage, http, localPrefs);
       // Spins up a fresh AppDatabase against the same on-disk file the UI
       // process uses (drift_flutter resolves it via path_provider).
       final db = AppDatabase();

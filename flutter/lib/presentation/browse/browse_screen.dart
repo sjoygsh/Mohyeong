@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
+import '../../data/source/local_source.dart';
+import '../../data/source/local_source_preferences.dart';
 import 'source_browse_screen.dart';
 
 /// Browse hosts two sub-tabs: Sources (installed sources you can browse) and
@@ -44,6 +46,7 @@ class _SourcesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(extensionRepositoryProvider);
+    final prefsAsync = ref.watch(localSourcePreferencesProvider);
     return StreamBuilder<List<InstalledExtension>>(
       stream: repo.watchInstalled(),
       builder: (context, snap) {
@@ -51,38 +54,79 @@ class _SourcesTab extends ConsumerWidget {
           return const Center(child: CircularProgressIndicator());
         }
         final extensions = snap.data!;
-        if (extensions.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'No sources installed. Install an extension on the '
-                'Extensions tab to browse manga.',
-                textAlign: TextAlign.center,
+        final localRoot = prefsAsync.value?.root;
+        return ListView(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.folder_outlined),
+              title: const Text('Local source'),
+              subtitle: Text(
+                localRoot ?? 'Tap to choose a folder of manga on this device.',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          );
-        }
-        return ListView.builder(
-          itemCount: extensions.length,
-          itemBuilder: (_, i) {
-            final e = extensions[i];
-            return ListTile(
-              title: Text(e.name),
-              subtitle: Text(e.lang.toUpperCase()),
-              onTap: () {
+              trailing: localRoot == null
+                  ? const Icon(Icons.chevron_right)
+                  : IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      tooltip: 'Change folder',
+                      onPressed: () => _pickLocalRoot(context, ref),
+                    ),
+              onTap: () async {
+                if (localRoot == null) {
+                  await _pickLocalRoot(context, ref);
+                  return;
+                }
+                if (!context.mounted) return;
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => SourceBrowseScreen(sourceId: e.id),
+                    builder: (_) =>
+                        const SourceBrowseScreen(sourceId: LocalSource.sourceId),
                   ),
                 );
               },
-            );
-          },
+            ),
+            if (extensions.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No other sources installed. Install an extension on '
+                  'the Extensions tab to browse online manga.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            for (final e in extensions)
+              ListTile(
+                title: Text(e.name),
+                subtitle: Text(e.lang.toUpperCase()),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => SourceBrowseScreen(sourceId: e.id),
+                    ),
+                  );
+                },
+              ),
+          ],
         );
       },
     );
   }
+}
+
+Future<void> _pickLocalRoot(BuildContext context, WidgetRef ref) async {
+  final picked = await FilePicker.platform.getDirectoryPath(
+    dialogTitle: 'Choose your local manga folder',
+  );
+  if (picked == null) return;
+  final prefs = await ref.read(localSourcePreferencesProvider.future);
+  await prefs.setRoot(picked);
+  // Bust the FutureProvider cache so the tile re-reads the new root.
+  ref.invalidate(localSourcePreferencesProvider);
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Local folder set to $picked')),
+  );
 }
 
 class _ExtensionsTab extends ConsumerWidget {
