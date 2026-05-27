@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/library/library_update_preference.dart';
 import '../../data/preferences/theme_preference.dart';
+import '../backup/backup_screen.dart';
 import '../track/trackers_settings_screen.dart';
 
 /// Settings screen. Currently exposes appearance + library update interval.
@@ -70,6 +71,19 @@ class SettingsScreen extends ConsumerWidget {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const TrackersSettingsScreen(),
+                ),
+              );
+            },
+          ),
+          const _SectionHeader('Data and storage'),
+          ListTile(
+            title: const Text('Backup & restore'),
+            subtitle: const Text('Mihon-compatible .tachibk export/import'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const BackupScreen(),
                 ),
               );
             },
