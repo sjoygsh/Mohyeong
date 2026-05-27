@@ -5,6 +5,8 @@ import '../network/app_http_client.dart';
 import 'track_credential_store.dart';
 import 'tracker.dart';
 import 'trackers/anilist.dart';
+import 'trackers/komga.dart';
+import 'trackers/manga_updates.dart';
 import 'trackers/myanimelist.dart';
 import 'trackers/stub_trackers.dart';
 
@@ -42,8 +44,14 @@ final trackerRegistryProvider = Provider<TrackerRegistry>((ref) {
     AniListTracker(credentials: credentials, navigatorKey: navigatorKey),
     KitsuTracker(credentials: credentials),
     ShikimoriTracker(credentials: credentials),
-    MangaUpdatesTracker(credentials: credentials),
-    KomgaTracker(credentials: credentials),
+    MangaUpdatesTracker(
+      credentials: credentials,
+      navigatorKey: navigatorKey,
+    ),
+    KomgaTracker(
+      credentials: credentials,
+      navigatorKey: navigatorKey,
+    ),
     SuwayomiTracker(credentials: credentials),
   ];
   for (final t in trackers) {

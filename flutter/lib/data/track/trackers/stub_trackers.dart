@@ -70,27 +70,6 @@ class ShikimoriTracker extends _StubTracker {
         );
 }
 
-class MangaUpdatesTracker extends _StubTracker {
-  MangaUpdatesTracker({required super.credentials})
-      : super(
-          id: TrackerIds.mangaUpdates,
-          name: 'MangaUpdates',
-          category: TrackerCategory.online,
-        );
-}
-
-class KomgaTracker extends _StubTracker {
-  KomgaTracker({required super.credentials})
-      : super(
-          id: TrackerIds.komga,
-          name: 'Komga',
-          category: TrackerCategory.advanced,
-        );
-
-  @override
-  bool get supportsServerUrl => true;
-}
-
 class SuwayomiTracker extends _StubTracker {
   SuwayomiTracker({required super.credentials})
       : super(
