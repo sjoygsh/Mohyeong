@@ -2,6 +2,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/manga/model/manga.dart';
+import '../../domain/manga/model/update_strategy.dart';
+import '../../domain/source/model/source_manga.dart';
 import '../database/app_database.dart' as db;
 import '../database/database_provider.dart';
 import 'manga_mapper.dart';
@@ -54,6 +56,52 @@ class MangaRepository {
   Future<int> upsert(Manga manga) async {
     final companion = MangaMapper.toCompanion(manga);
     return _db.into(_db.mangas).insertOnConflictUpdate(companion);
+  }
+
+  /// Insert a fresh manga row for a [candidate] returned by a source
+  /// listing. Used by flows like the migration screen that need to
+  /// land on a target manga before the library updater has run for it.
+  /// Resolves an existing row when (url, sourceId) already exists.
+  Future<Manga> insertFromSource({
+    required SourceManga candidate,
+    required int sourceId,
+  }) async {
+    final existing = await getByUrlAndSource(candidate.url, sourceId);
+    if (existing != null) return existing;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final companion = db.MangasCompanion.insert(
+      source: sourceId,
+      url: candidate.url,
+      title: candidate.title,
+      artist: Value(candidate.artist),
+      author: Value(candidate.author),
+      description: Value(candidate.description),
+      genre: Value(candidate.genre),
+      status: candidate.status,
+      thumbnailUrl: Value(candidate.thumbnailUrl),
+      favorite: 0,
+      lastUpdate: const Value(0),
+      nextUpdate: const Value(0),
+      initialized: candidate.initialized ? 1 : 0,
+      viewer: 0,
+      chapterFlags: 0,
+      coverLastModified: 0,
+      dateAdded: nowMs,
+      updateStrategy: Value(UpdateStrategy.alwaysUpdate.dbValue),
+      calculateInterval: const Value(0),
+      lastModifiedAt: Value(nowMs),
+      favoriteModifiedAt: const Value(null),
+      version: const Value(0),
+      isSyncing: const Value(0),
+      notes: const Value(''),
+    );
+    final newId =
+        await _db.into(_db.mangas).insertOnConflictUpdate(companion);
+    final inserted = await getById(newId);
+    if (inserted == null) {
+      throw StateError('Inserted manga row missing after insertFromSource.');
+    }
+    return inserted;
   }
 
   Future<void> deleteById(int id) async {

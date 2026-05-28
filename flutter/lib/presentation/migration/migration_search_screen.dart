@@ -1,0 +1,494 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../data/manga/manga_repository.dart';
+import '../../data/migration/migration_service.dart';
+import '../../data/source/extension_repository.dart';
+import '../../data/source/installed_extension.dart';
+import '../../domain/manga/model/manga.dart';
+import '../../domain/source/model/source_manga.dart';
+import '../common/source_image.dart';
+
+/// Source-to-source migration screen.
+///
+/// Flow:
+///  1. User picks a target source from the chip strip at the top.
+///  2. The search box auto-fills with the source manga's title; the
+///     user can refine.
+///  3. Results from that source render as a grid.
+///  4. Tapping a result opens a confirmation dialog with per-axis
+///     toggles. Confirming runs [MigrationService.migrate] and pops
+///     back to the new manga's details screen.
+///
+/// Mirrors Mihon's `MigrateSearchScreen` / `MigrationProcedureScreen`
+/// pair — collapsed into one screen here since we don't have Mihon's
+/// "queue every source in parallel" UX yet.
+class MigrationSearchScreen extends ConsumerStatefulWidget {
+  const MigrationSearchScreen({super.key, required this.sourceManga});
+
+  final Manga sourceManga;
+
+  @override
+  ConsumerState<MigrationSearchScreen> createState() =>
+      _MigrationSearchScreenState();
+}
+
+class _MigrationSearchScreenState
+    extends ConsumerState<MigrationSearchScreen> {
+  late final TextEditingController _queryController =
+      TextEditingController(text: widget.sourceManga.title);
+  String _activeQuery = '';
+  InstalledExtension? _selectedExt;
+  Future<List<InstalledExtension>>? _extsFuture;
+  Future<List<SourceManga>>? _resultsFuture;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _activeQuery = widget.sourceManga.title.trim();
+    _extsFuture = ref
+        .read(extensionRepositoryProvider)
+        .listInstalled()
+        .then((all) =>
+            // Hide the manga's own source — migrating onto the same
+            // source is a no-op for the user's intent.
+            all.where((e) => e.id != widget.sourceManga.source.toString())
+                .toList(growable: false))
+        .then((filtered) {
+      if (filtered.isNotEmpty && _selectedExt == null) {
+        // Auto-pick the first available source so the user sees results
+        // immediately on screen open.
+        Future.microtask(() => _onExtensionPicked(filtered.first));
+      }
+      return filtered;
+    });
+  }
+
+  @override
+  void dispose() {
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  void _onExtensionPicked(InstalledExtension ext) {
+    setState(() {
+      _selectedExt = ext;
+      _resultsFuture = _runSearch(ext, _activeQuery);
+    });
+  }
+
+  void _submitQuery() {
+    final q = _queryController.text.trim();
+    if (q.isEmpty) return;
+    setState(() {
+      _activeQuery = q;
+      final ext = _selectedExt;
+      if (ext != null) {
+        _resultsFuture = _runSearch(ext, q);
+      }
+    });
+  }
+
+  Future<List<SourceManga>> _runSearch(
+    InstalledExtension ext,
+    String query,
+  ) async {
+    final src = await ref.read(extensionRepositoryProvider).getSource(ext.id);
+    final page = await src.fetchSearch(query, 1);
+    return page.mangas;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: TextField(
+          controller: _queryController,
+          autofocus: false,
+          textInputAction: TextInputAction.search,
+          onSubmitted: (_) => _submitQuery(),
+          decoration: const InputDecoration(
+            hintText: 'Search target source',
+            border: InputBorder.none,
+          ),
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: _submitQuery,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          _SourcePickerBar(
+            future: _extsFuture,
+            selected: _selectedExt,
+            onPicked: _onExtensionPicked,
+          ),
+          Expanded(
+            child: _busy
+                ? const _MigratingOverlay()
+                : _ResultsArea(
+                    sourceManga: widget.sourceManga,
+                    selectedExt: _selectedExt,
+                    resultsFuture: _resultsFuture,
+                    onPickTarget: _onPickTarget,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onPickTarget(SourceManga candidate) async {
+    final ext = _selectedExt;
+    if (ext == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final options = await showDialog<MigrationOptions>(
+      context: context,
+      builder: (_) => _MigrationConfirmDialog(
+        sourceManga: widget.sourceManga,
+        targetSource: ext,
+        candidate: candidate,
+      ),
+    );
+    if (options == null) return;
+    setState(() => _busy = true);
+    try {
+      final sourceId = int.tryParse(ext.id);
+      if (sourceId == null) {
+        throw StateError('Source id ${ext.id} is not numeric');
+      }
+      final mangaRepo = ref.read(mangaRepositoryProvider);
+      // Find or create the target manga row.
+      final target = await mangaRepo.insertFromSource(
+        candidate: candidate,
+        sourceId: sourceId,
+      );
+      await ref.read(migrationServiceProvider).migrate(
+            source: widget.sourceManga,
+            target: target,
+            options: options,
+          );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Migration complete.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      messenger.showSnackBar(SnackBar(content: Text('Migration failed: $e')));
+    }
+  }
+
+}
+
+class _SourcePickerBar extends StatelessWidget {
+  const _SourcePickerBar({
+    required this.future,
+    required this.selected,
+    required this.onPicked,
+  });
+
+  final Future<List<InstalledExtension>>? future;
+  final InstalledExtension? selected;
+  final ValueChanged<InstalledExtension> onPicked;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<InstalledExtension>>(
+      future: future,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text('Failed to load sources: ${snap.error}'),
+          );
+        }
+        if (!snap.hasData) {
+          return const SizedBox(
+            height: 56,
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final exts = snap.data!;
+        if (exts.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'No other sources installed. Install one from Browse '
+              '→ Extensions before migrating.',
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+        return SizedBox(
+          height: 56,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            itemCount: exts.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 6),
+            itemBuilder: (_, i) {
+              final ext = exts[i];
+              return Center(
+                child: ChoiceChip(
+                  selected: ext.id == selected?.id,
+                  label: Text(ext.name),
+                  onSelected: (_) => onPicked(ext),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ResultsArea extends StatelessWidget {
+  const _ResultsArea({
+    required this.sourceManga,
+    required this.selectedExt,
+    required this.resultsFuture,
+    required this.onPickTarget,
+  });
+
+  final Manga sourceManga;
+  final InstalledExtension? selectedExt;
+  final Future<List<SourceManga>>? resultsFuture;
+  final ValueChanged<SourceManga> onPickTarget;
+
+  @override
+  Widget build(BuildContext context) {
+    if (selectedExt == null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('Pick a target source above to start searching.'),
+        ),
+      );
+    }
+    return FutureBuilder<List<SourceManga>>(
+      future: resultsFuture,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Search failed: ${snap.error}'),
+          );
+        }
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final results = snap.data!;
+        if (results.isEmpty) {
+          return const Center(child: Text('No matches on this source.'));
+        }
+        return GridView.builder(
+          padding: const EdgeInsets.all(8),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 140,
+            childAspectRatio: 0.6,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+          ),
+          itemCount: results.length,
+          itemBuilder: (_, i) => _ResultTile(
+            manga: results[i],
+            onTap: () => onPickTarget(results[i]),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ResultTile extends StatelessWidget {
+  const _ResultTile({required this.manga, required this.onTap});
+
+  final SourceManga manga;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
+    final url = manga.thumbnailUrl;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: url == null || url.isEmpty
+                  ? Container(color: placeholder)
+                  : SourceImage(
+                      url: url,
+                      fit: BoxFit.cover,
+                      placeholder: (_) => Container(color: placeholder),
+                      errorWidget: (_, _) => Container(color: placeholder),
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(6),
+              child: Text(
+                manga.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MigratingOverlay extends StatelessWidget {
+  const _MigratingOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 12),
+          Text('Migrating...'),
+        ],
+      ),
+    );
+  }
+}
+
+class _MigrationConfirmDialog extends StatefulWidget {
+  const _MigrationConfirmDialog({
+    required this.sourceManga,
+    required this.targetSource,
+    required this.candidate,
+  });
+
+  final Manga sourceManga;
+  final InstalledExtension targetSource;
+  final SourceManga candidate;
+
+  @override
+  State<_MigrationConfirmDialog> createState() =>
+      _MigrationConfirmDialogState();
+}
+
+class _MigrationConfirmDialogState extends State<_MigrationConfirmDialog> {
+  MigrationOptions _options = const MigrationOptions();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Migrate manga?'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${widget.sourceManga.title} -> '
+              '${widget.candidate.title} '
+              '(${widget.targetSource.name})',
+            ),
+            const SizedBox(height: 12),
+            _OptionTile(
+              label: 'Copy chapter read state',
+              value: _options.copyChapters,
+              onChanged: (v) => setState(
+                () => _options = MigrationOptions(
+                  copyChapters: v,
+                  copyCategories: _options.copyCategories,
+                  copyTracks: _options.copyTracks,
+                  deleteSourceManga: _options.deleteSourceManga,
+                ),
+              ),
+            ),
+            _OptionTile(
+              label: 'Copy categories',
+              value: _options.copyCategories,
+              onChanged: (v) => setState(
+                () => _options = MigrationOptions(
+                  copyChapters: _options.copyChapters,
+                  copyCategories: v,
+                  copyTracks: _options.copyTracks,
+                  deleteSourceManga: _options.deleteSourceManga,
+                ),
+              ),
+            ),
+            _OptionTile(
+              label: 'Copy tracker entries',
+              value: _options.copyTracks,
+              onChanged: (v) => setState(
+                () => _options = MigrationOptions(
+                  copyChapters: _options.copyChapters,
+                  copyCategories: _options.copyCategories,
+                  copyTracks: v,
+                  deleteSourceManga: _options.deleteSourceManga,
+                ),
+              ),
+            ),
+            _OptionTile(
+              label: 'Remove old manga from library',
+              value: _options.deleteSourceManga,
+              onChanged: (v) => setState(
+                () => _options = MigrationOptions(
+                  copyChapters: _options.copyChapters,
+                  copyCategories: _options.copyCategories,
+                  copyTracks: _options.copyTracks,
+                  deleteSourceManga: v,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_options),
+          child: const Text('Migrate'),
+        ),
+      ],
+    );
+  }
+}
+
+class _OptionTile extends StatelessWidget {
+  const _OptionTile({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return CheckboxListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
+      value: value,
+      onChanged: (v) => onChanged(v ?? value),
+      title: Text(label),
+    );
+  }
+}

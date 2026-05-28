@@ -19,6 +19,7 @@ import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../../domain/source/model/source.dart';
 import '../common/source_image.dart';
+import '../migration/migration_search_screen.dart';
 import '../reader/reader_screen.dart';
 import '../track/manga_tracking_sheet.dart';
 import 'chapter_settings_sheet.dart';
@@ -86,6 +87,18 @@ class MangaDetailsScreen extends ConsumerWidget {
                           icon: const Icon(Icons.link),
                           tooltip: 'Linked sources',
                           onPressed: () => _openLinkedSheet(context, manga),
+                        ),
+                      if (manga.favorite)
+                        IconButton(
+                          icon: const Icon(Icons.swap_horiz),
+                          tooltip: 'Migrate to another source',
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => MigrationSearchScreen(
+                                sourceManga: manga,
+                              ),
+                            ),
+                          ),
                         ),
                     ],
                   ),
