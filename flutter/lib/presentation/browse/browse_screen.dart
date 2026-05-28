@@ -9,17 +9,19 @@ import '../../data/source/installed_extension.dart';
 import '../../data/source/local_source.dart';
 import '../../data/source/local_source_preferences.dart';
 import 'global_search_screen.dart';
+import 'migrate_source_screen.dart';
 import 'source_browse_screen.dart';
 
-/// Browse hosts two sub-tabs: Sources (installed sources you can browse) and
-/// Extensions (install / uninstall management).
+/// Browse hosts three sub-tabs: Sources (installed sources you can browse),
+/// Extensions (install / uninstall management), and Migrate (moves
+/// favourites from one source to another).
 class BrowseScreen extends StatelessWidget {
   const BrowseScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Browse'),
@@ -42,6 +44,7 @@ class BrowseScreen extends StatelessWidget {
             tabs: [
               Tab(text: 'Sources'),
               Tab(text: 'Extensions'),
+              Tab(text: 'Migrate'),
             ],
           ),
         ),
@@ -49,6 +52,7 @@ class BrowseScreen extends StatelessWidget {
           children: [
             _SourcesTab(),
             _ExtensionsTab(),
+            MigrateSourceTab(),
           ],
         ),
       ),

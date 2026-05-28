@@ -40,6 +40,35 @@ class MangaRepository {
     return rows.map(MangaMapper.fromRow).toList(growable: false);
   }
 
+  /// Counts favourites grouped by source id. Used by the migrate-source
+  /// screen so the user can see which installed sources still have
+  /// manga to migrate off of. Returns `Map<sourceId, count>` ordered
+  /// descending by count.
+  Future<Map<int, int>> getFavoritesGroupedBySource() async {
+    final rows = await _db.customSelect(
+      'SELECT source, COUNT(*) AS cnt FROM mangas '
+      'WHERE favorite = 1 GROUP BY source ORDER BY cnt DESC',
+      readsFrom: {_db.mangas},
+    ).get();
+    return {
+      for (final r in rows) r.read<int>('source'): r.read<int>('cnt'),
+    };
+  }
+
+  /// Returns every favourited manga belonging to [sourceId]. Used by
+  /// the migrate-source flow to list the manga the user might want to
+  /// migrate one at a time.
+  Future<List<Manga>> getFavoritesBySource(int sourceId) async {
+    final rows = await _db.customSelect(
+      'SELECT * FROM mangas WHERE favorite = 1 AND source = ?1',
+      variables: [Variable<int>(sourceId)],
+      readsFrom: {_db.mangas},
+    ).get();
+    return rows
+        .map((r) => MangaMapper.fromRow(_db.mangas.map(r.data)))
+        .toList(growable: false);
+  }
+
   Stream<List<Manga>> watchFavorites() {
     return _db.getFavorites().watch().map(
           (rows) => rows.map(MangaMapper.fromRow).toList(growable: false),
