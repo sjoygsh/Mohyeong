@@ -574,6 +574,94 @@ Future<void> _editFetchInterval(
   await ref.read(mangaRepositoryProvider).setFetchInterval(manga.id, picked);
 }
 
+/// Card-based duplicate-warning dialog shown before flipping a new
+/// manga's `favorite=1` bit, when one or more favourited series share a
+/// fuzzy-matching title. Each row is tappable: tapping opens that
+/// duplicate's `MangaDetailsScreen` (so the user can pick it instead of
+/// re-adding a parallel copy) and dismisses the dialog as Cancel.
+/// Bottom buttons let the user back out or proceed with the add.
+class _DuplicateMangaDialog extends StatelessWidget {
+  const _DuplicateMangaDialog({required this.duplicates});
+
+  final List<Manga> duplicates;
+
+  static const int _maxRows = 5;
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = duplicates.take(_maxRows).toList(growable: false);
+    final extras = duplicates.length - shown.length;
+    return AlertDialog(
+      title: const Text('Possible duplicate'),
+      contentPadding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Text('Already in your library:'),
+            ),
+            for (final d in shown)
+              ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                leading: SizedBox(
+                  width: 40,
+                  height: 56,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: _CoverImage(url: d.thumbnailUrl),
+                  ),
+                ),
+                title: Text(
+                  d.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: (d.author != null && d.author!.isNotEmpty)
+                    ? Text(
+                        d.author!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                    : null,
+                onTap: () {
+                  Navigator.of(context).pop(false);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => MangaDetailsScreen(mangaId: d.id),
+                    ),
+                  );
+                },
+              ),
+            if (extras > 0)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
+                child: Text(
+                  '… and $extras more',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Add anyway'),
+        ),
+      ],
+    );
+  }
+}
+
 class _FetchIntervalDialog extends StatelessWidget {
   const _FetchIntervalDialog({required this.current});
 
@@ -696,38 +784,7 @@ Future<void> _toggleFavorite(
     if (dupes.isNotEmpty && context.mounted) {
       final go = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Possible duplicate'),
-          content: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Already in your library:'),
-              const SizedBox(height: 8),
-              for (final d in dupes.take(5))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text(
-                    '• ${d.title}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              if (dupes.length > 5)
-                Text('… and ${dupes.length - 5} more'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Add anyway'),
-            ),
-          ],
-        ),
+        builder: (ctx) => _DuplicateMangaDialog(duplicates: dupes),
       );
       if (go != true) return;
     }
