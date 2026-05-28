@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show Value, Variable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/manga/model/manga.dart';
@@ -49,6 +49,30 @@ class MangaRepository {
   Future<List<Manga>> getAll() async {
     final rows = await _db.getAllManga().get();
     return rows.map(MangaMapper.fromRow).toList(growable: false);
+  }
+
+  /// Mihon-parity duplicate detection used when the user adds a manga
+  /// to their library: returns favourited manga (excluding [excludeId])
+  /// whose title contains [title] as a case-insensitive substring. The
+  /// Kotlin version also matches via shared tracker rows (manga_sync
+  /// same sync_id + remote_id) — skipped here; title substring catches
+  /// the common case and tracker dedup is rare.
+  Future<List<Manga>> findFavoritesWithSimilarTitle(
+    int excludeId,
+    String title,
+  ) async {
+    final needle = title.trim().toLowerCase();
+    if (needle.isEmpty) return const <Manga>[];
+    final rows = await _db.customSelect(
+      'SELECT * FROM mangas '
+      'WHERE favorite = 1 AND _id != ?1 '
+      'AND lower(title) LIKE \'%\' || ?2 || \'%\'',
+      variables: [Variable<int>(excludeId), Variable<String>(needle)],
+      readsFrom: {_db.mangas},
+    ).get();
+    return rows
+        .map((r) => MangaMapper.fromRow(_db.mangas.map(r.data)))
+        .toList(growable: false);
   }
 
   /// Insert-or-update on PK. Returns the manga's id (filling in the

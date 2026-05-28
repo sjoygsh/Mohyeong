@@ -454,6 +454,53 @@ Future<void> _toggleFavorite(
       ),
     );
     if (confirmed != true) return;
+  } else {
+    // Mihon-parity duplicate check: warn before adding when there's
+    // already a favourited manga with a similar title (substring match,
+    // case-insensitive). Lets the user back out if they accidentally
+    // re-added an existing series from a different source.
+    final dupes = await mangaRepo.findFavoritesWithSimilarTitle(
+      manga.id,
+      manga.title,
+    );
+    if (dupes.isNotEmpty && context.mounted) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Possible duplicate'),
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Already in your library:'),
+              const SizedBox(height: 8),
+              for (final d in dupes.take(5))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    '• ${d.title}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              if (dupes.length > 5)
+                Text('… and ${dupes.length - 5} more'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Add anyway'),
+            ),
+          ],
+        ),
+      );
+      if (go != true) return;
+    }
   }
   await mangaRepo.setFavorite(manga.id, !manga.favorite);
   // When removing from library, also clear category memberships so the
