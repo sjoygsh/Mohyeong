@@ -55,6 +55,7 @@ class _UpdateTile extends StatelessWidget {
       update.chapterName,
       if (update.scanlator != null && update.scanlator!.isNotEmpty)
         update.scanlator!,
+      if (update.isLinkedAttribution) 'linked source',
     ];
     return ListTile(
       leading: _Thumb(url: update.thumbnailUrl),

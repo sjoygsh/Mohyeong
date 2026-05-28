@@ -4,9 +4,16 @@ import '../database/app_database.dart' as db;
 import '../database/database_provider.dart';
 
 /// A row from `updatesView` -- one (manga, chapter) pair representing a
-/// newly fetched chapter in a favourited manga. Shape mirrors the Kotlin
-/// `UpdatesView` SQLDelight view 1:1, including the `excludedScanlator`
-/// outer join introduced in migration 9.sqm.
+/// newly fetched chapter in a favourited manga (or a manga linked to one).
+/// Shape mirrors the Kotlin `UpdatesView` SQLDelight view 1:1, including
+/// the `excludedScanlator` outer join introduced in migration 9.sqm.
+///
+/// When the underlying manga is on the *linked* side of a `manga_links`
+/// cluster, [mangaId] / [mangaTitle] / [thumbnailUrl] / [coverLastModified]
+/// are replaced with the primary's values so the row visually attaches to
+/// the cluster entry, while [source] and the chapter fields still refer to
+/// the source that actually delivered the chapter. [isLinkedAttribution]
+/// reports which mode the row is in.
 class LibraryUpdate {
   const LibraryUpdate({
     required this.mangaId,
@@ -24,6 +31,7 @@ class LibraryUpdate {
     required this.dateUpload,
     required this.dateFetch,
     required this.excludedScanlator,
+    required this.isLinkedAttribution,
   });
 
   final int mangaId;
@@ -41,13 +49,17 @@ class LibraryUpdate {
   final int dateUpload;
   final int dateFetch;
   final String? excludedScanlator;
+  final bool isLinkedAttribution;
 
   bool get isScanlatorMuted => excludedScanlator != null;
 
-  factory LibraryUpdate.fromRow(db.UpdatesViewData r) {
+  factory LibraryUpdate.fromRow(
+    db.UpdatesViewData r, {
+    db.GetAllLinkedWithPrimaryResult? primary,
+  }) {
     return LibraryUpdate(
-      mangaId: r.mangaId,
-      mangaTitle: r.mangaTitle,
+      mangaId: primary?.id ?? r.mangaId,
+      mangaTitle: primary?.title ?? r.mangaTitle,
       chapterId: r.chapterId,
       chapterName: r.chapterName,
       scanlator: r.scanlator,
@@ -56,11 +68,12 @@ class LibraryUpdate {
       bookmark: r.bookmark != 0,
       lastPageRead: r.lastPageRead,
       source: r.source,
-      thumbnailUrl: r.thumbnailUrl,
-      coverLastModified: r.coverLastModified,
+      thumbnailUrl: primary?.thumbnailUrl ?? r.thumbnailUrl,
+      coverLastModified: primary?.coverLastModified ?? r.coverLastModified,
       dateUpload: r.dateUpload,
       dateFetch: r.datefetch,
       excludedScanlator: r.excludedScanlator,
+      isLinkedAttribution: primary != null,
     );
   }
 }
@@ -71,10 +84,21 @@ class UpdatesRepository {
   final db.AppDatabase _db;
 
   Stream<List<LibraryUpdate>> watchAll() {
-    return _db.select(_db.updatesView).watch().map(
-          (rows) =>
-              rows.map(LibraryUpdate.fromRow).toList(growable: false),
-        );
+    return _db.select(_db.updatesView).watch().asyncMap((rows) async {
+      // Re-query the linked->primary map on every emission. The link set
+      // is small (one row per cluster edge) and the view itself already
+      // reacts to manga_links changes, so this stays in sync.
+      final linkedRows = await _db.getAllLinkedWithPrimary().get();
+      final linkedToPrimary = <int, db.GetAllLinkedWithPrimaryResult>{
+        for (final r in linkedRows) r.linkedMangaId: r,
+      };
+      return rows
+          .map((r) => LibraryUpdate.fromRow(
+                r,
+                primary: linkedToPrimary[r.mangaId],
+              ))
+          .toList(growable: false);
+    });
   }
 }
 

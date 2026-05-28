@@ -2166,6 +2166,258 @@ class ExcludedScanlatorsCompanion extends UpdateCompanion<ExcludedScanlator> {
   }
 }
 
+class MangaLinks extends Table with TableInfo<MangaLinks, MangaLink> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  MangaLinks(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _primaryMangaIdMeta =
+      const VerificationMeta('primaryMangaId');
+  late final GeneratedColumn<int> primaryMangaId = GeneratedColumn<int>(
+      'primary_manga_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _linkedMangaIdMeta =
+      const VerificationMeta('linkedMangaId');
+  late final GeneratedColumn<int> linkedMangaId = GeneratedColumn<int>(
+      'linked_manga_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      $customConstraints: 'NOT NULL');
+  static const VerificationMeta _priorityMeta =
+      const VerificationMeta('priority');
+  late final GeneratedColumn<int> priority = GeneratedColumn<int>(
+      'priority', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      $customConstraints: 'NOT NULL DEFAULT 0',
+      defaultValue: const CustomExpression('0'));
+  @override
+  List<GeneratedColumn> get $columns =>
+      [primaryMangaId, linkedMangaId, priority];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_links';
+  @override
+  VerificationContext validateIntegrity(Insertable<MangaLink> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('primary_manga_id')) {
+      context.handle(
+          _primaryMangaIdMeta,
+          primaryMangaId.isAcceptableOrUnknown(
+              data['primary_manga_id']!, _primaryMangaIdMeta));
+    } else if (isInserting) {
+      context.missing(_primaryMangaIdMeta);
+    }
+    if (data.containsKey('linked_manga_id')) {
+      context.handle(
+          _linkedMangaIdMeta,
+          linkedMangaId.isAcceptableOrUnknown(
+              data['linked_manga_id']!, _linkedMangaIdMeta));
+    } else if (isInserting) {
+      context.missing(_linkedMangaIdMeta);
+    }
+    if (data.containsKey('priority')) {
+      context.handle(_priorityMeta,
+          priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {primaryMangaId, linkedMangaId};
+  @override
+  MangaLink map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaLink(
+      primaryMangaId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}primary_manga_id'])!,
+      linkedMangaId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}linked_manga_id'])!,
+      priority: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}priority'])!,
+    );
+  }
+
+  @override
+  MangaLinks createAlias(String alias) {
+    return MangaLinks(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const [
+        'PRIMARY KEY(primary_manga_id, linked_manga_id)',
+        'FOREIGN KEY(primary_manga_id)REFERENCES mangas(_id)ON DELETE CASCADE',
+        'FOREIGN KEY(linked_manga_id)REFERENCES mangas(_id)ON DELETE CASCADE'
+      ];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class MangaLink extends DataClass implements Insertable<MangaLink> {
+  final int primaryMangaId;
+  final int linkedMangaId;
+  final int priority;
+  const MangaLink(
+      {required this.primaryMangaId,
+      required this.linkedMangaId,
+      required this.priority});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['primary_manga_id'] = Variable<int>(primaryMangaId);
+    map['linked_manga_id'] = Variable<int>(linkedMangaId);
+    map['priority'] = Variable<int>(priority);
+    return map;
+  }
+
+  MangaLinksCompanion toCompanion(bool nullToAbsent) {
+    return MangaLinksCompanion(
+      primaryMangaId: Value(primaryMangaId),
+      linkedMangaId: Value(linkedMangaId),
+      priority: Value(priority),
+    );
+  }
+
+  factory MangaLink.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaLink(
+      primaryMangaId: serializer.fromJson<int>(json['primary_manga_id']),
+      linkedMangaId: serializer.fromJson<int>(json['linked_manga_id']),
+      priority: serializer.fromJson<int>(json['priority']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'primary_manga_id': serializer.toJson<int>(primaryMangaId),
+      'linked_manga_id': serializer.toJson<int>(linkedMangaId),
+      'priority': serializer.toJson<int>(priority),
+    };
+  }
+
+  MangaLink copyWith(
+          {int? primaryMangaId, int? linkedMangaId, int? priority}) =>
+      MangaLink(
+        primaryMangaId: primaryMangaId ?? this.primaryMangaId,
+        linkedMangaId: linkedMangaId ?? this.linkedMangaId,
+        priority: priority ?? this.priority,
+      );
+  MangaLink copyWithCompanion(MangaLinksCompanion data) {
+    return MangaLink(
+      primaryMangaId: data.primaryMangaId.present
+          ? data.primaryMangaId.value
+          : this.primaryMangaId,
+      linkedMangaId: data.linkedMangaId.present
+          ? data.linkedMangaId.value
+          : this.linkedMangaId,
+      priority: data.priority.present ? data.priority.value : this.priority,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaLink(')
+          ..write('primaryMangaId: $primaryMangaId, ')
+          ..write('linkedMangaId: $linkedMangaId, ')
+          ..write('priority: $priority')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(primaryMangaId, linkedMangaId, priority);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaLink &&
+          other.primaryMangaId == this.primaryMangaId &&
+          other.linkedMangaId == this.linkedMangaId &&
+          other.priority == this.priority);
+}
+
+class MangaLinksCompanion extends UpdateCompanion<MangaLink> {
+  final Value<int> primaryMangaId;
+  final Value<int> linkedMangaId;
+  final Value<int> priority;
+  final Value<int> rowid;
+  const MangaLinksCompanion({
+    this.primaryMangaId = const Value.absent(),
+    this.linkedMangaId = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MangaLinksCompanion.insert({
+    required int primaryMangaId,
+    required int linkedMangaId,
+    this.priority = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : primaryMangaId = Value(primaryMangaId),
+        linkedMangaId = Value(linkedMangaId);
+  static Insertable<MangaLink> custom({
+    Expression<int>? primaryMangaId,
+    Expression<int>? linkedMangaId,
+    Expression<int>? priority,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (primaryMangaId != null) 'primary_manga_id': primaryMangaId,
+      if (linkedMangaId != null) 'linked_manga_id': linkedMangaId,
+      if (priority != null) 'priority': priority,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MangaLinksCompanion copyWith(
+      {Value<int>? primaryMangaId,
+      Value<int>? linkedMangaId,
+      Value<int>? priority,
+      Value<int>? rowid}) {
+    return MangaLinksCompanion(
+      primaryMangaId: primaryMangaId ?? this.primaryMangaId,
+      linkedMangaId: linkedMangaId ?? this.linkedMangaId,
+      priority: priority ?? this.priority,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (primaryMangaId.present) {
+      map['primary_manga_id'] = Variable<int>(primaryMangaId.value);
+    }
+    if (linkedMangaId.present) {
+      map['linked_manga_id'] = Variable<int>(linkedMangaId.value);
+    }
+    if (priority.present) {
+      map['priority'] = Variable<int>(priority.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaLinksCompanion(')
+          ..write('primaryMangaId: $primaryMangaId, ')
+          ..write('linkedMangaId: $linkedMangaId, ')
+          ..write('priority: $priority, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class UpdatesViewData extends DataClass {
   final int mangaId;
   final String mangaTitle;
@@ -2379,7 +2631,7 @@ class UpdatesView extends ViewInfo<UpdatesView, UpdatesViewData>
   @override
   Map<SqlDialect, String> get createViewStatements => {
         SqlDialect.sqlite:
-            'CREATE VIEW updatesView AS SELECT mangas._id AS mangaId, mangas.title AS mangaTitle, chapters._id AS chapterId, chapters.name AS chapterName, chapters.scanlator, chapters.url AS chapterUrl, chapters.read, chapters.bookmark, chapters.last_page_read, mangas.source, mangas.favorite, mangas.thumbnail_url AS thumbnailUrl, mangas.cover_last_modified AS coverLastModified, chapters.date_upload AS dateUpload, chapters.date_fetch AS datefetch, excluded_scanlators.scanlator AS excludedScanlator FROM mangas JOIN chapters ON mangas._id = chapters.manga_id LEFT JOIN excluded_scanlators ON mangas._id = excluded_scanlators.manga_id AND chapters.scanlator = excluded_scanlators.scanlator WHERE favorite = 1 AND date_fetch > date_added ORDER BY date_fetch DESC',
+            'CREATE VIEW updatesView AS SELECT mangas._id AS mangaId, mangas.title AS mangaTitle, chapters._id AS chapterId, chapters.name AS chapterName, chapters.scanlator, chapters.url AS chapterUrl, chapters.read, chapters.bookmark, chapters.last_page_read, mangas.source, mangas.favorite, mangas.thumbnail_url AS thumbnailUrl, mangas.cover_last_modified AS coverLastModified, chapters.date_upload AS dateUpload, chapters.date_fetch AS datefetch, excluded_scanlators.scanlator AS excludedScanlator FROM mangas JOIN chapters ON mangas._id = chapters.manga_id LEFT JOIN excluded_scanlators ON mangas._id = excluded_scanlators.manga_id AND chapters.scanlator = excluded_scanlators.scanlator WHERE(favorite = 1 OR mangas._id IN (SELECT linked_manga_id FROM manga_links))AND date_fetch > date_added ORDER BY date_fetch DESC',
       };
   @override
   UpdatesView get asDslTable => this;
@@ -2478,7 +2730,7 @@ class UpdatesView extends ViewInfo<UpdatesView, UpdatesViewData>
   Query? get query => null;
   @override
   Set<String> get readTables =>
-      const {'mangas', 'chapters', 'excluded_scanlators'};
+      const {'mangas', 'chapters', 'excluded_scanlators', 'manga_links'};
 }
 
 class History extends Table with TableInfo<History, HistoryData> {
@@ -3836,258 +4088,6 @@ class LibraryView extends ViewInfo<LibraryView, LibraryViewData>
         'history',
         'mangas_categories'
       };
-}
-
-class MangaLinks extends Table with TableInfo<MangaLinks, MangaLink> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  MangaLinks(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _primaryMangaIdMeta =
-      const VerificationMeta('primaryMangaId');
-  late final GeneratedColumn<int> primaryMangaId = GeneratedColumn<int>(
-      'primary_manga_id', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: true,
-      $customConstraints: 'NOT NULL');
-  static const VerificationMeta _linkedMangaIdMeta =
-      const VerificationMeta('linkedMangaId');
-  late final GeneratedColumn<int> linkedMangaId = GeneratedColumn<int>(
-      'linked_manga_id', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: true,
-      $customConstraints: 'NOT NULL');
-  static const VerificationMeta _priorityMeta =
-      const VerificationMeta('priority');
-  late final GeneratedColumn<int> priority = GeneratedColumn<int>(
-      'priority', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      $customConstraints: 'NOT NULL DEFAULT 0',
-      defaultValue: const CustomExpression('0'));
-  @override
-  List<GeneratedColumn> get $columns =>
-      [primaryMangaId, linkedMangaId, priority];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'manga_links';
-  @override
-  VerificationContext validateIntegrity(Insertable<MangaLink> instance,
-      {bool isInserting = false}) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('primary_manga_id')) {
-      context.handle(
-          _primaryMangaIdMeta,
-          primaryMangaId.isAcceptableOrUnknown(
-              data['primary_manga_id']!, _primaryMangaIdMeta));
-    } else if (isInserting) {
-      context.missing(_primaryMangaIdMeta);
-    }
-    if (data.containsKey('linked_manga_id')) {
-      context.handle(
-          _linkedMangaIdMeta,
-          linkedMangaId.isAcceptableOrUnknown(
-              data['linked_manga_id']!, _linkedMangaIdMeta));
-    } else if (isInserting) {
-      context.missing(_linkedMangaIdMeta);
-    }
-    if (data.containsKey('priority')) {
-      context.handle(_priorityMeta,
-          priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta));
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {primaryMangaId, linkedMangaId};
-  @override
-  MangaLink map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return MangaLink(
-      primaryMangaId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}primary_manga_id'])!,
-      linkedMangaId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}linked_manga_id'])!,
-      priority: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}priority'])!,
-    );
-  }
-
-  @override
-  MangaLinks createAlias(String alias) {
-    return MangaLinks(attachedDatabase, alias);
-  }
-
-  @override
-  List<String> get customConstraints => const [
-        'PRIMARY KEY(primary_manga_id, linked_manga_id)',
-        'FOREIGN KEY(primary_manga_id)REFERENCES mangas(_id)ON DELETE CASCADE',
-        'FOREIGN KEY(linked_manga_id)REFERENCES mangas(_id)ON DELETE CASCADE'
-      ];
-  @override
-  bool get dontWriteConstraints => true;
-}
-
-class MangaLink extends DataClass implements Insertable<MangaLink> {
-  final int primaryMangaId;
-  final int linkedMangaId;
-  final int priority;
-  const MangaLink(
-      {required this.primaryMangaId,
-      required this.linkedMangaId,
-      required this.priority});
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['primary_manga_id'] = Variable<int>(primaryMangaId);
-    map['linked_manga_id'] = Variable<int>(linkedMangaId);
-    map['priority'] = Variable<int>(priority);
-    return map;
-  }
-
-  MangaLinksCompanion toCompanion(bool nullToAbsent) {
-    return MangaLinksCompanion(
-      primaryMangaId: Value(primaryMangaId),
-      linkedMangaId: Value(linkedMangaId),
-      priority: Value(priority),
-    );
-  }
-
-  factory MangaLink.fromJson(Map<String, dynamic> json,
-      {ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return MangaLink(
-      primaryMangaId: serializer.fromJson<int>(json['primary_manga_id']),
-      linkedMangaId: serializer.fromJson<int>(json['linked_manga_id']),
-      priority: serializer.fromJson<int>(json['priority']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'primary_manga_id': serializer.toJson<int>(primaryMangaId),
-      'linked_manga_id': serializer.toJson<int>(linkedMangaId),
-      'priority': serializer.toJson<int>(priority),
-    };
-  }
-
-  MangaLink copyWith(
-          {int? primaryMangaId, int? linkedMangaId, int? priority}) =>
-      MangaLink(
-        primaryMangaId: primaryMangaId ?? this.primaryMangaId,
-        linkedMangaId: linkedMangaId ?? this.linkedMangaId,
-        priority: priority ?? this.priority,
-      );
-  MangaLink copyWithCompanion(MangaLinksCompanion data) {
-    return MangaLink(
-      primaryMangaId: data.primaryMangaId.present
-          ? data.primaryMangaId.value
-          : this.primaryMangaId,
-      linkedMangaId: data.linkedMangaId.present
-          ? data.linkedMangaId.value
-          : this.linkedMangaId,
-      priority: data.priority.present ? data.priority.value : this.priority,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('MangaLink(')
-          ..write('primaryMangaId: $primaryMangaId, ')
-          ..write('linkedMangaId: $linkedMangaId, ')
-          ..write('priority: $priority')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(primaryMangaId, linkedMangaId, priority);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is MangaLink &&
-          other.primaryMangaId == this.primaryMangaId &&
-          other.linkedMangaId == this.linkedMangaId &&
-          other.priority == this.priority);
-}
-
-class MangaLinksCompanion extends UpdateCompanion<MangaLink> {
-  final Value<int> primaryMangaId;
-  final Value<int> linkedMangaId;
-  final Value<int> priority;
-  final Value<int> rowid;
-  const MangaLinksCompanion({
-    this.primaryMangaId = const Value.absent(),
-    this.linkedMangaId = const Value.absent(),
-    this.priority = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  MangaLinksCompanion.insert({
-    required int primaryMangaId,
-    required int linkedMangaId,
-    this.priority = const Value.absent(),
-    this.rowid = const Value.absent(),
-  })  : primaryMangaId = Value(primaryMangaId),
-        linkedMangaId = Value(linkedMangaId);
-  static Insertable<MangaLink> custom({
-    Expression<int>? primaryMangaId,
-    Expression<int>? linkedMangaId,
-    Expression<int>? priority,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (primaryMangaId != null) 'primary_manga_id': primaryMangaId,
-      if (linkedMangaId != null) 'linked_manga_id': linkedMangaId,
-      if (priority != null) 'priority': priority,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  MangaLinksCompanion copyWith(
-      {Value<int>? primaryMangaId,
-      Value<int>? linkedMangaId,
-      Value<int>? priority,
-      Value<int>? rowid}) {
-    return MangaLinksCompanion(
-      primaryMangaId: primaryMangaId ?? this.primaryMangaId,
-      linkedMangaId: linkedMangaId ?? this.linkedMangaId,
-      priority: priority ?? this.priority,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (primaryMangaId.present) {
-      map['primary_manga_id'] = Variable<int>(primaryMangaId.value);
-    }
-    if (linkedMangaId.present) {
-      map['linked_manga_id'] = Variable<int>(linkedMangaId.value);
-    }
-    if (priority.present) {
-      map['priority'] = Variable<int>(priority.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('MangaLinksCompanion(')
-          ..write('primaryMangaId: $primaryMangaId, ')
-          ..write('linkedMangaId: $linkedMangaId, ')
-          ..write('priority: $priority, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
 }
 
 class ExtensionRepos extends Table
@@ -5574,12 +5574,12 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final Mangas mangas = Mangas(this);
   late final Chapters chapters = Chapters(this);
   late final ExcludedScanlators excludedScanlators = ExcludedScanlators(this);
+  late final MangaLinks mangaLinks = MangaLinks(this);
   late final UpdatesView updatesView = UpdatesView(this);
   late final History history = History(this);
   late final Categories categories = Categories(this);
   late final MangasCategories mangasCategories = MangasCategories(this);
   late final LibraryView libraryView = LibraryView(this);
-  late final MangaLinks mangaLinks = MangaLinks(this);
   late final Index mangaLinksPrimaryIndex = Index('manga_links_primary_index',
       'CREATE INDEX IF NOT EXISTS manga_links_primary_index ON manga_links (primary_manga_id)');
   late final Index mangaLinksLinkedIndex = Index('manga_links_linked_index',
@@ -6325,12 +6325,12 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         mangas,
         chapters,
         excludedScanlators,
+        mangaLinks,
         updatesView,
         history,
         categories,
         mangasCategories,
         libraryView,
-        mangaLinks,
         mangaLinksPrimaryIndex,
         mangaLinksLinkedIndex,
         extensionRepos,
@@ -6380,6 +6380,20 @@ abstract class _$AppDatabase extends GeneratedDatabase {
             ],
           ),
           WritePropagation(
+            on: TableUpdateQuery.onTableName('mangas',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('manga_links', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('mangas',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('manga_links', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
             on: TableUpdateQuery.onTableName('chapters',
                 limitUpdateKind: UpdateKind.delete),
             result: [
@@ -6398,20 +6412,6 @@ abstract class _$AppDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('mangas_categories', kind: UpdateKind.delete),
-            ],
-          ),
-          WritePropagation(
-            on: TableUpdateQuery.onTableName('mangas',
-                limitUpdateKind: UpdateKind.delete),
-            result: [
-              TableUpdate('manga_links', kind: UpdateKind.delete),
-            ],
-          ),
-          WritePropagation(
-            on: TableUpdateQuery.onTableName('mangas',
-                limitUpdateKind: UpdateKind.delete),
-            result: [
-              TableUpdate('manga_links', kind: UpdateKind.delete),
             ],
           ),
           WritePropagation(
@@ -7418,6 +7418,142 @@ typedef $ExcludedScanlatorsProcessedTableManager = ProcessedTableManager<
     ),
     ExcludedScanlator,
     PrefetchHooks Function()>;
+typedef $MangaLinksCreateCompanionBuilder = MangaLinksCompanion Function({
+  required int primaryMangaId,
+  required int linkedMangaId,
+  Value<int> priority,
+  Value<int> rowid,
+});
+typedef $MangaLinksUpdateCompanionBuilder = MangaLinksCompanion Function({
+  Value<int> primaryMangaId,
+  Value<int> linkedMangaId,
+  Value<int> priority,
+  Value<int> rowid,
+});
+
+class $MangaLinksFilterComposer extends Composer<_$AppDatabase, MangaLinks> {
+  $MangaLinksFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get primaryMangaId => $composableBuilder(
+      column: $table.primaryMangaId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get linkedMangaId => $composableBuilder(
+      column: $table.linkedMangaId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnFilters(column));
+}
+
+class $MangaLinksOrderingComposer extends Composer<_$AppDatabase, MangaLinks> {
+  $MangaLinksOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get primaryMangaId => $composableBuilder(
+      column: $table.primaryMangaId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get linkedMangaId => $composableBuilder(
+      column: $table.linkedMangaId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnOrderings(column));
+}
+
+class $MangaLinksAnnotationComposer
+    extends Composer<_$AppDatabase, MangaLinks> {
+  $MangaLinksAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get primaryMangaId => $composableBuilder(
+      column: $table.primaryMangaId, builder: (column) => column);
+
+  GeneratedColumn<int> get linkedMangaId => $composableBuilder(
+      column: $table.linkedMangaId, builder: (column) => column);
+
+  GeneratedColumn<int> get priority =>
+      $composableBuilder(column: $table.priority, builder: (column) => column);
+}
+
+class $MangaLinksTableManager extends RootTableManager<
+    _$AppDatabase,
+    MangaLinks,
+    MangaLink,
+    $MangaLinksFilterComposer,
+    $MangaLinksOrderingComposer,
+    $MangaLinksAnnotationComposer,
+    $MangaLinksCreateCompanionBuilder,
+    $MangaLinksUpdateCompanionBuilder,
+    (MangaLink, BaseReferences<_$AppDatabase, MangaLinks, MangaLink>),
+    MangaLink,
+    PrefetchHooks Function()> {
+  $MangaLinksTableManager(_$AppDatabase db, MangaLinks table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $MangaLinksFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $MangaLinksOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $MangaLinksAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> primaryMangaId = const Value.absent(),
+            Value<int> linkedMangaId = const Value.absent(),
+            Value<int> priority = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaLinksCompanion(
+            primaryMangaId: primaryMangaId,
+            linkedMangaId: linkedMangaId,
+            priority: priority,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required int primaryMangaId,
+            required int linkedMangaId,
+            Value<int> priority = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaLinksCompanion.insert(
+            primaryMangaId: primaryMangaId,
+            linkedMangaId: linkedMangaId,
+            priority: priority,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $MangaLinksProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    MangaLinks,
+    MangaLink,
+    $MangaLinksFilterComposer,
+    $MangaLinksOrderingComposer,
+    $MangaLinksAnnotationComposer,
+    $MangaLinksCreateCompanionBuilder,
+    $MangaLinksUpdateCompanionBuilder,
+    (MangaLink, BaseReferences<_$AppDatabase, MangaLinks, MangaLink>),
+    MangaLink,
+    PrefetchHooks Function()>;
 typedef $HistoryCreateCompanionBuilder = HistoryCompanion Function({
   Value<int> id,
   required int chapterId,
@@ -7852,142 +7988,6 @@ typedef $MangasCategoriesProcessedTableManager = ProcessedTableManager<
       BaseReferences<_$AppDatabase, MangasCategories, MangasCategory>
     ),
     MangasCategory,
-    PrefetchHooks Function()>;
-typedef $MangaLinksCreateCompanionBuilder = MangaLinksCompanion Function({
-  required int primaryMangaId,
-  required int linkedMangaId,
-  Value<int> priority,
-  Value<int> rowid,
-});
-typedef $MangaLinksUpdateCompanionBuilder = MangaLinksCompanion Function({
-  Value<int> primaryMangaId,
-  Value<int> linkedMangaId,
-  Value<int> priority,
-  Value<int> rowid,
-});
-
-class $MangaLinksFilterComposer extends Composer<_$AppDatabase, MangaLinks> {
-  $MangaLinksFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get primaryMangaId => $composableBuilder(
-      column: $table.primaryMangaId,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<int> get linkedMangaId => $composableBuilder(
-      column: $table.linkedMangaId, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<int> get priority => $composableBuilder(
-      column: $table.priority, builder: (column) => ColumnFilters(column));
-}
-
-class $MangaLinksOrderingComposer extends Composer<_$AppDatabase, MangaLinks> {
-  $MangaLinksOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get primaryMangaId => $composableBuilder(
-      column: $table.primaryMangaId,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<int> get linkedMangaId => $composableBuilder(
-      column: $table.linkedMangaId,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<int> get priority => $composableBuilder(
-      column: $table.priority, builder: (column) => ColumnOrderings(column));
-}
-
-class $MangaLinksAnnotationComposer
-    extends Composer<_$AppDatabase, MangaLinks> {
-  $MangaLinksAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get primaryMangaId => $composableBuilder(
-      column: $table.primaryMangaId, builder: (column) => column);
-
-  GeneratedColumn<int> get linkedMangaId => $composableBuilder(
-      column: $table.linkedMangaId, builder: (column) => column);
-
-  GeneratedColumn<int> get priority =>
-      $composableBuilder(column: $table.priority, builder: (column) => column);
-}
-
-class $MangaLinksTableManager extends RootTableManager<
-    _$AppDatabase,
-    MangaLinks,
-    MangaLink,
-    $MangaLinksFilterComposer,
-    $MangaLinksOrderingComposer,
-    $MangaLinksAnnotationComposer,
-    $MangaLinksCreateCompanionBuilder,
-    $MangaLinksUpdateCompanionBuilder,
-    (MangaLink, BaseReferences<_$AppDatabase, MangaLinks, MangaLink>),
-    MangaLink,
-    PrefetchHooks Function()> {
-  $MangaLinksTableManager(_$AppDatabase db, MangaLinks table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $MangaLinksFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $MangaLinksOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $MangaLinksAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<int> primaryMangaId = const Value.absent(),
-            Value<int> linkedMangaId = const Value.absent(),
-            Value<int> priority = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              MangaLinksCompanion(
-            primaryMangaId: primaryMangaId,
-            linkedMangaId: linkedMangaId,
-            priority: priority,
-            rowid: rowid,
-          ),
-          createCompanionCallback: ({
-            required int primaryMangaId,
-            required int linkedMangaId,
-            Value<int> priority = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              MangaLinksCompanion.insert(
-            primaryMangaId: primaryMangaId,
-            linkedMangaId: linkedMangaId,
-            priority: priority,
-            rowid: rowid,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ));
-}
-
-typedef $MangaLinksProcessedTableManager = ProcessedTableManager<
-    _$AppDatabase,
-    MangaLinks,
-    MangaLink,
-    $MangaLinksFilterComposer,
-    $MangaLinksOrderingComposer,
-    $MangaLinksAnnotationComposer,
-    $MangaLinksCreateCompanionBuilder,
-    $MangaLinksUpdateCompanionBuilder,
-    (MangaLink, BaseReferences<_$AppDatabase, MangaLinks, MangaLink>),
-    MangaLink,
     PrefetchHooks Function()>;
 typedef $ExtensionReposCreateCompanionBuilder = ExtensionReposCompanion
     Function({
@@ -8736,13 +8736,13 @@ class $AppDatabaseManager {
       $ChaptersTableManager(_db, _db.chapters);
   $ExcludedScanlatorsTableManager get excludedScanlators =>
       $ExcludedScanlatorsTableManager(_db, _db.excludedScanlators);
+  $MangaLinksTableManager get mangaLinks =>
+      $MangaLinksTableManager(_db, _db.mangaLinks);
   $HistoryTableManager get history => $HistoryTableManager(_db, _db.history);
   $CategoriesTableManager get categories =>
       $CategoriesTableManager(_db, _db.categories);
   $MangasCategoriesTableManager get mangasCategories =>
       $MangasCategoriesTableManager(_db, _db.mangasCategories);
-  $MangaLinksTableManager get mangaLinks =>
-      $MangaLinksTableManager(_db, _db.mangaLinks);
   $ExtensionReposTableManager get extensionRepos =>
       $ExtensionReposTableManager(_db, _db.extensionRepos);
   $ScanlatorPriorityTableManager get scanlatorPriority =>

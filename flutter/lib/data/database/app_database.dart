@@ -35,14 +35,16 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
-  /// schemaVersion 16 is the first Flutter version.
+  /// schemaVersion 16 was the first Flutter version. schemaVersion 17 widens
+  /// `updatesView` to also include manga that aren't favourited themselves
+  /// but are on the linked side of a `manga_links` row, so the Updates tab
+  /// can surface chapter activity from secondary cluster entries (attributed
+  /// to the primary by the repository layer).
   ///
-  /// The Kotlin app shipped through SQLDelight migration 15.sqm, so existing
-  /// installs land here at user_version=15 and get lifted to 16 by
-  /// [_migrate15to16] below. Bump this number for any future schema change
-  /// and add a corresponding step to [onUpgrade].
+  /// Kotlin installs land at user_version=15 and step through
+  /// [_migrate15to16] then [_migrate16to17].
   @override
-  int get schemaVersion => 16;
+  int get schemaVersion => 17;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -57,7 +59,9 @@ class AppDatabase extends _$AppDatabase {
           if (from < 16) {
             await _migrate15to16(m);
           }
-          // Future: if (from < 17) await _migrate16to17(m);
+          if (from < 17) {
+            await _migrate16to17(m);
+          }
         },
         beforeOpen: (details) async {
           // Drift respects PRAGMA foreign_keys per-connection, and the
@@ -82,6 +86,14 @@ class AppDatabase extends _$AppDatabase {
     await customStatement('DROP VIEW IF EXISTS libraryView');
     await customStatement('DROP VIEW IF EXISTS updatesView');
     await m.createView(libraryView);
+    await m.createView(updatesView);
+  }
+
+  /// Widens `updatesView` to include manga that are on the linked side of any
+  /// `manga_links` row, even if they aren't favourited. The repository layer
+  /// reattributes those rows to the cluster's primary for display.
+  Future<void> _migrate16to17(Migrator m) async {
+    await customStatement('DROP VIEW IF EXISTS updatesView');
     await m.createView(updatesView);
   }
 }

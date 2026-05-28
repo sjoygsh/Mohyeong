@@ -5,6 +5,7 @@
 import 'mangas.drift';
 import 'chapters.drift';
 import 'excluded_scanlators.drift';
+import 'manga_links.drift';
 
 CREATE VIEW updatesView AS
 SELECT
@@ -29,6 +30,9 @@ ON mangas._id = chapters.manga_id
 LEFT JOIN excluded_scanlators
 ON mangas._id = excluded_scanlators.manga_id
 AND chapters.scanlator = excluded_scanlators.scanlator
-WHERE favorite = 1
+WHERE (
+    favorite = 1
+    OR mangas._id IN (SELECT linked_manga_id FROM manga_links)
+)
 AND date_fetch > date_added
 ORDER BY date_fetch DESC;
