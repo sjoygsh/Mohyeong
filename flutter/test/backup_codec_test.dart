@@ -153,6 +153,36 @@ void main() {
       );
     });
 
+    test('round-trips manga link rows keyed by (source, url) pairs', () {
+      final original = Backup(
+        backupMangaLinks: [
+          BackupMangaLink(
+            primarySource: 100,
+            primaryUrl: '/manga/primary',
+            linkedSource: 200,
+            linkedUrl: '/manga/mirror',
+            priority: 5,
+          ),
+          BackupMangaLink(
+            primarySource: 100,
+            primaryUrl: '/manga/primary',
+            linkedSource: 300,
+            linkedUrl: '/manga/translation',
+          ),
+        ],
+      );
+      final decoded = decodeBackup(encodeBackup(original));
+      expect(decoded.backupMangaLinks, hasLength(2));
+      final first = decoded.backupMangaLinks[0];
+      expect(first.primarySource, 100);
+      expect(first.primaryUrl, '/manga/primary');
+      expect(first.linkedSource, 200);
+      expect(first.linkedUrl, '/manga/mirror');
+      expect(first.priority, 5);
+      // Default priority round-trips as 0.
+      expect(decoded.backupMangaLinks[1].priority, 0);
+    });
+
     test('tolerates already-decompressed (non-gzip) payloads', () {
       final original = Backup(
         backupSources: [BackupSource(name: 'X', sourceId: 1)],
