@@ -215,7 +215,11 @@ class _ReaderData {
   }
 }
 
-class _ReaderBody extends StatelessWidget {
+/// The visible reader surface around the page viewport. Holds the
+/// "chrome visible" toggle (tap anywhere on the viewport to hide/show
+/// the header and bottom strip) plus the current/total page state that
+/// powers the page indicator and the paged-mode slider.
+class _ReaderBody extends StatefulWidget {
   const _ReaderBody({
     required this.data,
     required this.mode,
@@ -233,32 +237,216 @@ class _ReaderBody extends StatelessWidget {
   final VoidCallback onMarkRead;
 
   @override
+  State<_ReaderBody> createState() => _ReaderBodyState();
+}
+
+class _ReaderBodyState extends State<_ReaderBody> {
+  bool _chromeVisible = true;
+  int _currentPage = 0;
+  int _totalPages = 0;
+  // Used by the paged-mode slider to drive the underlying PageController.
+  // Bumped whenever the user moves the slider; the viewport reads it via
+  // [_ViewportRequest] and animates to the new index.
+  int _seekRequestId = 0;
+  int _seekTarget = 0;
+
+  void _toggleChrome() {
+    setState(() => _chromeVisible = !_chromeVisible);
+  }
+
+  void _onPageChanged(int page) {
+    if (page != _currentPage) {
+      setState(() => _currentPage = page);
+    }
+    widget.onPageChanged(page);
+  }
+
+  void _onTotalChanged(int total) {
+    if (total != _totalPages) {
+      // Defer to next frame; this callback fires during the viewport's
+      // build, so calling setState synchronously would mark dirty during
+      // build and trip the framework.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _totalPages = total);
+      });
+    }
+  }
+
+  void _seekTo(int page) {
+    setState(() {
+      _currentPage = page;
+      _seekTarget = page;
+      _seekRequestId++;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final data = widget.data;
     final prev = data.previousChapter;
     final next = data.nextChapter;
+    final showSlider = widget.mode.isPaged && _totalPages > 1;
+
     return SafeArea(
-      child: Column(
+      child: Stack(
         children: [
-          _ReaderHeader(
-            manga: data.manga,
-            chapter: data.chapter,
-            mode: mode,
-            onChangeMode: onChangeMode,
-          ),
-          Expanded(
-            child: _ReaderViewport(
-              data: data,
-              mode: mode,
-              onPageChanged: onPageChanged,
+          // Tap on the viewport toggles chrome. translucent so taps on
+          // the underlying images still register where the viewport
+          // already handles them (zoom on paged mode etc.).
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _toggleChrome,
+              child: _ReaderViewport(
+                data: data,
+                mode: widget.mode,
+                onPageChanged: _onPageChanged,
+                onTotalChanged: _onTotalChanged,
+                seekRequest: _ViewportSeekRequest(
+                  requestId: _seekRequestId,
+                  target: _seekTarget,
+                ),
+              ),
             ),
           ),
-          _ReaderControls(
-            onPrev: prev == null ? null : () => onJumpToChapter(prev.id),
-            onNext: next == null ? null : () => onJumpToChapter(next.id),
-            onMarkRead: onMarkRead,
-            alreadyRead: data.chapter.read,
+          // Top chrome.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AnimatedSlide(
+              duration: const Duration(milliseconds: 150),
+              offset: _chromeVisible ? Offset.zero : const Offset(0, -1),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 150),
+                opacity: _chromeVisible ? 1 : 0,
+                child: Container(
+                  color: const Color(0xCC000000),
+                  child: _ReaderHeader(
+                    manga: data.manga,
+                    chapter: data.chapter,
+                    mode: widget.mode,
+                    onChangeMode: widget.onChangeMode,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Bottom chrome: page indicator + optional slider + nav row.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: AnimatedSlide(
+              duration: const Duration(milliseconds: 150),
+              offset: _chromeVisible ? Offset.zero : const Offset(0, 1),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 150),
+                opacity: _chromeVisible ? 1 : 0,
+                child: Container(
+                  color: const Color(0xCC000000),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (showSlider)
+                        _PageSlider(
+                          current: _currentPage,
+                          total: _totalPages,
+                          reversed: widget.mode == ReadingMode.rightToLeft,
+                          onChanged: _seekTo,
+                        ),
+                      _PageIndicator(
+                        current: _currentPage,
+                        total: _totalPages,
+                      ),
+                      _ReaderControls(
+                        onPrev: prev == null
+                            ? null
+                            : () => widget.onJumpToChapter(prev.id),
+                        onNext: next == null
+                            ? null
+                            : () => widget.onJumpToChapter(next.id),
+                        onMarkRead: widget.onMarkRead,
+                        alreadyRead: data.chapter.read,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ViewportSeekRequest {
+  const _ViewportSeekRequest({required this.requestId, required this.target});
+
+  /// Monotonic id that ticks every time the user drags the slider — the
+  /// viewport listens for this to know whether the request is fresh, since
+  /// we may emit two requests with the same `target` index back-to-back.
+  final int requestId;
+  final int target;
+}
+
+class _PageIndicator extends StatelessWidget {
+  const _PageIndicator({required this.current, required this.total});
+
+  final int current;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    if (total <= 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Text(
+        '${current + 1} / $total',
+        style: const TextStyle(color: Colors.white70, fontSize: 12),
+      ),
+    );
+  }
+}
+
+class _PageSlider extends StatelessWidget {
+  const _PageSlider({
+    required this.current,
+    required this.total,
+    required this.reversed,
+    required this.onChanged,
+  });
+
+  final int current;
+  final int total;
+  final bool reversed;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (total <= 1) return const SizedBox.shrink();
+    // For RTL we still want the leftmost slider position to mean "earliest"
+    // page from the reader's POV. Slider's value space stays 0..total-1; we
+    // just flip the mapping. Mihon does the same.
+    final value = reversed
+        ? (total - 1 - current).clamp(0, total - 1).toDouble()
+        : current.clamp(0, total - 1).toDouble();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Slider(
+        min: 0,
+        max: (total - 1).toDouble(),
+        divisions: total - 1,
+        value: value,
+        label: '${current + 1}',
+        onChanged: (v) {
+          final raw = v.round();
+          final target =
+              reversed ? (total - 1 - raw).clamp(0, total - 1) : raw;
+          onChanged(target);
+        },
       ),
     );
   }
@@ -272,23 +460,31 @@ class _ReaderViewport extends StatelessWidget {
     required this.data,
     required this.mode,
     required this.onPageChanged,
+    required this.onTotalChanged,
+    required this.seekRequest,
   });
 
   final _ReaderData data;
   final ReadingMode mode;
   final ValueChanged<int> onPageChanged;
+  final ValueChanged<int> onTotalChanged;
+  final _ViewportSeekRequest seekRequest;
 
   @override
   Widget build(BuildContext context) {
     if (data.localPagePaths != null) {
+      // Report total synchronously — local pages are already enumerated.
+      onTotalChanged(data.localPagePaths!.length);
       return _LocalPageList(
         paths: data.localPagePaths!,
         mode: mode,
         initialPage: data.chapter.lastPageRead,
         onPageChanged: onPageChanged,
+        seekRequest: seekRequest,
       );
     }
     if (data.source == null) {
+      onTotalChanged(0);
       return _SourceUnavailable(
         mangaSourceId: data.manga.source,
         error: data.sourceError,
@@ -299,6 +495,8 @@ class _ReaderViewport extends StatelessWidget {
       chapter: data.chapter,
       mode: mode,
       onPageChanged: onPageChanged,
+      onTotalChanged: onTotalChanged,
+      seekRequest: seekRequest,
     );
   }
 }
@@ -309,12 +507,16 @@ class _PageList extends StatefulWidget {
     required this.chapter,
     required this.mode,
     required this.onPageChanged,
+    required this.onTotalChanged,
+    required this.seekRequest,
   });
 
   final MangaSource source;
   final Chapter chapter;
   final ReadingMode mode;
   final ValueChanged<int> onPageChanged;
+  final ValueChanged<int> onTotalChanged;
+  final _ViewportSeekRequest seekRequest;
 
   @override
   State<_PageList> createState() => _PageListState();
@@ -372,6 +574,11 @@ class _PageListState extends State<_PageList> {
           );
         }
         final pages = snap.data!;
+        // Report total once we know it. Routing through a post-frame
+        // callback because we're inside `build()`.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) widget.onTotalChanged(pages.length);
+        });
         if (pages.isEmpty) {
           return const Center(
             child: Text('No pages.', style: TextStyle(color: Colors.white70)),
@@ -382,6 +589,7 @@ class _PageListState extends State<_PageList> {
           mode: widget.mode,
           initialPage: widget.chapter.lastPageRead,
           onPageChanged: widget.onPageChanged,
+          seekRequest: widget.seekRequest,
           itemBuilder: (_, i) {
             final page = pages[i];
             final imageUrl = page.imageUrl ?? page.url;
@@ -418,12 +626,14 @@ class _LocalPageList extends StatelessWidget {
     required this.mode,
     required this.initialPage,
     required this.onPageChanged,
+    required this.seekRequest,
   });
 
   final List<String> paths;
   final ReadingMode mode;
   final int initialPage;
   final ValueChanged<int> onPageChanged;
+  final _ViewportSeekRequest seekRequest;
 
   @override
   Widget build(BuildContext context) {
@@ -437,6 +647,7 @@ class _LocalPageList extends StatelessWidget {
       mode: mode,
       initialPage: initialPage,
       onPageChanged: onPageChanged,
+      seekRequest: seekRequest,
       itemBuilder: (_, i) => Image.file(
         File(paths[i]),
         fit: BoxFit.contain,
@@ -465,6 +676,7 @@ class _PagesView extends StatefulWidget {
     required this.mode,
     required this.initialPage,
     required this.onPageChanged,
+    required this.seekRequest,
     required this.itemBuilder,
   });
 
@@ -472,6 +684,7 @@ class _PagesView extends StatefulWidget {
   final ReadingMode mode;
   final int initialPage;
   final ValueChanged<int> onPageChanged;
+  final _ViewportSeekRequest seekRequest;
   final IndexedWidgetBuilder itemBuilder;
 
   @override
@@ -504,6 +717,20 @@ class _PagesViewState extends State<_PagesView> {
       });
     }
     _lastReported = clamped;
+  }
+
+  @override
+  void didUpdateWidget(covariant _PagesView old) {
+    super.didUpdateWidget(old);
+    // Slider drove a seek: jump the underlying PageController. Continuous
+    // mode has no random-access seek surface — slider only shows in paged
+    // mode anyway so this branch is a no-op there.
+    if (widget.seekRequest.requestId != old.seekRequest.requestId &&
+        _pageController != null) {
+      final target =
+          widget.seekRequest.target.clamp(0, (widget.count - 1).clamp(0, widget.count));
+      _pageController!.jumpToPage(target);
+    }
   }
 
   @override
