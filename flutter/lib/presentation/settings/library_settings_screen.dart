@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_update_preference.dart';
 
-/// Library sub-screen: background update interval. Mirror of Mihon's
-/// SettingsLibraryScreen.
+/// Library sub-screen: background update interval + display toggles.
+/// Mirror of Mihon's SettingsLibraryScreen.
 class LibrarySettingsScreen extends ConsumerWidget {
   const LibrarySettingsScreen({super.key});
 
@@ -13,6 +14,9 @@ class LibrarySettingsScreen extends ConsumerWidget {
     final interval = ref.watch(libraryUpdatePreferenceProvider);
     final intervalNotifier =
         ref.read(libraryUpdatePreferenceProvider.notifier);
+    final showCarousel = ref.watch(showMostReadCarouselProvider);
+    final carouselNotifier =
+        ref.read(showMostReadCarouselProvider.notifier);
     return Scaffold(
       appBar: AppBar(title: const Text('Library')),
       body: ListView(
@@ -37,6 +41,21 @@ class LibrarySettingsScreen extends ConsumerWidget {
                 await intervalNotifier.setInterval(picked);
               }
             },
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
+            child: Text(
+              'Display',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          SwitchListTile(
+            title: const Text('Show "Most read" carousel'),
+            subtitle: const Text(
+              'Highlights the favourites you are furthest through.',
+            ),
+            value: showCarousel,
+            onChanged: carouselNotifier.setEnabled,
           ),
         ],
       ),
