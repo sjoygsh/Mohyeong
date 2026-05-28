@@ -15,8 +15,6 @@ import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
 
-enum LibrarySort { titleAsc, dateAddedDesc, lastUpdateDesc, unreadDesc }
-
 /// Tri-state filters for the library grid. Each axis can be off (show
 /// everything), include-only (show rows where the predicate matches),
 /// or exclude (show rows where it doesn't). Mirrors Mihon's library
@@ -89,7 +87,6 @@ class LibraryScreen extends ConsumerStatefulWidget {
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _query = '';
-  LibrarySort _sort = LibrarySort.titleAsc;
   LibraryFilters _filters = const LibraryFilters();
   bool _searching = false;
   bool _updating = false;
@@ -268,6 +265,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final libraryRepo = ref.watch(libraryRepositoryProvider);
     final categoryRepo = ref.watch(categoryRepositoryProvider);
     final displayMode = ref.watch(libraryDisplayModeProvider);
+    final sortPref = ref.watch(librarySortProvider);
 
     return Scaffold(
       appBar: _selecting ? _buildSelectionAppBar() : AppBar(
@@ -326,28 +324,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               });
             },
           ),
-          PopupMenuButton<LibrarySort>(
+          IconButton(
             icon: const Icon(Icons.sort),
-            initialValue: _sort,
-            onSelected: (s) => setState(() => _sort = s),
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: LibrarySort.titleAsc,
-                child: Text('Title (A–Z)'),
-              ),
-              PopupMenuItem(
-                value: LibrarySort.dateAddedDesc,
-                child: Text('Recently added'),
-              ),
-              PopupMenuItem(
-                value: LibrarySort.lastUpdateDesc,
-                child: Text('Last update'),
-              ),
-              PopupMenuItem(
-                value: LibrarySort.unreadDesc,
-                child: Text('Most unread'),
-              ),
-            ],
+            tooltip: 'Sort',
+            onPressed: () {
+              showModalBottomSheet<void>(
+                context: context,
+                showDragHandle: true,
+                builder: (_) => const _LibrarySortSheet(),
+              );
+            },
           ),
           PopupMenuButton<LibraryDisplayMode>(
             icon: const Icon(Icons.view_module),
@@ -393,7 +379,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 items: items,
                 categories: categories,
                 query: _query,
-                sort: _sort,
+                sort: sortPref,
                 filters: _filters,
                 displayMode: displayMode,
                 selectedCategoryId: _selectedCategoryId,
@@ -431,7 +417,7 @@ class _LibraryBody extends StatelessWidget {
   final List<LibraryItem> items;
   final List<Category> categories;
   final String query;
-  final LibrarySort sort;
+  final LibrarySortPref sort;
   final LibraryFilters filters;
   final LibraryDisplayMode displayMode;
   final int selectedCategoryId;
@@ -518,19 +504,32 @@ class _LibraryBody extends StatelessWidget {
     );
   }
 
-  int Function(LibraryItem, LibraryItem) _compare(LibrarySort sort) {
-    switch (sort) {
-      case LibrarySort.titleAsc:
-        return (a, b) => a.manga.title
-            .toLowerCase()
-            .compareTo(b.manga.title.toLowerCase());
-      case LibrarySort.dateAddedDesc:
-        return (a, b) => b.manga.dateAdded.compareTo(a.manga.dateAdded);
-      case LibrarySort.lastUpdateDesc:
-        return (a, b) => b.manga.lastUpdate.compareTo(a.manga.lastUpdate);
-      case LibrarySort.unreadDesc:
-        return (a, b) => b.unreadCount.compareTo(a.unreadCount);
+  int Function(LibraryItem, LibraryItem) _compare(LibrarySortPref sort) {
+    int asc(LibraryItem a, LibraryItem b) {
+      switch (sort.axis) {
+        case LibrarySortAxis.title:
+          return a.manga.title
+              .toLowerCase()
+              .compareTo(b.manga.title.toLowerCase());
+        case LibrarySortAxis.lastRead:
+          return a.lastRead.compareTo(b.lastRead);
+        case LibrarySortAxis.lastUpdate:
+          return a.manga.lastUpdate.compareTo(b.manga.lastUpdate);
+        case LibrarySortAxis.unread:
+          return a.unreadCount.compareTo(b.unreadCount);
+        case LibrarySortAxis.totalChapters:
+          return a.totalCount.compareTo(b.totalCount);
+        case LibrarySortAxis.latestChapter:
+          return a.latestUpload.compareTo(b.latestUpload);
+        case LibrarySortAxis.chapterFetchDate:
+          return a.chapterFetchedAt.compareTo(b.chapterFetchedAt);
+        case LibrarySortAxis.dateAdded:
+          return a.manga.dateAdded.compareTo(b.manga.dateAdded);
+      }
     }
+    return sort.direction == LibrarySortDirection.ascending
+        ? asc
+        : (a, b) => asc(b, a);
   }
 }
 
@@ -1151,6 +1150,74 @@ class _FilterRow extends StatelessWidget {
       leading: Icon(icon),
       title: Text(label),
       onTap: onTap,
+    );
+  }
+}
+
+/// Mihon-style sort sheet: lists every sort axis with an asc/desc arrow
+/// on the currently-active axis. Tapping the active row flips direction;
+/// tapping a different row switches axes (preserving direction). Writes
+/// back through the `librarySortProvider` so the choice persists.
+class _LibrarySortSheet extends ConsumerWidget {
+  const _LibrarySortSheet();
+
+  static const _entries = <(LibrarySortAxis, String)>[
+    (LibrarySortAxis.title, 'Alphabetical'),
+    (LibrarySortAxis.lastRead, 'Last read'),
+    (LibrarySortAxis.lastUpdate, 'Last update'),
+    (LibrarySortAxis.unread, 'Unread count'),
+    (LibrarySortAxis.totalChapters, 'Total chapters'),
+    (LibrarySortAxis.latestChapter, 'Latest chapter'),
+    (LibrarySortAxis.chapterFetchDate, 'Chapter fetch date'),
+    (LibrarySortAxis.dateAdded, 'Date added'),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = ref.watch(librarySortProvider);
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text(
+                'Sort by',
+                style: theme.textTheme.titleMedium,
+              ),
+            ),
+            for (final entry in _entries)
+              ListTile(
+                leading: Icon(
+                  entry.$1 == current.axis
+                      ? (current.direction == LibrarySortDirection.ascending
+                          ? Icons.arrow_upward
+                          : Icons.arrow_downward)
+                      : null,
+                  color: entry.$1 == current.axis
+                      ? theme.colorScheme.primary
+                      : null,
+                ),
+                title: Text(
+                  entry.$2,
+                  style: entry.$1 == current.axis
+                      ? TextStyle(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        )
+                      : null,
+                ),
+                onTap: () {
+                  ref.read(librarySortProvider.notifier).setAxis(entry.$1);
+                },
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
