@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/history/history_repository.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
+import '../reader/reader_screen.dart';
 
 /// History tab. Streams the most recently read chapters with their
 /// manga context attached. The header shows the cumulative reading time
@@ -100,6 +101,8 @@ class HistoryScreen extends ConsumerWidget {
 }
 
 enum _HistoryMenuAction { clearAll }
+
+enum _HistoryRowAction { openDetails, removeEntry, resetManga }
 
 sealed class _Row {
   const _Row();
@@ -214,13 +217,13 @@ class _DurationHeader extends StatelessWidget {
   }
 }
 
-class _HistoryTile extends StatelessWidget {
+class _HistoryTile extends ConsumerWidget {
   const _HistoryTile({required this.entry});
 
   final HistoryWithContext entry;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final readAt = entry.readAt;
     final subtitle = readAt == null
         ? entry.chapterName
@@ -233,14 +236,72 @@ class _HistoryTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-      onTap: () {
+      // Mihon's behaviour: tap a history row to resume reading the
+      // chapter that row represents, rather than detouring through the
+      // manga details screen. Long-press exposes the per-row delete +
+      // per-manga reset entry points.
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ReaderScreen(
+            mangaId: entry.mangaId,
+            chapterId: entry.chapterId,
+          ),
+        ),
+      ),
+      onLongPress: () => _showRowMenu(context, ref),
+      trailing: IconButton(
+        icon: const Icon(Icons.delete_outline),
+        tooltip: 'Remove from history',
+        onPressed: () => ref
+            .read(historyRepositoryProvider)
+            .removeById(entry.historyId),
+      ),
+    );
+  }
+
+  Future<void> _showRowMenu(BuildContext context, WidgetRef ref) async {
+    final repo = ref.read(historyRepositoryProvider);
+    final action = await showModalBottomSheet<_HistoryRowAction>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.menu_book_outlined),
+              title: const Text('Open manga details'),
+              onTap: () =>
+                  Navigator.of(ctx).pop(_HistoryRowAction.openDetails),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Remove from history'),
+              onTap: () =>
+                  Navigator.of(ctx).pop(_HistoryRowAction.removeEntry),
+            ),
+            ListTile(
+              leading: const Icon(Icons.layers_clear_outlined),
+              title: const Text('Reset history for this manga'),
+              onTap: () =>
+                  Navigator.of(ctx).pop(_HistoryRowAction.resetManga),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !context.mounted) return;
+    switch (action) {
+      case _HistoryRowAction.openDetails:
         Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => MangaDetailsScreen(mangaId: entry.mangaId),
           ),
         );
-      },
-    );
+      case _HistoryRowAction.removeEntry:
+        await repo.removeById(entry.historyId);
+      case _HistoryRowAction.resetManga:
+        await repo.resetByMangaId(entry.mangaId);
+    }
   }
 
   static String _relative(DateTime t) {

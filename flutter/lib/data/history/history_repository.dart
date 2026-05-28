@@ -61,6 +61,14 @@ class HistoryRepository {
     await _db.resetHistoryByMangaId(mangaId);
   }
 
+  /// Single-row delete used by the per-entry "remove from history" action
+  /// on the History tab. Wipes only this `history._id`; the underlying
+  /// chapter's `last_page_read` stays intact (Mihon parity — removing
+  /// history doesn't reset reading position).
+  Future<void> removeById(int historyId) async {
+    await (_db.delete(_db.history)..where((t) => t.id.equals(historyId))).go();
+  }
+
   Future<void> removeAll() async {
     await _db.removeAllHistory();
   }
