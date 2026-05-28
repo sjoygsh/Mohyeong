@@ -11,10 +11,64 @@ import '../../data/manga/manga_repository.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/library/model/library_item.dart';
 import '../../domain/manga/model/manga.dart';
+import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
 
 enum LibrarySort { titleAsc, dateAddedDesc, lastUpdateDesc, unreadDesc }
+
+/// Tri-state filters for the library grid. Each axis can be off (show
+/// everything), include-only (show rows where the predicate matches),
+/// or exclude (show rows where it doesn't). Mirrors Mihon's library
+/// filter sheet — minus the Downloaded / Tracked axes, which need
+/// per-row async lookups that aren't wired through this widget yet.
+class LibraryFilters {
+  const LibraryFilters({
+    this.unread = TriState.disabled,
+    this.started = TriState.disabled,
+    this.bookmarked = TriState.disabled,
+    this.completed = TriState.disabled,
+  });
+
+  final TriState unread;
+  final TriState started;
+  final TriState bookmarked;
+  final TriState completed;
+
+  bool get isActive =>
+      unread != TriState.disabled ||
+      started != TriState.disabled ||
+      bookmarked != TriState.disabled ||
+      completed != TriState.disabled;
+
+  /// Mihon stores publication status as ints; `2` is "Completed".
+  static const int _statusCompleted = 2;
+
+  bool matches(LibraryItem item) {
+    if (!applyTriState(unread, () => item.unreadCount > 0)) return false;
+    if (!applyTriState(started, () => item.readCount > 0)) return false;
+    if (!applyTriState(bookmarked, () => item.bookmarkCount > 0)) return false;
+    if (!applyTriState(
+        completed, () => item.manga.status == _statusCompleted)) {
+      return false;
+    }
+    return true;
+  }
+
+  LibraryFilters copyWith({
+    TriState? unread,
+    TriState? started,
+    TriState? bookmarked,
+    TriState? completed,
+  }) {
+    return LibraryFilters(
+      unread: unread ?? this.unread,
+      started: started ?? this.started,
+      bookmarked: bookmarked ?? this.bookmarked,
+      completed: completed ?? this.completed,
+    );
+  }
+}
 
 /// Library tab: streams the favorites + per-manga aggregate stats from
 /// `libraryView`, partitions by category (tabs above the grid when more
@@ -36,6 +90,7 @@ class LibraryScreen extends ConsumerStatefulWidget {
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _query = '';
   LibrarySort _sort = LibrarySort.titleAsc;
+  LibraryFilters _filters = const LibraryFilters();
   bool _searching = false;
   bool _updating = false;
   int _selectedCategoryId = Category.uncategorizedId;
@@ -241,6 +296,23 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             onPressed: _updating ? null : _refreshLibrary,
           ),
           IconButton(
+            icon: Icon(
+              Icons.filter_list,
+              color: _filters.isActive
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+            tooltip: 'Filter',
+            onPressed: () async {
+              final next = await showModalBottomSheet<LibraryFilters>(
+                context: context,
+                showDragHandle: true,
+                builder: (_) => _LibraryFilterSheet(current: _filters),
+              );
+              if (next != null) setState(() => _filters = next);
+            },
+          ),
+          IconButton(
             icon: Icon(_searching ? Icons.close : Icons.search),
             onPressed: () {
               setState(() {
@@ -322,6 +394,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 categories: categories,
                 query: _query,
                 sort: _sort,
+                filters: _filters,
                 displayMode: displayMode,
                 selectedCategoryId: _selectedCategoryId,
                 onCategoryChanged: (id) =>
@@ -345,6 +418,7 @@ class _LibraryBody extends StatelessWidget {
     required this.categories,
     required this.query,
     required this.sort,
+    required this.filters,
     required this.displayMode,
     required this.selectedCategoryId,
     required this.onCategoryChanged,
@@ -358,6 +432,7 @@ class _LibraryBody extends StatelessWidget {
   final List<Category> categories;
   final String query;
   final LibrarySort sort;
+  final LibraryFilters filters;
   final LibraryDisplayMode displayMode;
   final int selectedCategoryId;
   final ValueChanged<int> onCategoryChanged;
@@ -400,11 +475,17 @@ class _LibraryBody extends StatelessWidget {
         : items;
 
     final qLower = query.toLowerCase();
-    final filtered = qLower.isEmpty
+    final filteredByQuery = qLower.isEmpty
         ? filteredByCategory
         : filteredByCategory
             .where((it) => it.manga.title.toLowerCase().contains(qLower))
             .toList(growable: false);
+
+    final filtered = filters.isActive
+        ? filteredByQuery
+            .where(filters.matches)
+            .toList(growable: false)
+        : filteredByQuery;
 
     final sorted = [...filtered]..sort(_compare(sort));
 
@@ -929,6 +1010,147 @@ class _ErrorView extends StatelessWidget {
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ),
+    );
+  }
+}
+
+/// Tri-state filter sheet for the library grid. Each row cycles
+/// disabled → include → exclude → disabled on tap. A 'Reset' action
+/// clears everything; 'Apply' pops the sheet with the new state.
+class _LibraryFilterSheet extends StatefulWidget {
+  const _LibraryFilterSheet({required this.current});
+
+  final LibraryFilters current;
+
+  @override
+  State<_LibraryFilterSheet> createState() => _LibraryFilterSheetState();
+}
+
+class _LibraryFilterSheetState extends State<_LibraryFilterSheet> {
+  late LibraryFilters _draft = widget.current;
+
+  TriState _cycle(TriState v) {
+    switch (v) {
+      case TriState.disabled:
+        return TriState.enabledIs;
+      case TriState.enabledIs:
+        return TriState.enabledNot;
+      case TriState.enabledNot:
+        return TriState.disabled;
+    }
+  }
+
+  IconData _icon(TriState v) {
+    switch (v) {
+      case TriState.disabled:
+        return Icons.check_box_outline_blank;
+      case TriState.enabledIs:
+        return Icons.check_box;
+      case TriState.enabledNot:
+        return Icons.indeterminate_check_box;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Row(
+                children: [
+                  Text(
+                    'Filters',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _draft.isActive
+                        ? () => setState(() => _draft = const LibraryFilters())
+                        : null,
+                    child: const Text('Reset'),
+                  ),
+                ],
+              ),
+            ),
+            _FilterRow(
+              label: 'Unread',
+              icon: _icon(_draft.unread),
+              onTap: () => setState(
+                () => _draft = _draft.copyWith(unread: _cycle(_draft.unread)),
+              ),
+            ),
+            _FilterRow(
+              label: 'Started',
+              icon: _icon(_draft.started),
+              onTap: () => setState(
+                () => _draft =
+                    _draft.copyWith(started: _cycle(_draft.started)),
+              ),
+            ),
+            _FilterRow(
+              label: 'Bookmarked',
+              icon: _icon(_draft.bookmarked),
+              onTap: () => setState(
+                () => _draft = _draft.copyWith(
+                  bookmarked: _cycle(_draft.bookmarked),
+                ),
+              ),
+            ),
+            _FilterRow(
+              label: 'Completed',
+              icon: _icon(_draft.completed),
+              onTap: () => setState(
+                () => _draft = _draft.copyWith(
+                  completed: _cycle(_draft.completed),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(_draft),
+                    child: const Text('Apply'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterRow extends StatelessWidget {
+  const _FilterRow({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      onTap: onTap,
     );
   }
 }
