@@ -23,6 +23,7 @@ class InstalledExtension {
     required this.versionCode,
     required this.supportsLatest,
     required this.sourcePath,
+    required this.installUrl,
   });
 
   final String id;
@@ -32,6 +33,12 @@ class InstalledExtension {
   final int versionCode;
   final bool supportsLatest;
   final String sourcePath;
+
+  /// URL the extension was originally installed from. Null when the
+  /// install came from a local file pick (no remembered origin). When
+  /// present, the Extensions tab exposes a one-tap "Update" action that
+  /// re-fetches this URL through [ExtensionRepository.installFromUrl].
+  final String? installUrl;
 
   factory InstalledExtension.fromManifest(
     Map<String, dynamic> manifest,
@@ -45,6 +52,10 @@ class InstalledExtension {
       versionCode: (manifest['version_code'] as num?)?.toInt() ?? 1,
       supportsLatest: manifest['supports_latest'] as bool? ?? false,
       sourcePath: sourcePath,
+      // `__install_url` is a sidecar key we stamp into the persisted
+      // manifest copy at install time. Not part of the JS-side manifest
+      // contract — the underscore prefix is the marker.
+      installUrl: manifest['__install_url'] as String?,
     );
   }
 }
@@ -101,20 +112,30 @@ class ExtensionStorage {
   }
 
   /// Persists an extension to disk. Caller is responsible for having already
-  /// loaded the JS source once in a [JsRuntime] to validate it.
+  /// loaded the JS source once in a [JsRuntime] to validate it. When
+  /// [installUrl] is non-null it's stamped into the persisted manifest copy
+  /// under `__install_url` so future sessions can re-fetch the origin.
   Future<InstalledExtension> install({
     required Map<String, dynamic> manifest,
     required String sourceCode,
+    String? installUrl,
   }) async {
     final id = manifest['id'] as String?;
     if (id == null || id.isEmpty) {
       throw ArgumentError('Manifest missing required `id` field');
     }
+    // Copy so we don't mutate the caller's map; strip any stale
+    // `__install_url` then stamp the new one (or leave absent when the
+    // install has no remembered origin).
+    final toWrite = Map<String, dynamic>.of(manifest)..remove('__install_url');
+    if (installUrl != null && installUrl.isNotEmpty) {
+      toWrite['__install_url'] = installUrl;
+    }
     final dir = _dirFor(id);
     if (!await dir.exists()) await dir.create(recursive: true);
-    await _manifestFile(id).writeAsString(jsonEncode(manifest));
+    await _manifestFile(id).writeAsString(jsonEncode(toWrite));
     await _sourceFile(id).writeAsString(sourceCode);
-    return InstalledExtension.fromManifest(manifest, _sourceFile(id).path);
+    return InstalledExtension.fromManifest(toWrite, _sourceFile(id).path);
   }
 
   Future<void> uninstall(String id) async {

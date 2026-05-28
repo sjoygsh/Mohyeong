@@ -64,7 +64,9 @@ class ExtensionRepository {
     return installFromString(code);
   }
 
-  /// Installs from a remote URL (raw .js file).
+  /// Installs from a remote URL (raw .js file). The URL is remembered
+  /// alongside the manifest so the Extensions tab can offer a one-tap
+  /// update via [updateFromOrigin].
   Future<InstalledExtension> installFromUrl(String url) async {
     final response = await _http.dio.get<String>(
       url,
@@ -74,10 +76,27 @@ class ExtensionRepository {
     if (code == null || code.isEmpty) {
       throw StateError('Empty response from $url');
     }
-    return installFromString(code);
+    return installFromString(code, installUrl: url);
   }
 
-  Future<InstalledExtension> installFromString(String code) async {
+  /// Re-runs the URL install for an extension that was previously
+  /// installed from a URL. Throws when the extension has no remembered
+  /// origin (it was installed from a local file).
+  Future<InstalledExtension> updateFromOrigin(InstalledExtension e) {
+    final url = e.installUrl;
+    if (url == null || url.isEmpty) {
+      throw StateError(
+        'Extension ${e.name} has no remembered install URL — '
+        'install from URL once first.',
+      );
+    }
+    return installFromUrl(url);
+  }
+
+  Future<InstalledExtension> installFromString(
+    String code, {
+    String? installUrl,
+  }) async {
     // Load once just to read + validate the manifest. The runtime gets
     // disposed; the real runtime spins up on first use.
     final probe = await JsSource.load(code, dio: _http.dio);
@@ -86,6 +105,7 @@ class ExtensionRepository {
     final installed = await _storage.install(
       manifest: manifest,
       sourceCode: code,
+      installUrl: installUrl,
     );
     // Drop any cached old version so the next getSource picks up the new
     // code.

@@ -291,12 +291,25 @@ class _ExtensionsTab extends ConsumerWidget {
             itemCount: extensions.length,
             itemBuilder: (_, i) {
               final e = extensions[i];
+              final canUpdate = e.installUrl != null;
               return ListTile(
                 title: Text(e.name),
                 subtitle: Text('${e.lang.toUpperCase()} • v${e.versionCode}'),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => _confirmUninstall(context, repo, e),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (canUpdate)
+                      IconButton(
+                        icon: const Icon(Icons.refresh),
+                        tooltip: 'Update from origin URL',
+                        onPressed: () => _runUpdate(context, repo, e),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      tooltip: 'Uninstall',
+                      onPressed: () => _confirmUninstall(context, repo, e),
+                    ),
+                  ],
                 ),
               );
             },
@@ -307,6 +320,45 @@ class _ExtensionsTab extends ConsumerWidget {
         onPressed: () => _showAddSheet(context, repo),
         child: const Icon(Icons.add),
       ),
+    );
+  }
+}
+
+/// Re-fetches the JS from [e.installUrl] and reinstalls. Surfaces
+/// success/failure via SnackBar so the user gets feedback either way.
+/// Compares the manifest version code before/after to tell "Updated"
+/// vs "Already up to date" — matches Mihon's update flow wording.
+Future<void> _runUpdate(
+  BuildContext context,
+  ExtensionRepository repo,
+  InstalledExtension e,
+) async {
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const Center(child: CircularProgressIndicator()),
+  );
+  try {
+    final beforeVersion = e.versionCode;
+    final updated = await repo.updateFromOrigin(e);
+    if (!context.mounted) return;
+    Navigator.of(context).pop(); // dismiss progress
+    final unchanged = updated.versionCode == beforeVersion;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          unchanged
+              ? '${updated.name} is already up to date.'
+              : 'Updated ${updated.name} '
+                  '(v$beforeVersion → v${updated.versionCode}).',
+        ),
+      ),
+    );
+  } catch (err) {
+    if (!context.mounted) return;
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Update failed: $err')),
     );
   }
 }
