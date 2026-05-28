@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/reader/reader_preferences.dart';
 import '../../domain/reader/model/reading_mode.dart';
 
-/// Reader sub-screen: global default reading mode. Per-manga overrides
-/// live in the reader's tune menu — this is the fallback when a manga
-/// has no override.
+/// Reader sub-screen: global default reading mode + visual prefs
+/// (background colour, colour filter). Per-manga overrides live in
+/// the reader's tune menu — these are the fallbacks.
 class ReaderSettingsScreen extends ConsumerWidget {
   const ReaderSettingsScreen({super.key});
 
@@ -14,6 +14,8 @@ class ReaderSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final readerMode = ref.watch(readerPreferencesProvider);
     final readerNotifier = ref.read(readerPreferencesProvider.notifier);
+    final background = ref.watch(readerBackgroundProvider);
+    final colorFilter = ref.watch(readerColorFilterProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Reader')),
       body: ListView(
@@ -36,6 +38,47 @@ class ReaderSettingsScreen extends ConsumerWidget {
               );
               if (picked != null) {
                 await readerNotifier.setMode(picked);
+              }
+            },
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Appearance',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          ListTile(
+            title: const Text('Background colour'),
+            subtitle: Text(background.label),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<ReaderBackground>(
+                context: context,
+                builder: (_) =>
+                    _ReaderBackgroundPickerDialog(current: background),
+              );
+              if (picked != null) {
+                await ref
+                    .read(readerBackgroundProvider.notifier)
+                    .set(picked);
+              }
+            },
+          ),
+          ListTile(
+            title: const Text('Colour filter'),
+            subtitle: Text(colorFilter.label),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<ReaderColorFilter>(
+                context: context,
+                builder: (_) =>
+                    _ReaderColorFilterPickerDialog(current: colorFilter),
+              );
+              if (picked != null) {
+                await ref
+                    .read(readerColorFilterProvider.notifier)
+                    .set(picked);
               }
             },
           ),
@@ -67,6 +110,64 @@ class _ReadingModePickerDialog extends StatelessWidget {
                     value: m,
                     title: Text(m.label),
                   ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReaderBackgroundPickerDialog extends StatelessWidget {
+  const _ReaderBackgroundPickerDialog({required this.current});
+
+  final ReaderBackground current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Background colour'),
+      children: [
+        RadioGroup<ReaderBackground>(
+          groupValue: current,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final b in ReaderBackground.values)
+                RadioListTile<ReaderBackground>(
+                  value: b,
+                  title: Text(b.label),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReaderColorFilterPickerDialog extends StatelessWidget {
+  const _ReaderColorFilterPickerDialog({required this.current});
+
+  final ReaderColorFilter current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Colour filter'),
+      children: [
+        RadioGroup<ReaderColorFilter>(
+          groupValue: current,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final f in ReaderColorFilter.values)
+                RadioListTile<ReaderColorFilter>(
+                  value: f,
+                  title: Text(f.label),
+                ),
             ],
           ),
         ),

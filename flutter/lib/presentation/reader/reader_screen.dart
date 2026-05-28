@@ -75,8 +75,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   @override
   Widget build(BuildContext context) {
     final globalMode = ref.watch(readerPreferencesProvider);
+    final background = ref.watch(readerBackgroundProvider);
+    final colorFilter = ref.watch(readerColorFilterProvider);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: background.color,
       body: FutureBuilder<_ReaderData?>(
         future: _data,
         builder: (context, snap) {
@@ -84,8 +86,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
             return _ReaderError(error: snap.error!);
           }
           if (!snap.hasData) {
-            return const Center(
-              child: CircularProgressIndicator(color: Colors.white),
+            return Center(
+              child: CircularProgressIndicator(color: background.onColor),
             );
           }
           final data = snap.data;
@@ -97,6 +99,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           return _ReaderBody(
             data: data,
             mode: effectiveMode,
+            background: background,
+            colorFilter: colorFilter,
             onJumpToChapter: _jumpToChapter,
             onChangeMode: (mode) async {
               // Persist as a per-manga override. Preserve the upper bits
@@ -223,6 +227,8 @@ class _ReaderBody extends StatefulWidget {
   const _ReaderBody({
     required this.data,
     required this.mode,
+    required this.background,
+    required this.colorFilter,
     required this.onJumpToChapter,
     required this.onChangeMode,
     required this.onPageChanged,
@@ -231,6 +237,8 @@ class _ReaderBody extends StatefulWidget {
 
   final _ReaderData data;
   final ReadingMode mode;
+  final ReaderBackground background;
+  final ReaderColorFilter colorFilter;
   final ValueChanged<int> onJumpToChapter;
   final ValueChanged<ReadingMode> onChangeMode;
   final ValueChanged<int> onPageChanged;
@@ -310,6 +318,16 @@ class _ReaderBodyState extends State<_ReaderBody> {
               ),
             ),
           ),
+          // Reader colour filter (sepia/yellow/blue tint). Sits above
+          // the pages but below the chrome so the filter affects only
+          // the page art, not the controls. IgnorePointer so taps still
+          // pass through to the toggle-chrome gesture detector.
+          if (widget.colorFilter.overlay != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(color: widget.colorFilter.overlay!),
+              ),
+            ),
           // Top chrome.
           Positioned(
             top: 0,
