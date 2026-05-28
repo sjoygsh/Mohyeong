@@ -8,9 +8,11 @@ import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
 import '../../data/source/local_source.dart';
 import '../../data/source/local_source_preferences.dart';
+import '../../data/source/source_preferences.dart';
 import 'global_search_screen.dart';
 import 'migrate_source_screen.dart';
 import 'source_browse_screen.dart';
+import 'sources_filter_screen.dart';
 
 /// Browse hosts three sub-tabs: Sources (installed sources you can browse),
 /// Extensions (install / uninstall management), and Migrate (moves
@@ -34,6 +36,19 @@ class BrowseScreen extends StatelessWidget {
                   Navigator.of(innerContext).push(
                     MaterialPageRoute<void>(
                       builder: (_) => const GlobalSearchScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Builder(
+              builder: (innerContext) => IconButton(
+                icon: const Icon(Icons.filter_list),
+                tooltip: 'Filter sources',
+                onPressed: () {
+                  Navigator.of(innerContext).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SourcesFilterScreen(),
                     ),
                   );
                 },
@@ -67,15 +82,60 @@ class _SourcesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(extensionRepositoryProvider);
     final prefsAsync = ref.watch(localSourcePreferencesProvider);
+    final sourcePrefsAsync = ref.watch(sourcePreferencesProvider);
     return StreamBuilder<List<InstalledExtension>>(
       stream: repo.watchInstalled(),
       builder: (context, snap) {
         if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final extensions = snap.data!;
+        final allExtensions = snap.data!;
+        final sourcePrefs = sourcePrefsAsync.value;
         final localRoot = prefsAsync.value?.root;
-        return ListView(
+        // Listen to the language + hidden-source sets so toggles on the
+        // filter screen reflect immediately when the user pops back.
+        // While prefs are still loading, fall through to "show all".
+        return StreamBuilder<Set<String>>(
+          stream: sourcePrefs?.watchEnabledLanguages(),
+          initialData: sourcePrefs?.getEnabledLanguages(),
+          builder: (context, langSnap) {
+            return StreamBuilder<Set<String>>(
+              stream: sourcePrefs?.watchDisabledSources(),
+              initialData: sourcePrefs?.getDisabledSources(),
+              builder: (context, disSnap) {
+                final enabledLangs = langSnap.data ?? const <String>{};
+                final disabledIds = disSnap.data ?? const <String>{};
+                final extensions = sourcePrefs == null
+                    ? allExtensions
+                    : allExtensions
+                        .where((e) =>
+                            enabledLangs.contains(e.lang.toLowerCase()) &&
+                            !disabledIds.contains(e.id))
+                        .toList(growable: false);
+                return _buildList(
+                  context,
+                  ref,
+                  extensions,
+                  localRoot,
+                  filtered: sourcePrefs != null &&
+                      extensions.length != allExtensions.length,
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildList(
+    BuildContext context,
+    WidgetRef ref,
+    List<InstalledExtension> extensions,
+    String? localRoot, {
+    required bool filtered,
+  }) {
+    return ListView(
           children: [
             ListTile(
               leading: const Icon(Icons.folder_outlined),
@@ -127,10 +187,21 @@ class _SourcesTab extends ConsumerWidget {
                   );
                 },
               ),
+            if (filtered)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                child: Text(
+                  'Some sources are hidden by your filter. Tap the '
+                  'funnel icon above to adjust.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.outline,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
           ],
         );
-      },
-    );
   }
 }
 
