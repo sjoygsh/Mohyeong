@@ -27,6 +27,7 @@ import '../reader/reader_screen.dart';
 import '../track/manga_tracking_sheet.dart';
 import 'chapter_settings_sheet.dart';
 import 'linked_manga_sheet.dart';
+import 'manga_notes_screen.dart';
 import 'scanlator_filter_sheet.dart';
 
 /// Manga details: cover + metadata header followed by the chapter list.
@@ -103,6 +104,17 @@ class MangaDetailsScreen extends ConsumerWidget {
                             ),
                           ),
                         ),
+                      if (manga.favorite)
+                        IconButton(
+                          icon: const Icon(Icons.edit_note),
+                          tooltip: 'Edit notes',
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  MangaNotesScreen(manga: manga),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                   SliverToBoxAdapter(child: _MangaInfoBox(manga: manga)),
@@ -117,6 +129,8 @@ class MangaDetailsScreen extends ConsumerWidget {
                   if (manga.favorite)
                     SliverToBoxAdapter(child: _TrackerPreviewBar(manga: manga)),
                   SliverToBoxAdapter(child: _DescriptionAndTags(manga: manga)),
+                  if (manga.favorite && manga.notes.trim().isNotEmpty)
+                    SliverToBoxAdapter(child: _NotesPreview(manga: manga)),
                   if (chapSnap.hasError)
                     SliverToBoxAdapter(child: _Error(error: chapSnap.error!))
                   else if (!chapSnap.hasData)
@@ -929,6 +943,61 @@ class _TrackerPreviewBar extends ConsumerWidget {
         ? t.score.toInt().toString()
         : t.score.toStringAsFixed(1);
     return '$name · $progress · ★$score';
+  }
+}
+
+/// Compact preview of the per-manga notes the user has saved. Shown
+/// between the description and the chapter list. Tapping anywhere on
+/// the block opens the full editor — mirrors Mihon's `MangaNotesSection`
+/// minus the markdown-rendered display (v1.0 shows plain text).
+class _NotesPreview extends StatelessWidget {
+  const _NotesPreview({required this.manga});
+
+  final Manga manga;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => MangaNotesScreen(manga: manga),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.edit_note,
+                    size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  'Notes',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              manga.notes,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium,
+            ),
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Divider(height: 1),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

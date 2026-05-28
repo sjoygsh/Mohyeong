@@ -135,6 +135,19 @@ class MangaRepository {
     );
   }
 
+  /// Overwrite the per-manga `notes` column (free-form markdown text the
+  /// user keeps about a series). Empty string clears the row's notes.
+  /// Bumps `last_modified_at` for sync ordering.
+  Future<void> setNotes(int id, String notes) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.mangas)..where((t) => t.id.equals(id))).write(
+      db.MangasCompanion(
+        notes: Value(notes),
+        lastModifiedAt: Value(nowMs),
+      ),
+    );
+  }
+
   /// Toggle the library state of an existing manga without touching the
   /// rest of its row. Adds `dateAdded` when entering the library (matches
   /// the Kotlin behaviour so categorization-by-date sort works), and
