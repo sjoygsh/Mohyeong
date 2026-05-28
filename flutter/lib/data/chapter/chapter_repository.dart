@@ -65,6 +65,20 @@ class ChapterRepository {
     ));
   }
 
+  /// Overwrites the per-chapter `bookmark_note` text. Empty string clears
+  /// the column. Bumps `last_modified_at` for sync ordering. Doesn't
+  /// touch the `bookmark` flag — callers decide whether saving a note
+  /// should also flip the chapter into the bookmarked state.
+  Future<void> setBookmarkNote(int chapterId, String note) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final trimmed = note.trim();
+    await (_db.update(_db.chapters)..where((t) => t.id.equals(chapterId)))
+        .write(db.ChaptersCompanion(
+      bookmarkNote: Value(trimmed.isEmpty ? null : trimmed),
+      lastModifiedAt: Value(nowMs),
+    ));
+  }
+
   /// Save the user's current page within a chapter. Called by the reader
   /// on every page change; the row also receives a `lastModifiedAt` bump
   /// so sync clients pick up the position.

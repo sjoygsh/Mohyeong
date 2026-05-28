@@ -1371,7 +1371,31 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: subtitleParts.isEmpty ? null : Text(subtitleParts.join(' • ')),
+      subtitle: () {
+        final note = chapter.bookmarkNote;
+        final hasNote = note != null && note.isNotEmpty;
+        if (subtitleParts.isEmpty && !hasNote) return null;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (subtitleParts.isNotEmpty) Text(subtitleParts.join(' • ')),
+            if (hasNote)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  note,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+          ],
+        );
+      }(),
       leading: chapter.bookmark
           ? const Icon(Icons.bookmark, size: 20)
           : null,
@@ -1397,6 +1421,21 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                   chapterRepo.setBookmark(chapter.id, true);
                 case _ChapterAction.unbookmark:
                   chapterRepo.setBookmark(chapter.id, false);
+                case _ChapterAction.editBookmarkNote:
+                  () async {
+                    final result = await showBookmarkNoteDialog(
+                      context,
+                      initialNote: chapter.bookmarkNote ?? '',
+                    );
+                    if (result == null) return;
+                    await chapterRepo.setBookmarkNote(chapter.id, result);
+                    // Flip the chapter into the bookmarked state when
+                    // the user saves any text — matches Mihon's flow
+                    // where editing a note implies bookmarking.
+                    if (result.trim().isNotEmpty && !chapter.bookmark) {
+                      await chapterRepo.setBookmark(chapter.id, true);
+                    }
+                  }();
                 case _ChapterAction.download:
                   widget.downloadRepo.enqueue(widget.manga, chapter);
                 case _ChapterAction.deleteDownload:
@@ -1428,6 +1467,14 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                   value: _ChapterAction.unbookmark,
                   child: Text('Remove bookmark'),
                 ),
+              PopupMenuItem(
+                value: _ChapterAction.editBookmarkNote,
+                child: Text(
+                  chapter.bookmarkNote == null || chapter.bookmarkNote!.isEmpty
+                      ? 'Add bookmark note'
+                      : 'Edit bookmark note',
+                ),
+              ),
               if (_downloadState != DownloadState.completed &&
                   _downloadState != DownloadState.downloading &&
                   _downloadState != DownloadState.queued)
@@ -1474,8 +1521,55 @@ enum _ChapterAction {
   markUnread,
   bookmark,
   unbookmark,
+  editBookmarkNote,
   download,
   deleteDownload,
+}
+
+/// Plain-text bookmark-note dialog. Mihon parity — bookmarking a
+/// chapter optionally captures a short note (where you left off, what
+/// happened, etc.) that surfaces in the bookmarks UI later. Saving an
+/// empty string clears the note.
+Future<String?> showBookmarkNoteDialog(
+  BuildContext context, {
+  required String initialNote,
+}) async {
+  final controller = TextEditingController(text: initialNote);
+  try {
+    return await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Bookmark note'),
+          content: SizedBox(
+            width: 400,
+            child: TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 6,
+              minLines: 4,
+              decoration: const InputDecoration(
+                hintText: 'Where did you leave off? Anything to remember?',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  } finally {
+    controller.dispose();
+  }
 }
 
 class _DownloadIndicator extends StatelessWidget {
