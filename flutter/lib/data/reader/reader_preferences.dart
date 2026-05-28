@@ -155,6 +155,50 @@ final readerColorFilterProvider =
   ReaderColorFilterNotifier.new,
 );
 
+/// Auto-hide delay for the reader's top/bottom chrome (header + page
+/// indicator strip). `0` keeps the chrome pinned until the user taps
+/// the viewport again — matches the previous behaviour. Any positive
+/// value re-arms a timer whenever the chrome becomes visible so it
+/// fades back out after [state] seconds. Mihon's equivalent is the
+/// `pref_keep_screen_on` companion pref `pref_reader_hide_threshold`
+/// (we drop the `pref_` prefix to fit the rest of the Flutter prefs).
+class ReaderAutoHideChromeNotifier extends Notifier<int> {
+  static const _key = 'reader_auto_hide_chrome_seconds';
+  static const _default = 0;
+
+  /// Presets surfaced by the picker. Kept here so the settings screen
+  /// and any future quick-access menu agree on the same values.
+  static const presets = <int>[0, 3, 5, 10, 30];
+
+  @override
+  int build() {
+    _loadFromDisk();
+    return _default;
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getInt(_key);
+    if (stored == null) return;
+    // Clamp to the preset set so a stray import can't park us on a
+    // bizarre delay (e.g. 1 second, which would feel like the chrome
+    // is broken).
+    final resolved = presets.contains(stored) ? stored : _default;
+    if (resolved != state) state = resolved;
+  }
+
+  Future<void> set(int seconds) async {
+    state = seconds;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, seconds);
+  }
+}
+
+final readerAutoHideChromeSecondsProvider =
+    NotifierProvider<ReaderAutoHideChromeNotifier, int>(
+  ReaderAutoHideChromeNotifier.new,
+);
+
 /// Resolves the effective reading mode for a given per-manga
 /// `viewerFlags`. Returns the per-manga override when set; falls back
 /// to the user's global default otherwise.

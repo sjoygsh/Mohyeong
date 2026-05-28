@@ -16,6 +16,7 @@ class ReaderSettingsScreen extends ConsumerWidget {
     final readerNotifier = ref.read(readerPreferencesProvider.notifier);
     final background = ref.watch(readerBackgroundProvider);
     final colorFilter = ref.watch(readerColorFilterProvider);
+    final autoHideSeconds = ref.watch(readerAutoHideChromeSecondsProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Reader')),
       body: ListView(
@@ -82,10 +83,32 @@ class ReaderSettingsScreen extends ConsumerWidget {
               }
             },
           ),
+          ListTile(
+            title: const Text('Auto-hide chrome'),
+            subtitle: Text(_autoHideLabel(autoHideSeconds)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<int>(
+                context: context,
+                builder: (_) =>
+                    _ReaderAutoHideChromePickerDialog(current: autoHideSeconds),
+              );
+              if (picked != null) {
+                await ref
+                    .read(readerAutoHideChromeSecondsProvider.notifier)
+                    .set(picked);
+              }
+            },
+          ),
         ],
       ),
     );
   }
+}
+
+String _autoHideLabel(int seconds) {
+  if (seconds <= 0) return 'Off';
+  return 'After $seconds second${seconds == 1 ? '' : 's'}';
 }
 
 class _ReadingModePickerDialog extends StatelessWidget {
@@ -138,6 +161,35 @@ class _ReaderBackgroundPickerDialog extends StatelessWidget {
                 RadioListTile<ReaderBackground>(
                   value: b,
                   title: Text(b.label),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReaderAutoHideChromePickerDialog extends StatelessWidget {
+  const _ReaderAutoHideChromePickerDialog({required this.current});
+
+  final int current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Auto-hide chrome'),
+      children: [
+        RadioGroup<int>(
+          groupValue: current,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final s in ReaderAutoHideChromeNotifier.presets)
+                RadioListTile<int>(
+                  value: s,
+                  title: Text(_autoHideLabel(s)),
                 ),
             ],
           ),

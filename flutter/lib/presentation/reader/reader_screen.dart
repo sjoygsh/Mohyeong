@@ -223,7 +223,7 @@ class _ReaderData {
 /// "chrome visible" toggle (tap anywhere on the viewport to hide/show
 /// the header and bottom strip) plus the current/total page state that
 /// powers the page indicator and the paged-mode slider.
-class _ReaderBody extends StatefulWidget {
+class _ReaderBody extends ConsumerStatefulWidget {
   const _ReaderBody({
     required this.data,
     required this.mode,
@@ -245,10 +245,10 @@ class _ReaderBody extends StatefulWidget {
   final VoidCallback onMarkRead;
 
   @override
-  State<_ReaderBody> createState() => _ReaderBodyState();
+  ConsumerState<_ReaderBody> createState() => _ReaderBodyState();
 }
 
-class _ReaderBodyState extends State<_ReaderBody> {
+class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   bool _chromeVisible = true;
   int _currentPage = 0;
   int _totalPages = 0;
@@ -257,9 +257,45 @@ class _ReaderBodyState extends State<_ReaderBody> {
   // [_ViewportRequest] and animates to the new index.
   int _seekRequestId = 0;
   int _seekTarget = 0;
+  // Auto-hide timer for the chrome overlay. Re-armed each time the
+  // chrome becomes visible (initial state + every toggle-to-visible).
+  // `null` means either auto-hide is disabled (delay = 0) or the
+  // chrome is currently hidden.
+  Timer? _autoHideTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Chrome starts visible — arm the initial countdown so the reader
+    // settles into a clean view if the user doesn't tap anything.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _armAutoHide();
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoHideTimer?.cancel();
+    super.dispose();
+  }
+
+  void _armAutoHide() {
+    _autoHideTimer?.cancel();
+    final seconds = ref.read(readerAutoHideChromeSecondsProvider);
+    if (seconds <= 0 || !_chromeVisible) return;
+    _autoHideTimer = Timer(Duration(seconds: seconds), () {
+      if (!mounted) return;
+      if (_chromeVisible) setState(() => _chromeVisible = false);
+    });
+  }
 
   void _toggleChrome() {
     setState(() => _chromeVisible = !_chromeVisible);
+    if (_chromeVisible) {
+      _armAutoHide();
+    } else {
+      _autoHideTimer?.cancel();
+    }
   }
 
   void _onPageChanged(int page) {
