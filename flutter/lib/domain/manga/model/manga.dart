@@ -98,6 +98,17 @@ class Manga {
     }
   }
 
+  TriState get downloadedFilter {
+    switch (downloadedFilterRaw) {
+      case chapterShowDownloaded:
+        return TriState.enabledIs;
+      case chapterShowNotDownloaded:
+        return TriState.enabledNot;
+      default:
+        return TriState.disabled;
+    }
+  }
+
   bool sortDescending() {
     return (chapterFlags & chapterSortDirMask) == chapterSortDesc;
   }

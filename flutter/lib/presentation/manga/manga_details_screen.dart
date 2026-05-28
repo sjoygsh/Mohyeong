@@ -161,70 +161,101 @@ class _ChaptersSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final excludedRepo = ref.watch(excludedScanlatorsRepositoryProvider);
+    final downloadRepo = ref.watch(downloadRepositoryProvider);
     return StreamBuilder<Set<String>>(
       stream: excludedRepo.watchByMangaId(manga.id),
       builder: (context, excludedSnap) {
         final excluded = excludedSnap.data ?? const <String>{};
-        final availableScanlators = <String>{
-          for (final c in chapters)
-            if (c.scanlator != null && c.scanlator!.isNotEmpty) c.scanlator!,
-        };
-
-        final filtered = chapters.where((c) {
-          if (excluded.contains(c.scanlator)) return false;
-          final unreadOk = applyTriState(manga.unreadFilter, () => !c.read);
-          final bookmarkedOk =
-              applyTriState(manga.bookmarkedFilter, () => c.bookmark);
-          return unreadOk && bookmarkedOk;
-        }).toList(growable: false);
-
-        final sorted = [...filtered]..sort((a, b) {
-          int cmp;
-          switch (manga.sorting) {
-            case Manga.chapterSortingNumber:
-              cmp = a.chapterNumber.compareTo(b.chapterNumber);
-            case Manga.chapterSortingUploadDate:
-              cmp = a.dateUpload.compareTo(b.dateUpload);
-            case Manga.chapterSortingAlphabet:
-              cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
-            default:
-              cmp = a.sourceOrder.compareTo(b.sourceOrder);
-          }
-          return manga.sortDescending() ? -cmp : cmp;
-        });
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _ChapterListHeader(
-              visibleCount: sorted.length,
-              totalCount: chapters.length,
-              mangaForSheet: manga,
-              availableScanlators: availableScanlators,
-              excludedScanlators: excluded,
-            ),
-            if (sorted.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(
-                  child: Text('No chapters match the current filter.'),
-                ),
-              )
-            else
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: sorted.length,
-                itemBuilder: (_, i) => _ChapterTile(
-                  manga: manga,
-                  chapter: sorted[i],
-                  chapterRepo: chapterRepo,
-                  downloadRepo: ref.watch(downloadRepositoryProvider),
-                ),
-              ),
-          ],
+        // Only probe the filesystem when the user has actually engaged
+        // the downloaded filter axis. Common path stays sync.
+        if (manga.downloadedFilter == TriState.disabled) {
+          return _buildBody(context, excluded, null, downloadRepo);
+        }
+        return FutureBuilder<Set<int>>(
+          future: downloadRepo.listDownloadedChapterIds(manga.source, manga.id),
+          builder: (context, downloadedSnap) {
+            return _buildBody(
+              context,
+              excluded,
+              downloadedSnap.data ?? const <int>{},
+              downloadRepo,
+            );
+          },
         );
       },
+    );
+  }
+
+  Widget _buildBody(
+    BuildContext context,
+    Set<String> excluded,
+    Set<int>? downloadedIds,
+    DownloadRepository downloadRepo,
+  ) {
+    final availableScanlators = <String>{
+      for (final c in chapters)
+        if (c.scanlator != null && c.scanlator!.isNotEmpty) c.scanlator!,
+    };
+
+    final filtered = chapters.where((c) {
+      if (excluded.contains(c.scanlator)) return false;
+      final unreadOk = applyTriState(manga.unreadFilter, () => !c.read);
+      final bookmarkedOk =
+          applyTriState(manga.bookmarkedFilter, () => c.bookmark);
+      final downloadedOk = downloadedIds == null
+          ? true
+          : applyTriState(
+              manga.downloadedFilter,
+              () => downloadedIds.contains(c.id),
+            );
+      return unreadOk && bookmarkedOk && downloadedOk;
+    }).toList(growable: false);
+
+    final sorted = [...filtered]..sort((a, b) {
+      int cmp;
+      switch (manga.sorting) {
+        case Manga.chapterSortingNumber:
+          cmp = a.chapterNumber.compareTo(b.chapterNumber);
+        case Manga.chapterSortingUploadDate:
+          cmp = a.dateUpload.compareTo(b.dateUpload);
+        case Manga.chapterSortingAlphabet:
+          cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        default:
+          cmp = a.sourceOrder.compareTo(b.sourceOrder);
+      }
+      return manga.sortDescending() ? -cmp : cmp;
+    });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ChapterListHeader(
+          visibleCount: sorted.length,
+          totalCount: chapters.length,
+          mangaForSheet: manga,
+          availableScanlators: availableScanlators,
+          excludedScanlators: excluded,
+        ),
+        if (sorted.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(
+              child: Text('No chapters match the current filter.'),
+            ),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: sorted.length,
+            itemBuilder: (_, i) => _ChapterTile(
+              manga: manga,
+              chapter: sorted[i],
+              chapterRepo: chapterRepo,
+              downloadRepo: downloadRepo,
+            ),
+          ),
+      ],
     );
   }
 }

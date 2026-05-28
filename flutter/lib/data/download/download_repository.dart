@@ -94,6 +94,29 @@ class DownloadRepository {
     return count;
   }
 
+  /// Set of chapter ids that are fully downloaded for [mangaId]. Cheaper
+  /// than calling [isDownloaded] per chapter when filtering a chapter
+  /// list, since it walks the manga directory once.
+  Future<Set<int>> listDownloadedChapterIds(
+    int sourceId,
+    int mangaId,
+  ) async {
+    final root = await _root();
+    final mangaDir = Directory(
+      p.join(root.path, sourceId.toString(), mangaId.toString()),
+    );
+    if (!await mangaDir.exists()) return const <int>{};
+    final ids = <int>{};
+    await for (final entity in mangaDir.list()) {
+      if (entity is! Directory) continue;
+      final marker = File(p.join(entity.path, '.done'));
+      if (!await marker.exists()) continue;
+      final parsed = int.tryParse(p.basename(entity.path));
+      if (parsed != null) ids.add(parsed);
+    }
+    return ids;
+  }
+
   /// Returns the list of locally-cached page paths for a downloaded chapter,
   /// or null if the chapter isn't fully downloaded.
   Future<List<String>?> localPagePaths(
