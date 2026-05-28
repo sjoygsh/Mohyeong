@@ -94,6 +94,46 @@ class DownloadRepository {
     return count;
   }
 
+  /// Set of `(sourceId, mangaId)` pairs that have at least one fully
+  /// downloaded chapter. Walks the downloads root once so the library
+  /// filter sheet can apply a Downloaded axis without an N-call probe.
+  /// Returns the pair as a `int` key encoded as `source << 32 | manga`
+  /// (both are 32-bit-fitting in our schema, manga.id auto-increments).
+  Future<Set<int>> listMangaWithAnyDownload() async {
+    final root = await _root();
+    if (!await root.exists()) return const <int>{};
+    final out = <int>{};
+    await for (final sourceDir in root.list()) {
+      if (sourceDir is! Directory) continue;
+      final sourceId = int.tryParse(p.basename(sourceDir.path));
+      if (sourceId == null) continue;
+      await for (final mangaDir in sourceDir.list()) {
+        if (mangaDir is! Directory) continue;
+        final mangaId = int.tryParse(p.basename(mangaDir.path));
+        if (mangaId == null) continue;
+        // First .done marker wins; bail out for this manga as soon as
+        // any chapter qualifies.
+        var hasOne = false;
+        await for (final chapterDir in mangaDir.list()) {
+          if (chapterDir is! Directory) continue;
+          final marker = File(p.join(chapterDir.path, '.done'));
+          if (await marker.exists()) {
+            hasOne = true;
+            break;
+          }
+        }
+        if (hasOne) out.add((sourceId << 32) | mangaId);
+      }
+    }
+    return out;
+  }
+
+  /// Convenience encoding shared with [listMangaWithAnyDownload]. Pure
+  /// helper — exposed so callers can probe the returned set without
+  /// duplicating the bit shuffle.
+  static int encodeMangaKey(int sourceId, int mangaId) =>
+      (sourceId << 32) | mangaId;
+
   /// Set of chapter ids that are fully downloaded for [mangaId]. Cheaper
   /// than calling [isDownloaded] per chapter when filtering a chapter
   /// list, since it walks the manga directory once.

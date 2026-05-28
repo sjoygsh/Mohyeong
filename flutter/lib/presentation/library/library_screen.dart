@@ -18,37 +18,53 @@ import '../manga/manga_details_screen.dart';
 /// Tri-state filters for the library grid. Each axis can be off (show
 /// everything), include-only (show rows where the predicate matches),
 /// or exclude (show rows where it doesn't). Mirrors Mihon's library
-/// filter sheet — minus the Downloaded / Tracked axes, which need
-/// per-row async lookups that aren't wired through this widget yet.
+/// filter sheet. The Downloaded axis needs an async-resolved set of
+/// `(sourceId, mangaId)` keys (filesystem walk) — when active, the
+/// body wraps the pipeline in a FutureBuilder and passes the set in.
 class LibraryFilters {
   const LibraryFilters({
     this.unread = TriState.disabled,
     this.started = TriState.disabled,
     this.bookmarked = TriState.disabled,
     this.completed = TriState.disabled,
+    this.downloaded = TriState.disabled,
   });
 
   final TriState unread;
   final TriState started;
   final TriState bookmarked;
   final TriState completed;
+  final TriState downloaded;
 
   bool get isActive =>
       unread != TriState.disabled ||
       started != TriState.disabled ||
       bookmarked != TriState.disabled ||
-      completed != TriState.disabled;
+      completed != TriState.disabled ||
+      downloaded != TriState.disabled;
 
   /// Mihon stores publication status as ints; `2` is "Completed".
   static const int _statusCompleted = 2;
 
-  bool matches(LibraryItem item) {
+  /// [downloadedKeys] is the set of `DownloadRepository.encodeMangaKey`
+  /// results for every manga that has at least one fully-downloaded
+  /// chapter. Pass null when the Downloaded axis is disabled; the
+  /// predicate short-circuits in that case.
+  bool matches(LibraryItem item, {Set<int>? downloadedKeys}) {
     if (!applyTriState(unread, () => item.unreadCount > 0)) return false;
     if (!applyTriState(started, () => item.readCount > 0)) return false;
     if (!applyTriState(bookmarked, () => item.bookmarkCount > 0)) return false;
     if (!applyTriState(
         completed, () => item.manga.status == _statusCompleted)) {
       return false;
+    }
+    if (downloaded != TriState.disabled) {
+      final keys = downloadedKeys ?? const <int>{};
+      final key = DownloadRepository.encodeMangaKey(
+        item.manga.source,
+        item.manga.id,
+      );
+      if (!applyTriState(downloaded, () => keys.contains(key))) return false;
     }
     return true;
   }
@@ -58,12 +74,14 @@ class LibraryFilters {
     TriState? started,
     TriState? bookmarked,
     TriState? completed,
+    TriState? downloaded,
   }) {
     return LibraryFilters(
       unread: unread ?? this.unread,
       started: started ?? this.started,
       bookmarked: bookmarked ?? this.bookmarked,
       completed: completed ?? this.completed,
+      downloaded: downloaded ?? this.downloaded,
     );
   }
 }
@@ -375,12 +393,43 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             stream: categoryRepo.watchAll(),
             builder: (context, catSnap) {
               final categories = catSnap.data ?? const <Category>[];
+              // Resolve the downloaded-keys set only when the Downloaded
+              // filter is active. The filesystem walk is cheap but not
+              // free, and most users never enable this axis.
+              if (_filters.downloaded != TriState.disabled) {
+                final downloadRepo = ref.watch(downloadRepositoryProvider);
+                return FutureBuilder<Set<int>>(
+                  future: downloadRepo.listMangaWithAnyDownload(),
+                  builder: (context, dlSnap) {
+                    if (!dlSnap.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    return _LibraryBody(
+                      items: items,
+                      categories: categories,
+                      query: _query,
+                      sort: sortPref,
+                      filters: _filters,
+                      downloadedKeys: dlSnap.data,
+                      displayMode: displayMode,
+                      selectedCategoryId: _selectedCategoryId,
+                      onCategoryChanged: (id) =>
+                          setState(() => _selectedCategoryId = id),
+                      onRefresh: _refreshLibrary,
+                      selected: _selected,
+                      selecting: _selecting,
+                      onToggleSelected: _toggleSelected,
+                    );
+                  },
+                );
+              }
               return _LibraryBody(
                 items: items,
                 categories: categories,
                 query: _query,
                 sort: sortPref,
                 filters: _filters,
+                downloadedKeys: null,
                 displayMode: displayMode,
                 selectedCategoryId: _selectedCategoryId,
                 onCategoryChanged: (id) =>
@@ -405,6 +454,7 @@ class _LibraryBody extends StatelessWidget {
     required this.query,
     required this.sort,
     required this.filters,
+    required this.downloadedKeys,
     required this.displayMode,
     required this.selectedCategoryId,
     required this.onCategoryChanged,
@@ -419,6 +469,7 @@ class _LibraryBody extends StatelessWidget {
   final String query;
   final LibrarySortPref sort;
   final LibraryFilters filters;
+  final Set<int>? downloadedKeys;
   final LibraryDisplayMode displayMode;
   final int selectedCategoryId;
   final ValueChanged<int> onCategoryChanged;
@@ -469,7 +520,8 @@ class _LibraryBody extends StatelessWidget {
 
     final filtered = filters.isActive
         ? filteredByQuery
-            .where(filters.matches)
+            .where((it) =>
+                filters.matches(it, downloadedKeys: downloadedKeys))
             .toList(growable: false)
         : filteredByQuery;
 
@@ -1106,6 +1158,15 @@ class _LibraryFilterSheetState extends State<_LibraryFilterSheet> {
               onTap: () => setState(
                 () => _draft = _draft.copyWith(
                   completed: _cycle(_draft.completed),
+                ),
+              ),
+            ),
+            _FilterRow(
+              label: 'Downloaded',
+              icon: _icon(_draft.downloaded),
+              onTap: () => setState(
+                () => _draft = _draft.copyWith(
+                  downloaded: _cycle(_draft.downloaded),
                 ),
               ),
             ),
