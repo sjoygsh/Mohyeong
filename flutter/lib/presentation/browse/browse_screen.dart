@@ -8,6 +8,7 @@ import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
 import '../../data/source/local_source.dart';
 import '../../data/source/local_source_preferences.dart';
+import 'global_search_screen.dart';
 import 'source_browse_screen.dart';
 
 /// Browse hosts two sub-tabs: Sources (installed sources you can browse) and
@@ -22,6 +23,21 @@ class BrowseScreen extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Browse'),
+          actions: [
+            Builder(
+              builder: (innerContext) => IconButton(
+                icon: const Icon(Icons.search),
+                tooltip: 'Global search',
+                onPressed: () {
+                  Navigator.of(innerContext).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const GlobalSearchScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Sources'),
