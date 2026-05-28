@@ -223,9 +223,72 @@ class DownloadRepository {
     return allowed.contains(clean) ? clean : 'jpg';
   }
 
+  /// Snapshot of everything the queue currently knows about, in
+  /// queued-then-running order. Used by the Downloads screen to show
+  /// "what's pending". `current` flags the job that's actively
+  /// downloading (always at most one — the queue is serial).
+  List<ActiveDownload> snapshot() {
+    final running = _byChapter.values
+        .where((j) => !_queue.contains(j))
+        .toList(growable: false);
+    return [
+      for (final j in running)
+        ActiveDownload(manga: j.manga, chapter: j.chapter, current: true),
+      for (final j in _queue)
+        ActiveDownload(manga: j.manga, chapter: j.chapter, current: false),
+    ];
+  }
+
+  /// Removes a queued chapter. The currently-running job can't be
+  /// cancelled (Dio download is in-flight and there's no cancel token
+  /// threaded through yet — would need wider plumbing).
+  bool cancelQueued(int chapterId) {
+    final job = _byChapter[chapterId];
+    if (job == null) return false;
+    final idx = _queue.indexOf(job);
+    if (idx < 0) return false; // currently running, not queued.
+    _queue.removeAt(idx);
+    _byChapter.remove(chapterId);
+    _events.add(
+      DownloadEvent(chapterId: chapterId, state: DownloadState.deleted),
+    );
+    return true;
+  }
+
+  /// Drops every queued chapter, leaving the in-flight job to finish.
+  /// Returns the number of jobs removed.
+  int clearQueue() {
+    final removed = List<_DownloadJob>.from(_queue);
+    _queue.clear();
+    for (final j in removed) {
+      _byChapter.remove(j.chapter.id);
+      _events.add(
+        DownloadEvent(chapterId: j.chapter.id, state: DownloadState.deleted),
+      );
+    }
+    return removed.length;
+  }
+
   Future<void> close() async {
     await _events.close();
   }
+}
+
+/// Public view of a queued or in-flight download. Mirrors the
+/// "Downloads" tab list rows in Mihon.
+class ActiveDownload {
+  const ActiveDownload({
+    required this.manga,
+    required this.chapter,
+    required this.current,
+  });
+
+  final Manga manga;
+  final Chapter chapter;
+
+  /// True if this is the job currently being downloaded; false for
+  /// items still waiting in the queue.
+  final bool current;
 }
 
 class _DownloadJob {
