@@ -22,12 +22,15 @@ class SourcePreferences {
 
   static const String keyEnabledLanguages = 'source_languages';
   static const String keyDisabledSources = 'hidden_catalogues';
+  static const String keyPinnedSources = 'pinned_catalogues';
 
   final SharedPreferences _prefs;
 
   final StreamController<Set<String>> _enabledLangs =
       StreamController<Set<String>>.broadcast();
   final StreamController<Set<String>> _disabledSrcs =
+      StreamController<Set<String>>.broadcast();
+  final StreamController<Set<String>> _pinnedSrcs =
       StreamController<Set<String>>.broadcast();
 
   Set<String> getEnabledLanguages() {
@@ -42,6 +45,12 @@ class SourcePreferences {
     return raw.toSet();
   }
 
+  Set<String> getPinnedSources() {
+    final raw = _prefs.getStringList(keyPinnedSources);
+    if (raw == null) return const <String>{};
+    return raw.toSet();
+  }
+
   Stream<Set<String>> watchEnabledLanguages() async* {
     yield getEnabledLanguages();
     yield* _enabledLangs.stream;
@@ -52,6 +61,11 @@ class SourcePreferences {
     yield* _disabledSrcs.stream;
   }
 
+  Stream<Set<String>> watchPinnedSources() async* {
+    yield getPinnedSources();
+    yield* _pinnedSrcs.stream;
+  }
+
   Future<void> setEnabledLanguages(Set<String> langs) async {
     await _prefs.setStringList(keyEnabledLanguages, langs.toList()..sort());
     _enabledLangs.add(getEnabledLanguages());
@@ -60,6 +74,19 @@ class SourcePreferences {
   Future<void> setDisabledSources(Set<String> ids) async {
     await _prefs.setStringList(keyDisabledSources, ids.toList()..sort());
     _disabledSrcs.add(getDisabledSources());
+  }
+
+  Future<void> setPinnedSources(Set<String> ids) async {
+    await _prefs.setStringList(keyPinnedSources, ids.toList()..sort());
+    _pinnedSrcs.add(getPinnedSources());
+  }
+
+  Future<void> toggleSourcePin(String id) async {
+    final current = getPinnedSources();
+    final next = current.contains(id)
+        ? (current.toSet()..remove(id))
+        : (current.toSet()..add(id));
+    await setPinnedSources(next);
   }
 
   Future<void> toggleLanguage(String code) async {

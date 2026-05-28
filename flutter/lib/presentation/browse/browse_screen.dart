@@ -103,22 +103,31 @@ class _SourcesTab extends ConsumerWidget {
               stream: sourcePrefs?.watchDisabledSources(),
               initialData: sourcePrefs?.getDisabledSources(),
               builder: (context, disSnap) {
-                final enabledLangs = langSnap.data ?? const <String>{};
-                final disabledIds = disSnap.data ?? const <String>{};
-                final extensions = sourcePrefs == null
-                    ? allExtensions
-                    : allExtensions
-                        .where((e) =>
-                            enabledLangs.contains(e.lang.toLowerCase()) &&
-                            !disabledIds.contains(e.id))
-                        .toList(growable: false);
-                return _buildList(
-                  context,
-                  ref,
-                  extensions,
-                  localRoot,
-                  filtered: sourcePrefs != null &&
-                      extensions.length != allExtensions.length,
+                return StreamBuilder<Set<String>>(
+                  stream: sourcePrefs?.watchPinnedSources(),
+                  initialData: sourcePrefs?.getPinnedSources(),
+                  builder: (context, pinSnap) {
+                    final enabledLangs = langSnap.data ?? const <String>{};
+                    final disabledIds = disSnap.data ?? const <String>{};
+                    final pinnedIds = pinSnap.data ?? const <String>{};
+                    final extensions = sourcePrefs == null
+                        ? allExtensions
+                        : allExtensions
+                            .where((e) =>
+                                enabledLangs.contains(e.lang.toLowerCase()) &&
+                                !disabledIds.contains(e.id))
+                            .toList(growable: false);
+                    return _buildList(
+                      context,
+                      ref,
+                      extensions,
+                      localRoot,
+                      pinnedIds: pinnedIds,
+                      sourcePrefs: sourcePrefs,
+                      filtered: sourcePrefs != null &&
+                          extensions.length != allExtensions.length,
+                    );
+                  },
                 );
               },
             );
@@ -134,7 +143,17 @@ class _SourcesTab extends ConsumerWidget {
     List<InstalledExtension> extensions,
     String? localRoot, {
     required bool filtered,
+    Set<String> pinnedIds = const <String>{},
+    SourcePreferences? sourcePrefs,
   }) {
+    final pinned = [
+      for (final e in extensions)
+        if (pinnedIds.contains(e.id)) e,
+    ];
+    final unpinned = [
+      for (final e in extensions)
+        if (!pinnedIds.contains(e.id)) e,
+    ];
     return ListView(
           children: [
             ListTile(
@@ -175,17 +194,39 @@ class _SourcesTab extends ConsumerWidget {
                   textAlign: TextAlign.center,
                 ),
               ),
-            for (final e in extensions)
-              ListTile(
-                title: Text(e.name),
-                subtitle: Text(e.lang.toUpperCase()),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => SourceBrowseScreen(sourceId: e.id),
-                    ),
-                  );
-                },
+            if (pinned.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text(
+                  'Pinned',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              for (final e in pinned)
+                _SourceTile(
+                  extension: e,
+                  pinned: true,
+                  sourcePrefs: sourcePrefs,
+                ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text(
+                  'All',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+            for (final e in unpinned)
+              _SourceTile(
+                extension: e,
+                pinned: false,
+                sourcePrefs: sourcePrefs,
               ),
             if (filtered)
               Padding(
@@ -403,6 +444,46 @@ Future<void> _runInstall(
     Navigator.of(context).pop(); // dismiss progress
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Install failed: $e')),
+    );
+  }
+}
+
+/// Single row in the Sources list. Trailing pin icon flips
+/// `pinned_catalogues` membership; pinned rows render above the rest
+/// under a "Pinned" header.
+class _SourceTile extends StatelessWidget {
+  const _SourceTile({
+    required this.extension,
+    required this.pinned,
+    required this.sourcePrefs,
+  });
+
+  final InstalledExtension extension;
+  final bool pinned;
+  final SourcePreferences? sourcePrefs;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(extension.name),
+      subtitle: Text(extension.lang.toUpperCase()),
+      trailing: sourcePrefs == null
+          ? null
+          : IconButton(
+              icon: Icon(
+                pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                color: pinned ? Theme.of(context).colorScheme.primary : null,
+              ),
+              tooltip: pinned ? 'Unpin' : 'Pin to top',
+              onPressed: () => sourcePrefs!.toggleSourcePin(extension.id),
+            ),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SourceBrowseScreen(sourceId: extension.id),
+          ),
+        );
+      },
     );
   }
 }
