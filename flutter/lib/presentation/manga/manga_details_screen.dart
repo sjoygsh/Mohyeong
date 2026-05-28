@@ -11,9 +11,11 @@ import '../../data/track/track_updater.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
+import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
 import '../reader/reader_screen.dart';
 import '../track/manga_tracking_sheet.dart';
+import 'chapter_settings_sheet.dart';
 import 'linked_manga_sheet.dart';
 
 /// Manga details: cover + metadata header followed by the chapter list.
@@ -92,9 +94,6 @@ class MangaDetailsScreen extends ConsumerWidget {
                     ],
                   ),
                   SliverToBoxAdapter(child: _Metadata(manga: manga)),
-                  SliverToBoxAdapter(
-                    child: _ChapterListHeader(count: chapters.length),
-                  ),
                   if (chapSnap.hasError)
                     SliverToBoxAdapter(child: _Error(error: chapSnap.error!))
                   else if (!chapSnap.hasData)
@@ -105,16 +104,23 @@ class MangaDetailsScreen extends ConsumerWidget {
                       ),
                     )
                   else if (chapters.isEmpty)
-                    const SliverToBoxAdapter(child: _NoChapters())
-                  else
-                    SliverList.builder(
-                      itemCount: chapters.length,
-                      itemBuilder: (_, i) => _ChapterTile(
-                        manga: manga,
-                        chapter: chapters[i],
-                        chapterRepo: chapterRepo,
-                        downloadRepo: ref.watch(downloadRepositoryProvider),
+                    ...const [
+                      SliverToBoxAdapter(
+                        child: _ChapterListHeader(
+                          visibleCount: 0,
+                          totalCount: 0,
+                          mangaForSheet: null,
+                        ),
                       ),
+                      SliverToBoxAdapter(child: _NoChapters()),
+                    ]
+                  else
+                    ..._buildChapterSlivers(
+                      context: context,
+                      ref: ref,
+                      manga: manga,
+                      chapters: chapters,
+                      chapterRepo: chapterRepo,
                     ),
                 ],
               );
@@ -124,6 +130,80 @@ class MangaDetailsScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Builds the chapter list slivers: header (count + filter icon) followed
+/// by a sliver list of filtered + sorted chapter tiles.
+///
+/// The filter/sort logic mirrors Mihon's `GetChaptersByMangaId` +
+/// `applyFilters` pipeline: read the manga's `chapter_flags` bitmask,
+/// drop chapters that don't match the tri-state filters, then sort by
+/// the configured key in ascending or descending order. The display
+/// mode (chapter name vs chapter number) is applied at the tile level.
+List<Widget> _buildChapterSlivers({
+  required BuildContext context,
+  required WidgetRef ref,
+  required Manga manga,
+  required List<Chapter> chapters,
+  required ChapterRepository chapterRepo,
+}) {
+  final filtered = chapters.where((c) {
+    final unreadOk = applyTriState(manga.unreadFilter, () => !c.read);
+    final bookmarkedOk =
+        applyTriState(manga.bookmarkedFilter, () => c.bookmark);
+    return unreadOk && bookmarkedOk;
+  }).toList(growable: false);
+
+  final sorted = [...filtered]..sort((a, b) {
+    int cmp;
+    switch (manga.sorting) {
+      case Manga.chapterSortingNumber:
+        cmp = a.chapterNumber.compareTo(b.chapterNumber);
+      case Manga.chapterSortingUploadDate:
+        cmp = a.dateUpload.compareTo(b.dateUpload);
+      case Manga.chapterSortingAlphabet:
+        cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      default:
+        cmp = a.sourceOrder.compareTo(b.sourceOrder);
+    }
+    return manga.sortDescending() ? -cmp : cmp;
+  });
+
+  return [
+    SliverToBoxAdapter(
+      child: _ChapterListHeader(
+        visibleCount: sorted.length,
+        totalCount: chapters.length,
+        mangaForSheet: manga,
+      ),
+    ),
+    if (sorted.isEmpty)
+      const SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: Text('No chapters match the current filter.')),
+        ),
+      )
+    else
+      SliverList.builder(
+        itemCount: sorted.length,
+        itemBuilder: (_, i) => _ChapterTile(
+          manga: manga,
+          chapter: sorted[i],
+          chapterRepo: chapterRepo,
+          downloadRepo: ref.watch(downloadRepositoryProvider),
+        ),
+      ),
+  ];
+}
+
+void _openChapterSettingsSheet(BuildContext context, Manga manga) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => ChapterSettingsSheet(manga: manga),
+  );
 }
 
 void _openTrackingSheet(BuildContext context, Manga manga) {
@@ -406,17 +486,46 @@ class _Metadata extends StatelessWidget {
 }
 
 class _ChapterListHeader extends StatelessWidget {
-  const _ChapterListHeader({required this.count});
+  const _ChapterListHeader({
+    required this.visibleCount,
+    required this.totalCount,
+    required this.mangaForSheet,
+  });
 
-  final int count;
+  /// Chapters left after filters are applied.
+  final int visibleCount;
+
+  /// Total chapter count before filtering. Shown in parens when the
+  /// visible count is smaller so it's obvious filters are active.
+  final int totalCount;
+
+  /// When non-null the header renders a settings icon that opens the
+  /// filter/sort sheet. Skipped on the "0 chapters yet" branch.
+  final Manga? mangaForSheet;
 
   @override
   Widget build(BuildContext context) {
+    final label = visibleCount == totalCount
+        ? '$visibleCount chapters'
+        : '$visibleCount of $totalCount chapters';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Text(
-        '$count chapters',
-        style: Theme.of(context).textTheme.titleMedium,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          if (mangaForSheet != null)
+            IconButton(
+              icon: const Icon(Icons.tune),
+              tooltip: 'Chapter filter & sort',
+              onPressed: () =>
+                  _openChapterSettingsSheet(context, mangaForSheet!),
+            ),
+        ],
       ),
     );
   }
@@ -479,7 +588,13 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
   @override
   Widget build(BuildContext context) {
     final chapter = widget.chapter;
-    final title = chapter.name.isEmpty
+    // Honour the per-manga "Display chapter number" toggle. When set, every
+    // chapter is labelled by its number even if it has a real title; when
+    // unset, fall back to the name and only synthesise a "Chapter N" label
+    // for entries with an empty name (matches Mihon's behaviour).
+    final showNumber =
+        widget.manga.displayMode == Manga.chapterDisplayNumber;
+    final title = showNumber || chapter.name.isEmpty
         ? 'Chapter ${_formatChapterNumber(chapter.chapterNumber)}'
         : chapter.name;
     final scanlator = chapter.scanlator;

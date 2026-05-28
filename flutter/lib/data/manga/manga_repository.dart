@@ -60,6 +60,19 @@ class MangaRepository {
     await (_db.delete(_db.mangas)..where((t) => t.id.equals(id))).go();
   }
 
+  /// Overwrite the `chapter_flags` bitfield (chapter sort/filter/display
+  /// bits) for a single manga. Used by the chapter settings sheet on the
+  /// manga details screen. Bumps `last_modified_at` for sync ordering.
+  Future<void> setChapterFlags(int id, int flags) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.mangas)..where((t) => t.id.equals(id))).write(
+      db.MangasCompanion(
+        chapterFlags: Value(flags),
+        lastModifiedAt: Value(nowMs),
+      ),
+    );
+  }
+
   /// Overwrite the `viewer` bitfield (reading mode + reserved bits) for a
   /// single manga. Used by the reader's "Reading mode" picker to apply a
   /// per-manga override. Bumps `last_modified_at` so sync clients pick up
