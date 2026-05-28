@@ -1,125 +1,52 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/library/library_update_preference.dart';
-import '../../data/preferences/theme_preference.dart';
-import '../../data/reader/reader_preferences.dart';
-import '../../domain/reader/model/reading_mode.dart';
-import '../backup/backup_screen.dart';
-import '../sync/sync_settings_screen.dart';
 import '../track/trackers_settings_screen.dart';
+import 'appearance_settings_screen.dart';
+import 'data_storage_settings_screen.dart';
+import 'library_settings_screen.dart';
+import 'reader_settings_screen.dart';
 
-/// Settings screen. Currently exposes appearance + library update interval.
-/// More preference categories (reader, downloads, sync, ...) will live here
-/// as each subsystem lands.
-class SettingsScreen extends ConsumerWidget {
+/// Top-level Settings screen. Mirror of Mihon's `SettingsMainScreen`:
+/// a categorical list where each tile pushes the matching sub-screen.
+/// Sub-screens own the actual preference UI.
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final themeMode = ref.watch(themePreferenceProvider);
-    final themeNotifier = ref.read(themePreferenceProvider.notifier);
-    final interval = ref.watch(libraryUpdatePreferenceProvider);
-    final intervalNotifier =
-        ref.read(libraryUpdatePreferenceProvider.notifier);
-    final readerMode = ref.watch(readerPreferencesProvider);
-    final readerNotifier = ref.read(readerPreferencesProvider.notifier);
-
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         children: [
-          const _SectionHeader('Appearance'),
-          RadioGroup<ThemeMode>(
-            groupValue: themeMode,
-            onChanged: (m) {
-              if (m != null) themeNotifier.setMode(m);
-            },
-            child: const Column(
-              children: [
-                RadioListTile<ThemeMode>(
-                  value: ThemeMode.system,
-                  title: Text('Follow system'),
-                ),
-                RadioListTile<ThemeMode>(
-                  value: ThemeMode.light,
-                  title: Text('Light'),
-                ),
-                RadioListTile<ThemeMode>(
-                  value: ThemeMode.dark,
-                  title: Text('Dark'),
-                ),
-              ],
-            ),
+          _SettingsTile(
+            icon: Icons.palette_outlined,
+            title: 'Appearance',
+            subtitle: 'Theme and colours',
+            destination: const AppearanceSettingsScreen(),
           ),
-          const _SectionHeader('Library'),
-          ListTile(
-            title: const Text('Update interval'),
-            subtitle: Text(interval.label),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              final picked = await showDialog<LibraryUpdateInterval>(
-                context: context,
-                builder: (_) => _IntervalPickerDialog(current: interval),
-              );
-              if (picked != null) {
-                await intervalNotifier.setInterval(picked);
-              }
-            },
+          _SettingsTile(
+            icon: Icons.collections_bookmark_outlined,
+            title: 'Library',
+            subtitle: 'Update interval',
+            destination: const LibrarySettingsScreen(),
           ),
-          const _SectionHeader('Reader'),
-          ListTile(
-            title: const Text('Default reading mode'),
-            subtitle: Text(readerMode.label),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              final picked = await showDialog<ReadingMode>(
-                context: context,
-                builder: (_) => _ReadingModePickerDialog(current: readerMode),
-              );
-              if (picked != null) {
-                await readerNotifier.setMode(picked);
-              }
-            },
+          _SettingsTile(
+            icon: Icons.menu_book_outlined,
+            title: 'Reader',
+            subtitle: 'Default reading mode',
+            destination: const ReaderSettingsScreen(),
           ),
-          const _SectionHeader('Tracking'),
-          ListTile(
-            title: const Text('Trackers'),
-            subtitle: const Text('AniList, MyAnimeList, and more'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const TrackersSettingsScreen(),
-                ),
-              );
-            },
+          _SettingsTile(
+            icon: Icons.sync_outlined,
+            title: 'Tracking',
+            subtitle: 'AniList, MyAnimeList, and more',
+            destination: const TrackersSettingsScreen(),
           ),
-          const _SectionHeader('Data and storage'),
-          ListTile(
-            title: const Text('Backup & restore'),
-            subtitle: const Text('Mihon-compatible .tachibk export/import'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const BackupScreen(),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            title: const Text('Sync'),
-            subtitle:
-                const Text('SyncYomi, WebDAV, Google Drive, or Dropbox'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const SyncSettingsScreen(),
-                ),
-              );
-            },
+          _SettingsTile(
+            icon: Icons.storage_outlined,
+            title: 'Data and storage',
+            subtitle: 'Backup, restore, and sync',
+            destination: const DataStorageSettingsScreen(),
           ),
         ],
       ),
@@ -127,78 +54,29 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.label);
+class _SettingsTile extends StatelessWidget {
+  const _SettingsTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.destination,
+  });
 
-  final String label;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget destination;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        label,
-        style: const TextStyle(fontWeight: FontWeight.w600),
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => destination),
       ),
-    );
-  }
-}
-
-class _ReadingModePickerDialog extends StatelessWidget {
-  const _ReadingModePickerDialog({required this.current});
-
-  final ReadingMode current;
-
-  @override
-  Widget build(BuildContext context) {
-    return SimpleDialog(
-      title: const Text('Default reading mode'),
-      children: [
-        RadioGroup<ReadingMode>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final m in ReadingMode.values)
-                if (m != ReadingMode.defaultMode)
-                  RadioListTile<ReadingMode>(
-                    value: m,
-                    title: Text(m.label),
-                  ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _IntervalPickerDialog extends StatelessWidget {
-  const _IntervalPickerDialog({required this.current});
-
-  final LibraryUpdateInterval current;
-
-  @override
-  Widget build(BuildContext context) {
-    return SimpleDialog(
-      title: const Text('Update interval'),
-      children: [
-        RadioGroup<LibraryUpdateInterval>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final v in LibraryUpdateInterval.values)
-                RadioListTile<LibraryUpdateInterval>(
-                  value: v,
-                  title: Text(v.label),
-                ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
