@@ -154,7 +154,8 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         '${result.mangaRestored} manga, '
         '${result.categoriesRestored} categories, '
         '${result.extensionReposRestored} extension repos, '
-        '${result.preferencesRestored} preferences.'
+        '${result.preferencesRestored} preferences, '
+        '${result.linksRestored} links.'
         '${result.skippedMangaWithoutSource > 0 ? "\n${result.skippedMangaWithoutSource} entries skipped (errors)." : ""}',
       );
     } catch (e) {

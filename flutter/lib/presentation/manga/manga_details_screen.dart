@@ -14,6 +14,7 @@ import '../../domain/manga/model/manga.dart';
 import '../common/source_image.dart';
 import '../reader/reader_screen.dart';
 import '../track/manga_tracking_sheet.dart';
+import 'linked_manga_sheet.dart';
 
 /// Manga details: cover + metadata header followed by the chapter list.
 /// Tapping a chapter is a no-op until the reader screen ships.
@@ -82,6 +83,12 @@ class MangaDetailsScreen extends ConsumerWidget {
                         tooltip: 'Tracking',
                         onPressed: () => _openTrackingSheet(context, manga),
                       ),
+                      if (manga.favorite)
+                        IconButton(
+                          icon: const Icon(Icons.link),
+                          tooltip: 'Linked sources',
+                          onPressed: () => _openLinkedSheet(context, manga),
+                        ),
                     ],
                   ),
                   SliverToBoxAdapter(child: _Metadata(manga: manga)),
@@ -125,6 +132,15 @@ void _openTrackingSheet(BuildContext context, Manga manga) {
     isScrollControlled: true,
     showDragHandle: true,
     builder: (_) => MangaTrackingSheet(manga: manga),
+  );
+}
+
+void _openLinkedSheet(BuildContext context, Manga manga) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => LinkedMangaSheet(primary: manga),
   );
 }
 

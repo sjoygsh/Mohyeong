@@ -29,6 +29,7 @@ class BackupRestoreResult {
     required this.categoriesRestored,
     required this.extensionReposRestored,
     required this.preferencesRestored,
+    required this.linksRestored,
     required this.skippedMangaWithoutSource,
   });
 
@@ -36,6 +37,7 @@ class BackupRestoreResult {
   final int categoriesRestored;
   final int extensionReposRestored;
   final int preferencesRestored;
+  final int linksRestored;
 
   /// Mihon backups can reference sources whose extension isn't installed
   /// in this app. The manga row is still restored (the library shows a
@@ -101,14 +103,33 @@ class BackupRestorer {
     }
 
     final prefCount = await _restorePreferences(backup.backupPreferences);
+    final linkCount = await _restoreLinks(backup.backupMangaLinks);
 
     return BackupRestoreResult(
       mangaRestored: mangaCount,
       categoriesRestored: restoredCategoryIds.length,
       extensionReposRestored: repoCount,
       preferencesRestored: prefCount,
+      linksRestored: linkCount,
       skippedMangaWithoutSource: skipped,
     );
+  }
+
+  /// Re-creates the manga_links cluster table from the backup. Skips any
+  /// link whose primary or linked manga isn't present in the local DB —
+  /// happens when a backup references manga the user has since removed.
+  Future<int> _restoreLinks(List<BackupMangaLink> links) async {
+    if (links.isEmpty) return 0;
+    var count = 0;
+    for (final l in links) {
+      final primary = await _manga.getByUrlAndSource(l.primaryUrl, l.primarySource);
+      if (primary == null) continue;
+      final linked = await _manga.getByUrlAndSource(l.linkedUrl, l.linkedSource);
+      if (linked == null) continue;
+      await _db.insertLink(primary.id, linked.id, l.priority);
+      count += 1;
+    }
+    return count;
   }
 
   /// Replays each [BackupPreference] back into [SharedPreferences].

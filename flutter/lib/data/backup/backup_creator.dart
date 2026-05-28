@@ -193,6 +193,20 @@ class BackupCreator {
             ))
         .toList(growable: false);
 
+    // Cross-source links — dump the manga_links cluster table verbatim,
+    // keyed by the source+url pair so the linked side can be re-resolved
+    // on restore even if local manga ids have shifted.
+    final linkRows = await _db.getAllLinksForBackup().get();
+    final backupLinks = linkRows
+        .map((r) => BackupMangaLink(
+              primarySource: r.primarySource,
+              primaryUrl: r.primaryUrl,
+              linkedSource: r.linkedSource,
+              linkedUrl: r.linkedUrl,
+              priority: r.priority,
+            ))
+        .toList(growable: false);
+
     return Backup(
       backupManga: backupManga,
       backupCategories: backupCategories,
@@ -200,7 +214,7 @@ class BackupCreator {
       backupPreferences: await _collectAppPreferences(),
       backupSourcePreferences: const [],
       backupExtensionRepo: backupRepos,
-      backupMangaLinks: const [],
+      backupMangaLinks: backupLinks,
     );
   }
 
