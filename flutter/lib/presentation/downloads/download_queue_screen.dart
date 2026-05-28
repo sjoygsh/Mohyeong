@@ -104,51 +104,106 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
       ),
       body: items.isEmpty
           ? const _EmptyQueue()
-          : ListView.separated(
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, i) {
-                final item = items[i];
-                final progress = _progress[item.chapter.id];
-                return ListTile(
-                  leading: item.current
-                      ? const Icon(Icons.downloading)
-                      : const Icon(Icons.hourglass_empty),
-                  title: Text(
-                    item.manga.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+          : _buildBody(context, repo, items),
+    );
+  }
+
+  Widget _buildBody(
+    BuildContext context,
+    DownloadRepository repo,
+    List<ActiveDownload> items,
+  ) {
+    // Snapshot orders running-first, then queued. Split them so the
+    // running job stays pinned at the top while only queued rows are
+    // dragged.
+    final running = items.where((i) => i.current).toList(growable: false);
+    final queued = items.where((i) => !i.current).toList(growable: false);
+    return ReorderableListView.builder(
+      buildDefaultDragHandles: false,
+      header: running.isEmpty
+          ? null
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final item in running) _buildTile(item, draggable: false),
+                const Divider(height: 1),
+              ],
+            ),
+      itemCount: queued.length,
+      itemBuilder: (context, i) {
+        final item = queued[i];
+        return _buildTile(
+          item,
+          draggable: true,
+          dragIndex: i,
+          key: ValueKey<int>(item.chapter.id),
+        );
+      },
+      onReorderItem: (oldIdx, newIdx) {
+        // onReorderItem already adjusts newIdx to the index after the
+        // dragged tile is removed — we can drop the shift the older
+        // onReorder callback needed.
+        repo.reorderQueue(queued[oldIdx].chapter.id, newIdx);
+      },
+    );
+  }
+
+  Widget _buildTile(
+    ActiveDownload item, {
+    required bool draggable,
+    int? dragIndex,
+    Key? key,
+  }) {
+    final progress = _progress[item.chapter.id];
+    final repo = ref.read(downloadRepositoryProvider);
+    return ListTile(
+      key: key,
+      leading: item.current
+          ? const Icon(Icons.downloading)
+          : const Icon(Icons.hourglass_empty),
+      title: Text(
+        item.manga.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            item.chapter.name.isEmpty
+                ? 'Chapter ${item.chapter.chapterNumber}'
+                : item.chapter.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (item.current && progress != null) ...[
+            const SizedBox(height: 4),
+            LinearProgressIndicator(value: progress),
+          ] else if (item.current) ...[
+            const SizedBox(height: 4),
+            const LinearProgressIndicator(),
+          ],
+        ],
+      ),
+      trailing: item.current
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Cancel',
+                  onPressed: () => repo.cancelQueued(item.chapter.id),
+                ),
+                if (draggable && dragIndex != null)
+                  ReorderableDragStartListener(
+                    index: dragIndex,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(Icons.drag_handle),
+                    ),
                   ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.chapter.name.isEmpty
-                            ? 'Chapter ${item.chapter.chapterNumber}'
-                            : item.chapter.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (item.current && progress != null) ...[
-                        const SizedBox(height: 4),
-                        LinearProgressIndicator(value: progress),
-                      ] else if (item.current) ...[
-                        const SizedBox(height: 4),
-                        const LinearProgressIndicator(),
-                      ],
-                    ],
-                  ),
-                  trailing: item.current
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.close),
-                          tooltip: 'Cancel',
-                          onPressed: () {
-                            repo.cancelQueued(item.chapter.id);
-                          },
-                        ),
-                );
-              },
+              ],
             ),
     );
   }

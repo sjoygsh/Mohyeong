@@ -344,6 +344,29 @@ class DownloadRepository {
     return true;
   }
 
+  /// Moves a queued chapter to [newQueueIndex] in the queue (0 = head of
+  /// the queue, i.e. next to run after the current job finishes). The
+  /// currently-running job is unaffected — it can't be reordered, since
+  /// it's no longer in `_queue`. Re-emits a `queued` event for the
+  /// chapter so any listening UI (the queue screen) repaints.
+  ///
+  /// Returns `true` when the move actually happened; `false` if the
+  /// chapter isn't queued or [newQueueIndex] would be a no-op.
+  bool reorderQueue(int chapterId, int newQueueIndex) {
+    final job = _byChapter[chapterId];
+    if (job == null) return false;
+    final oldIndex = _queue.indexOf(job);
+    if (oldIndex < 0) return false; // currently running — not in _queue.
+    final clamped = newQueueIndex.clamp(0, _queue.length - 1);
+    if (clamped == oldIndex) return false;
+    _queue.removeAt(oldIndex);
+    _queue.insert(clamped, job);
+    _events.add(
+      DownloadEvent(chapterId: chapterId, state: DownloadState.queued),
+    );
+    return true;
+  }
+
   /// Drops every queued chapter, leaving the in-flight job to finish.
   /// Returns the number of jobs removed.
   int clearQueue() {
