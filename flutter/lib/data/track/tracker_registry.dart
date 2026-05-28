@@ -10,7 +10,7 @@ import 'trackers/komga.dart';
 import 'trackers/manga_updates.dart';
 import 'trackers/myanimelist.dart';
 import 'trackers/shikimori.dart';
-import 'trackers/stub_trackers.dart';
+import 'trackers/suwayomi.dart';
 
 /// Provides the single shared navigator key all trackers use to surface the
 /// OAuth webview. Wired into [MaterialApp.navigatorKey] from main.dart.
@@ -54,7 +54,10 @@ final trackerRegistryProvider = Provider<TrackerRegistry>((ref) {
       credentials: credentials,
       navigatorKey: navigatorKey,
     ),
-    SuwayomiTracker(credentials: credentials),
+    SuwayomiTracker(
+      credentials: credentials,
+      navigatorKey: navigatorKey,
+    ),
   ];
   for (final t in trackers) {
     t.attachDio(http.dio);
