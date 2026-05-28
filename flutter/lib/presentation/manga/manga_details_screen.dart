@@ -269,6 +269,13 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                               ),
                             ),
                           ),
+                        if (manga.favorite)
+                          IconButton(
+                            icon: const Icon(Icons.update),
+                            tooltip: 'Fetch interval',
+                            onPressed: () =>
+                                _editFetchInterval(context, ref, manga),
+                          ),
                       ],
                     ),
                   SliverToBoxAdapter(child: _MangaInfoBox(manga: manga)),
@@ -547,6 +554,66 @@ void _openLinkedSheet(BuildContext context, Manga manga) {
     showDragHandle: true,
     builder: (_) => LinkedMangaSheet(primary: manga),
   );
+}
+
+/// Mihon-parity per-manga fetch-interval override. Mihon's discrete
+/// picker exposes Default (0) + a handful of day counts + Off (-1).
+/// `fetch_interval` (Drift column `calculate_interval`) is read by the
+/// background library updater to decide whether a manga is due for a
+/// new chapter check.
+Future<void> _editFetchInterval(
+  BuildContext context,
+  WidgetRef ref,
+  Manga manga,
+) async {
+  final picked = await showDialog<int>(
+    context: context,
+    builder: (_) => _FetchIntervalDialog(current: manga.fetchInterval),
+  );
+  if (picked == null || picked == manga.fetchInterval) return;
+  await ref.read(mangaRepositoryProvider).setFetchInterval(manga.id, picked);
+}
+
+class _FetchIntervalDialog extends StatelessWidget {
+  const _FetchIntervalDialog({required this.current});
+
+  final int current;
+
+  static const List<({int days, String label})> _options = [
+    (days: 0, label: 'Default'),
+    (days: 1, label: 'Every day'),
+    (days: 2, label: 'Every 2 days'),
+    (days: 3, label: 'Every 3 days'),
+    (days: 7, label: 'Weekly'),
+    (days: 14, label: 'Every 2 weeks'),
+    (days: 30, label: 'Monthly'),
+    (days: 60, label: 'Every 2 months'),
+    (days: 90, label: 'Every 3 months'),
+    (days: -1, label: 'Off'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Fetch interval'),
+      children: [
+        RadioGroup<int>(
+          groupValue: current,
+          onChanged: (v) => Navigator.of(context).pop(v),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final opt in _options)
+                RadioListTile<int>(
+                  value: opt.days,
+                  title: Text(opt.label),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Mirrors Mihon's `MangaScreenModel.openMangaInWebView`: resolve the

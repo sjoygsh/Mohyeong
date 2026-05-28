@@ -201,6 +201,25 @@ class MangaRepository {
     );
   }
 
+  /// Override the per-manga fetch interval (`calculate_interval` column —
+  /// the Kotlin name leaked through Drift codegen). Mihon uses 0 to mean
+  /// "let the smart-update heuristic compute the interval"; positive
+  /// values pin it (in days, 1..365); negative values turn auto-update
+  /// off entirely. Bumps `last_modified_at` for sync ordering.
+  ///
+  /// Doesn't touch `next_update` here — the next library-update sweep
+  /// recomputes it from `last_update + interval`, which is enough for
+  /// the picker to round-trip correctly.
+  Future<void> setFetchInterval(int id, int days) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.mangas)..where((t) => t.id.equals(id))).write(
+      db.MangasCompanion(
+        calculateInterval: Value(days),
+        lastModifiedAt: Value(nowMs),
+      ),
+    );
+  }
+
   /// Toggle the library state of an existing manga without touching the
   /// rest of its row. Adds `dateAdded` when entering the library (matches
   /// the Kotlin behaviour so categorization-by-date sort works), and
