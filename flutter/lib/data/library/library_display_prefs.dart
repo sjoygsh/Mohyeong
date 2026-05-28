@@ -7,8 +7,8 @@ library;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Library grid display style — three modes matching Mihon's Compact /
-/// Comfortable / Cover-only options.
+/// Library grid display style — four modes matching Mihon's Compact /
+/// Comfortable / Cover-only / List options.
 enum LibraryDisplayMode {
   /// Cover with the title overlaid at the bottom of the image.
   compactGrid,
@@ -18,6 +18,10 @@ enum LibraryDisplayMode {
 
   /// Cover only, no title. Useful for a denser library at a glance.
   coverOnlyGrid,
+
+  /// Single-column list: thumbnail + title + author. Fits far more rows
+  /// at the cost of cover prominence.
+  list,
 }
 
 class LibraryDisplayModeNotifier extends Notifier<LibraryDisplayMode> {
@@ -50,6 +54,8 @@ class LibraryDisplayModeNotifier extends Notifier<LibraryDisplayMode> {
         return LibraryDisplayMode.comfortableGrid;
       case 'cover_only':
         return LibraryDisplayMode.coverOnlyGrid;
+      case 'list':
+        return LibraryDisplayMode.list;
       default:
         return null;
     }
@@ -63,6 +69,8 @@ class LibraryDisplayModeNotifier extends Notifier<LibraryDisplayMode> {
         return 'comfortable';
       case LibraryDisplayMode.coverOnlyGrid:
         return 'cover_only';
+      case LibraryDisplayMode.list:
+        return 'list';
     }
   }
 }

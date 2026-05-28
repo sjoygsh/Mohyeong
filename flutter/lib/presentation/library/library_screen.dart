@@ -389,6 +389,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 value: LibraryDisplayMode.coverOnlyGrid,
                 child: Text('Cover only'),
               ),
+              PopupMenuItem(
+                value: LibraryDisplayMode.list,
+                child: Text('List'),
+              ),
             ],
           ),
         ],
@@ -711,6 +715,19 @@ class _LibraryGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (displayMode == LibraryDisplayMode.list) {
+      return ListView.separated(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const Divider(height: 1),
+        itemBuilder: (context, i) => _MangaListTile(
+          item: items[i],
+          isSelected: selected.contains(items[i].manga.id),
+          selecting: selecting,
+          onToggleSelected: onToggleSelected,
+        ),
+      );
+    }
     // Cover-only fits more per row because there's no title row eating
     // space below the cover.
     final maxExtent = displayMode == LibraryDisplayMode.coverOnlyGrid
@@ -733,6 +750,110 @@ class _LibraryGrid extends StatelessWidget {
         isSelected: selected.contains(items[i].manga.id),
         selecting: selecting,
         onToggleSelected: onToggleSelected,
+      ),
+    );
+  }
+}
+
+/// Single-row tile for `LibraryDisplayMode.list`. Mirrors Mihon's
+/// `LibraryList`: 40x56 thumbnail on the left, title (1 line) + author
+/// (1 line) in the middle, unread + downloaded badges on the right.
+/// Long-press toggles selection (consistent with the grid modes).
+class _MangaListTile extends ConsumerWidget {
+  const _MangaListTile({
+    required this.item,
+    required this.isSelected,
+    required this.selecting,
+    required this.onToggleSelected,
+  });
+
+  final LibraryItem item;
+  final bool isSelected;
+  final bool selecting;
+  final ValueChanged<int> onToggleSelected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final manga = item.manga;
+    final scheme = Theme.of(context).colorScheme;
+    final downloadRepo = ref.watch(downloadRepositoryProvider);
+    return InkWell(
+      onTap: () {
+        if (selecting) {
+          onToggleSelected(manga.id);
+        } else {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => MangaDetailsScreen(mangaId: manga.id),
+            ),
+          );
+        }
+      },
+      onLongPress: () => onToggleSelected(manga.id),
+      child: Container(
+        color: isSelected ? scheme.primary.withValues(alpha: 0.15) : null,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 40,
+              height: 56,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: _Cover(manga: manga),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    manga.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  if (manga.author != null && manga.author!.isNotEmpty)
+                    Text(
+                      manga.author!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurface.withValues(alpha: 0.6),
+                          ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (item.unreadCount > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: _UnreadBadge(count: item.unreadCount),
+              ),
+            FutureBuilder<int>(
+              future: downloadRepo.countDownloadedForManga(
+                manga.source,
+                manga.id,
+              ),
+              builder: (context, snap) {
+                final n = snap.data ?? 0;
+                if (n <= 0) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: _DownloadedBadge(count: n),
+                );
+              },
+            ),
+            if (isSelected)
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Icon(Icons.check_circle, color: scheme.primary),
+              ),
+          ],
+        ),
       ),
     );
   }
