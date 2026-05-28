@@ -52,9 +52,16 @@ class HistoryScreen extends ConsumerWidget {
                 if (entries.isEmpty) {
                   return const Center(child: Text('No reading history yet.'));
                 }
+                final rows = _groupByDay(entries);
                 return ListView.builder(
-                  itemCount: entries.length,
-                  itemBuilder: (_, i) => _HistoryTile(entry: entries[i]),
+                  itemCount: rows.length,
+                  itemBuilder: (_, i) {
+                    final row = rows[i];
+                    if (row is _HeaderRow) {
+                      return _DayHeader(label: row.label);
+                    }
+                    return _HistoryTile(entry: (row as _EntryRow).entry);
+                  },
                 );
               },
             ),
@@ -93,6 +100,82 @@ class HistoryScreen extends ConsumerWidget {
 }
 
 enum _HistoryMenuAction { clearAll }
+
+sealed class _Row {
+  const _Row();
+}
+
+class _HeaderRow extends _Row {
+  const _HeaderRow(this.label);
+  final String label;
+}
+
+class _EntryRow extends _Row {
+  const _EntryRow(this.entry);
+  final HistoryWithContext entry;
+}
+
+/// Walks the entries in stream-order (most recent first) and emits a
+/// `_HeaderRow` whenever the day label changes. Entries with `readAt
+/// == null` are bucketed under "Unknown".
+List<_Row> _groupByDay(List<HistoryWithContext> entries) {
+  final rows = <_Row>[];
+  String? lastLabel;
+  for (final e in entries) {
+    final label = _dayLabel(e.readAt);
+    if (label != lastLabel) {
+      rows.add(_HeaderRow(label));
+      lastLabel = label;
+    }
+    rows.add(_EntryRow(e));
+  }
+  return rows;
+}
+
+String _dayLabel(DateTime? t) {
+  if (t == null) return 'Unknown';
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final that = DateTime(t.year, t.month, t.day);
+  final diffDays = today.difference(that).inDays;
+  if (diffDays == 0) return 'Today';
+  if (diffDays == 1) return 'Yesterday';
+  if (diffDays < 7) return _weekdayName(that.weekday);
+  return '${that.year}-${that.month.toString().padLeft(2, '0')}-${that.day.toString().padLeft(2, '0')}';
+}
+
+String _weekdayName(int weekday) {
+  const names = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+  return names[(weekday - 1) % 7];
+}
+
+class _DayHeader extends StatelessWidget {
+  const _DayHeader({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
+}
 
 class _DurationHeader extends StatelessWidget {
   const _DurationHeader({required this.repo});
