@@ -190,6 +190,32 @@ class DownloadRepository {
     );
   }
 
+  /// Wipes the entire `<root>/<sourceId>/<mangaId>/` directory tree —
+  /// every downloaded chapter for the manga. Used by the library bulk
+  /// remove flow when the user opts to free up storage. Returns the
+  /// number of chapter dirs deleted so the caller can report progress.
+  Future<int> deleteAllForManga(int sourceId, int mangaId) async {
+    final root = await _root();
+    final mangaDir = Directory(
+      p.join(root.path, sourceId.toString(), mangaId.toString()),
+    );
+    if (!await mangaDir.exists()) return 0;
+    var count = 0;
+    await for (final entity in mangaDir.list()) {
+      if (entity is Directory) {
+        final parsed = int.tryParse(p.basename(entity.path));
+        if (parsed != null) {
+          _events.add(
+            DownloadEvent(chapterId: parsed, state: DownloadState.deleted),
+          );
+        }
+        count++;
+      }
+    }
+    await mangaDir.delete(recursive: true);
+    return count;
+  }
+
   /// Enqueues a chapter for download. Idempotent: re-queueing a chapter
   /// already in the queue or already downloaded is a no-op.
   Future<void> enqueue(Manga manga, Chapter chapter) async {

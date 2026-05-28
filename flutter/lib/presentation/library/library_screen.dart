@@ -203,42 +203,37 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Future<void> _selectionRemoveFromLibrary() async {
     final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showDialog<bool>(
+    final result = await showDialog<_RemoveResult>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          'Remove ${_selected.length} manga from library?',
-        ),
-        content: const Text(
-          'The manga rows stay in the database (read history kept) but '
-          'disappear from the Library tab.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
+      builder: (ctx) =>
+          _RemoveLibraryDialog(count: _selected.length),
     );
-    if (confirmed != true) return;
+    if (result == null) return;
+    if (!result.remove && !result.deleteDownloads) return;
     final mangaRepo = ref.read(mangaRepositoryProvider);
     final categoryRepo = ref.read(categoryRepositoryProvider);
+    final downloadRepo =
+        result.deleteDownloads ? ref.read(downloadRepositoryProvider) : null;
     final ids = _selected.toList(growable: false);
     for (final id in ids) {
-      await mangaRepo.setFavorite(id, false);
-      // Clear category memberships so re-adding starts clean.
-      await categoryRepo.setCategoriesForManga(id, const <int>{});
+      final manga = await mangaRepo.getById(id);
+      if (result.remove) {
+        await mangaRepo.setFavorite(id, false);
+        // Clear category memberships so re-adding starts clean.
+        await categoryRepo.setCategoriesForManga(id, const <int>{});
+      }
+      if (downloadRepo != null && manga != null) {
+        await downloadRepo.deleteAllForManga(manga.source, manga.id);
+      }
     }
     if (!mounted) return;
     _clearSelection();
-    messenger.showSnackBar(
-      SnackBar(content: Text('${ids.length} removed from library')),
-    );
+    final msg = result.remove && result.deleteDownloads
+        ? '${ids.length} removed (downloads deleted)'
+        : result.remove
+            ? '${ids.length} removed from library'
+            : 'Downloads deleted for ${ids.length} manga';
+    messenger.showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _selectionMoveToCategory() async {
@@ -1467,6 +1462,74 @@ class _LibrarySortSheet extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Result of the bulk remove dialog. Both flags are independent: the
+/// user can opt to remove from library only, downloads only, or both.
+/// `remove == false` means the user cancelled.
+class _RemoveResult {
+  const _RemoveResult({required this.remove, required this.deleteDownloads});
+  final bool remove;
+  final bool deleteDownloads;
+}
+
+/// Mihon-style `DeleteLibraryMangaDialog`: two checkboxes (manga from
+/// library, downloaded chapters) wired to a single OK button that's
+/// disabled until at least one box is ticked.
+class _RemoveLibraryDialog extends StatefulWidget {
+  const _RemoveLibraryDialog({required this.count});
+
+  final int count;
+
+  @override
+  State<_RemoveLibraryDialog> createState() => _RemoveLibraryDialogState();
+}
+
+class _RemoveLibraryDialogState extends State<_RemoveLibraryDialog> {
+  bool _removeFromLibrary = true;
+  bool _deleteDownloads = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final canConfirm = _removeFromLibrary || _deleteDownloads;
+    return AlertDialog(
+      title: Text('Remove ${widget.count} manga?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CheckboxListTile(
+            value: _removeFromLibrary,
+            onChanged: (v) => setState(() => _removeFromLibrary = v ?? false),
+            title: const Text('Remove from library'),
+            contentPadding: EdgeInsets.zero,
+          ),
+          CheckboxListTile(
+            value: _deleteDownloads,
+            onChanged: (v) => setState(() => _deleteDownloads = v ?? false),
+            title: const Text('Delete downloaded chapters'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: canConfirm
+              ? () => Navigator.of(context).pop(
+                    _RemoveResult(
+                      remove: _removeFromLibrary,
+                      deleteDownloads: _deleteDownloads,
+                    ),
+                  )
+              : null,
+          child: const Text('OK'),
+        ),
+      ],
     );
   }
 }
