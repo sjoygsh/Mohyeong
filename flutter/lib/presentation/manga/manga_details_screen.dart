@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
+import '../../data/manga/excluded_scanlators_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/track/track_updater.dart';
 import '../../domain/category/model/category.dart';
@@ -17,6 +18,7 @@ import '../reader/reader_screen.dart';
 import '../track/manga_tracking_sheet.dart';
 import 'chapter_settings_sheet.dart';
 import 'linked_manga_sheet.dart';
+import 'scanlator_filter_sheet.dart';
 
 /// Manga details: cover + metadata header followed by the chapter list.
 /// Tapping a chapter is a no-op until the reader screen ships.
@@ -115,12 +117,12 @@ class MangaDetailsScreen extends ConsumerWidget {
                       SliverToBoxAdapter(child: _NoChapters()),
                     ]
                   else
-                    ..._buildChapterSlivers(
-                      context: context,
-                      ref: ref,
-                      manga: manga,
-                      chapters: chapters,
-                      chapterRepo: chapterRepo,
+                    SliverToBoxAdapter(
+                      child: _ChaptersSection(
+                        manga: manga,
+                        chapters: chapters,
+                        chapterRepo: chapterRepo,
+                      ),
                     ),
                 ],
               );
@@ -132,69 +134,95 @@ class MangaDetailsScreen extends ConsumerWidget {
   }
 }
 
-/// Builds the chapter list slivers: header (count + filter icon) followed
-/// by a sliver list of filtered + sorted chapter tiles.
+/// Renders the chapter list header + the filter/sort-applied chapter
+/// tiles. Watches the manga's excluded-scanlator set so toggling
+/// exclusions live-updates the list.
 ///
 /// The filter/sort logic mirrors Mihon's `GetChaptersByMangaId` +
-/// `applyFilters` pipeline: read the manga's `chapter_flags` bitmask,
-/// drop chapters that don't match the tri-state filters, then sort by
-/// the configured key in ascending or descending order. The display
-/// mode (chapter name vs chapter number) is applied at the tile level.
-List<Widget> _buildChapterSlivers({
-  required BuildContext context,
-  required WidgetRef ref,
-  required Manga manga,
-  required List<Chapter> chapters,
-  required ChapterRepository chapterRepo,
-}) {
-  final filtered = chapters.where((c) {
-    final unreadOk = applyTriState(manga.unreadFilter, () => !c.read);
-    final bookmarkedOk =
-        applyTriState(manga.bookmarkedFilter, () => c.bookmark);
-    return unreadOk && bookmarkedOk;
-  }).toList(growable: false);
-
-  final sorted = [...filtered]..sort((a, b) {
-    int cmp;
-    switch (manga.sorting) {
-      case Manga.chapterSortingNumber:
-        cmp = a.chapterNumber.compareTo(b.chapterNumber);
-      case Manga.chapterSortingUploadDate:
-        cmp = a.dateUpload.compareTo(b.dateUpload);
-      case Manga.chapterSortingAlphabet:
-        cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
-      default:
-        cmp = a.sourceOrder.compareTo(b.sourceOrder);
-    }
-    return manga.sortDescending() ? -cmp : cmp;
+/// `applyFilters` pipeline: drop excluded-scanlator rows, apply the
+/// tri-state unread/bookmarked filters, then sort by the configured key
+/// in the configured direction. Chapter display mode (name vs number)
+/// is applied at the tile level.
+class _ChaptersSection extends ConsumerWidget {
+  const _ChaptersSection({
+    required this.manga,
+    required this.chapters,
+    required this.chapterRepo,
   });
 
-  return [
-    SliverToBoxAdapter(
-      child: _ChapterListHeader(
-        visibleCount: sorted.length,
-        totalCount: chapters.length,
-        mangaForSheet: manga,
-      ),
-    ),
-    if (sorted.isEmpty)
-      const SliverToBoxAdapter(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(child: Text('No chapters match the current filter.')),
-        ),
-      )
-    else
-      SliverList.builder(
-        itemCount: sorted.length,
-        itemBuilder: (_, i) => _ChapterTile(
-          manga: manga,
-          chapter: sorted[i],
-          chapterRepo: chapterRepo,
-          downloadRepo: ref.watch(downloadRepositoryProvider),
-        ),
-      ),
-  ];
+  final Manga manga;
+  final List<Chapter> chapters;
+  final ChapterRepository chapterRepo;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final excludedRepo = ref.watch(excludedScanlatorsRepositoryProvider);
+    return StreamBuilder<Set<String>>(
+      stream: excludedRepo.watchByMangaId(manga.id),
+      builder: (context, excludedSnap) {
+        final excluded = excludedSnap.data ?? const <String>{};
+        final availableScanlators = <String>{
+          for (final c in chapters)
+            if (c.scanlator != null && c.scanlator!.isNotEmpty) c.scanlator!,
+        };
+
+        final filtered = chapters.where((c) {
+          if (excluded.contains(c.scanlator)) return false;
+          final unreadOk = applyTriState(manga.unreadFilter, () => !c.read);
+          final bookmarkedOk =
+              applyTriState(manga.bookmarkedFilter, () => c.bookmark);
+          return unreadOk && bookmarkedOk;
+        }).toList(growable: false);
+
+        final sorted = [...filtered]..sort((a, b) {
+          int cmp;
+          switch (manga.sorting) {
+            case Manga.chapterSortingNumber:
+              cmp = a.chapterNumber.compareTo(b.chapterNumber);
+            case Manga.chapterSortingUploadDate:
+              cmp = a.dateUpload.compareTo(b.dateUpload);
+            case Manga.chapterSortingAlphabet:
+              cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            default:
+              cmp = a.sourceOrder.compareTo(b.sourceOrder);
+          }
+          return manga.sortDescending() ? -cmp : cmp;
+        });
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ChapterListHeader(
+              visibleCount: sorted.length,
+              totalCount: chapters.length,
+              mangaForSheet: manga,
+              availableScanlators: availableScanlators,
+              excludedScanlators: excluded,
+            ),
+            if (sorted.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(
+                  child: Text('No chapters match the current filter.'),
+                ),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: sorted.length,
+                itemBuilder: (_, i) => _ChapterTile(
+                  manga: manga,
+                  chapter: sorted[i],
+                  chapterRepo: chapterRepo,
+                  downloadRepo: ref.watch(downloadRepositoryProvider),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 void _openChapterSettingsSheet(BuildContext context, Manga manga) {
@@ -203,6 +231,24 @@ void _openChapterSettingsSheet(BuildContext context, Manga manga) {
     isScrollControlled: true,
     showDragHandle: true,
     builder: (_) => ChapterSettingsSheet(manga: manga),
+  );
+}
+
+void _openScanlatorFilterSheet(
+  BuildContext context, {
+  required int mangaId,
+  required Set<String> available,
+  required Set<String> excluded,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => ScanlatorFilterSheet(
+      mangaId: mangaId,
+      availableScanlators: available,
+      initiallyExcluded: excluded,
+    ),
   );
 }
 
@@ -490,6 +536,8 @@ class _ChapterListHeader extends StatelessWidget {
     required this.visibleCount,
     required this.totalCount,
     required this.mangaForSheet,
+    this.availableScanlators = const {},
+    this.excludedScanlators = const {},
   });
 
   /// Chapters left after filters are applied.
@@ -503,11 +551,19 @@ class _ChapterListHeader extends StatelessWidget {
   /// filter/sort sheet. Skipped on the "0 chapters yet" branch.
   final Manga? mangaForSheet;
 
+  /// Every scanlator that appears on at least one chapter for this
+  /// manga. The scanlator-filter sheet uses this to populate its list.
+  final Set<String> availableScanlators;
+
+  /// Currently-excluded set. Drives the badge dot on the people icon.
+  final Set<String> excludedScanlators;
+
   @override
   Widget build(BuildContext context) {
     final label = visibleCount == totalCount
         ? '$visibleCount chapters'
         : '$visibleCount of $totalCount chapters';
+    final manga = mangaForSheet;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Row(
@@ -518,12 +574,43 @@ class _ChapterListHeader extends StatelessWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
-          if (mangaForSheet != null)
+          if (manga != null && availableScanlators.isNotEmpty)
+            IconButton(
+              icon: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(Icons.people_alt_outlined),
+                  // Small primary dot when at least one scanlator is
+                  // excluded — quick visual cue that the list is
+                  // filtered.
+                  if (excludedScanlators.isNotEmpty)
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              tooltip: 'Scanlator filter',
+              onPressed: () => _openScanlatorFilterSheet(
+                context,
+                mangaId: manga.id,
+                available: availableScanlators,
+                excluded: excludedScanlators,
+              ),
+            ),
+          if (manga != null)
             IconButton(
               icon: const Icon(Icons.tune),
               tooltip: 'Chapter filter & sort',
-              onPressed: () =>
-                  _openChapterSettingsSheet(context, mangaForSheet!),
+              onPressed: () => _openChapterSettingsSheet(context, manga),
             ),
         ],
       ),
