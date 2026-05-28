@@ -768,49 +768,104 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-/// Description + genre tags block. The expand/collapse animation in
-/// Mihon's `ExpandableMangaDescription` is punted; we render the full
-/// description and let the user scroll.
-class _DescriptionAndTags extends StatelessWidget {
+/// Description + genre tags block with expand/collapse — the section
+/// behaves like Mihon's `ExpandableMangaDescription`. Collapsed: clamps
+/// to 3 lines and shows a chevron-down hint plus a horizontally
+/// scrollable chip strip. Expanded: full description + wrapped chips
+/// + chevron-up. Tapping anywhere on the block toggles.
+class _DescriptionAndTags extends StatefulWidget {
   const _DescriptionAndTags({required this.manga});
 
   final Manga manga;
 
   @override
+  State<_DescriptionAndTags> createState() => _DescriptionAndTagsState();
+}
+
+class _DescriptionAndTagsState extends State<_DescriptionAndTags> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    final description = manga.description?.trim();
-    final genres = manga.genre ?? const <String>[];
+    final description = widget.manga.description?.trim();
+    final genres = widget.manga.genre ?? const <String>[];
     if ((description == null || description.isEmpty) && genres.isEmpty) {
       return const SizedBox.shrink();
     }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (description != null && description.isNotEmpty)
-            Text(
-              description,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          if (genres.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: genres
-                  .map(
-                    (g) => Chip(
-                      label: Text(g, style: const TextStyle(fontSize: 12)),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
+    final hasDescription = description != null && description.isNotEmpty;
+    return InkWell(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (hasDescription) ...[
+                Text(
+                  description,
+                  maxLines: _expanded ? null : 3,
+                  overflow: _expanded
+                      ? TextOverflow.visible
+                      : TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 4),
+                Center(
+                  child: Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              if (genres.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                if (_expanded)
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: genres
+                        .map((g) => _GenreChip(text: g))
+                        .toList(growable: false),
                   )
-                  .toList(growable: false),
-            ),
-          ],
-        ],
+                else
+                  // Collapsed: single horizontally-scrollable row so the
+                  // chip strip doesn't bloat the header.
+                  SizedBox(
+                    height: 32,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: genres.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 6),
+                      itemBuilder: (_, i) => _GenreChip(text: genres[i]),
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        ),
       ),
+    );
+  }
+}
+
+class _GenreChip extends StatelessWidget {
+  const _GenreChip({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      label: Text(text, style: const TextStyle(fontSize: 12)),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 }
