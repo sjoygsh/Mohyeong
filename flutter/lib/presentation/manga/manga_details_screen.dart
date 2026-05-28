@@ -3,12 +3,14 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/manga/excluded_scanlators_repository.dart';
 import '../../data/manga/manga_repository.dart';
+import '../../data/source/extension_repository.dart';
 import '../../data/source/source_repository.dart';
 import '../../data/track/track_updater.dart';
 import '../../domain/category/model/category.dart';
@@ -93,6 +95,7 @@ class MangaDetailsScreen extends ConsumerWidget {
                       manga: manga,
                       onAddToLibrary: () => _toggleFavorite(context, ref, manga),
                       onTracking: () => _openTrackingSheet(context, manga),
+                      onOpenInBrowser: () => _openInBrowser(context, ref, manga),
                     ),
                   ),
                   SliverToBoxAdapter(child: _DescriptionAndTags(manga: manga)),
@@ -317,6 +320,46 @@ void _openLinkedSheet(BuildContext context, Manga manga) {
     showDragHandle: true,
     builder: (_) => LinkedMangaSheet(primary: manga),
   );
+}
+
+/// Mirrors Mihon's `MangaScreenModel.openMangaInWebView`: resolve the
+/// source's `baseUrl`, join it with the relative `manga.url`, and hand
+/// the result off to the platform browser via url_launcher. Falls back
+/// to the raw `manga.url` if the source can't be looked up (the source
+/// may be uninstalled — the URL is sometimes absolute anyway).
+Future<void> _openInBrowser(
+  BuildContext context,
+  WidgetRef ref,
+  Manga manga,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  String full = manga.url;
+  if (!full.startsWith('http')) {
+    try {
+      final source =
+          await ref.read(extensionRepositoryProvider).getSource('${manga.source}');
+      final base = source.baseUrl;
+      if (base.isNotEmpty) {
+        full =
+            '${base.replaceAll(RegExp(r'/+$'), '')}/${manga.url.replaceAll(RegExp(r'^/+'), '')}';
+      }
+    } catch (_) {
+      // Source not installed — fall through with the raw relative URL.
+    }
+  }
+  final uri = Uri.tryParse(full);
+  if (uri == null || !uri.hasScheme) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('No URL available for this entry')),
+    );
+    return;
+  }
+  final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!ok) {
+    messenger.showSnackBar(
+      SnackBar(content: Text('Could not open $uri')),
+    );
+  }
 }
 
 Future<void> _toggleFavorite(
@@ -690,20 +733,21 @@ class _StatusRow extends StatelessWidget {
 }
 
 /// 3-button action row right under the info box: Add-to-library / Track
-/// / Linked-sources. Mirrors Mihon's `MangaActionRow`. The interval and
-/// WebView buttons are skipped — interval needs the auto-update
-/// scheduler hooked up per-manga, and WebView is browser-only and not
-/// part of the v1.0 scope.
+/// / Open-in-browser. Mirrors Mihon's `MangaActionRow`. The interval
+/// button is skipped — it needs the auto-update scheduler hooked up
+/// per-manga, which isn't in v1.0 scope.
 class _MangaActionRow extends StatelessWidget {
   const _MangaActionRow({
     required this.manga,
     required this.onAddToLibrary,
     required this.onTracking,
+    required this.onOpenInBrowser,
   });
 
   final Manga manga;
   final VoidCallback onAddToLibrary;
   final VoidCallback onTracking;
+  final VoidCallback onOpenInBrowser;
 
   @override
   Widget build(BuildContext context) {
@@ -728,6 +772,14 @@ class _MangaActionRow extends StatelessWidget {
               label: 'Track',
               color: muted,
               onPressed: onTracking,
+            ),
+          ),
+          Expanded(
+            child: _ActionButton(
+              icon: Icons.public,
+              label: 'WebView',
+              color: muted,
+              onPressed: onOpenInBrowser,
             ),
           ),
         ],
