@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,11 +9,13 @@ import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/manga/excluded_scanlators_repository.dart';
 import '../../data/manga/manga_repository.dart';
+import '../../data/source/source_repository.dart';
 import '../../data/track/track_updater.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
+import '../../domain/source/model/source.dart';
 import '../common/source_image.dart';
 import '../reader/reader_screen.dart';
 import '../track/manga_tracking_sheet.dart';
@@ -63,27 +66,12 @@ class MangaDetailsScreen extends ConsumerWidget {
                   slivers: [
                   SliverAppBar(
                     pinned: true,
-                    expandedHeight: 280,
-                    flexibleSpace: FlexibleSpaceBar(
-                      title: Text(
-                        manga.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      background: _HeaderBackdrop(manga: manga),
+                    title: Text(
+                      manga.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     actions: [
-                      IconButton(
-                        icon: Icon(
-                          manga.favorite
-                              ? Icons.favorite
-                              : Icons.favorite_border,
-                        ),
-                        tooltip: manga.favorite
-                            ? 'Remove from library'
-                            : 'Add to library',
-                        onPressed: () => _toggleFavorite(context, ref, manga),
-                      ),
                       if (manga.favorite)
                         IconButton(
                           icon: const Icon(Icons.label_outline),
@@ -91,11 +79,6 @@ class MangaDetailsScreen extends ConsumerWidget {
                           onPressed: () =>
                               _editCategories(context, ref, manga),
                         ),
-                      IconButton(
-                        icon: const Icon(Icons.sync_outlined),
-                        tooltip: 'Tracking',
-                        onPressed: () => _openTrackingSheet(context, manga),
-                      ),
                       if (manga.favorite)
                         IconButton(
                           icon: const Icon(Icons.link),
@@ -104,7 +87,15 @@ class MangaDetailsScreen extends ConsumerWidget {
                         ),
                     ],
                   ),
-                  SliverToBoxAdapter(child: _Metadata(manga: manga)),
+                  SliverToBoxAdapter(child: _MangaInfoBox(manga: manga)),
+                  SliverToBoxAdapter(
+                    child: _MangaActionRow(
+                      manga: manga,
+                      onAddToLibrary: () => _toggleFavorite(context, ref, manga),
+                      onTracking: () => _openTrackingSheet(context, manga),
+                    ),
+                  ),
+                  SliverToBoxAdapter(child: _DescriptionAndTags(manga: manga)),
                   if (chapSnap.hasError)
                     SliverToBoxAdapter(child: _Error(error: chapSnap.error!))
                   else if (!chapSnap.hasData)
@@ -479,38 +470,119 @@ class _CategorySelectorState extends State<_CategorySelector> {
   }
 }
 
-class _HeaderBackdrop extends StatelessWidget {
-  const _HeaderBackdrop({required this.manga});
+/// Mihon-style info header: blurred backdrop of the cover behind a row
+/// containing the cover thumbnail and the title / author / artist /
+/// status / source name. Tablet-width handling is punted — Mihon's
+/// `MangaAndSourceTitlesLarge` centers the cover above the metadata at
+/// ≥720dp, but the phone-first small variant is what we render here.
+class _MangaInfoBox extends ConsumerWidget {
+  const _MangaInfoBox({required this.manga});
+
+  final Manga manga;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sourceRepo = ref.watch(sourceRepositoryProvider);
+    return Stack(
+      children: [
+        // Blurred backdrop. Mihon uses the cover image with a 4dp blur
+        // and 0.2 alpha plus a transparent → background-colour gradient
+        // so the foreground row stays legible on light covers.
+        Positioned.fill(child: _Backdrop(manga: manga)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: SizedBox(
+                  width: 110,
+                  height: 155, // ~book aspect ratio 1:1.41
+                  child: _CoverImage(url: manga.thumbnailUrl),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      manga.title,
+                      style: Theme.of(context).textTheme.titleLarge,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    _IconText(
+                      icon: Icons.person_outline,
+                      text: manga.author?.trim().isNotEmpty == true
+                          ? manga.author!.trim()
+                          : 'Unknown author',
+                    ),
+                    if (manga.artist?.trim().isNotEmpty == true &&
+                        manga.artist!.trim() != manga.author?.trim()) ...[
+                      const SizedBox(height: 2),
+                      _IconText(
+                        icon: Icons.brush_outlined,
+                        text: manga.artist!.trim(),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    FutureBuilder<Source?>(
+                      future: sourceRepo.findById(manga.source),
+                      builder: (context, snap) {
+                        final src = snap.data;
+                        return _StatusRow(status: manga.status, source: src);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Backdrop extends StatelessWidget {
+  const _Backdrop({required this.manga});
 
   final Manga manga;
 
   @override
   Widget build(BuildContext context) {
-    final placeholderColor =
-        Theme.of(context).colorScheme.surfaceContainerHighest;
     final url = manga.thumbnailUrl;
-    final image = (url == null || url.isEmpty)
-        ? Container(color: placeholderColor)
-        : SourceImage(
-            url: url,
-            fit: BoxFit.cover,
-            placeholder: (_) => Container(color: placeholderColor),
-            errorWidget: (_, _) => Container(color: placeholderColor),
-          );
+    final bg = Theme.of(context).colorScheme.surface;
+    if (url == null || url.isEmpty) {
+      return Container(color: bg);
+    }
     return Stack(
       fit: StackFit.expand,
       children: [
-        image,
-        // Dim gradient so the title stays legible on light covers.
+        Opacity(
+          opacity: 0.25,
+          child: SourceImage(
+            url: url,
+            fit: BoxFit.cover,
+            placeholder: (_) => Container(color: bg),
+            errorWidget: (_, _) => Container(color: bg),
+          ),
+        ),
+        // Blur over the dimmed cover.
+        BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: const SizedBox.shrink(),
+        ),
+        // Transparent → background gradient for legibility.
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                Colors.transparent,
-                Colors.black.withValues(alpha: 0.6),
-              ],
+              colors: [Colors.transparent, bg],
             ),
           ),
         ),
@@ -519,46 +591,221 @@ class _HeaderBackdrop extends StatelessWidget {
   }
 }
 
-class _Metadata extends StatelessWidget {
-  const _Metadata({required this.manga});
+class _CoverImage extends StatelessWidget {
+  const _CoverImage({required this.url});
+
+  final String? url;
+
+  @override
+  Widget build(BuildContext context) {
+    final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
+    if (url == null || url!.isEmpty) {
+      return Container(color: placeholder);
+    }
+    return SourceImage(
+      url: url!,
+      fit: BoxFit.cover,
+      placeholder: (_) => Container(color: placeholder),
+      errorWidget: (_, _) => Container(color: placeholder),
+    );
+  }
+}
+
+class _IconText extends StatelessWidget {
+  const _IconText({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75);
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            text,
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(color: color),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Status icon + label · source name. Source name renders only when the
+/// source lookup resolves; otherwise the row degrades to status alone.
+class _StatusRow extends StatelessWidget {
+  const _StatusRow({required this.status, required this.source});
+
+  final int status;
+  final Source? source;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75);
+    final style = Theme.of(context).textTheme.bodyMedium?.copyWith(color: color);
+    return Row(
+      children: [
+        Icon(_statusIcon(status), size: 16, color: color),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            _statusLabel(status),
+            style: style,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
+        ),
+        if (source != null) ...[
+          Text(' • ', style: style),
+          if (source!.isStub)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Icon(
+                Icons.warning_amber_rounded,
+                size: 16,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          Flexible(
+            child: Text(
+              source!.visualName,
+              style: style,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// 3-button action row right under the info box: Add-to-library / Track
+/// / Linked-sources. Mirrors Mihon's `MangaActionRow`. The interval and
+/// WebView buttons are skipped — interval needs the auto-update
+/// scheduler hooked up per-manga, and WebView is browser-only and not
+/// part of the v1.0 scope.
+class _MangaActionRow extends StatelessWidget {
+  const _MangaActionRow({
+    required this.manga,
+    required this.onAddToLibrary,
+    required this.onTracking,
+  });
+
+  final Manga manga;
+  final VoidCallback onAddToLibrary;
+  final VoidCallback onTracking;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final muted =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ActionButton(
+              icon: manga.favorite ? Icons.favorite : Icons.favorite_border,
+              label: manga.favorite ? 'In library' : 'Add to library',
+              color: manga.favorite ? primary : muted,
+              onPressed: onAddToLibrary,
+            ),
+          ),
+          Expanded(
+            child: _ActionButton(
+              icon: Icons.sync_outlined,
+              label: 'Track',
+              color: muted,
+              onPressed: onTracking,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onPressed,
+      child: Column(
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, color: color),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Description + genre tags block. The expand/collapse animation in
+/// Mihon's `ExpandableMangaDescription` is punted; we render the full
+/// description and let the user scroll.
+class _DescriptionAndTags extends StatelessWidget {
+  const _DescriptionAndTags({required this.manga});
 
   final Manga manga;
 
   @override
   Widget build(BuildContext context) {
-    final author = manga.author?.trim();
-    final artist = manga.artist?.trim();
-    final showArtist =
-        artist != null && artist.isNotEmpty && artist != author;
+    final description = manga.description?.trim();
+    final genres = manga.genre ?? const <String>[];
+    if ((description == null || description.isEmpty) && genres.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (author != null && author.isNotEmpty)
-            Text(author, style: Theme.of(context).textTheme.titleSmall),
-          if (showArtist)
+          if (description != null && description.isNotEmpty)
             Text(
-              artist,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          const SizedBox(height: 8),
-          Text(_statusLabel(manga.status),
-              style: Theme.of(context).textTheme.bodyMedium),
-          if (manga.description != null && manga.description!.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              manga.description!,
+              description,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-          ],
-          if (manga.genre != null && manga.genre!.isNotEmpty) ...[
+          if (genres.isNotEmpty) ...[
             const SizedBox(height: 12),
             Wrap(
               spacing: 6,
               runSpacing: 6,
-              children: manga.genre!
-                  .map((g) => Chip(label: Text(g)))
+              children: genres
+                  .map(
+                    (g) => Chip(
+                      label: Text(g, style: const TextStyle(fontSize: 12)),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  )
                   .toList(growable: false),
             ),
           ],
@@ -566,26 +813,45 @@ class _Metadata extends StatelessWidget {
       ),
     );
   }
+}
 
-  // Mirrors SManga.STATUS_*: 0=Unknown, 1=Ongoing, 2=Completed, 3=Licensed,
-  // 4=Publishing Finished, 5=Cancelled, 6=On Hiatus.
-  String _statusLabel(int status) {
-    switch (status) {
-      case 1:
-        return 'Ongoing';
-      case 2:
-        return 'Completed';
-      case 3:
-        return 'Licensed';
-      case 4:
-        return 'Publishing finished';
-      case 5:
-        return 'Cancelled';
-      case 6:
-        return 'On hiatus';
-      default:
-        return 'Unknown status';
-    }
+// Mirrors SManga.STATUS_*: 0=Unknown, 1=Ongoing, 2=Completed, 3=Licensed,
+// 4=Publishing Finished, 5=Cancelled, 6=On Hiatus.
+String _statusLabel(int status) {
+  switch (status) {
+    case 1:
+      return 'Ongoing';
+    case 2:
+      return 'Completed';
+    case 3:
+      return 'Licensed';
+    case 4:
+      return 'Publishing finished';
+    case 5:
+      return 'Cancelled';
+    case 6:
+      return 'On hiatus';
+    default:
+      return 'Unknown';
+  }
+}
+
+IconData _statusIcon(int status) {
+  switch (status) {
+    case 1:
+      return Icons.schedule;
+    case 2:
+      return Icons.done_all;
+    case 3:
+      return Icons.attach_money;
+    case 4:
+      return Icons.done;
+    case 5:
+      return Icons.close;
+    case 6:
+      return Icons.pause_circle_outline;
+    default:
+      return Icons.block_outlined;
   }
 }
 
