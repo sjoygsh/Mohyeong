@@ -32,20 +32,116 @@ import 'manga_notes_screen.dart';
 import 'scanlator_filter_sheet.dart';
 
 /// Manga details: cover + metadata header followed by the chapter list.
-/// Tapping a chapter is a no-op until the reader screen ships.
-class MangaDetailsScreen extends ConsumerWidget {
+/// Promoted to a stateful widget to own chapter multi-select state — the
+/// app bar swaps into a selection bar when at least one chapter row is
+/// selected, exposing bulk mark-read / mark-unread / (un)bookmark /
+/// download actions. Mirrors Mihon's long-press multi-select flow on the
+/// chapter list.
+class MangaDetailsScreen extends ConsumerStatefulWidget {
   const MangaDetailsScreen({super.key, required this.mangaId});
 
   final int mangaId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MangaDetailsScreen> createState() =>
+      _MangaDetailsScreenState();
+}
+
+class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
+  final Set<int> _selectedChapterIds = <int>{};
+
+  bool get _selecting => _selectedChapterIds.isNotEmpty;
+
+  void _toggleChapterSelected(int id) {
+    setState(() {
+      if (!_selectedChapterIds.add(id)) _selectedChapterIds.remove(id);
+    });
+  }
+
+  void _clearSelection() {
+    if (_selectedChapterIds.isEmpty) return;
+    setState(_selectedChapterIds.clear);
+  }
+
+  void _selectAll(Iterable<int> ids) {
+    setState(() {
+      _selectedChapterIds
+        ..clear()
+        ..addAll(ids);
+    });
+  }
+
+  /// Resolves the selected ids back to `Chapter` rows from the current
+  /// stream snapshot. Anything that no longer exists in the snapshot is
+  /// dropped silently (rare race when the source-fetch happens to wipe a
+  /// row mid-selection).
+  List<Chapter> _selectedChapters(List<Chapter> all) {
+    if (_selectedChapterIds.isEmpty) return const [];
+    final byId = {for (final c in all) c.id: c};
+    return [
+      for (final id in _selectedChapterIds)
+        if (byId[id] != null) byId[id]!,
+    ];
+  }
+
+  Future<void> _bulkSetRead(List<Chapter> all, bool read) async {
+    final chapterRepo = ref.read(chapterRepositoryProvider);
+    final picked = _selectedChapters(all);
+    for (final c in picked) {
+      await chapterRepo.setRead(c.id, read);
+    }
+    if (read) {
+      // Push the highest selected chapter number to trackers, parity
+      // with Mihon's per-action sync. We deliberately only push on the
+      // mark-read branch — marking unread shouldn't regress trackers.
+      final highest = picked.fold<double>(
+        -1,
+        (m, c) => c.chapterNumber > m ? c.chapterNumber : m,
+      );
+      if (highest > 0) {
+        unawaited(
+          ref.read(trackUpdaterProvider).setLastChapterRead(
+                mangaId: widget.mangaId,
+                chapterNumber: highest,
+              ),
+        );
+      }
+    }
+    _clearSelection();
+  }
+
+  Future<void> _bulkSetBookmark(List<Chapter> all, bool bookmark) async {
+    final chapterRepo = ref.read(chapterRepositoryProvider);
+    for (final c in _selectedChapters(all)) {
+      await chapterRepo.setBookmark(c.id, bookmark);
+    }
+    _clearSelection();
+  }
+
+  Future<void> _bulkDownload(Manga manga, List<Chapter> all) async {
+    final downloadRepo = ref.read(downloadRepositoryProvider);
+    for (final c in _selectedChapters(all)) {
+      await downloadRepo.enqueue(manga, c);
+    }
+    _clearSelection();
+  }
+
+  Future<void> _bulkDeleteDownloads(Manga manga, List<Chapter> all) async {
+    final downloadRepo = ref.read(downloadRepositoryProvider);
+    for (final c in _selectedChapters(all)) {
+      await downloadRepo.deleteDownload(manga.source, manga.id, c.id);
+    }
+    _clearSelection();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final mangaRepo = ref.watch(mangaRepositoryProvider);
     final chapterRepo = ref.watch(chapterRepositoryProvider);
 
     return Scaffold(
       body: StreamBuilder<Manga?>(
-        stream: mangaRepo.watchById(mangaId),
+        stream: mangaRepo.watchById(widget.mangaId),
         builder: (context, mangaSnap) {
           if (mangaSnap.hasError) {
             return _Error(error: mangaSnap.error!);
@@ -58,66 +154,123 @@ class MangaDetailsScreen extends ConsumerWidget {
             return const _MissingManga();
           }
           return StreamBuilder<List<Chapter>>(
-            stream: chapterRepo.watchByMangaId(mangaId),
+            stream: chapterRepo.watchByMangaId(widget.mangaId),
             builder: (context, chapSnap) {
               final chapters = chapSnap.data ?? const <Chapter>[];
               final nextUnread = _pickNextUnread(chapters);
-              return Scaffold(
-                floatingActionButton: nextUnread == null
-                    ? null
-                    : _ContinueReadingFab(
-                        manga: manga,
-                        chapter: nextUnread,
-                        anyRead: chapters.any((c) => c.read),
-                      ),
-                body: CustomScrollView(
+              return PopScope(
+                canPop: !_selecting,
+                onPopInvokedWithResult: (didPop, _) {
+                  if (!didPop) _clearSelection();
+                },
+                child: Scaffold(
+                  floatingActionButton: _selecting || nextUnread == null
+                      ? null
+                      : _ContinueReadingFab(
+                          manga: manga,
+                          chapter: nextUnread,
+                          anyRead: chapters.any((c) => c.read),
+                        ),
+                  body: CustomScrollView(
                   slivers: [
-                  SliverAppBar(
-                    pinned: true,
-                    title: Text(
-                      manga.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    actions: [
-                      if (manga.favorite)
+                  if (_selecting)
+                    SliverAppBar(
+                      pinned: true,
+                      backgroundColor:
+                          Theme.of(context).colorScheme.primaryContainer,
+                      leading: IconButton(
+                        icon: const Icon(Icons.close),
+                        tooltip: 'Clear selection',
+                        onPressed: _clearSelection,
+                      ),
+                      title: Text('${_selectedChapterIds.length} selected'),
+                      actions: [
                         IconButton(
-                          icon: const Icon(Icons.label_outline),
-                          tooltip: 'Edit categories',
+                          icon: const Icon(Icons.select_all),
+                          tooltip: 'Select all',
                           onPressed: () =>
-                              _editCategories(context, ref, manga),
+                              _selectAll(chapters.map((c) => c.id)),
                         ),
-                      if (manga.favorite)
                         IconButton(
-                          icon: const Icon(Icons.link),
-                          tooltip: 'Linked sources',
-                          onPressed: () => _openLinkedSheet(context, manga),
+                          icon: const Icon(Icons.done_all),
+                          tooltip: 'Mark as read',
+                          onPressed: () => _bulkSetRead(chapters, true),
                         ),
-                      if (manga.favorite)
                         IconButton(
-                          icon: const Icon(Icons.swap_horiz),
-                          tooltip: 'Migrate to another source',
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => MigrationSearchScreen(
-                                sourceManga: manga,
+                          icon: const Icon(Icons.remove_done),
+                          tooltip: 'Mark as unread',
+                          onPressed: () => _bulkSetRead(chapters, false),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.bookmark_add_outlined),
+                          tooltip: 'Bookmark',
+                          onPressed: () => _bulkSetBookmark(chapters, true),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.bookmark_remove_outlined),
+                          tooltip: 'Remove bookmark',
+                          onPressed: () => _bulkSetBookmark(chapters, false),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.download_outlined),
+                          tooltip: 'Download',
+                          onPressed: () => _bulkDownload(manga, chapters),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: 'Delete downloads',
+                          onPressed: () =>
+                              _bulkDeleteDownloads(manga, chapters),
+                        ),
+                      ],
+                    )
+                  else
+                    SliverAppBar(
+                      pinned: true,
+                      title: Text(
+                        manga.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      actions: [
+                        if (manga.favorite)
+                          IconButton(
+                            icon: const Icon(Icons.label_outline),
+                            tooltip: 'Edit categories',
+                            onPressed: () =>
+                                _editCategories(context, ref, manga),
+                          ),
+                        if (manga.favorite)
+                          IconButton(
+                            icon: const Icon(Icons.link),
+                            tooltip: 'Linked sources',
+                            onPressed: () => _openLinkedSheet(context, manga),
+                          ),
+                        if (manga.favorite)
+                          IconButton(
+                            icon: const Icon(Icons.swap_horiz),
+                            tooltip: 'Migrate to another source',
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => MigrationSearchScreen(
+                                  sourceManga: manga,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      if (manga.favorite)
-                        IconButton(
-                          icon: const Icon(Icons.edit_note),
-                          tooltip: 'Edit notes',
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  MangaNotesScreen(manga: manga),
+                        if (manga.favorite)
+                          IconButton(
+                            icon: const Icon(Icons.edit_note),
+                            tooltip: 'Edit notes',
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    MangaNotesScreen(manga: manga),
+                              ),
                             ),
                           ),
-                        ),
-                    ],
-                  ),
+                      ],
+                    ),
                   SliverToBoxAdapter(child: _MangaInfoBox(manga: manga)),
                   SliverToBoxAdapter(
                     child: _MangaActionRow(
@@ -158,11 +311,14 @@ class MangaDetailsScreen extends ConsumerWidget {
                         manga: manga,
                         chapters: chapters,
                         chapterRepo: chapterRepo,
+                        selectedIds: _selectedChapterIds,
+                        onToggleSelected: _toggleChapterSelected,
                       ),
                     ),
                 ],
               ),
-            );
+            ),
+              );
             },
           );
         },
@@ -185,11 +341,15 @@ class _ChaptersSection extends ConsumerWidget {
     required this.manga,
     required this.chapters,
     required this.chapterRepo,
+    required this.selectedIds,
+    required this.onToggleSelected,
   });
 
   final Manga manga;
   final List<Chapter> chapters;
   final ChapterRepository chapterRepo;
+  final Set<int> selectedIds;
+  final ValueChanged<int> onToggleSelected;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -286,6 +446,9 @@ class _ChaptersSection extends ConsumerWidget {
               chapter: sorted[i],
               chapterRepo: chapterRepo,
               downloadRepo: downloadRepo,
+              isSelected: selectedIds.contains(sorted[i].id),
+              selecting: selectedIds.isNotEmpty,
+              onToggleSelected: onToggleSelected,
             ),
           ),
       ],
@@ -1292,12 +1455,18 @@ class _ChapterTile extends ConsumerStatefulWidget {
     required this.chapter,
     required this.chapterRepo,
     required this.downloadRepo,
+    required this.isSelected,
+    required this.selecting,
+    required this.onToggleSelected,
   });
 
   final Manga manga;
   final Chapter chapter;
   final ChapterRepository chapterRepo;
   final DownloadRepository downloadRepo;
+  final bool isSelected;
+  final bool selecting;
+  final ValueChanged<int> onToggleSelected;
 
   @override
   ConsumerState<_ChapterTile> createState() => _ChapterTileState();
@@ -1361,6 +1530,9 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
       subtitleParts.add(scanlator);
     }
     return ListTile(
+      tileColor: widget.isSelected
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
+          : null,
       title: Text(
         title,
         style: TextStyle(
@@ -1403,7 +1575,13 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
         mainAxisSize: MainAxisSize.min,
         children: [
           _DownloadIndicator(state: _downloadState, progress: _progress),
-          PopupMenuButton<_ChapterAction>(
+          if (widget.selecting)
+            // Hide the per-row popup while a multi-select is in flight —
+            // the app bar already exposes the bulk variants of every
+            // action and tapping a row should only toggle selection.
+            const SizedBox.shrink()
+          else
+            PopupMenuButton<_ChapterAction>(
             onSelected: (action) {
               final chapterRepo = widget.chapterRepo;
               switch (action) {
@@ -1492,6 +1670,10 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
         ],
       ),
       onTap: () {
+        if (widget.selecting) {
+          widget.onToggleSelected(chapter.id);
+          return;
+        }
         Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => ReaderScreen(
@@ -1501,6 +1683,7 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
           ),
         );
       },
+      onLongPress: () => widget.onToggleSelected(chapter.id),
     );
   }
 
