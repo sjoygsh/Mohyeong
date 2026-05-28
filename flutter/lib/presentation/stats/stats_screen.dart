@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/history/history_repository.dart';
 import '../../data/library/library_repository.dart';
+import '../../data/track/track_repository.dart';
 import '../../domain/library/model/library_item.dart';
 
 /// Mihon-equivalent Statistics screen. Pulls one snapshot from
@@ -17,11 +18,12 @@ class StatsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final libraryRepo = ref.watch(libraryRepositoryProvider);
     final historyRepo = ref.watch(historyRepositoryProvider);
+    final trackRepo = ref.watch(trackRepositoryProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Statistics')),
       body: FutureBuilder<_Stats>(
-        future: _load(libraryRepo, historyRepo),
+        future: _load(libraryRepo, historyRepo, trackRepo),
         builder: (context, snap) {
           if (snap.hasError) {
             return Center(child: Text('Failed to load stats: ${snap.error}'));
@@ -63,11 +65,34 @@ class StatsScreen extends ConsumerWidget {
                 label: 'Completed manga (locally)',
                 value: '${s.completedManga}',
               ),
+              _StatTile(
+                icon: Icons.track_changes,
+                label: 'Tracked manga',
+                value: '${s.trackedManga}',
+              ),
+              _Section(title: 'Sources & categories'),
+              _StatTile(
+                icon: Icons.dns_outlined,
+                label: 'Sources in library',
+                value: '${s.sourceCount}',
+              ),
+              _StatTile(
+                icon: Icons.folder_outlined,
+                label: 'Categories in use',
+                value: '${s.categoryCount}',
+              ),
               _Section(title: 'Time'),
               _StatTile(
                 icon: Icons.timer_outlined,
                 label: 'Total time read',
                 value: _formatDuration(s.totalReadMs),
+              ),
+              _StatTile(
+                icon: Icons.av_timer,
+                label: 'Average per manga',
+                value: s.mangaCount == 0
+                    ? '0 min'
+                    : _formatDuration(s.totalReadMs ~/ s.mangaCount),
               ),
             ],
           );
@@ -93,12 +118,23 @@ class StatsScreen extends ConsumerWidget {
 Future<_Stats> _load(
   LibraryRepository library,
   HistoryRepository history,
+  TrackRepository tracks,
 ) async {
   // Pull the first emission of the library stream — this is a one-shot
   // snapshot for the screen, not a live feed.
   final items = await library.watchAll().first;
   final totalReadMs = await history.totalReadDurationMs();
-  return _Stats.fromItems(items, totalReadMs);
+  final trackRows = await tracks.getAll();
+  // Tracked-in-library count: only intersect with manga that are
+  // currently favourited so a tracker row left over from a removed
+  // series doesn't inflate the number.
+  final libraryIds = {for (final i in items) i.manga.id};
+  final trackedManga = trackRows
+      .map((t) => t.mangaId)
+      .toSet()
+      .intersection(libraryIds)
+      .length;
+  return _Stats.fromItems(items, totalReadMs, trackedManga);
 }
 
 class _Stats {
@@ -110,6 +146,9 @@ class _Stats {
     required this.bookmarkedChapters,
     required this.completedManga,
     required this.totalReadMs,
+    required this.sourceCount,
+    required this.categoryCount,
+    required this.trackedManga,
   });
 
   final int mangaCount;
@@ -119,13 +158,22 @@ class _Stats {
   final int bookmarkedChapters;
   final int completedManga;
   final int totalReadMs;
+  final int sourceCount;
+  final int categoryCount;
+  final int trackedManga;
 
-  factory _Stats.fromItems(List<LibraryItem> items, int readMs) {
+  factory _Stats.fromItems(
+    List<LibraryItem> items,
+    int readMs,
+    int trackedManga,
+  ) {
     var totalChapters = 0;
     var readChapters = 0;
     var unreadChapters = 0;
     var bookmarkedChapters = 0;
     var completedManga = 0;
+    final sources = <int>{};
+    final categories = <int>{};
     for (final i in items) {
       totalChapters += i.totalCount;
       readChapters += i.readCount;
@@ -133,6 +181,13 @@ class _Stats {
       bookmarkedChapters += i.bookmarkCount;
       if (i.totalCount > 0 && i.readCount == i.totalCount) {
         completedManga++;
+      }
+      sources.add(i.manga.source);
+      // Category id 0 is Mihon's implicit "Default" bucket assigned to
+      // every uncategorised manga — skip it so a fresh library reads as
+      // "0 categories in use" instead of "1".
+      for (final c in i.categoryIds) {
+        if (c != 0) categories.add(c);
       }
     }
     return _Stats(
@@ -143,6 +198,9 @@ class _Stats {
       bookmarkedChapters: bookmarkedChapters,
       completedManga: completedManga,
       totalReadMs: readMs,
+      sourceCount: sources.length,
+      categoryCount: categories.length,
+      trackedManga: trackedManga,
     );
   }
 }
