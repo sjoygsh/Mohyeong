@@ -50,8 +50,17 @@ class MangaDetailsScreen extends ConsumerWidget {
             stream: chapterRepo.watchByMangaId(mangaId),
             builder: (context, chapSnap) {
               final chapters = chapSnap.data ?? const <Chapter>[];
-              return CustomScrollView(
-                slivers: [
+              final nextUnread = _pickNextUnread(chapters);
+              return Scaffold(
+                floatingActionButton: nextUnread == null
+                    ? null
+                    : _ContinueReadingFab(
+                        manga: manga,
+                        chapter: nextUnread,
+                        anyRead: chapters.any((c) => c.read),
+                      ),
+                body: CustomScrollView(
+                  slivers: [
                   SliverAppBar(
                     pinned: true,
                     expandedHeight: 280,
@@ -125,7 +134,8 @@ class MangaDetailsScreen extends ConsumerWidget {
                       ),
                     ),
                 ],
-              );
+              ),
+            );
             },
           );
         },
@@ -219,6 +229,54 @@ class _ChaptersSection extends ConsumerWidget {
                 ),
               ),
           ],
+        );
+      },
+    );
+  }
+}
+
+/// Returns the next chapter the user should read, or null if every
+/// chapter is already marked read (or the list is empty).
+///
+/// Mirrors Mihon's `getNextChapter` behaviour: order chapters by their
+/// source-supplied order, then pick the lowest one that hasn't been
+/// read yet. Excluded scanlators are NOT filtered here — Mihon shows
+/// the FAB even when filters hide chapters, and we want the same.
+Chapter? _pickNextUnread(List<Chapter> chapters) {
+  final unread = chapters.where((c) => !c.read).toList(growable: false);
+  if (unread.isEmpty) return null;
+  unread.sort((a, b) => a.sourceOrder.compareTo(b.sourceOrder));
+  return unread.first;
+}
+
+/// Floating action button that jumps straight into the next unread
+/// chapter. Label flips between "Start" (no chapters read yet) and
+/// "Continue" (at least one chapter is already read) — same wording as
+/// Mihon's manga details screen.
+class _ContinueReadingFab extends StatelessWidget {
+  const _ContinueReadingFab({
+    required this.manga,
+    required this.chapter,
+    required this.anyRead,
+  });
+
+  final Manga manga;
+  final Chapter chapter;
+  final bool anyRead;
+
+  @override
+  Widget build(BuildContext context) {
+    return FloatingActionButton.extended(
+      icon: const Icon(Icons.play_arrow),
+      label: Text(anyRead ? 'Continue' : 'Start'),
+      onPressed: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ReaderScreen(
+              mangaId: manga.id,
+              chapterId: chapter.id,
+            ),
+          ),
         );
       },
     );
