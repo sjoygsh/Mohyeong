@@ -8,6 +8,7 @@ import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_repository.dart';
 import '../../data/library/library_updater.dart';
 import '../../data/manga/manga_repository.dart';
+import '../../data/track/track_repository.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/library/model/library_item.dart';
 import '../../domain/manga/model/manga.dart';
@@ -28,6 +29,7 @@ class LibraryFilters {
     this.bookmarked = TriState.disabled,
     this.completed = TriState.disabled,
     this.downloaded = TriState.disabled,
+    this.tracked = TriState.disabled,
   });
 
   final TriState unread;
@@ -35,22 +37,29 @@ class LibraryFilters {
   final TriState bookmarked;
   final TriState completed;
   final TriState downloaded;
+  final TriState tracked;
 
   bool get isActive =>
       unread != TriState.disabled ||
       started != TriState.disabled ||
       bookmarked != TriState.disabled ||
       completed != TriState.disabled ||
-      downloaded != TriState.disabled;
+      downloaded != TriState.disabled ||
+      tracked != TriState.disabled;
 
   /// Mihon stores publication status as ints; `2` is "Completed".
   static const int _statusCompleted = 2;
 
   /// [downloadedKeys] is the set of `DownloadRepository.encodeMangaKey`
   /// results for every manga that has at least one fully-downloaded
-  /// chapter. Pass null when the Downloaded axis is disabled; the
-  /// predicate short-circuits in that case.
-  bool matches(LibraryItem item, {Set<int>? downloadedKeys}) {
+  /// chapter. [trackedMangaIds] is the set of mangaIds that have at
+  /// least one tracker row. Pass null when the corresponding axis is
+  /// disabled; the predicate short-circuits in that case.
+  bool matches(
+    LibraryItem item, {
+    Set<int>? downloadedKeys,
+    Set<int>? trackedMangaIds,
+  }) {
     if (!applyTriState(unread, () => item.unreadCount > 0)) return false;
     if (!applyTriState(started, () => item.readCount > 0)) return false;
     if (!applyTriState(bookmarked, () => item.bookmarkCount > 0)) return false;
@@ -66,6 +75,12 @@ class LibraryFilters {
       );
       if (!applyTriState(downloaded, () => keys.contains(key))) return false;
     }
+    if (tracked != TriState.disabled) {
+      final ids = trackedMangaIds ?? const <int>{};
+      if (!applyTriState(tracked, () => ids.contains(item.manga.id))) {
+        return false;
+      }
+    }
     return true;
   }
 
@@ -75,6 +90,7 @@ class LibraryFilters {
     TriState? bookmarked,
     TriState? completed,
     TriState? downloaded,
+    TriState? tracked,
   }) {
     return LibraryFilters(
       unread: unread ?? this.unread,
@@ -82,6 +98,7 @@ class LibraryFilters {
       bookmarked: bookmarked ?? this.bookmarked,
       completed: completed ?? this.completed,
       downloaded: downloaded ?? this.downloaded,
+      tracked: tracked ?? this.tracked,
     );
   }
 }
@@ -393,24 +410,33 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             stream: categoryRepo.watchAll(),
             builder: (context, catSnap) {
               final categories = catSnap.data ?? const <Category>[];
-              // Resolve the downloaded-keys set only when the Downloaded
-              // filter is active. The filesystem walk is cheap but not
-              // free, and most users never enable this axis.
-              if (_filters.downloaded != TriState.disabled) {
+              // Both the Downloaded and Tracked axes need async-resolved
+              // sets. Resolve them in parallel only when at least one is
+              // enabled — most users never enable either.
+              final needsDownloaded =
+                  _filters.downloaded != TriState.disabled;
+              final needsTracked = _filters.tracked != TriState.disabled;
+              if (needsDownloaded || needsTracked) {
                 final downloadRepo = ref.watch(downloadRepositoryProvider);
-                return FutureBuilder<Set<int>>(
-                  future: downloadRepo.listMangaWithAnyDownload(),
-                  builder: (context, dlSnap) {
-                    if (!dlSnap.hasData) {
+                final trackRepo = ref.watch(trackRepositoryProvider);
+                return FutureBuilder<_AsyncFilterSets>(
+                  future: _resolveAsyncFilterSets(
+                    downloadRepo: needsDownloaded ? downloadRepo : null,
+                    trackRepo: needsTracked ? trackRepo : null,
+                  ),
+                  builder: (context, snap) {
+                    if (!snap.hasData) {
                       return const Center(child: CircularProgressIndicator());
                     }
+                    final sets = snap.data!;
                     return _LibraryBody(
                       items: items,
                       categories: categories,
                       query: _query,
                       sort: sortPref,
                       filters: _filters,
-                      downloadedKeys: dlSnap.data,
+                      downloadedKeys: sets.downloadedKeys,
+                      trackedMangaIds: sets.trackedMangaIds,
                       displayMode: displayMode,
                       selectedCategoryId: _selectedCategoryId,
                       onCategoryChanged: (id) =>
@@ -430,6 +456,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 sort: sortPref,
                 filters: _filters,
                 downloadedKeys: null,
+                trackedMangaIds: null,
                 displayMode: displayMode,
                 selectedCategoryId: _selectedCategoryId,
                 onCategoryChanged: (id) =>
@@ -447,6 +474,32 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 }
 
+/// Holds the async-resolved sets that the filter predicate needs when
+/// either the Downloaded or Tracked axis is active. Either field may be
+/// null if its corresponding axis was disabled at resolve time.
+class _AsyncFilterSets {
+  const _AsyncFilterSets({this.downloadedKeys, this.trackedMangaIds});
+  final Set<int>? downloadedKeys;
+  final Set<int>? trackedMangaIds;
+}
+
+/// Resolves the two async sets in parallel. Skipped sides are returned
+/// as null rather than empty so the predicate can short-circuit.
+Future<_AsyncFilterSets> _resolveAsyncFilterSets({
+  DownloadRepository? downloadRepo,
+  TrackRepository? trackRepo,
+}) async {
+  final dlFut = downloadRepo?.listMangaWithAnyDownload();
+  final trFut = trackRepo?.getAll();
+  final dl = dlFut == null ? null : await dlFut;
+  final tracks = trFut == null ? null : await trFut;
+  return _AsyncFilterSets(
+    downloadedKeys: dl,
+    trackedMangaIds:
+        tracks == null ? null : {for (final t in tracks) t.mangaId},
+  );
+}
+
 class _LibraryBody extends StatelessWidget {
   const _LibraryBody({
     required this.items,
@@ -455,6 +508,7 @@ class _LibraryBody extends StatelessWidget {
     required this.sort,
     required this.filters,
     required this.downloadedKeys,
+    required this.trackedMangaIds,
     required this.displayMode,
     required this.selectedCategoryId,
     required this.onCategoryChanged,
@@ -470,6 +524,7 @@ class _LibraryBody extends StatelessWidget {
   final LibrarySortPref sort;
   final LibraryFilters filters;
   final Set<int>? downloadedKeys;
+  final Set<int>? trackedMangaIds;
   final LibraryDisplayMode displayMode;
   final int selectedCategoryId;
   final ValueChanged<int> onCategoryChanged;
@@ -520,8 +575,11 @@ class _LibraryBody extends StatelessWidget {
 
     final filtered = filters.isActive
         ? filteredByQuery
-            .where((it) =>
-                filters.matches(it, downloadedKeys: downloadedKeys))
+            .where((it) => filters.matches(
+                  it,
+                  downloadedKeys: downloadedKeys,
+                  trackedMangaIds: trackedMangaIds,
+                ))
             .toList(growable: false)
         : filteredByQuery;
 
@@ -1167,6 +1225,15 @@ class _LibraryFilterSheetState extends State<_LibraryFilterSheet> {
               onTap: () => setState(
                 () => _draft = _draft.copyWith(
                   downloaded: _cycle(_draft.downloaded),
+                ),
+              ),
+            ),
+            _FilterRow(
+              label: 'Tracked',
+              icon: _icon(_draft.tracked),
+              onTap: () => setState(
+                () => _draft = _draft.copyWith(
+                  tracked: _cycle(_draft.tracked),
                 ),
               ),
             ),
