@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/category/category_repository.dart';
+import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_repository.dart';
 import '../../data/library/library_updater.dart';
+import '../../data/manga/manga_repository.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/library/model/library_item.dart';
 import '../../domain/manga/model/manga.dart';
@@ -37,13 +39,151 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   bool _searching = false;
   bool _updating = false;
   int _selectedCategoryId = Category.uncategorizedId;
+  // Manga ids the user has multi-selected via long-press. Empty set
+  // means selection mode is off. Mihon shows a contextual app bar with
+  // bulk actions when at least one item is selected.
+  final Set<int> _selected = <int>{};
   late final TextEditingController _searchController =
       TextEditingController();
+
+  bool get _selecting => _selected.isNotEmpty;
+
+  void _toggleSelected(int mangaId) {
+    setState(() {
+      if (_selected.contains(mangaId)) {
+        _selected.remove(mangaId);
+      } else {
+        _selected.add(mangaId);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    if (_selected.isEmpty) return;
+    setState(() => _selected.clear());
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Contextual app bar shown while at least one card is selected.
+  /// Mirrors Mihon's library selection bar: back-arrow to dismiss,
+  /// count title, mark-read, mark-unread, move-to-category, delete.
+  AppBar _buildSelectionAppBar() {
+    return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        onPressed: _clearSelection,
+      ),
+      title: Text('${_selected.length}'),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.done_all),
+          tooltip: 'Mark as read',
+          onPressed: () => _selectionMarkRead(true),
+        ),
+        IconButton(
+          icon: const Icon(Icons.remove_done),
+          tooltip: 'Mark as unread',
+          onPressed: () => _selectionMarkRead(false),
+        ),
+        IconButton(
+          icon: const Icon(Icons.label_outline),
+          tooltip: 'Move to category',
+          onPressed: _selectionMoveToCategory,
+        ),
+        IconButton(
+          icon: const Icon(Icons.delete_outline),
+          tooltip: 'Remove from library',
+          onPressed: _selectionRemoveFromLibrary,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _selectionMarkRead(bool read) async {
+    final chapterRepo = ref.read(chapterRepositoryProvider);
+    final ids = _selected.toList(growable: false);
+    for (final id in ids) {
+      await chapterRepo.setReadForManga(id, read);
+    }
+    if (!mounted) return;
+    _clearSelection();
+  }
+
+  Future<void> _selectionRemoveFromLibrary() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Remove ${_selected.length} manga from library?',
+        ),
+        content: const Text(
+          'The manga rows stay in the database (read history kept) but '
+          'disappear from the Library tab.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final mangaRepo = ref.read(mangaRepositoryProvider);
+    final categoryRepo = ref.read(categoryRepositoryProvider);
+    final ids = _selected.toList(growable: false);
+    for (final id in ids) {
+      await mangaRepo.setFavorite(id, false);
+      // Clear category memberships so re-adding starts clean.
+      await categoryRepo.setCategoriesForManga(id, const <int>{});
+    }
+    if (!mounted) return;
+    _clearSelection();
+    messenger.showSnackBar(
+      SnackBar(content: Text('${ids.length} removed from library')),
+    );
+  }
+
+  Future<void> _selectionMoveToCategory() async {
+    final categoryRepo = ref.read(categoryRepositoryProvider);
+    final allCats = await categoryRepo.getAll();
+    final userCats = allCats
+        .where((c) => !c.isSystemCategory)
+        .toList(growable: false);
+    if (!mounted) return;
+    if (userCats.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No categories yet. Create one in More -> Categories first.',
+          ),
+        ),
+      );
+      return;
+    }
+    final selectedIds = await showModalBottomSheet<Set<int>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _BulkCategorySheet(categories: userCats),
+    );
+    if (selectedIds == null) return;
+    final ids = _selected.toList(growable: false);
+    for (final mangaId in ids) {
+      await categoryRepo.setCategoriesForManga(mangaId, selectedIds);
+    }
+    if (!mounted) return;
+    _clearSelection();
   }
 
   /// Foreground library update. Independent of the workmanager schedule.
@@ -75,7 +215,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final displayMode = ref.watch(libraryDisplayModeProvider);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: _selecting ? _buildSelectionAppBar() : AppBar(
         title: _searching
             ? TextField(
                 controller: _searchController,
@@ -187,6 +327,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 onCategoryChanged: (id) =>
                     setState(() => _selectedCategoryId = id),
                 onRefresh: _refreshLibrary,
+                selected: _selected,
+                selecting: _selecting,
+                onToggleSelected: _toggleSelected,
               );
             },
           );
@@ -206,6 +349,9 @@ class _LibraryBody extends StatelessWidget {
     required this.selectedCategoryId,
     required this.onCategoryChanged,
     required this.onRefresh,
+    required this.selected,
+    required this.selecting,
+    required this.onToggleSelected,
   });
 
   final List<LibraryItem> items;
@@ -216,6 +362,9 @@ class _LibraryBody extends StatelessWidget {
   final int selectedCategoryId;
   final ValueChanged<int> onCategoryChanged;
   final Future<void> Function() onRefresh;
+  final Set<int> selected;
+  final bool selecting;
+  final ValueChanged<int> onToggleSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -278,6 +427,9 @@ class _LibraryBody extends StatelessWidget {
                   child: _LibraryGrid(
                     items: sorted,
                     displayMode: displayMode,
+                    selected: selected,
+                    selecting: selecting,
+                    onToggleSelected: onToggleSelected,
                   ),
                 ),
         ),
@@ -356,10 +508,16 @@ class _LibraryGrid extends StatelessWidget {
   const _LibraryGrid({
     required this.items,
     required this.displayMode,
+    required this.selected,
+    required this.selecting,
+    required this.onToggleSelected,
   });
 
   final List<LibraryItem> items;
   final LibraryDisplayMode displayMode;
+  final Set<int> selected;
+  final bool selecting;
+  final ValueChanged<int> onToggleSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -382,6 +540,9 @@ class _LibraryGrid extends StatelessWidget {
       itemBuilder: (context, i) => _MangaCard(
         item: items[i],
         displayMode: displayMode,
+        isSelected: selected.contains(items[i].manga.id),
+        selecting: selecting,
+        onToggleSelected: onToggleSelected,
       ),
     );
   }
@@ -391,10 +552,16 @@ class _MangaCard extends ConsumerWidget {
   const _MangaCard({
     required this.item,
     required this.displayMode,
+    required this.isSelected,
+    required this.selecting,
+    required this.onToggleSelected,
   });
 
   final LibraryItem item;
   final LibraryDisplayMode displayMode;
+  final bool isSelected;
+  final bool selecting;
+  final ValueChanged<int> onToggleSelected;
 
   void _open(BuildContext context) {
     Navigator.of(context).push(
@@ -412,11 +579,25 @@ class _MangaCard extends ConsumerWidget {
     final showTitleBelow =
         displayMode == LibraryDisplayMode.comfortableGrid;
     final downloadRepo = ref.watch(downloadRepositoryProvider);
+    final scheme = Theme.of(context).colorScheme;
 
     return Card(
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: isSelected
+            ? BorderSide(color: scheme.primary, width: 3)
+            : BorderSide.none,
+      ),
       child: InkWell(
-        onTap: () => _open(context),
+        onTap: () {
+          if (selecting) {
+            onToggleSelected(manga.id);
+          } else {
+            _open(context);
+          }
+        },
+        onLongPress: () => onToggleSelected(manga.id),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -457,6 +638,21 @@ class _MangaCard extends ConsumerWidget {
                       right: 0,
                       bottom: 0,
                       child: _CoverTitleOverlay(title: manga.title),
+                    ),
+                  // Selection scrim + check icon. Drawn on top of every
+                  // other overlay so the selection state is obvious.
+                  if (isSelected)
+                    Positioned.fill(
+                      child: ColoredBox(
+                        color: scheme.primary.withValues(alpha: 0.35),
+                        child: Center(
+                          child: Icon(
+                            Icons.check_circle,
+                            size: 36,
+                            color: scheme.onPrimary,
+                          ),
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -558,6 +754,83 @@ class _CoverTitleOverlay extends StatelessWidget {
           height: 1.2,
           fontWeight: FontWeight.w500,
           shadows: [Shadow(blurRadius: 4, color: Colors.black)],
+        ),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet for the bulk "Move to category" action. Returns the set
+/// of category ids the user picked (empty Set means "no categories" —
+/// the manga ends up in Uncategorized). Cancel returns null so the
+/// caller leaves memberships untouched.
+class _BulkCategorySheet extends StatefulWidget {
+  const _BulkCategorySheet({required this.categories});
+
+  final List<Category> categories;
+
+  @override
+  State<_BulkCategorySheet> createState() => _BulkCategorySheetState();
+}
+
+class _BulkCategorySheetState extends State<_BulkCategorySheet> {
+  final Set<int> _picked = <int>{};
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Text(
+                'Move to category',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: widget.categories.map((c) {
+                  final checked = _picked.contains(c.id);
+                  return CheckboxListTile(
+                    value: checked,
+                    onChanged: (v) {
+                      setState(() {
+                        if (v == true) {
+                          _picked.add(c.id);
+                        } else {
+                          _picked.remove(c.id);
+                        }
+                      });
+                    },
+                    title: Text(c.name),
+                  );
+                }).toList(growable: false),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(_picked),
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

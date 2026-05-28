@@ -42,6 +42,20 @@ class ChapterRepository {
     ));
   }
 
+  /// Bulk-set the read flag for every chapter belonging to [mangaId].
+  /// When marking unread, also resets `last_page_read` to 0 so the
+  /// reader doesn't jump to a now-meaningless position. Used by the
+  /// library multi-select "mark all read/unread" action.
+  Future<void> setReadForManga(int mangaId, bool read) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.chapters)..where((t) => t.mangaId.equals(mangaId)))
+        .write(db.ChaptersCompanion(
+      read: Value(read ? 1 : 0),
+      lastPageRead: read ? const Value.absent() : const Value(0),
+      lastModifiedAt: Value(nowMs),
+    ));
+  }
+
   Future<void> setBookmark(int chapterId, bool bookmark) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     await (_db.update(_db.chapters)..where((t) => t.id.equals(chapterId)))
