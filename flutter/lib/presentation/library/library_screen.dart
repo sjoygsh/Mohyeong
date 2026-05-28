@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/category/category_repository.dart';
+import '../../data/download/download_repository.dart';
 import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_repository.dart';
 import '../../data/library/library_updater.dart';
@@ -386,7 +387,7 @@ class _LibraryGrid extends StatelessWidget {
   }
 }
 
-class _MangaCard extends StatelessWidget {
+class _MangaCard extends ConsumerWidget {
   const _MangaCard({
     required this.item,
     required this.displayMode,
@@ -404,12 +405,13 @@ class _MangaCard extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final manga = item.manga;
     final showCoverOverlayTitle =
         displayMode == LibraryDisplayMode.compactGrid;
     final showTitleBelow =
         displayMode == LibraryDisplayMode.comfortableGrid;
+    final downloadRepo = ref.watch(downloadRepositoryProvider);
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -430,6 +432,25 @@ class _MangaCard extends StatelessWidget {
                       left: 4,
                       child: _UnreadBadge(count: item.unreadCount),
                     ),
+                  // Top-end badge: count of fully-downloaded chapters.
+                  // Counted via filesystem probe; the future is
+                  // re-issued whenever the card rebuilds (so adding a
+                  // download then navigating away & back picks it up).
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: FutureBuilder<int>(
+                      future: downloadRepo.countDownloadedForManga(
+                        manga.source,
+                        manga.id,
+                      ),
+                      builder: (context, snap) {
+                        final n = snap.data ?? 0;
+                        if (n <= 0) return const SizedBox.shrink();
+                        return _DownloadedBadge(count: n);
+                      },
+                    ),
+                  ),
                   if (showCoverOverlayTitle)
                     Positioned(
                       left: 0,
@@ -475,6 +496,35 @@ class _UnreadBadge extends StatelessWidget {
         '$count',
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: scheme.onPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
+}
+
+/// Top-end badge showing the number of fully-downloaded chapters. Used
+/// alongside the unread badge so the cover can advertise both states
+/// without competing for the same corner. Mihon's badge palette: green
+/// tertiary for downloaded, primary for unread.
+class _DownloadedBadge extends StatelessWidget {
+  const _DownloadedBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.tertiary,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '$count',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: scheme.onTertiary,
               fontWeight: FontWeight.w600,
             ),
       ),

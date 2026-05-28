@@ -74,6 +74,26 @@ class DownloadRepository {
     return marker.exists();
   }
 
+  /// Number of fully-downloaded chapters for [mangaId]. Walks the
+  /// `<root>/<sourceId>/<mangaId>/` directory and counts subdirectories
+  /// that carry a `.done` marker. Returns 0 if the manga has no
+  /// downloads directory at all.
+  Future<int> countDownloadedForManga(int sourceId, int mangaId) async {
+    final root = await _root();
+    final mangaDir = Directory(
+      p.join(root.path, sourceId.toString(), mangaId.toString()),
+    );
+    if (!await mangaDir.exists()) return 0;
+    var count = 0;
+    await for (final entity in mangaDir.list()) {
+      if (entity is Directory) {
+        final marker = File(p.join(entity.path, '.done'));
+        if (await marker.exists()) count++;
+      }
+    }
+    return count;
+  }
+
   /// Returns the list of locally-cached page paths for a downloaded chapter,
   /// or null if the chapter isn't fully downloaded.
   Future<List<String>?> localPagePaths(
