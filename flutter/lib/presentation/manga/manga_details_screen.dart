@@ -12,12 +12,15 @@ import '../../data/manga/excluded_scanlators_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/source_repository.dart';
+import '../../data/track/track_repository.dart';
 import '../../data/track/track_updater.dart';
+import '../../data/track/tracker_registry.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../../domain/source/model/source.dart';
+import '../../domain/track/model/track.dart';
 import '../common/source_image.dart';
 import '../migration/migration_search_screen.dart';
 import '../reader/reader_screen.dart';
@@ -111,6 +114,8 @@ class MangaDetailsScreen extends ConsumerWidget {
                       onOpenInBrowser: () => _openInBrowser(context, ref, manga),
                     ),
                   ),
+                  if (manga.favorite)
+                    SliverToBoxAdapter(child: _TrackerPreviewBar(manga: manga)),
                   SliverToBoxAdapter(child: _DescriptionAndTags(manga: manga)),
                   if (chapSnap.hasError)
                     SliverToBoxAdapter(child: _Error(error: chapSnap.error!))
@@ -861,6 +866,69 @@ class _ActionButton extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Horizontal chip strip showing each tracker bound to this manga, with
+/// its chapter progress and score (when non-zero). Empty when no tracks
+/// exist — costs a streaming DB query per detail open. Tapping any chip
+/// opens the same tracking sheet as the Track action button so the user
+/// can edit progress/score in place.
+class _TrackerPreviewBar extends ConsumerWidget {
+  const _TrackerPreviewBar({required this.manga});
+
+  final Manga manga;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final trackRepo = ref.watch(trackRepositoryProvider);
+    final registry = ref.watch(trackerRegistryProvider);
+    return StreamBuilder<List<Track>>(
+      stream: trackRepo.watchByMangaId(manga.id),
+      builder: (context, snap) {
+        final tracks = snap.data ?? const <Track>[];
+        if (tracks.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: SizedBox(
+            height: 36,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: tracks.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 6),
+              itemBuilder: (context, i) {
+                final t = tracks[i];
+                final tracker = registry.byId(t.trackerId);
+                final name = tracker?.name ?? 'Tracker ${t.trackerId}';
+                return ActionChip(
+                  avatar: CircleAvatar(
+                    child: Text(
+                      name.substring(0, 1),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  label: Text(_chipLabel(name, t)),
+                  onPressed: () => _openTrackingSheet(context, manga),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// "AniList · 12/24 · ★8" — drops the score segment when zero (which
+  /// is how Mihon's API represents "no score set" for every tracker).
+  static String _chipLabel(String name, Track t) {
+    final progress = t.totalChapters > 0
+        ? '${t.lastChapterRead.toInt()}/${t.totalChapters}'
+        : '${t.lastChapterRead.toInt()}';
+    if (t.score <= 0) return '$name · $progress';
+    final score = t.score == t.score.roundToDouble()
+        ? t.score.toInt().toString()
+        : t.score.toStringAsFixed(1);
+    return '$name · $progress · ★$score';
   }
 }
 
