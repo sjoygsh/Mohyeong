@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/library/library_updater.dart';
+import '../../data/updates/updates_filter_prefs.dart';
 import '../../data/updates/updates_repository.dart';
+import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
 
@@ -48,10 +50,23 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
   @override
   Widget build(BuildContext context) {
     final repo = ref.watch(updatesRepositoryProvider);
+    final filters = ref.watch(updatesFiltersProvider);
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Updates'),
         actions: [
+          IconButton(
+            icon: Icon(
+              Icons.filter_list,
+              color: filters.isActive ? scheme.primary : null,
+            ),
+            tooltip: 'Filter updates',
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (_) => const _UpdatesFilterDialog(),
+            ),
+          ),
           IconButton(
             icon: _updating
                 ? const SizedBox(
@@ -75,23 +90,121 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           final updates = snapshot.data!;
+          final visible = updates.where((u) {
+            if (!applyTriState(filters.unread, () => !u.read)) return false;
+            if (!applyTriState(filters.bookmark, () => u.bookmark)) {
+              return false;
+            }
+            if (filters.hideMutedScanlators && u.isScanlatorMuted) {
+              return false;
+            }
+            return true;
+          }).toList(growable: false);
           return RefreshIndicator(
             onRefresh: _refresh,
-            child: updates.isEmpty
+            child: visible.isEmpty
                 ? ListView(
                     // ListView so RefreshIndicator still triggers on overscroll.
                     physics: const AlwaysScrollableScrollPhysics(),
-                    children: const [_Message(text: 'No new chapters.')],
+                    children: [
+                      _Message(
+                        text: filters.isActive
+                            ? 'No updates match the current filter.'
+                            : 'No new chapters.',
+                      ),
+                    ],
                   )
                 : ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: updates.length,
+                    itemCount: visible.length,
                     itemBuilder: (context, i) =>
-                        _UpdateTile(update: updates[i]),
+                        _UpdateTile(update: visible[i]),
                   ),
           );
         },
       ),
+    );
+  }
+}
+
+/// Three-axis filter dialog: unread (tri), bookmark (tri), and a flip
+/// for hiding muted-scanlator rows entirely. Each tri-state cycles
+/// disabled → enabledIs → enabledNot → disabled on tap to keep the
+/// dialog compact (Mihon uses three icons; we use a single rotating
+/// `Icon` for the same effect).
+class _UpdatesFilterDialog extends ConsumerWidget {
+  const _UpdatesFilterDialog();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final filters = ref.watch(updatesFiltersProvider);
+    final notifier = ref.read(updatesFiltersProvider.notifier);
+
+    TriState next(TriState v) {
+      switch (v) {
+        case TriState.disabled:
+          return TriState.enabledIs;
+        case TriState.enabledIs:
+          return TriState.enabledNot;
+        case TriState.enabledNot:
+          return TriState.disabled;
+      }
+    }
+
+    Widget triRow(
+      String label,
+      TriState value,
+      ValueChanged<TriState> onChanged,
+    ) {
+      IconData icon;
+      String stateText;
+      switch (value) {
+        case TriState.disabled:
+          icon = Icons.check_box_outline_blank;
+          stateText = 'Off';
+        case TriState.enabledIs:
+          icon = Icons.check_box;
+          stateText = 'Include';
+        case TriState.enabledNot:
+          icon = Icons.disabled_by_default;
+          stateText = 'Exclude';
+      }
+      return ListTile(
+        leading: Icon(icon),
+        title: Text(label),
+        subtitle: Text(stateText),
+        onTap: () => onChanged(next(value)),
+      );
+    }
+
+    return AlertDialog(
+      title: const Text('Filter updates'),
+      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            triRow('Unread', filters.unread, notifier.setUnread),
+            triRow('Bookmarked', filters.bookmark, notifier.setBookmark),
+            const Divider(height: 1),
+            SwitchListTile(
+              title: const Text('Hide muted-scanlator rows'),
+              subtitle: const Text(
+                'When off, muted rows still appear with strikethrough.',
+              ),
+              value: filters.hideMutedScanlators,
+              onChanged: notifier.setHideMutedScanlators,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
     );
   }
 }
