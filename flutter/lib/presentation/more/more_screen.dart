@@ -5,6 +5,7 @@ import '../backup/backup_screen.dart';
 import '../categories/categories_screen.dart';
 import '../downloads/download_queue_screen.dart';
 import '../settings/settings_screen.dart';
+import '../stats/stats_screen.dart';
 import '../sync/sync_settings_screen.dart';
 
 /// "More" hub -- equivalent to the Kotlin MoreTab. Routes to Settings,
@@ -25,6 +26,11 @@ class MoreScreen extends StatelessWidget {
         icon: Icons.category_outlined,
         label: 'Categories',
         builder: (_) => const CategoriesScreen(),
+      ),
+      _MoreEntry(
+        icon: Icons.bar_chart_outlined,
+        label: 'Statistics',
+        builder: (_) => const StatsScreen(),
       ),
       _MoreEntry(
         icon: Icons.cloud_sync_outlined,
