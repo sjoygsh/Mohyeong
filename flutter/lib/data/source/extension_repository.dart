@@ -121,3 +121,26 @@ final extensionRepositoryProvider = Provider<ExtensionRepository>((ref) {
     'has been initialised.',
   );
 });
+
+/// Map of `int` source id → language code, derived from the installed
+/// extension list. Mihon stores `Manga.source` as a 64-bit int but the
+/// extension manifest ids are strings; we parse on the way in. Used by
+/// the library language badge — looking it up per card via a stream
+/// keeps the badge reactive when the user installs/uninstalls
+/// extensions, without each card re-walking the manifest directory.
+///
+/// LocalSource (`'0'`) is intentionally absent from the map: it has no
+/// meaningful language ('all'), so the language badge won't render on
+/// local-source cards.
+final installedSourceLangsProvider =
+    StreamProvider<Map<int, String>>((ref) async* {
+  final repo = ref.watch(extensionRepositoryProvider);
+  await for (final list in repo.watchInstalled()) {
+    final m = <int, String>{};
+    for (final e in list) {
+      final id = int.tryParse(e.id);
+      if (id != null) m[id] = e.lang;
+    }
+    yield m;
+  }
+});

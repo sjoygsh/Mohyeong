@@ -8,6 +8,8 @@ import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_repository.dart';
 import '../../data/library/library_updater.dart';
 import '../../data/manga/manga_repository.dart';
+import '../../data/source/extension_repository.dart';
+import '../../data/source/local_source.dart';
 import '../../data/track/track_repository.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/library/model/library_item.dart';
@@ -795,6 +797,16 @@ class _MangaListTile extends ConsumerWidget {
     final manga = item.manga;
     final scheme = Theme.of(context).colorScheme;
     final downloadRepo = ref.watch(downloadRepositoryProvider);
+    final showUnreadBadge = ref.watch(displayUnreadBadgeProvider);
+    final showDownloadBadge = ref.watch(displayDownloadBadgeProvider);
+    final showLocalBadge = ref.watch(displayLocalBadgeProvider);
+    final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
+    final isLocal = manga.source.toString() == LocalSource.sourceId;
+    final sourceLangs = showLanguageBadge
+        ? ref.watch(installedSourceLangsProvider).valueOrNull
+        : null;
+    final lang =
+        (sourceLangs != null && !isLocal) ? sourceLangs[manga.source] : null;
     return InkWell(
       onTap: () {
         if (selecting) {
@@ -846,25 +858,36 @@ class _MangaListTile extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 8),
-            if (item.unreadCount > 0)
+            if (showLocalBadge && isLocal)
+              const Padding(
+                padding: EdgeInsets.only(left: 4),
+                child: _TextChip(text: 'Local'),
+              ),
+            if (lang != null && lang.isNotEmpty && lang != 'all')
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: _TextChip(text: lang.toUpperCase()),
+              ),
+            if (showUnreadBadge && item.unreadCount > 0)
               Padding(
                 padding: const EdgeInsets.only(left: 4),
                 child: _UnreadBadge(count: item.unreadCount),
               ),
-            FutureBuilder<int>(
-              future: downloadRepo.countDownloadedForManga(
-                manga.source,
-                manga.id,
+            if (showDownloadBadge)
+              FutureBuilder<int>(
+                future: downloadRepo.countDownloadedForManga(
+                  manga.source,
+                  manga.id,
+                ),
+                builder: (context, snap) {
+                  final n = snap.data ?? 0;
+                  if (n <= 0) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: _DownloadedBadge(count: n),
+                  );
+                },
               ),
-              builder: (context, snap) {
-                final n = snap.data ?? 0;
-                if (n <= 0) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(left: 4),
-                  child: _DownloadedBadge(count: n),
-                );
-              },
-            ),
             if (isSelected)
               Padding(
                 padding: const EdgeInsets.only(left: 4),
@@ -909,6 +932,26 @@ class _MangaCard extends ConsumerWidget {
         displayMode == LibraryDisplayMode.comfortableGrid;
     final downloadRepo = ref.watch(downloadRepositoryProvider);
     final scheme = Theme.of(context).colorScheme;
+    final showUnreadBadge = ref.watch(displayUnreadBadgeProvider);
+    final showDownloadBadge = ref.watch(displayDownloadBadgeProvider);
+    final showLocalBadge = ref.watch(displayLocalBadgeProvider);
+    final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
+    final isLocal = manga.source.toString() == LocalSource.sourceId;
+    final sourceLangs = showLanguageBadge
+        ? ref.watch(installedSourceLangsProvider).valueOrNull
+        : null;
+    final lang =
+        (sourceLangs != null && !isLocal) ? sourceLangs[manga.source] : null;
+    // Build the top-left badge column: unread on top, then Local/lang
+    // chips below it. Each entry is omitted when its toggle is off so
+    // the column collapses cleanly.
+    final topLeftChildren = <Widget>[
+      if (showUnreadBadge && item.unreadCount > 0)
+        _UnreadBadge(count: item.unreadCount),
+      if (showLocalBadge && isLocal) const _TextChip(text: 'Local'),
+      if (lang != null && lang.isNotEmpty && lang != 'all')
+        _TextChip(text: lang.toUpperCase()),
+    ];
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -935,32 +978,42 @@ class _MangaCard extends ConsumerWidget {
                 fit: StackFit.expand,
                 children: [
                   _Cover(manga: manga),
-                  // Top-start badge: unread count.
-                  if (item.unreadCount > 0)
+                  // Top-start badge column: unread count, then Local /
+                  // language chips stacked beneath.
+                  if (topLeftChildren.isNotEmpty)
                     Positioned(
                       top: 4,
                       left: 4,
-                      child: _UnreadBadge(count: item.unreadCount),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (var i = 0; i < topLeftChildren.length; i++) ...[
+                            if (i > 0) const SizedBox(height: 2),
+                            topLeftChildren[i],
+                          ],
+                        ],
+                      ),
                     ),
                   // Top-end badge: count of fully-downloaded chapters.
                   // Counted via filesystem probe; the future is
                   // re-issued whenever the card rebuilds (so adding a
                   // download then navigating away & back picks it up).
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: FutureBuilder<int>(
-                      future: downloadRepo.countDownloadedForManga(
-                        manga.source,
-                        manga.id,
+                  if (showDownloadBadge)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: FutureBuilder<int>(
+                        future: downloadRepo.countDownloadedForManga(
+                          manga.source,
+                          manga.id,
+                        ),
+                        builder: (context, snap) {
+                          final n = snap.data ?? 0;
+                          if (n <= 0) return const SizedBox.shrink();
+                          return _DownloadedBadge(count: n);
+                        },
                       ),
-                      builder: (context, snap) {
-                        final n = snap.data ?? 0;
-                        if (n <= 0) return const SizedBox.shrink();
-                        return _DownloadedBadge(count: n);
-                      },
                     ),
-                  ),
                   if (showCoverOverlayTitle)
                     Positioned(
                       left: 0,
@@ -1050,6 +1103,35 @@ class _DownloadedBadge extends StatelessWidget {
         '$count',
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: scheme.onTertiary,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
+}
+
+/// Compact label chip used for the Local / language-code badges.
+/// Visually distinct from the unread/downloaded count badges (uses the
+/// theme's `secondary` so the count badges stay the primary signal),
+/// but the same rounded-rect padding so they line up in a column.
+class _TextChip extends StatelessWidget {
+  const _TextChip({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.secondary,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: scheme.onSecondary,
               fontWeight: FontWeight.w600,
             ),
       ),

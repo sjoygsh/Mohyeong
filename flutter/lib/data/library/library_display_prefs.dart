@@ -268,3 +268,89 @@ final showMostReadCarouselProvider =
     NotifierProvider<ShowMostReadCarouselNotifier, bool>(
   ShowMostReadCarouselNotifier.new,
 );
+
+/// Boolean Notifier persisted to SharedPreferences under [_key]. Used as
+/// the underlying type for every library-badge visibility toggle below —
+/// each subclass only differs in its [_key] and [_default]. Mirrors
+/// Mihon's `LibraryPreferences` badge entries 1:1 so backups carry over.
+abstract class _BoolPrefNotifier extends Notifier<bool> {
+  String get _key;
+  bool get _default;
+
+  @override
+  bool build() {
+    _loadFromDisk();
+    return _default;
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getBool(_key);
+    if (stored != null && stored != state) state = stored;
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    state = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, enabled);
+  }
+}
+
+/// "Show downloaded count badge on library cards". Off by default in
+/// Mihon — the per-card filesystem probe isn't free, and most users only
+/// want it when they're triaging offline reads.
+class DisplayDownloadBadgeNotifier extends _BoolPrefNotifier {
+  @override
+  String get _key => 'display_download_badge';
+  @override
+  bool get _default => false;
+}
+
+/// "Show unread count badge on library cards". On by default — the
+/// unread count is the headline number on the Library tab.
+class DisplayUnreadBadgeNotifier extends _BoolPrefNotifier {
+  @override
+  String get _key => 'display_unread_badge';
+  @override
+  bool get _default => true;
+}
+
+/// "Show 'Local' chip on cards backed by the built-in Local source"
+/// (source id 0). On by default so users can tell side-loaded series
+/// apart from extension-fetched ones at a glance.
+class DisplayLocalBadgeNotifier extends _BoolPrefNotifier {
+  @override
+  String get _key => 'display_local_badge';
+  @override
+  bool get _default => true;
+}
+
+/// "Show source language code chip on library cards" — useful when the
+/// user follows series across several language editions. Off by default
+/// to keep covers clean.
+class DisplayLanguageBadgeNotifier extends _BoolPrefNotifier {
+  @override
+  String get _key => 'display_language_badge';
+  @override
+  bool get _default => false;
+}
+
+final displayDownloadBadgeProvider =
+    NotifierProvider<DisplayDownloadBadgeNotifier, bool>(
+  DisplayDownloadBadgeNotifier.new,
+);
+
+final displayUnreadBadgeProvider =
+    NotifierProvider<DisplayUnreadBadgeNotifier, bool>(
+  DisplayUnreadBadgeNotifier.new,
+);
+
+final displayLocalBadgeProvider =
+    NotifierProvider<DisplayLocalBadgeNotifier, bool>(
+  DisplayLocalBadgeNotifier.new,
+);
+
+final displayLanguageBadgeProvider =
+    NotifierProvider<DisplayLanguageBadgeNotifier, bool>(
+  DisplayLanguageBadgeNotifier.new,
+);
