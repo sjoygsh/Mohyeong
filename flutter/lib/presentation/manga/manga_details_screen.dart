@@ -27,6 +27,7 @@ import '../reader/reader_screen.dart';
 import '../track/manga_tracking_sheet.dart';
 import 'chapter_settings_sheet.dart';
 import 'linked_manga_sheet.dart';
+import 'manga_cover_viewer.dart';
 import 'manga_notes_screen.dart';
 import 'scanlator_filter_sheet.dart';
 
@@ -605,7 +606,15 @@ class _MangaInfoBox extends ConsumerWidget {
                 child: SizedBox(
                   width: 110,
                   height: 155, // ~book aspect ratio 1:1.41
-                  child: _CoverImage(url: manga.thumbnailUrl),
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => MangaCoverViewer(manga: manga),
+                        fullscreenDialog: true,
+                      ),
+                    ),
+                    child: _CoverImage(url: manga.thumbnailUrl),
+                  ),
                 ),
               ),
               const SizedBox(width: 16),
