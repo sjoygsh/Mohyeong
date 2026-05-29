@@ -184,6 +184,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           tooltip: 'Move to category',
           onPressed: _selectionMoveToCategory,
         ),
+        PopupMenuButton<int?>(
+          icon: const Icon(Icons.download_outlined),
+          tooltip: 'Download chapters',
+          onSelected: _selectionDownloadNext,
+          itemBuilder: (_) => const [
+            PopupMenuItem<int?>(value: 1, child: Text('Next 1 chapter')),
+            PopupMenuItem<int?>(value: 5, child: Text('Next 5 chapters')),
+            PopupMenuItem<int?>(value: 10, child: Text('Next 10 chapters')),
+            PopupMenuItem<int?>(value: 25, child: Text('Next 25 chapters')),
+            PopupMenuItem<int?>(value: null, child: Text('All unread chapters')),
+          ],
+        ),
         IconButton(
           icon: const Icon(Icons.delete_outline),
           tooltip: 'Remove from library',
@@ -191,6 +203,39 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ),
       ],
     );
+  }
+
+  /// Bulk download for selected manga: for each, fetch its chapters, sort
+  /// by `sourceOrder` ascending (matches `_pickNextUnread`), take the
+  /// first [count] unread (null = all) and enqueue each. Relies on
+  /// `DownloadRepository.enqueue` being idempotent for already-queued or
+  /// already-downloaded chapters.
+  Future<void> _selectionDownloadNext(int? count) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final mangaRepo = ref.read(mangaRepositoryProvider);
+    final chapterRepo = ref.read(chapterRepositoryProvider);
+    final downloadRepo = ref.read(downloadRepositoryProvider);
+    final ids = _selected.toList(growable: false);
+    var enqueued = 0;
+    for (final id in ids) {
+      final manga = await mangaRepo.getById(id);
+      if (manga == null) continue;
+      final chapters = await chapterRepo.getByMangaId(id);
+      final unread = chapters.where((c) => !c.read).toList()
+        ..sort((a, b) => a.sourceOrder.compareTo(b.sourceOrder));
+      final take = count == null ? unread : unread.take(count).toList();
+      for (final c in take) {
+        await downloadRepo.enqueue(manga, c);
+        enqueued++;
+      }
+    }
+    if (!mounted) return;
+    _clearSelection();
+    messenger.showSnackBar(SnackBar(
+      content: Text(enqueued == 0
+          ? 'No unread chapters to download.'
+          : 'Enqueued $enqueued chapter${enqueued == 1 ? '' : 's'}.'),
+    ));
   }
 
   Future<void> _selectionMarkRead(bool read) async {
