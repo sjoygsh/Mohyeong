@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/manga/manga_repository.dart';
+import '../../data/source/browse_preferences.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
 import '../../domain/source/model/source_manga.dart';
@@ -226,7 +227,19 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
                     ),
                   );
                 }
-                final items = snap.data!.mangas;
+                var items = snap.data!.mangas;
+                final sourceIdInt = int.tryParse(widget.sourceId);
+                if (ref.watch(hideInLibraryItemsProvider) &&
+                    sourceIdInt != null) {
+                  final favoritedUrls = ref
+                      .watch(favoritedUrlsForSourceProvider(sourceIdInt))
+                      .valueOrNull;
+                  if (favoritedUrls != null) {
+                    items = items
+                        .where((m) => !favoritedUrls.contains(m.url))
+                        .toList(growable: false);
+                  }
+                }
                 if (items.isEmpty) {
                   return Center(
                     child: Text(

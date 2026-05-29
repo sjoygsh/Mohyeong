@@ -13,7 +13,7 @@ import '../manga/manga_details_screen.dart';
 /// URLs of the manga already favourited for a given source id. Used to
 /// drop in-library results from the browse grid when the
 /// `hideInLibraryItems` preference is on.
-final _favoritedUrlsForSourceProvider =
+final favoritedUrlsForSourceProvider =
     FutureProvider.family<Set<String>, int>((ref, sourceId) async {
   final repo = ref.watch(mangaRepositoryProvider);
   final favorites = await repo.getFavoritesBySource(sourceId);
@@ -293,7 +293,7 @@ class _MangaGrid extends ConsumerWidget {
     List<SourceManga> items = this.items;
     if (hideInLibrary && sourceIdInt != null) {
       final favoritedUrls = ref
-          .watch(_favoritedUrlsForSourceProvider(sourceIdInt))
+          .watch(favoritedUrlsForSourceProvider(sourceIdInt))
           .valueOrNull;
       if (favoritedUrls != null) {
         items = items
