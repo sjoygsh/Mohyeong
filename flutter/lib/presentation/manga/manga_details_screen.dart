@@ -456,6 +456,11 @@ class _ChaptersSection extends ConsumerWidget {
               isSelected: selectedIds.contains(sorted[i].id),
               selecting: selectedIds.isNotEmpty,
               onToggleSelected: onToggleSelected,
+              // Pass the full (unfiltered, unsorted) chapter list so the
+              // "Mark previous as read" affordance acts over every chapter
+              // earlier in reading order, not just the ones the current
+              // filter happens to show.
+              allChapters: chapters,
             ),
           ),
       ],
@@ -1582,6 +1587,7 @@ class _ChapterTile extends ConsumerStatefulWidget {
     required this.isSelected,
     required this.selecting,
     required this.onToggleSelected,
+    required this.allChapters,
   });
 
   final Manga manga;
@@ -1591,6 +1597,7 @@ class _ChapterTile extends ConsumerStatefulWidget {
   final bool isSelected;
   final bool selecting;
   final ValueChanged<int> onToggleSelected;
+  final List<Chapter> allChapters;
 
   @override
   ConsumerState<_ChapterTile> createState() => _ChapterTileState();
@@ -1719,6 +1726,34 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                   );
                 case _ChapterAction.markUnread:
                   chapterRepo.setRead(chapter.id, false);
+                case _ChapterAction.markPreviousAsRead:
+                  () async {
+                    // Strict less-than: the current chapter is not
+                    // included (Mihon parity — that's what
+                    // `markPreviousChapterRead` does). Skip rows already
+                    // marked read to avoid pointless writes.
+                    final earlier = widget.allChapters
+                        .where((c) =>
+                            c.chapterNumber < chapter.chapterNumber && !c.read)
+                        .toList(growable: false);
+                    for (final c in earlier) {
+                      await chapterRepo.setRead(c.id, true);
+                    }
+                    if (earlier.isNotEmpty) {
+                      // Push the highest chapter number we just marked
+                      // (which is strictly less than `chapter`) to
+                      // trackers so progress stays consistent.
+                      final highest = earlier
+                          .map((c) => c.chapterNumber)
+                          .reduce((a, b) => a > b ? a : b);
+                      unawaited(
+                        ref.read(trackUpdaterProvider).setLastChapterRead(
+                              mangaId: chapter.mangaId,
+                              chapterNumber: highest,
+                            ),
+                      );
+                    }
+                  }();
                 case _ChapterAction.bookmark:
                   chapterRepo.setBookmark(chapter.id, true);
                 case _ChapterAction.unbookmark:
@@ -1758,6 +1793,12 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                 const PopupMenuItem(
                   value: _ChapterAction.markUnread,
                   child: Text('Mark as unread'),
+                ),
+              if (widget.allChapters.any((c) =>
+                  c.chapterNumber < chapter.chapterNumber && !c.read))
+                const PopupMenuItem(
+                  value: _ChapterAction.markPreviousAsRead,
+                  child: Text('Mark previous as read'),
                 ),
               if (!chapter.bookmark)
                 const PopupMenuItem(
@@ -1826,6 +1867,7 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
 enum _ChapterAction {
   markRead,
   markUnread,
+  markPreviousAsRead,
   bookmark,
   unbookmark,
   editBookmarkNote,
