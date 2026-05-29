@@ -435,6 +435,19 @@ class _ChaptersSection extends ConsumerWidget {
           mangaForSheet: manga,
           availableScanlators: availableScanlators,
           excludedScanlators: excluded,
+          unreadCount: chapters.where((c) => !c.read).length,
+          onBulkDownload: (count) {
+            // Pick the earliest unread chapters in reading order. Match
+            // `_pickNextUnread`'s ascending-sourceOrder convention so
+            // "next" lines up with the Continue Reading FAB.
+            final unread = chapters.where((c) => !c.read).toList()
+              ..sort((a, b) => a.sourceOrder.compareTo(b.sourceOrder));
+            final take =
+                count == null ? unread : unread.take(count).toList();
+            for (final c in take) {
+              unawaited(downloadRepo.enqueue(manga, c));
+            }
+          },
         ),
         if (sorted.isEmpty)
           const Padding(
@@ -1498,6 +1511,8 @@ class _ChapterListHeader extends StatelessWidget {
     required this.mangaForSheet,
     this.availableScanlators = const {},
     this.excludedScanlators = const {},
+    this.unreadCount = 0,
+    this.onBulkDownload,
   });
 
   /// Chapters left after filters are applied.
@@ -1517,6 +1532,15 @@ class _ChapterListHeader extends StatelessWidget {
 
   /// Currently-excluded set. Drives the badge dot on the people icon.
   final Set<String> excludedScanlators;
+
+  /// Total unread chapter count (across the unfiltered list). Drives
+  /// availability of the bulk-download popup — hidden when 0.
+  final int unreadCount;
+
+  /// Bulk-download callback. `null` count means "all unread"; a positive
+  /// integer means "next N unread in reading order". Null callback hides
+  /// the menu entirely (the empty-chapters branch passes null here).
+  final void Function(int? count)? onBulkDownload;
 
   @override
   Widget build(BuildContext context) {
@@ -1565,6 +1589,24 @@ class _ChapterListHeader extends StatelessWidget {
                 available: availableScanlators,
                 excluded: excludedScanlators,
               ),
+            ),
+          if (manga != null && onBulkDownload != null && unreadCount > 0)
+            PopupMenuButton<int?>(
+              icon: const Icon(Icons.download_outlined),
+              tooltip: 'Download',
+              onSelected: onBulkDownload,
+              itemBuilder: (_) => [
+                for (final n in const [1, 5, 10, 25])
+                  if (unreadCount >= n)
+                    PopupMenuItem<int?>(
+                      value: n,
+                      child: Text('Next $n chapter${n == 1 ? '' : 's'}'),
+                    ),
+                const PopupMenuItem<int?>(
+                  value: null,
+                  child: Text('All unread chapters'),
+                ),
+              ],
             ),
           if (manga != null)
             IconButton(
