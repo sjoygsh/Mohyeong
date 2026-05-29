@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/manga/manga_repository.dart';
+import '../../data/reader/reader_behavior_preferences.dart';
 import '../../data/reader/reader_preferences.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/track/track_updater.dart';
@@ -47,7 +49,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   @override
   void initState() {
     super.initState();
+    // Honour the fullscreen pref by hiding the system bars while the reader
+    // is open. Restored to the normal edge-to-edge mode on dispose so the
+    // bars come back when we pop to the rest of the app.
+    if (ref.read(readerFullscreenProvider)) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    }
     _reload();
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
   }
 
   void _reload() {
@@ -331,6 +345,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     final prev = data.previousChapter;
     final next = data.nextChapter;
     final showSlider = widget.mode.isPaged && _totalPages > 1;
+    final showPageNumber = ref.watch(readerShowPageNumberProvider);
 
     return SafeArea(
       child: Stack(
@@ -410,10 +425,11 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                           reversed: widget.mode == ReadingMode.rightToLeft,
                           onChanged: _seekTo,
                         ),
-                      _PageIndicator(
-                        current: _currentPage,
-                        total: _totalPages,
-                      ),
+                      if (showPageNumber)
+                        _PageIndicator(
+                          current: _currentPage,
+                          total: _totalPages,
+                        ),
                       _ReaderControls(
                         onPrev: prev == null
                             ? null
@@ -835,10 +851,98 @@ class _PagesViewState extends State<_PagesView> {
       reverse: widget.mode == ReadingMode.rightToLeft,
       itemCount: widget.count,
       onPageChanged: _report,
-      itemBuilder: (ctx, i) => InteractiveViewer(
+      itemBuilder: (ctx, i) => _ZoomablePage(
+        child: Center(child: widget.itemBuilder(ctx, i)),
+      ),
+    );
+  }
+}
+
+/// A single paged image wrapped in an [InteractiveViewer] with double-tap
+/// to zoom. The zoom-in/out transition duration comes from
+/// [readerDoubleTapAnimSpeedProvider]; a value of 0 applies the transform
+/// instantly. Double-tapping while zoomed resets back to fit.
+class _ZoomablePage extends ConsumerStatefulWidget {
+  const _ZoomablePage({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_ZoomablePage> createState() => _ZoomablePageState();
+}
+
+class _ZoomablePageState extends ConsumerState<_ZoomablePage>
+    with SingleTickerProviderStateMixin {
+  static const _zoomScale = 2.5;
+
+  final TransformationController _controller = TransformationController();
+  late final AnimationController _animController =
+      AnimationController(vsync: this);
+  Animation<Matrix4>? _animation;
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _applyMatrix(Matrix4 target) {
+    final speedMs = ref.read(readerDoubleTapAnimSpeedProvider);
+    if (speedMs <= 0) {
+      _controller.value = target;
+      return;
+    }
+    _animController.duration = Duration(milliseconds: speedMs);
+    _animation?.removeListener(_onAnimTick);
+    _animation = Matrix4Tween(
+      begin: _controller.value,
+      end: target,
+    ).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeOut),
+    )..addListener(_onAnimTick);
+    _animController
+      ..reset()
+      ..forward();
+  }
+
+  void _onAnimTick() {
+    final anim = _animation;
+    if (anim != null) _controller.value = anim.value;
+  }
+
+  void _handleDoubleTap(TapDownDetails details) {
+    // Already zoomed in → reset to fit.
+    if (_controller.value.getMaxScaleOnAxis() > 1.01) {
+      _applyMatrix(Matrix4.identity());
+      return;
+    }
+    // Zoom in centred on the tapped point.
+    final position = details.localPosition;
+    final target = Matrix4.identity()
+      ..translateByDouble(
+        -position.dx * (_zoomScale - 1),
+        -position.dy * (_zoomScale - 1),
+        0,
+        1,
+      )
+      ..scaleByDouble(_zoomScale, _zoomScale, _zoomScale, 1);
+    _applyMatrix(target);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    TapDownDetails? lastTapDown;
+    return GestureDetector(
+      onDoubleTapDown: (d) => lastTapDown = d,
+      onDoubleTap: () {
+        if (lastTapDown != null) _handleDoubleTap(lastTapDown!);
+      },
+      child: InteractiveViewer(
+        transformationController: _controller,
         minScale: 1,
         maxScale: 4,
-        child: Center(child: widget.itemBuilder(ctx, i)),
+        child: widget.child,
       ),
     );
   }

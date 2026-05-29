@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/preferences/typed_preferences.dart';
+import '../../data/reader/reader_behavior_preferences.dart';
 import '../../data/reader/reader_preferences.dart';
 import '../../domain/reader/model/reading_mode.dart';
 
@@ -17,6 +19,7 @@ class ReaderSettingsScreen extends ConsumerWidget {
     final background = ref.watch(readerBackgroundProvider);
     final colorFilter = ref.watch(readerColorFilterProvider);
     final autoHideSeconds = ref.watch(readerAutoHideChromeSecondsProvider);
+    final doubleTapSpeed = ref.watch(readerDoubleTapAnimSpeedProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Reader')),
       body: ListView(
@@ -100,8 +103,145 @@ class ReaderSettingsScreen extends ConsumerWidget {
               }
             },
           ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Behaviour',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          _PrefSwitch(
+            title: 'Fullscreen',
+            subtitle: 'Hide the system bars while reading.',
+            provider: readerFullscreenProvider,
+          ),
+          _PrefSwitch(
+            title: 'Keep screen on',
+            subtitle: 'Prevent the screen from dimming while reading.',
+            provider: readerKeepScreenOnProvider,
+          ),
+          _PrefSwitch(
+            title: 'Show page number',
+            subtitle: 'Display the current / total page indicator.',
+            provider: readerShowPageNumberProvider,
+          ),
+          _PrefSwitch(
+            title: 'Show reading-mode label',
+            subtitle: 'Flash the active reading mode when a chapter opens.',
+            provider: readerShowReadingModeProvider,
+          ),
+          _PrefSwitch(
+            title: 'Animate page transitions',
+            subtitle: 'Slide between pages in the paged readers.',
+            provider: readerPageTransitionsProvider,
+          ),
+          ListTile(
+            title: const Text('Double-tap zoom speed'),
+            subtitle: Text(_animSpeedLabel(doubleTapSpeed)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<int>(
+                context: context,
+                builder: (_) =>
+                    _DoubleTapSpeedPickerDialog(current: doubleTapSpeed),
+              );
+              if (picked != null) {
+                await ref
+                    .read(readerDoubleTapAnimSpeedProvider.notifier)
+                    .set(picked);
+              }
+            },
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Chapter navigation',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          _PrefSwitch(
+            title: 'Skip read chapters',
+            subtitle: 'Jump past chapters already marked read.',
+            provider: readerSkipReadProvider,
+          ),
+          _PrefSwitch(
+            title: 'Skip filtered chapters',
+            subtitle: "Skip chapters hidden by the manga's chapter filters.",
+            provider: readerSkipFilteredProvider,
+          ),
+          _PrefSwitch(
+            title: 'Skip duplicate chapters',
+            subtitle: 'Skip chapters that repeat an adjacent chapter number.',
+            provider: readerSkipDupeProvider,
+          ),
+          _PrefSwitch(
+            title: 'Always show chapter transition',
+            subtitle: 'Show the transition screen between chapters.',
+            provider: readerAlwaysShowTransitionProvider,
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// Thin `SwitchListTile` wired to a bool [BoolPrefNotifier] provider.
+/// Keeps the long settings list declarative.
+class _PrefSwitch extends ConsumerWidget {
+  const _PrefSwitch({
+    required this.title,
+    required this.subtitle,
+    required this.provider,
+  });
+
+  final String title;
+  final String subtitle;
+  final NotifierProvider<BoolPrefNotifier, bool> provider;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final value = ref.watch(provider);
+    return SwitchListTile(
+      title: Text(title),
+      subtitle: Text(subtitle),
+      value: value,
+      onChanged: (v) => ref.read(provider.notifier).set(v),
+    );
+  }
+}
+
+String _animSpeedLabel(int ms) {
+  if (ms <= 0) return 'No animation';
+  return '$ms ms';
+}
+
+class _DoubleTapSpeedPickerDialog extends StatelessWidget {
+  const _DoubleTapSpeedPickerDialog({required this.current});
+
+  final int current;
+
+  static const _options = <int>[0, 250, 500];
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Double-tap zoom speed'),
+      children: [
+        RadioGroup<int>(
+          groupValue: _options.contains(current) ? current : 500,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final v in _options)
+                RadioListTile<int>(
+                  value: v,
+                  title: Text(_animSpeedLabel(v)),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
