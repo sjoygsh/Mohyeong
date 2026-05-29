@@ -20,6 +20,7 @@ import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../../domain/source/model/source.dart';
+import '../../domain/source/model/source_manga.dart';
 import '../../domain/track/model/track.dart';
 import '../common/source_image.dart';
 import '../migration/migration_search_screen.dart';
@@ -51,6 +52,46 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   final Set<int> _selectedChapterIds = <int>{};
 
   bool get _selecting => _selectedChapterIds.isNotEmpty;
+
+  /// True while a manual "Refresh" metadata sweep is in flight. Used to
+  /// disable the action and swap its icon for a spinner so the user
+  /// doesn't double-tap and stack network requests.
+  bool _refreshingDetails = false;
+
+  /// Re-fetches the manga's metadata + chapter list from its source and
+  /// persists both. Mihon parity with the "Refresh" overflow action —
+  /// covers the case where the source has updated the description /
+  /// status / cover etc. since the row was first inserted.
+  Future<void> _refreshMangaFromSource(Manga manga) async {
+    if (_refreshingDetails) return;
+    setState(() => _refreshingDetails = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final extRepo = ref.read(extensionRepositoryProvider);
+      final mangaRepo = ref.read(mangaRepositoryProvider);
+      final chapterRepo = ref.read(chapterRepositoryProvider);
+      final source = await extRepo.getSource(manga.source.toString());
+      final details = await source.fetchMangaDetails(
+        SourceManga(url: manga.url, title: manga.title),
+      );
+      await mangaRepo.applySourceDetails(manga.id, details);
+      final fetched = await source.fetchChapterList(
+        SourceManga(url: manga.url, title: manga.title),
+      );
+      final added = await chapterRepo.syncChaptersWithSource(manga.id, fetched);
+      if (!mounted) return;
+      final msg = added.isEmpty
+          ? 'Refreshed. No new chapters.'
+          : 'Refreshed. ${added.length} new chapter'
+              '${added.length == 1 ? '' : 's'}.';
+      messenger.showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('Refresh failed: $e')));
+    } finally {
+      if (mounted) setState(() => _refreshingDetails = false);
+    }
+  }
 
   void _toggleChapterSelected(int id) {
     setState(() {
@@ -276,6 +317,21 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                             onPressed: () =>
                                 _editFetchInterval(context, ref, manga),
                           ),
+                        IconButton(
+                          icon: _refreshingDetails
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh),
+                          tooltip: 'Refresh from source',
+                          onPressed: _refreshingDetails
+                              ? null
+                              : () => _refreshMangaFromSource(manga),
+                        ),
                       ],
                     ),
                   SliverToBoxAdapter(child: _MangaInfoBox(manga: manga)),

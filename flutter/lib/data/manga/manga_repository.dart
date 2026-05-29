@@ -161,6 +161,36 @@ class MangaRepository {
     await (_db.delete(_db.mangas)..where((t) => t.id.equals(id))).go();
   }
 
+  /// Overwrites the source-supplied metadata columns (artist / author /
+  /// description / genre / status / thumbnail) on an existing manga row
+  /// with the latest [details] from a `fetchMangaDetails` call.
+  ///
+  /// Title is left alone — Mihon parity, the local title is treated as
+  /// authoritative so a source rename doesn't blow away custom-saved
+  /// titles. Bumps `last_modified_at` for sync ordering and stamps
+  /// `cover_last_modified` when the thumbnail URL actually changed so
+  /// cache invalidation has something to compare against.
+  Future<void> applySourceDetails(int id, SourceManga details) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final existing = await getById(id);
+    final coverChanged = existing != null &&
+        existing.thumbnailUrl != details.thumbnailUrl &&
+        details.thumbnailUrl != null;
+    await (_db.update(_db.mangas)..where((t) => t.id.equals(id))).write(
+      db.MangasCompanion(
+        artist: Value(details.artist),
+        author: Value(details.author),
+        description: Value(details.description),
+        genre: Value(details.genre),
+        status: Value(details.status),
+        thumbnailUrl: Value(details.thumbnailUrl),
+        initialized: const Value(1),
+        coverLastModified: coverChanged ? Value(nowMs) : const Value.absent(),
+        lastModifiedAt: Value(nowMs),
+      ),
+    );
+  }
+
   /// Overwrite the `chapter_flags` bitfield (chapter sort/filter/display
   /// bits) for a single manga. Used by the chapter settings sheet on the
   /// manga details screen. Bumps `last_modified_at` for sync ordering.
