@@ -14,6 +14,7 @@ import '../../data/source/extension_repository.dart';
 import '../../data/track/track_updater.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
+import '../../domain/manga/model/tri_state.dart';
 import '../../domain/reader/model/reader_scale_type.dart';
 import '../../domain/reader/model/reading_mode.dart';
 import '../../domain/source/model/manga_source.dart';
@@ -375,8 +376,12 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     }
     final skipRead = ref.read(readerSkipReadProvider);
     final skipDupe = ref.read(readerSkipDupeProvider);
+    final skipFiltered = ref.read(readerSkipFilteredProvider);
     final adjacent = _adjacentChapter(widget.data,
-        forward: forward, skipRead: skipRead, skipDupe: skipDupe);
+        forward: forward,
+        skipRead: skipRead,
+        skipDupe: skipDupe,
+        skipFiltered: skipFiltered);
     if (adjacent != null) widget.onJumpToChapter(adjacent.id);
   }
 
@@ -393,9 +398,12 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     required bool forward,
     required bool skipRead,
     required bool skipDupe,
+    required bool skipFiltered,
   }) {
     final immediate = forward ? data.nextChapter : data.previousChapter;
-    if (immediate == null || (!skipRead && !skipDupe)) return immediate;
+    if (immediate == null || (!skipRead && !skipDupe && !skipFiltered)) {
+      return immediate;
+    }
     final siblings = data.siblings;
     final currentIdx = siblings.indexWhere((c) => c.id == data.chapter.id);
     if (currentIdx < 0) return immediate;
@@ -407,9 +415,37 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
           candidate.chapterNumber == data.chapter.chapterNumber) {
         continue;
       }
+      if (skipFiltered && !_passesChapterFilter(data.manga, candidate)) {
+        continue;
+      }
       return candidate;
     }
     return immediate;
+  }
+
+  /// Whether [chapter] survives the manga's chapter-filter flags. Honours
+  /// the unread and bookmarked tri-state axes (matching the manga-details
+  /// filter sheet). The downloaded axis is intentionally ignored here — it
+  /// needs an async filesystem probe that doesn't belong in synchronous
+  /// page-turn navigation.
+  bool _passesChapterFilter(Manga manga, Chapter chapter) {
+    switch (manga.unreadFilter) {
+      case TriState.enabledIs:
+        if (chapter.read) return false;
+      case TriState.enabledNot:
+        if (!chapter.read) return false;
+      case TriState.disabled:
+        break;
+    }
+    switch (manga.bookmarkedFilter) {
+      case TriState.enabledIs:
+        if (!chapter.bookmark) return false;
+      case TriState.enabledNot:
+        if (chapter.bookmark) return false;
+      case TriState.disabled:
+        break;
+    }
+    return true;
   }
 
   @override
@@ -417,10 +453,11 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     final data = widget.data;
     final skipRead = ref.watch(readerSkipReadProvider);
     final skipDupe = ref.watch(readerSkipDupeProvider);
+    final skipFiltered = ref.watch(readerSkipFilteredProvider);
     final prev = _adjacentChapter(data, forward: false,
-        skipRead: skipRead, skipDupe: skipDupe);
+        skipRead: skipRead, skipDupe: skipDupe, skipFiltered: skipFiltered);
     final next = _adjacentChapter(data, forward: true,
-        skipRead: skipRead, skipDupe: skipDupe);
+        skipRead: skipRead, skipDupe: skipDupe, skipFiltered: skipFiltered);
     final showSlider = widget.mode.isPaged && _totalPages > 1;
     final showPageNumber = ref.watch(readerShowPageNumberProvider);
     final grayscale = ref.watch(readerGrayscaleProvider);
