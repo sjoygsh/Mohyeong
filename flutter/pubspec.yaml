@@ -69,6 +69,15 @@ dependencies:
   # Extensions are loaded as JS files and run in a sandboxed context.
   flutter_js: ^0.8.0
 
+  # Keep the screen awake while reading (reader "keep screen on" pref).
+  wakelock_plus: ^1.2.5
+
+  # Override screen brightness while reading (reader custom-brightness pref).
+  screen_brightness: ^2.1.1
+
+  # Biometric / device-credential app lock (security settings).
+  local_auth: ^2.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

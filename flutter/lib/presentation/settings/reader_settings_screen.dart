@@ -117,6 +117,13 @@ class ReaderSettingsScreen extends ConsumerWidget {
             subtitle: 'Render pages as a colour negative.',
             provider: readerInvertedColorsProvider,
           ),
+          _PrefSwitch(
+            title: 'Custom brightness',
+            subtitle: 'Set a fixed screen brightness while reading.',
+            provider: readerCustomBrightnessProvider,
+          ),
+          if (ref.watch(readerCustomBrightnessProvider))
+            const _BrightnessSlider(),
           ListTile(
             title: const Text('Scale type'),
             subtitle: Text(scaleType.label),
@@ -273,6 +280,31 @@ class _PrefSwitch extends ConsumerWidget {
       subtitle: Text(subtitle),
       value: value,
       onChanged: (v) => ref.read(provider.notifier).set(v),
+    );
+  }
+}
+
+/// Slider for [readerBrightnessValueProvider] (1..100 percent), shown only
+/// while custom brightness is enabled.
+class _BrightnessSlider extends ConsumerWidget {
+  const _BrightnessSlider();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final value = ref.watch(readerBrightnessValueProvider).clamp(1, 100);
+    return ListTile(
+      title: const Text('Brightness level'),
+      subtitle: Slider(
+        min: 1,
+        max: 100,
+        divisions: 99,
+        value: value.toDouble(),
+        label: '$value%',
+        onChanged: (v) => ref
+            .read(readerBrightnessValueProvider.notifier)
+            .set(v.round()),
+      ),
+      trailing: Text('$value%'),
     );
   }
 }

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:screen_brightness/screen_brightness.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
@@ -57,13 +59,36 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     if (ref.read(readerFullscreenProvider)) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     }
+    _applyKeepScreenOn();
+    _applyBrightness();
     _reload();
   }
 
   @override
   void dispose() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // Release the wakelock + restore system brightness so the reader's
+    // settings don't leak into the rest of the app.
+    WakelockPlus.disable();
+    ScreenBrightness().resetApplicationScreenBrightness();
     super.dispose();
+  }
+
+  /// Acquire/release the wakelock per the keep-screen-on pref.
+  void _applyKeepScreenOn() {
+    if (ref.read(readerKeepScreenOnProvider)) {
+      WakelockPlus.enable();
+    } else {
+      WakelockPlus.disable();
+    }
+  }
+
+  /// Apply the custom reader brightness (when enabled) to this activity's
+  /// window. The 1..100 percent pref maps to the plugin's 0..1 range.
+  void _applyBrightness() {
+    if (!ref.read(readerCustomBrightnessProvider)) return;
+    final pct = ref.read(readerBrightnessValueProvider).clamp(1, 100);
+    ScreenBrightness().setApplicationScreenBrightness(pct / 100);
   }
 
   void _reload() {

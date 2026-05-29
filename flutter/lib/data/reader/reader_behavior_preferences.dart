@@ -18,8 +18,8 @@ final readerFullscreenProvider = boolPref('pref_fullscreen_key', true);
 /// Animate page changes in the paged readers (slide transition).
 final readerPageTransitionsProvider = boolPref('pref_enable_transitions', true);
 
-/// Keep the device awake while the reader is open. Requires the wakelock
-/// plugin to take effect — the pref is honoured by the reader screen.
+/// Keep the device awake while the reader is open. Honoured by the reader
+/// screen via the `wakelock_plus` plugin.
 final readerKeepScreenOnProvider = boolPref('pref_keep_screen_on', true);
 
 /// When advancing past the end of a chapter, skip chapters that are
@@ -50,10 +50,19 @@ final readerGrayscaleProvider = boolPref('pref_grayscale', false);
 /// Invert page colours (negative). Useful for dark-on-light scans.
 final readerInvertedColorsProvider = boolPref('pref_inverted_colors', false);
 
-/// Override the screen brightness while reading. Stored-only for now —
-/// honouring it needs a screen-brightness plugin which isn't in pubspec.
+/// Override the screen brightness while reading. Honoured by the reader
+/// screen via the `screen_brightness` plugin — when on, the reader applies
+/// [readerBrightnessValueProvider] on open and restores the system
+/// brightness on close.
 final readerCustomBrightnessProvider =
     boolPref('pref_custom_brightness', false);
+
+/// Reader brightness level when [readerCustomBrightnessProvider] is on,
+/// expressed 1..100 (percent of full brightness). Mihon stores a
+/// -75..100 range where negatives dim via an overlay; we keep it simple
+/// and only drive the hardware brightness in the positive range.
+final readerBrightnessValueProvider =
+    intPref('pref_custom_brightness_value', 50);
 
 /// How page images are scaled to the viewport. Stored as the
 /// [ReaderScaleType.key] string; convert via `ReaderScaleType.fromKey`.
