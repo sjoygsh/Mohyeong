@@ -9,65 +9,149 @@ import '../reader/reader_screen.dart';
 /// History tab. Streams the most recently read chapters with their
 /// manga context attached. The header shows the cumulative reading time
 /// (mirrors the Kotlin "Total time read" stat).
-class HistoryScreen extends ConsumerWidget {
+class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  bool _searching = false;
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _openSearch() {
+    setState(() => _searching = true);
+  }
+
+  void _closeSearch() {
+    setState(() {
+      _searching = false;
+      _query = '';
+      _searchController.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final repo = ref.watch(historyRepositoryProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('History'),
-        actions: [
-          PopupMenuButton<_HistoryMenuAction>(
-            onSelected: (action) {
-              if (action == _HistoryMenuAction.clearAll) {
-                _confirmClearAll(context, repo);
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: _HistoryMenuAction.clearAll,
-                child: Text('Clear history'),
+    return PopScope(
+      canPop: !_searching,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _closeSearch();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: _searching
+              ? TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: 'Search history',
+                    border: InputBorder.none,
+                  ),
+                  style: Theme.of(context).textTheme.titleLarge,
+                  textInputAction: TextInputAction.search,
+                  onChanged: (v) => setState(() => _query = v.trim()),
+                )
+              : const Text('History'),
+          leading: _searching
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: _closeSearch,
+                )
+              : null,
+          actions: [
+            if (_searching && _query.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Clear query',
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() => _query = '');
+                },
+              )
+            else if (!_searching)
+              IconButton(
+                icon: const Icon(Icons.search),
+                tooltip: 'Search history',
+                onPressed: _openSearch,
               ),
-            ],
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          _DurationHeader(repo: repo),
-          const Divider(height: 1),
-          Expanded(
-            child: StreamBuilder<List<HistoryWithContext>>(
-              stream: repo.watchRecent(),
-              builder: (context, snap) {
-                if (snap.hasError) {
-                  return Center(child: Text('Error: ${snap.error}'));
+            PopupMenuButton<_HistoryMenuAction>(
+              onSelected: (action) {
+                if (action == _HistoryMenuAction.clearAll) {
+                  _confirmClearAll(context, repo);
                 }
-                if (!snap.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final entries = snap.data!;
-                if (entries.isEmpty) {
-                  return const Center(child: Text('No reading history yet.'));
-                }
-                final rows = _groupByDay(entries);
-                return ListView.builder(
-                  itemCount: rows.length,
-                  itemBuilder: (_, i) {
-                    final row = rows[i];
-                    if (row is _HeaderRow) {
-                      return _DayHeader(label: row.label);
-                    }
-                    return _HistoryTile(entry: (row as _EntryRow).entry);
-                  },
-                );
               },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: _HistoryMenuAction.clearAll,
+                  child: Text('Clear history'),
+                ),
+              ],
             ),
-          ),
-        ],
+          ],
+        ),
+        body: Column(
+          children: [
+            _DurationHeader(repo: repo),
+            const Divider(height: 1),
+            Expanded(
+              child: StreamBuilder<List<HistoryWithContext>>(
+                stream: repo.watchRecent(),
+                builder: (context, snap) {
+                  if (snap.hasError) {
+                    return Center(child: Text('Error: ${snap.error}'));
+                  }
+                  if (!snap.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final entries = snap.data!;
+                  if (entries.isEmpty) {
+                    return const Center(
+                      child: Text('No reading history yet.'),
+                    );
+                  }
+                  // Substring match on manga title — same lightweight
+                  // case-insensitive contains the Library search uses.
+                  // Day grouping runs after filtering so the day
+                  // headers only reflect the visible rows.
+                  final q = _query.toLowerCase();
+                  final filtered = q.isEmpty
+                      ? entries
+                      : entries
+                          .where(
+                              (e) => e.mangaTitle.toLowerCase().contains(q))
+                          .toList(growable: false);
+                  if (filtered.isEmpty) {
+                    return const Center(
+                      child: Text('No history matches the query.'),
+                    );
+                  }
+                  final rows = _groupByDay(filtered);
+                  return ListView.builder(
+                    itemCount: rows.length,
+                    itemBuilder: (_, i) {
+                      final row = rows[i];
+                      if (row is _HeaderRow) {
+                        return _DayHeader(label: row.label);
+                      }
+                      return _HistoryTile(entry: (row as _EntryRow).entry);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
