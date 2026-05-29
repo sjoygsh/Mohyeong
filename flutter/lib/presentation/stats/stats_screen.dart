@@ -4,13 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/history/history_repository.dart';
 import '../../data/library/library_repository.dart';
 import '../../data/track/track_repository.dart';
+import '../../data/track/tracker_registry.dart';
 import '../../domain/library/model/library_item.dart';
 
 /// Mihon-equivalent Statistics screen. Pulls one snapshot from
 /// `libraryView` + the cumulative read duration from `history`, then
-/// renders headline totals. Per-manga / track-score breakdowns are
-/// deliberately deferred — they need joins through the track tables
-/// that aren't pre-aggregated yet.
+/// renders headline totals plus a per-tracker score breakdown.
 class StatsScreen extends ConsumerWidget {
   const StatsScreen({super.key});
 
@@ -19,11 +18,12 @@ class StatsScreen extends ConsumerWidget {
     final libraryRepo = ref.watch(libraryRepositoryProvider);
     final historyRepo = ref.watch(historyRepositoryProvider);
     final trackRepo = ref.watch(trackRepositoryProvider);
+    final registry = ref.watch(trackerRegistryProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Statistics')),
       body: FutureBuilder<_Stats>(
-        future: _load(libraryRepo, historyRepo, trackRepo),
+        future: _load(libraryRepo, historyRepo, trackRepo, registry),
         builder: (context, snap) {
           if (snap.hasError) {
             return Center(child: Text('Failed to load stats: ${snap.error}'));
@@ -94,6 +94,21 @@ class StatsScreen extends ConsumerWidget {
                     ? '0 min'
                     : _formatDuration(s.totalReadMs ~/ s.mangaCount),
               ),
+              if (s.trackScores.isNotEmpty) ...[
+                _Section(title: 'Track scores'),
+                _StatTile(
+                  icon: Icons.star_rate,
+                  label: 'Mean score (all trackers)',
+                  value: _formatScore(s.overallMeanScore),
+                ),
+                for (final group in s.trackScores)
+                  _StatTile(
+                    icon: Icons.star_border,
+                    label: group.trackerName,
+                    value:
+                        '${_formatScore(group.meanScore)}  (${group.ratedCount})',
+                  ),
+              ],
             ],
           );
         },
@@ -113,12 +128,20 @@ class StatsScreen extends ConsumerWidget {
     if (mins > 0 || parts.isEmpty) parts.add('${mins}m');
     return parts.join(' ');
   }
+
+  // Scores are normalised to the 0..10 scale at the data layer (Kitsu's
+  // 0..20 native scale, for example, is halved on the way in). One
+  // decimal is enough to keep aggregate means readable without showing
+  // spurious precision.
+  static String _formatScore(double score) =>
+      '${score.toStringAsFixed(1)} / 10';
 }
 
 Future<_Stats> _load(
   LibraryRepository library,
   HistoryRepository history,
   TrackRepository tracks,
+  TrackerRegistry registry,
 ) async {
   // Pull the first emission of the library stream — this is a one-shot
   // snapshot for the screen, not a live feed.
@@ -129,12 +152,41 @@ Future<_Stats> _load(
   // currently favourited so a tracker row left over from a removed
   // series doesn't inflate the number.
   final libraryIds = {for (final i in items) i.manga.id};
-  final trackedManga = trackRows
-      .map((t) => t.mangaId)
-      .toSet()
-      .intersection(libraryIds)
-      .length;
-  return _Stats.fromItems(items, totalReadMs, trackedManga);
+  final libraryTrackRows =
+      trackRows.where((t) => libraryIds.contains(t.mangaId)).toList(
+            growable: false,
+          );
+  final trackedManga =
+      libraryTrackRows.map((t) => t.mangaId).toSet().length;
+  // Group track rows by trackerId for the score breakdown. Only count
+  // rows with a positive score — Mihon treats `0.0` as "no score set"
+  // and including those would tank every average.
+  final byTracker = <int, List<double>>{};
+  for (final t in libraryTrackRows) {
+    if (t.score <= 0) continue;
+    byTracker.putIfAbsent(t.trackerId, () => []).add(t.score);
+  }
+  final groups = <_TrackerScoreGroup>[];
+  for (final entry in byTracker.entries) {
+    final scores = entry.value;
+    if (scores.isEmpty) continue;
+    final mean = scores.reduce((a, b) => a + b) / scores.length;
+    // Unknown ids fall through to a synthetic label — happens when a
+    // tracker was uninstalled but the manga_sync row was kept.
+    final name =
+        registry.byId(entry.key)?.name ?? 'Tracker ${entry.key}';
+    groups.add(_TrackerScoreGroup(
+      trackerName: name,
+      meanScore: mean,
+      ratedCount: scores.length,
+    ));
+  }
+  groups.sort((a, b) => a.trackerName.compareTo(b.trackerName));
+  final allScores = byTracker.values.expand((l) => l).toList(growable: false);
+  final overallMean = allScores.isEmpty
+      ? 0.0
+      : allScores.reduce((a, b) => a + b) / allScores.length;
+  return _Stats.fromItems(items, totalReadMs, trackedManga, groups, overallMean);
 }
 
 class _Stats {
@@ -149,6 +201,8 @@ class _Stats {
     required this.sourceCount,
     required this.categoryCount,
     required this.trackedManga,
+    required this.trackScores,
+    required this.overallMeanScore,
   });
 
   final int mangaCount;
@@ -161,11 +215,15 @@ class _Stats {
   final int sourceCount;
   final int categoryCount;
   final int trackedManga;
+  final List<_TrackerScoreGroup> trackScores;
+  final double overallMeanScore;
 
   factory _Stats.fromItems(
     List<LibraryItem> items,
     int readMs,
     int trackedManga,
+    List<_TrackerScoreGroup> trackScores,
+    double overallMeanScore,
   ) {
     var totalChapters = 0;
     var readChapters = 0;
@@ -201,8 +259,22 @@ class _Stats {
       sourceCount: sources.length,
       categoryCount: categories.length,
       trackedManga: trackedManga,
+      trackScores: trackScores,
+      overallMeanScore: overallMeanScore,
     );
   }
+}
+
+class _TrackerScoreGroup {
+  const _TrackerScoreGroup({
+    required this.trackerName,
+    required this.meanScore,
+    required this.ratedCount,
+  });
+
+  final String trackerName;
+  final double meanScore;
+  final int ratedCount;
 }
 
 class _Section extends StatelessWidget {
