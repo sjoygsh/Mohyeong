@@ -8,6 +8,7 @@ import 'data_storage_settings_screen.dart';
 import 'download_settings_screen.dart';
 import 'library_settings_screen.dart';
 import 'reader_settings_screen.dart';
+import 'security_settings_screen.dart';
 
 /// Top-level Settings screen. Mirror of Mihon's `SettingsMainScreen`:
 /// a categorical list where each tile pushes the matching sub-screen.
@@ -62,6 +63,12 @@ class SettingsScreen extends StatelessWidget {
             title: 'Data and storage',
             subtitle: 'Backup, restore, and sync',
             destination: const DataStorageSettingsScreen(),
+          ),
+          _SettingsTile(
+            icon: Icons.security_outlined,
+            title: 'Security',
+            subtitle: 'App lock and secure screen',
+            destination: const SecuritySettingsScreen(),
           ),
           _SettingsTile(
             icon: Icons.code_outlined,
