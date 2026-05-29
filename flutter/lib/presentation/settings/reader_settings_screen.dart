@@ -187,6 +187,21 @@ class ReaderSettingsScreen extends ConsumerWidget {
             subtitle: 'Slide between pages in the paged readers.',
             provider: readerPageTransitionsProvider,
           ),
+          _PrefSwitch(
+            title: 'Tap to navigate',
+            subtitle: 'Tap the screen edges to turn pages (paged modes).',
+            provider: readerTapToNavigateProvider,
+          ),
+          _PrefSwitch(
+            title: 'Invert tap zones',
+            subtitle: 'Swap the left/right page-turn zones.',
+            provider: readerTapNavigateInvertProvider,
+          ),
+          _PrefSwitch(
+            title: 'Volume key navigation',
+            subtitle: 'Turn pages with the volume keys (not yet active).',
+            provider: readerVolumeKeysProvider,
+          ),
           ListTile(
             title: const Text('Double-tap zoom speed'),
             subtitle: Text(_animSpeedLabel(doubleTapSpeed)),

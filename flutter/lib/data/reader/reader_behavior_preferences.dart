@@ -71,3 +71,21 @@ final readerCropBordersProvider = boolPref('crop_borders', false);
 /// Allow zooming wide (landscape) pages beyond fit. Stored-only — the
 /// paged viewer's InteractiveViewer already permits free zoom.
 final readerLandscapeZoomProvider = boolPref('landscape_zoom', false);
+
+/// Tap the left/right thirds of the screen to turn pages in the paged
+/// readers. When off, a tap anywhere just toggles the reader chrome.
+final readerTapToNavigateProvider = boolPref('pref_tap_navigation', true);
+
+/// Swap the left/right tap zones (left = forward, right = back).
+final readerTapNavigateInvertProvider =
+    boolPref('pref_tap_navigation_invert', false);
+
+/// Use the hardware volume keys to turn pages. Stored-only — Android
+/// doesn't deliver volume key events to Flutter without a platform
+/// channel, which isn't wired.
+final readerVolumeKeysProvider = boolPref('reader_volume_keys', false);
+
+/// Show the tap-zone guide overlay when opening a chapter. Stored-only —
+/// the guide overlay itself isn't built yet.
+final readerShowNavOverlayProvider =
+    boolPref('pref_show_navigation_overlay_new_user', true);

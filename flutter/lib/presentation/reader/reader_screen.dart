@@ -340,6 +340,46 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     });
   }
 
+  /// Handle a tap on the page viewport. With tap-to-navigate on (paged
+  /// modes only), tapping the left/right third turns a page — falling
+  /// through to the adjacent chapter at the chapter boundary. The centre
+  /// third (and any tap in continuous mode) just toggles the chrome.
+  void _handleViewportTap(TapUpDetails details, double width) {
+    final tapNav = ref.read(readerTapToNavigateProvider);
+    if (!widget.mode.isPaged || !tapNav || width <= 0) {
+      _toggleChrome();
+      return;
+    }
+    final x = details.localPosition.dx;
+    final leftZone = x < width / 3;
+    final rightZone = x > width * 2 / 3;
+    if (!leftZone && !rightZone) {
+      _toggleChrome();
+      return;
+    }
+    // Right zone advances by default; RTL reading and the user invert
+    // pref each flip that mapping.
+    var forward = rightZone;
+    if (widget.mode == ReadingMode.rightToLeft) forward = !forward;
+    if (ref.read(readerTapNavigateInvertProvider)) forward = !forward;
+    _navigatePage(forward: forward);
+  }
+
+  /// Turn one page in [forward] direction, or jump to the adjacent
+  /// chapter when stepping past either end of the current chapter.
+  void _navigatePage({required bool forward}) {
+    final target = forward ? _currentPage + 1 : _currentPage - 1;
+    if (target >= 0 && target < _totalPages) {
+      _seekTo(target);
+      return;
+    }
+    final skipRead = ref.read(readerSkipReadProvider);
+    final skipDupe = ref.read(readerSkipDupeProvider);
+    final adjacent = _adjacentChapter(widget.data,
+        forward: forward, skipRead: skipRead, skipDupe: skipDupe);
+    if (adjacent != null) widget.onJumpToChapter(adjacent.id);
+  }
+
   /// Resolve the chapter the prev/next buttons should jump to, honouring
   /// the skip-read and skip-dupe navigation prefs. Walks [data.siblings]
   /// (reading order) from the current chapter in [forward] direction,
@@ -427,7 +467,8 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
-              onTap: _toggleChrome,
+              onTapUp: (d) =>
+                  _handleViewportTap(d, MediaQuery.sizeOf(context).width),
               child: viewport,
             ),
           ),
