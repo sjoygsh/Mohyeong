@@ -265,6 +265,36 @@ class MangaRepository {
       ),
     );
   }
+
+  /// Deletes every non-favourited manga and all of its dependent rows
+  /// (chapters, history, track rows, category links, scanlator exclusions,
+  /// linked-source rows). Favourited library entries are untouched. Mirrors
+  /// Mihon's "Clear database" advanced action. Returns the number of manga
+  /// rows removed.
+  Future<int> clearNonLibraryEntries() async {
+    return _db.transaction(() async {
+      const nonFav = 'SELECT _id FROM mangas WHERE favorite = 0';
+      await _db.customStatement(
+        'DELETE FROM history WHERE chapter_id IN '
+        '(SELECT _id FROM chapters WHERE manga_id IN ($nonFav))',
+      );
+      await _db.customStatement(
+        'DELETE FROM manga_links WHERE primary_manga_id IN ($nonFav) '
+        'OR linked_manga_id IN ($nonFav)',
+      );
+      for (final table in const [
+        'chapters',
+        'manga_sync',
+        'mangas_categories',
+        'excluded_scanlators',
+      ]) {
+        await _db.customStatement(
+          'DELETE FROM $table WHERE manga_id IN ($nonFav)',
+        );
+      }
+      return (_db.delete(_db.mangas)..where((t) => t.favorite.equals(0))).go();
+    });
+  }
 }
 
 final mangaRepositoryProvider = Provider<MangaRepository>((ref) {

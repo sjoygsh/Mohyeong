@@ -51,6 +51,9 @@ dependencies:
 
   # Image loading + caching (cover art, reader pages)
   cached_network_image: ^3.3.1
+  # Underlying cache store for cached_network_image — declared directly so
+  # the advanced "clear cached covers" action can call emptyCache().
+  flutter_cache_manager: ^3.3.1
 
   # Cupertino icons (iOS-style)
   cupertino_icons: ^1.0.8

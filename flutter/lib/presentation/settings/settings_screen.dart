@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../track/trackers_settings_screen.dart';
+import 'advanced_settings_screen.dart';
 import 'appearance_settings_screen.dart';
 import 'browse_settings_screen.dart';
 import 'data_storage_settings_screen.dart';
@@ -61,6 +62,12 @@ class SettingsScreen extends StatelessWidget {
             title: 'Data and storage',
             subtitle: 'Backup, restore, and sync',
             destination: const DataStorageSettingsScreen(),
+          ),
+          _SettingsTile(
+            icon: Icons.code_outlined,
+            title: 'Advanced',
+            subtitle: 'Clear cookies, cache, and database',
+            destination: const AdvancedSettingsScreen(),
           ),
         ],
       ),
