@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../track/trackers_settings_screen.dart';
 import 'appearance_settings_screen.dart';
+import 'browse_settings_screen.dart';
 import 'data_storage_settings_screen.dart';
 import 'download_settings_screen.dart';
 import 'library_settings_screen.dart';
@@ -42,6 +43,12 @@ class SettingsScreen extends StatelessWidget {
             title: 'Downloads',
             subtitle: 'Simultaneous downloads, auto-download',
             destination: const DownloadSettingsScreen(),
+          ),
+          _SettingsTile(
+            icon: Icons.explore_outlined,
+            title: 'Browse',
+            subtitle: 'Sources and NSFW content',
+            destination: const BrowseSettingsScreen(),
           ),
           _SettingsTile(
             icon: Icons.sync_outlined,

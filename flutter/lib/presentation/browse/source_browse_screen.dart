@@ -2,12 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/manga/manga_repository.dart';
+import '../../data/source/browse_preferences.dart';
 import '../../data/source/extension_repository.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../cloudflare/cloudflare_solver_screen.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
+
+/// URLs of the manga already favourited for a given source id. Used to
+/// drop in-library results from the browse grid when the
+/// `hideInLibraryItems` preference is on.
+final _favoritedUrlsForSourceProvider =
+    FutureProvider.family<Set<String>, int>((ref, sourceId) async {
+  final repo = ref.watch(mangaRepositoryProvider);
+  final favorites = await repo.getFavoritesBySource(sourceId);
+  return favorites.map((m) => m.url).toSet();
+});
 
 /// Browses a single installed source: tabs for Popular / Latest / Search,
 /// each backed by an infinite-scroll grid pulled from the JS extension.
@@ -258,7 +269,7 @@ class _SearchListingState extends State<_SearchListing>
   }
 }
 
-class _MangaGrid extends StatelessWidget {
+class _MangaGrid extends ConsumerWidget {
   const _MangaGrid({
     required this.items,
     required this.sourceId,
@@ -276,7 +287,20 @@ class _MangaGrid extends StatelessWidget {
   final VoidCallback onLoadMore;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hideInLibrary = ref.watch(hideInLibraryItemsProvider);
+    final sourceIdInt = int.tryParse(sourceId);
+    List<SourceManga> items = this.items;
+    if (hideInLibrary && sourceIdInt != null) {
+      final favoritedUrls = ref
+          .watch(_favoritedUrlsForSourceProvider(sourceIdInt))
+          .valueOrNull;
+      if (favoritedUrls != null) {
+        items = items
+            .where((m) => !favoritedUrls.contains(m.url))
+            .toList(growable: false);
+      }
+    }
     if (error != null && items.isEmpty) {
       return Center(
         child: Padding(
