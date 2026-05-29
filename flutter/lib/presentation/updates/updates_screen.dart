@@ -28,6 +28,27 @@ class UpdatesScreen extends ConsumerStatefulWidget {
 class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
   bool _updating = false;
   final Set<int> _selectedChapterIds = <int>{};
+  final TextEditingController _searchController = TextEditingController();
+  bool _searching = false;
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _openSearch() {
+    setState(() => _searching = true);
+  }
+
+  void _closeSearch() {
+    setState(() {
+      _searching = false;
+      _query = '';
+      _searchController.clear();
+    });
+  }
 
   bool get _selecting => _selectedChapterIds.isNotEmpty;
 
@@ -109,7 +130,14 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
       stream: repo.watchAll(),
       builder: (context, snapshot) {
         final updates = snapshot.data ?? const <LibraryUpdate>[];
+        // Case-insensitive substring match against manga title — same
+        // shape as the History tab search field. Empty query is a fast
+        // pass-through (no allocation, no per-row toLower).
+        final q = _query.toLowerCase();
         final visible = updates.where((u) {
+          if (q.isNotEmpty && !u.mangaTitle.toLowerCase().contains(q)) {
+            return false;
+          }
           if (!applyTriState(filters.unread, () => !u.read)) return false;
           if (!applyTriState(filters.bookmark, () => u.bookmark)) {
             return false;
@@ -120,9 +148,16 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
           return true;
         }).toList(growable: false);
         return PopScope(
-          canPop: !_selecting,
+          // System back closes the in-flight thing first: selection >
+          // search > pop.
+          canPop: !_selecting && !_searching,
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) _clearSelection();
+            if (didPop) return;
+            if (_selecting) {
+              _clearSelection();
+            } else if (_searching) {
+              _closeSearch();
+            }
           },
           child: Scaffold(
             appBar: _selecting
@@ -186,8 +221,42 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                     ],
                   )
                 : AppBar(
-                    title: const Text('Updates'),
+                    title: _searching
+                        ? TextField(
+                            controller: _searchController,
+                            autofocus: true,
+                            decoration: const InputDecoration(
+                              hintText: 'Search updates',
+                              border: InputBorder.none,
+                            ),
+                            style: Theme.of(context).textTheme.titleLarge,
+                            textInputAction: TextInputAction.search,
+                            onChanged: (v) =>
+                                setState(() => _query = v.trim()),
+                          )
+                        : const Text('Updates'),
+                    leading: _searching
+                        ? IconButton(
+                            icon: const Icon(Icons.arrow_back),
+                            onPressed: _closeSearch,
+                          )
+                        : null,
                     actions: [
+                      if (_searching && _query.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          tooltip: 'Clear query',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _query = '');
+                          },
+                        )
+                      else if (!_searching)
+                        IconButton(
+                          icon: const Icon(Icons.search),
+                          tooltip: 'Search updates',
+                          onPressed: _openSearch,
+                        ),
                       IconButton(
                         icon: Icon(
                           Icons.filter_list,
@@ -231,9 +300,11 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                           physics: const AlwaysScrollableScrollPhysics(),
                           children: [
                             _Message(
-                              text: filters.isActive
-                                  ? 'No updates match the current filter.'
-                                  : 'No new chapters.',
+                              text: _query.isNotEmpty
+                                  ? 'No updates match the query.'
+                                  : filters.isActive
+                                      ? 'No updates match the current filter.'
+                                      : 'No new chapters.',
                             ),
                           ],
                         )
