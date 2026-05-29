@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'data/library/library_update_preference.dart';
 import 'data/library/library_update_scheduler.dart';
 import 'data/network/app_http_client.dart';
+import 'data/preferences/appearance_preferences.dart';
 import 'data/preferences/theme_preference.dart';
 import 'data/source/extension_repository.dart';
 import 'data/source/installed_extension.dart';
@@ -54,6 +55,7 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themePreferenceProvider);
+    final amoled = ref.watch(amoledProvider);
     // Keep the periodic task in sync with the preference.
     ref.listen<LibraryUpdateInterval>(
       libraryUpdatePreferenceProvider,
@@ -66,7 +68,7 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
       title: 'Mohyeong',
       navigatorKey: ref.watch(trackerNavigatorKeyProvider),
       theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
+      darkTheme: amoled ? AppTheme.darkAmoled : AppTheme.dark,
       themeMode: themeMode,
       home: const HomeScreen(),
       debugShowCheckedModeBanner: false,

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/preferences/appearance_preferences.dart';
 import '../../data/preferences/theme_preference.dart';
+import 'pref_tiles.dart';
 
-/// Appearance sub-screen: theme mode. Future appearance prefs (app
-/// language, date format, navigation rail style) drop in here.
+/// Appearance sub-screen: theme mode, AMOLED dark, and display
+/// preferences. Mirror of Mihon's `SettingsAppearanceScreen`.
 class AppearanceSettingsScreen extends ConsumerWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -16,13 +18,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Appearance')),
       body: ListView(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'Theme',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
+          const PrefSectionHeader('Theme'),
           RadioGroup<ThemeMode>(
             groupValue: themeMode,
             onChanged: (m) {
@@ -44,6 +40,29 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
+          PrefSwitch(
+            title: 'AMOLED black',
+            subtitle: 'Use a pure-black background in dark mode.',
+            provider: amoledProvider,
+          ),
+          const PrefSectionHeader('Timestamps'),
+          PrefSwitch(
+            title: 'Relative timestamps',
+            subtitle: 'Show times as "2h ago" (not yet active).',
+            provider: relativeTimestampsProvider,
+          ),
+          const PrefSectionHeader('Display'),
+          PrefSwitch(
+            title: 'Tablet UI',
+            subtitle: 'Force the two-pane layout (not yet active).',
+            provider: tabletUiModeProvider,
+          ),
+          PrefSwitch(
+            title: 'Images in description',
+            subtitle: 'Render images embedded in manga descriptions '
+                '(not yet active).',
+            provider: showImagesInDescriptionProvider,
           ),
         ],
       ),
