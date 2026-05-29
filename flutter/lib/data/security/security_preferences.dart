@@ -11,11 +11,18 @@ library;
 
 import '../preferences/typed_preferences.dart';
 
+/// SharedPreferences keys. Exposed so [AuthGate] can read the persisted
+/// values directly on cold start: the typed-pref Notifiers return their
+/// default synchronously and only load the stored value asynchronously,
+/// which races the first frame and would report the lock as disabled.
+const appLockKey = 'pref_app_lock';
+const secureScreenKey = 'secure_screen';
+
 /// Require authentication to open the app.
-final appLockEnabledProvider = boolPref('pref_app_lock', false);
+final appLockEnabledProvider = boolPref(appLockKey, false);
 
 /// Apply FLAG_SECURE to the window (block screenshots / recents preview).
-final secureScreenProvider = boolPref('secure_screen', false);
+final secureScreenProvider = boolPref(secureScreenKey, false);
 
 /// Grace period in minutes before the app re-locks after going to the
 /// background. 0 = lock immediately on leaving.

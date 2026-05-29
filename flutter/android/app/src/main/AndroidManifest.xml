@@ -16,8 +16,10 @@
     <!-- Update notifications + tracker auth toasts on Android 13+. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Biometric / device-credential app lock (local_auth). -->
+    <!-- Biometric / device-credential app lock (local_auth). USE_BIOMETRIC
+         covers API 28+; USE_FINGERPRINT is the fallback for API 23-27. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
 
     <!-- Local source folder picker reaches into user-selected directories
          via the Storage Access Framework. No broad MANAGE_EXTERNAL_STORAGE. -->

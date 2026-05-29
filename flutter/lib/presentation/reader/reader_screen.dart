@@ -46,13 +46,15 @@ class ReaderScreen extends ConsumerStatefulWidget {
   ConsumerState<ReaderScreen> createState() => _ReaderScreenState();
 }
 
-class _ReaderScreenState extends ConsumerState<ReaderScreen> {
+class _ReaderScreenState extends ConsumerState<ReaderScreen>
+    with WidgetsBindingObserver {
   late int _chapterId = widget.chapterId;
   Future<_ReaderData?>? _data;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Honour the fullscreen pref by hiding the system bars while the reader
     // is open. Restored to the normal edge-to-edge mode on dispose so the
     // bars come back when we pop to the rest of the app.
@@ -65,7 +67,30 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Don't hold the wakelock or a dimmed/brightened screen while the reader
+    // is in the background; reacquire both when it comes back to the front.
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        // True backgrounding only. Deliberately NOT `inactive`, which also
+        // fires on transient interruptions (notification shade, permission
+        // dialogs, multi-window focus loss) and would flicker the screen
+        // brightness mid-read.
+        WakelockPlus.disable();
+        ScreenBrightness().resetApplicationScreenBrightness();
+      case AppLifecycleState.resumed:
+        _applyKeepScreenOn();
+        _applyBrightness();
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        break;
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // Release the wakelock + restore system brightness so the reader's
     // settings don't leak into the rest of the app.

@@ -24,8 +24,10 @@ class MainActivity : FlutterFragmentActivity() {
                             } else {
                                 window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                             }
+                            // Reply only after the flag has actually been applied on
+                            // the UI thread, so the Dart future can't resolve early.
+                            result.success(null)
                         }
-                        result.success(null)
                     }
                     else -> result.notImplemented()
                 }
