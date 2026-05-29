@@ -27,6 +27,57 @@ class UpdatesScreen extends ConsumerStatefulWidget {
 
 class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
   bool _updating = false;
+  final Set<int> _selectedChapterIds = <int>{};
+
+  bool get _selecting => _selectedChapterIds.isNotEmpty;
+
+  void _toggleSelected(int chapterId) {
+    setState(() {
+      if (!_selectedChapterIds.add(chapterId)) {
+        _selectedChapterIds.remove(chapterId);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    if (_selectedChapterIds.isEmpty) return;
+    setState(_selectedChapterIds.clear);
+  }
+
+  void _selectAll(Iterable<int> ids) {
+    setState(() {
+      _selectedChapterIds
+        ..clear()
+        ..addAll(ids);
+    });
+  }
+
+  Future<void> _bulkSetRead(List<LibraryUpdate> visible, bool read) async {
+    final repo = ref.read(chapterRepositoryProvider);
+    final ids = visible
+        .where((u) => _selectedChapterIds.contains(u.chapterId))
+        .map((u) => u.chapterId)
+        .toList(growable: false);
+    for (final id in ids) {
+      await repo.setRead(id, read);
+    }
+    _clearSelection();
+  }
+
+  Future<void> _bulkSetBookmark(
+    List<LibraryUpdate> visible,
+    bool bookmark,
+  ) async {
+    final repo = ref.read(chapterRepositoryProvider);
+    final ids = visible
+        .where((u) => _selectedChapterIds.contains(u.chapterId))
+        .map((u) => u.chapterId)
+        .toList(growable: false);
+    for (final id in ids) {
+      await repo.setBookmark(id, bookmark);
+    }
+    _clearSelection();
+  }
 
   Future<void> _refresh() async {
     if (_updating) return;
@@ -54,77 +105,155 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
     final repo = ref.watch(updatesRepositoryProvider);
     final filters = ref.watch(updatesFiltersProvider);
     final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Updates'),
-        actions: [
-          IconButton(
-            icon: Icon(
-              Icons.filter_list,
-              color: filters.isActive ? scheme.primary : null,
-            ),
-            tooltip: 'Filter updates',
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (_) => const _UpdatesFilterDialog(),
-            ),
-          ),
-          IconButton(
-            icon: _updating
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh),
-            tooltip: 'Update library',
-            onPressed: _updating ? null : _refresh,
-          ),
-        ],
-      ),
-      body: StreamBuilder<List<LibraryUpdate>>(
-        stream: repo.watchAll(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return _Message(text: 'Failed to load updates: ${snapshot.error}');
+    return StreamBuilder<List<LibraryUpdate>>(
+      stream: repo.watchAll(),
+      builder: (context, snapshot) {
+        final updates = snapshot.data ?? const <LibraryUpdate>[];
+        final visible = updates.where((u) {
+          if (!applyTriState(filters.unread, () => !u.read)) return false;
+          if (!applyTriState(filters.bookmark, () => u.bookmark)) {
+            return false;
           }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+          if (filters.hideMutedScanlators && u.isScanlatorMuted) {
+            return false;
           }
-          final updates = snapshot.data!;
-          final visible = updates.where((u) {
-            if (!applyTriState(filters.unread, () => !u.read)) return false;
-            if (!applyTriState(filters.bookmark, () => u.bookmark)) {
-              return false;
-            }
-            if (filters.hideMutedScanlators && u.isScanlatorMuted) {
-              return false;
-            }
-            return true;
-          }).toList(growable: false);
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: visible.isEmpty
-                ? ListView(
-                    // ListView so RefreshIndicator still triggers on overscroll.
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: [
-                      _Message(
-                        text: filters.isActive
-                            ? 'No updates match the current filter.'
-                            : 'No new chapters.',
+          return true;
+        }).toList(growable: false);
+        return PopScope(
+          canPop: !_selecting,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _clearSelection();
+          },
+          child: Scaffold(
+            appBar: _selecting
+                ? AppBar(
+                    backgroundColor: scheme.primaryContainer,
+                    leading: IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Clear selection',
+                      onPressed: _clearSelection,
+                    ),
+                    title: Text('${_selectedChapterIds.length} selected'),
+                    actions: [
+                      if (_selectedChapterIds.length == 1)
+                        IconButton(
+                          icon: const Icon(Icons.menu_book_outlined),
+                          tooltip: 'Open manga details',
+                          onPressed: () {
+                            final id = _selectedChapterIds.single;
+                            final pick = visible.firstWhere(
+                              (u) => u.chapterId == id,
+                              orElse: () => updates.firstWhere(
+                                (u) => u.chapterId == id,
+                              ),
+                            );
+                            _clearSelection();
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => MangaDetailsScreen(
+                                  mangaId: pick.mangaId,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.select_all),
+                        tooltip: 'Select all',
+                        onPressed: () =>
+                            _selectAll(visible.map((u) => u.chapterId)),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.done_all),
+                        tooltip: 'Mark as read',
+                        onPressed: () => _bulkSetRead(visible, true),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.remove_done),
+                        tooltip: 'Mark as unread',
+                        onPressed: () => _bulkSetRead(visible, false),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.bookmark_add_outlined),
+                        tooltip: 'Bookmark',
+                        onPressed: () => _bulkSetBookmark(visible, true),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.bookmark_remove_outlined),
+                        tooltip: 'Remove bookmark',
+                        onPressed: () => _bulkSetBookmark(visible, false),
                       ),
                     ],
                   )
-                : ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: visible.length,
-                    itemBuilder: (context, i) =>
-                        _UpdateTile(update: visible[i]),
+                : AppBar(
+                    title: const Text('Updates'),
+                    actions: [
+                      IconButton(
+                        icon: Icon(
+                          Icons.filter_list,
+                          color: filters.isActive ? scheme.primary : null,
+                        ),
+                        tooltip: 'Filter updates',
+                        onPressed: () => showDialog<void>(
+                          context: context,
+                          builder: (_) => const _UpdatesFilterDialog(),
+                        ),
+                      ),
+                      IconButton(
+                        icon: _updating
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh),
+                        tooltip: 'Update library',
+                        onPressed: _updating ? null : _refresh,
+                      ),
+                    ],
                   ),
-          );
-        },
-      ),
+            body: Builder(
+              builder: (_) {
+                if (snapshot.hasError) {
+                  return _Message(
+                    text: 'Failed to load updates: ${snapshot.error}',
+                  );
+                }
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: visible.isEmpty
+                      ? ListView(
+                          // ListView so RefreshIndicator still triggers on overscroll.
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: [
+                            _Message(
+                              text: filters.isActive
+                                  ? 'No updates match the current filter.'
+                                  : 'No new chapters.',
+                            ),
+                          ],
+                        )
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          itemCount: visible.length,
+                          itemBuilder: (context, i) => _UpdateTile(
+                            update: visible[i],
+                            selected: _selectedChapterIds
+                                .contains(visible[i].chapterId),
+                            selecting: _selecting,
+                            onToggleSelected: _toggleSelected,
+                          ),
+                        ),
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -212,9 +341,17 @@ class _UpdatesFilterDialog extends ConsumerWidget {
 }
 
 class _UpdateTile extends ConsumerWidget {
-  const _UpdateTile({required this.update});
+  const _UpdateTile({
+    required this.update,
+    required this.selected,
+    required this.selecting,
+    required this.onToggleSelected,
+  });
 
   final LibraryUpdate update;
+  final bool selected;
+  final bool selecting;
+  final ValueChanged<int> onToggleSelected;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -229,6 +366,11 @@ class _UpdateTile extends ConsumerWidget {
       if (update.isLinkedAttribution) 'linked source',
     ];
     return ListTile(
+      // Selected rows pick up the primaryContainer wash to match the
+      // selection app bar — same visual key used by the chapter
+      // multi-select on the manga details screen.
+      selected: selected,
+      selectedTileColor: theme.colorScheme.primaryContainer,
       leading: _Thumb(url: update.thumbnailUrl),
       title: Text(
         update.mangaTitle,
@@ -250,79 +392,32 @@ class _UpdateTile extends ConsumerWidget {
       trailing: update.bookmark
           ? const Icon(Icons.bookmark, size: 18)
           : null,
-      // Tap opens the chapter directly (Mihon parity — Updates is a
-      // "what's new" feed, so the natural action is to start reading
-      // it). Long-press still exposes the older details/mark-read
-      // actions via a bottom sheet.
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => ReaderScreen(
-              mangaId: update.mangaId,
-              chapterId: update.chapterId,
-            ),
-          ),
-        );
-      },
-      onLongPress: () => _showRowMenu(context, ref),
+      // While a multi-select is active, taps just toggle selection —
+      // matches Mihon's behavior so the bulk action bar can be operated
+      // without leaving the screen. Outside selection mode the tap
+      // opens the chapter directly; long-press always enters/extends
+      // selection by toggling the row, or (when not selecting) falls
+      // through to the per-row action sheet.
+      onTap: selecting
+          ? () => onToggleSelected(update.chapterId)
+          : () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ReaderScreen(
+                    mangaId: update.mangaId,
+                    chapterId: update.chapterId,
+                  ),
+                ),
+              );
+            },
+      // Long-press always toggles selection — entering selection mode
+      // when none is active. This is the natural Mihon parity behaviour
+      // now that the selection bar exposes the same actions the older
+      // per-row sheet covered.
+      onLongPress: () => onToggleSelected(update.chapterId),
     );
-  }
-
-  Future<void> _showRowMenu(BuildContext context, WidgetRef ref) async {
-    final action = await showModalBottomSheet<_UpdateRowAction>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.menu_book_outlined),
-              title: const Text('Open manga details'),
-              onTap: () => Navigator.of(ctx).pop(_UpdateRowAction.openDetails),
-            ),
-            ListTile(
-              leading: Icon(
-                update.read
-                    ? Icons.radio_button_unchecked
-                    : Icons.check_circle_outline,
-              ),
-              title: Text(update.read ? 'Mark as unread' : 'Mark as read'),
-              onTap: () => Navigator.of(ctx).pop(_UpdateRowAction.toggleRead),
-            ),
-            ListTile(
-              leading: Icon(
-                update.bookmark
-                    ? Icons.bookmark_remove_outlined
-                    : Icons.bookmark_add_outlined,
-              ),
-              title:
-                  Text(update.bookmark ? 'Remove bookmark' : 'Add bookmark'),
-              onTap: () => Navigator.of(ctx).pop(_UpdateRowAction.toggleBookmark),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (action == null) return;
-    if (!context.mounted) return;
-    final repo = ref.read(chapterRepositoryProvider);
-    switch (action) {
-      case _UpdateRowAction.openDetails:
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => MangaDetailsScreen(mangaId: update.mangaId),
-          ),
-        );
-      case _UpdateRowAction.toggleRead:
-        await repo.setRead(update.chapterId, !update.read);
-      case _UpdateRowAction.toggleBookmark:
-        await repo.setBookmark(update.chapterId, !update.bookmark);
-    }
   }
 }
-
-enum _UpdateRowAction { openDetails, toggleRead, toggleBookmark }
 
 class _Thumb extends StatelessWidget {
   const _Thumb({required this.url});
