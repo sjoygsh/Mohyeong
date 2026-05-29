@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/history/history_repository.dart';
+import '../../data/preferences/appearance_preferences.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
 import '../reader/reader_screen.dart';
+import '../util/timestamp_format.dart';
 
 /// History tab. Streams the most recently read chapters with their
 /// manga context attached. The header shows the cumulative reading time
@@ -309,9 +311,10 @@ class _HistoryTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final readAt = entry.readAt;
+    final relative = ref.watch(relativeTimestampsProvider);
     final subtitle = readAt == null
         ? entry.chapterName
-        : '${entry.chapterName} • ${_relative(readAt)}';
+        : '${entry.chapterName} • ${formatTimestamp(readAt, relative: relative)}';
     return ListTile(
       leading: _Thumb(url: entry.thumbnailUrl),
       title: Text(
@@ -388,14 +391,6 @@ class _HistoryTile extends ConsumerWidget {
     }
   }
 
-  static String _relative(DateTime t) {
-    final diff = DateTime.now().difference(t);
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
-    if (diff.inDays < 1) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
-  }
 }
 
 class _Thumb extends StatelessWidget {

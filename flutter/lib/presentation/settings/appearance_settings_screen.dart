@@ -49,7 +49,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           const PrefSectionHeader('Timestamps'),
           PrefSwitch(
             title: 'Relative timestamps',
-            subtitle: 'Show times as "2h ago" (not yet active).',
+            subtitle: 'Show history times as "2h ago" instead of dates.',
             provider: relativeTimestampsProvider,
           ),
           const PrefSectionHeader('Display'),

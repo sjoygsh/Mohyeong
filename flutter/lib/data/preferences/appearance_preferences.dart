@@ -16,7 +16,7 @@ import 'typed_preferences.dart';
 final amoledProvider = boolPref('pref_theme_dark_amoled', false);
 
 /// Show timestamps as "2h ago" style relative times instead of absolute
-/// dates. Stored-only for now.
+/// dates. Honoured by the History tab via `formatTimestamp`.
 final relativeTimestampsProvider = boolPref('relative_time_v2', true);
 
 /// Absolute date display pattern (e.g. "yyyy-MM-dd"). Stored-only.
