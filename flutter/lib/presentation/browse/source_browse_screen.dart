@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/manga/manga_repository.dart';
 import '../../data/source/extension_repository.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../cloudflare/cloudflare_solver_screen.dart';
 import '../common/source_image.dart';
+import '../manga/manga_details_screen.dart';
 
 /// Browses a single installed source: tabs for Popular / Latest / Search,
 /// each backed by an infinite-scroll grid pulled from the JS extension.
@@ -148,6 +150,7 @@ class _ListingState extends State<_Listing>
     super.build(context);
     return _MangaGrid(
       items: _items,
+      sourceId: widget.source.id,
       loading: _loading,
       error: _error,
       hasMore: _hasNext,
@@ -243,6 +246,7 @@ class _SearchListingState extends State<_SearchListing>
           Expanded(
             child: _MangaGrid(
               items: _items,
+              sourceId: widget.source.id,
               loading: _loading,
               error: _error,
               hasMore: _hasNext,
@@ -257,6 +261,7 @@ class _SearchListingState extends State<_SearchListing>
 class _MangaGrid extends StatelessWidget {
   const _MangaGrid({
     required this.items,
+    required this.sourceId,
     required this.loading,
     required this.error,
     required this.hasMore,
@@ -264,6 +269,7 @@ class _MangaGrid extends StatelessWidget {
   });
 
   final List<SourceManga> items;
+  final String sourceId;
   final bool loading;
   final Object? error;
   final bool hasMore;
@@ -307,20 +313,21 @@ class _MangaGrid extends StatelessWidget {
           if (i >= items.length) {
             return const Center(child: CircularProgressIndicator());
           }
-          return _MangaCard(manga: items[i]);
+          return _MangaCard(manga: items[i], sourceId: sourceId);
         },
       ),
     );
   }
 }
 
-class _MangaCard extends StatelessWidget {
-  const _MangaCard({required this.manga});
+class _MangaCard extends ConsumerWidget {
+  const _MangaCard({required this.manga, required this.sourceId});
 
   final SourceManga manga;
+  final String sourceId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
     final url = manga.thumbnailUrl;
     return ClipRRect(
@@ -360,8 +367,48 @@ class _MangaCard extends StatelessWidget {
               style: const TextStyle(color: Colors.white, fontSize: 12),
             ),
           ),
+          // Tap routes via `insertFromSource` (resolves an existing row
+          // when (url, source) already matches, inserts a non-favourite
+          // row otherwise) into the manga details screen — same flow
+          // Mihon uses to open a source manga before it's added to the
+          // library.
+          Positioned.fill(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => _openManga(context, ref),
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _openManga(BuildContext context, WidgetRef ref) async {
+    final sourceIdInt = int.tryParse(sourceId);
+    if (sourceIdInt == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Source id "$sourceId" is not numeric.')),
+      );
+      return;
+    }
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final inserted = await ref
+          .read(mangaRepositoryProvider)
+          .insertFromSource(candidate: manga, sourceId: sourceIdInt);
+      if (!context.mounted) return;
+      await navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => MangaDetailsScreen(mangaId: inserted.id),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not open manga: $e')),
+      );
+    }
   }
 }

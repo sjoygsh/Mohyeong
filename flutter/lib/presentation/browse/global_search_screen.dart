@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/manga/manga_repository.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../common/source_image.dart';
+import '../manga/manga_details_screen.dart';
 import 'source_browse_screen.dart';
 
 /// Mihon's "Global search" screen: takes a query and fans it out across
@@ -239,7 +241,10 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
                   separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (_, i) => SizedBox(
                     width: 130,
-                    child: _ResultCard(manga: items[i]),
+                    child: _ResultCard(
+                      manga: items[i],
+                      sourceId: widget.sourceId,
+                    ),
                   ),
                 );
               },
@@ -251,13 +256,14 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
   }
 }
 
-class _ResultCard extends StatelessWidget {
-  const _ResultCard({required this.manga});
+class _ResultCard extends ConsumerWidget {
+  const _ResultCard({required this.manga, required this.sourceId});
 
   final SourceManga manga;
+  final String sourceId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
     final url = manga.thumbnailUrl;
     return ClipRRect(
@@ -297,8 +303,46 @@ class _ResultCard extends StatelessWidget {
               style: const TextStyle(color: Colors.white, fontSize: 12),
             ),
           ),
+          // Tap routes via `insertFromSource` into the manga details
+          // screen — same flow Mihon uses when picking a result before
+          // adding to library.
+          Positioned.fill(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => _openManga(context, ref),
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _openManga(BuildContext context, WidgetRef ref) async {
+    final sourceIdInt = int.tryParse(sourceId);
+    if (sourceIdInt == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Source id "$sourceId" is not numeric.')),
+      );
+      return;
+    }
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final inserted = await ref
+          .read(mangaRepositoryProvider)
+          .insertFromSource(candidate: manga, sourceId: sourceIdInt);
+      if (!context.mounted) return;
+      await navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => MangaDetailsScreen(mangaId: inserted.id),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not open manga: $e')),
+      );
+    }
   }
 }
