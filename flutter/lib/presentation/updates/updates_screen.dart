@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/chapter/chapter_repository.dart';
 import '../../data/library/library_updater.dart';
 import '../../data/updates/updates_filter_prefs.dart';
 import '../../data/updates/updates_repository.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
+import '../reader/reader_screen.dart';
 
 /// Updates tab -- streams `updatesView` (newly fetched chapters in
 /// favourited manga). Mirrors the Kotlin UpdatesTab presentation: cover
@@ -209,13 +211,13 @@ class _UpdatesFilterDialog extends ConsumerWidget {
   }
 }
 
-class _UpdateTile extends StatelessWidget {
+class _UpdateTile extends ConsumerWidget {
   const _UpdateTile({required this.update});
 
   final LibraryUpdate update;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final readColor = theme.disabledColor;
     final defaultColor = theme.colorScheme.onSurface;
@@ -248,16 +250,79 @@ class _UpdateTile extends StatelessWidget {
       trailing: update.bookmark
           ? const Icon(Icons.bookmark, size: 18)
           : null,
+      // Tap opens the chapter directly (Mihon parity — Updates is a
+      // "what's new" feed, so the natural action is to start reading
+      // it). Long-press still exposes the older details/mark-read
+      // actions via a bottom sheet.
       onTap: () {
         Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ReaderScreen(
+              mangaId: update.mangaId,
+              chapterId: update.chapterId,
+            ),
+          ),
+        );
+      },
+      onLongPress: () => _showRowMenu(context, ref),
+    );
+  }
+
+  Future<void> _showRowMenu(BuildContext context, WidgetRef ref) async {
+    final action = await showModalBottomSheet<_UpdateRowAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.menu_book_outlined),
+              title: const Text('Open manga details'),
+              onTap: () => Navigator.of(ctx).pop(_UpdateRowAction.openDetails),
+            ),
+            ListTile(
+              leading: Icon(
+                update.read
+                    ? Icons.radio_button_unchecked
+                    : Icons.check_circle_outline,
+              ),
+              title: Text(update.read ? 'Mark as unread' : 'Mark as read'),
+              onTap: () => Navigator.of(ctx).pop(_UpdateRowAction.toggleRead),
+            ),
+            ListTile(
+              leading: Icon(
+                update.bookmark
+                    ? Icons.bookmark_remove_outlined
+                    : Icons.bookmark_add_outlined,
+              ),
+              title:
+                  Text(update.bookmark ? 'Remove bookmark' : 'Add bookmark'),
+              onTap: () => Navigator.of(ctx).pop(_UpdateRowAction.toggleBookmark),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null) return;
+    if (!context.mounted) return;
+    final repo = ref.read(chapterRepositoryProvider);
+    switch (action) {
+      case _UpdateRowAction.openDetails:
+        await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => MangaDetailsScreen(mangaId: update.mangaId),
           ),
         );
-      },
-    );
+      case _UpdateRowAction.toggleRead:
+        await repo.setRead(update.chapterId, !update.read);
+      case _UpdateRowAction.toggleBookmark:
+        await repo.setBookmark(update.chapterId, !update.bookmark);
+    }
   }
 }
+
+enum _UpdateRowAction { openDetails, toggleRead, toggleBookmark }
 
 class _Thumb extends StatelessWidget {
   const _Thumb({required this.url});
