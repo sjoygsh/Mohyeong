@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../track/trackers_settings_screen.dart';
 import 'appearance_settings_screen.dart';
 import 'data_storage_settings_screen.dart';
+import 'download_settings_screen.dart';
 import 'library_settings_screen.dart';
 import 'reader_settings_screen.dart';
 
@@ -35,6 +36,12 @@ class SettingsScreen extends StatelessWidget {
             title: 'Reader',
             subtitle: 'Default reading mode',
             destination: const ReaderSettingsScreen(),
+          ),
+          _SettingsTile(
+            icon: Icons.download_outlined,
+            title: 'Downloads',
+            subtitle: 'Simultaneous downloads, auto-download',
+            destination: const DownloadSettingsScreen(),
           ),
           _SettingsTile(
             icon: Icons.sync_outlined,

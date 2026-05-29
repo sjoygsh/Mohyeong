@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
@@ -261,14 +262,37 @@ class DownloadRepository {
     unawaited(_drain());
   }
 
+  /// How many chapters to download concurrently. Read fresh from
+  /// SharedPreferences (`download_slots`, 1..5) at the start of each drain
+  /// so a settings change takes effect on the next batch. Defaults to
+  /// serial (1) when unset or out of range.
+  Future<int> _maxConcurrent() async {
+    final prefs = await SharedPreferences.getInstance();
+    final v = prefs.getInt('download_slots') ?? 1;
+    return v.clamp(1, 5);
+  }
+
   Future<void> _drain() async {
     if (_running || _paused) return;
     _running = true;
     try {
-      while (_queue.isNotEmpty && !_paused) {
-        final job = _queue.removeAt(0);
-        await _runJob(job);
-        _byChapter.remove(job.chapter.id);
+      final concurrency = await _maxConcurrent();
+      final active = <Future<void>>{};
+      while (!_paused && (_queue.isNotEmpty || active.isNotEmpty)) {
+        // Top up the in-flight set until we hit the concurrency cap or
+        // run out of queued jobs.
+        while (!_paused && _queue.isNotEmpty && active.length < concurrency) {
+          final job = _queue.removeAt(0);
+          late final Future<void> f;
+          f = _runJob(job).whenComplete(() {
+            _byChapter.remove(job.chapter.id);
+            active.remove(f);
+          });
+          active.add(f);
+        }
+        if (active.isEmpty) break;
+        // Wait for at least one job to finish, then re-fill.
+        await Future.any(active);
       }
     } finally {
       _running = false;
