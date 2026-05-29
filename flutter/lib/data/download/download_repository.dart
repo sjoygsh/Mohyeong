@@ -36,9 +36,34 @@ class DownloadRepository {
   final List<_DownloadJob> _queue = [];
   final Map<int, _DownloadJob> _byChapter = {}; // chapterId -> job
   bool _running = false;
+  bool _paused = false;
 
   final _events = StreamController<DownloadEvent>.broadcast();
   Stream<DownloadEvent> get events => _events.stream;
+
+  /// Whether new queued jobs are blocked from starting. The currently
+  /// running job (if any) keeps going — we don't have `CancelToken`
+  /// plumbed yet — so pause is effectively "no new jobs after this
+  /// one". UI reads this to flip the pause/resume affordance.
+  bool get isPaused => _paused;
+
+  /// Stop pulling jobs from the queue. The in-flight job finishes
+  /// normally. Subsequent calls to [enqueue] still queue rows but the
+  /// drain loop won't start them until [resumeQueue] is called.
+  void pauseQueue() {
+    if (_paused) return;
+    _paused = true;
+    _events.add(const DownloadEvent.queuePaused());
+  }
+
+  /// Resume pulling jobs from the queue. Kicks the drain loop if there's
+  /// anything pending so the UI sees activity immediately.
+  void resumeQueue() {
+    if (!_paused) return;
+    _paused = false;
+    _events.add(const DownloadEvent.queueResumed());
+    unawaited(_drain());
+  }
 
   Future<Directory> _root() async {
     final cached = _rootCache;
@@ -237,10 +262,10 @@ class DownloadRepository {
   }
 
   Future<void> _drain() async {
-    if (_running) return;
+    if (_running || _paused) return;
     _running = true;
     try {
-      while (_queue.isNotEmpty) {
+      while (_queue.isNotEmpty && !_paused) {
         final job = _queue.removeAt(0);
         await _runJob(job);
         _byChapter.remove(job.chapter.id);
@@ -409,7 +434,18 @@ class _DownloadJob {
   final Chapter chapter;
 }
 
-enum DownloadState { queued, downloading, completed, failed, deleted }
+enum DownloadState {
+  queued,
+  downloading,
+  completed,
+  failed,
+  deleted,
+  // Whole-queue lifecycle events — `chapterId` is unused for these (set
+  // to 0). Listeners that care about per-row state can ignore them; the
+  // queue screen uses them to refresh its pause/resume button.
+  queuePaused,
+  queueResumed,
+}
 
 class DownloadEvent {
   const DownloadEvent({
@@ -418,6 +454,18 @@ class DownloadEvent {
     this.progress,
     this.error,
   });
+
+  const DownloadEvent.queuePaused()
+      : chapterId = 0,
+        state = DownloadState.queuePaused,
+        progress = null,
+        error = null;
+
+  const DownloadEvent.queueResumed()
+      : chapterId = 0,
+        state = DownloadState.queueResumed,
+        progress = null,
+        error = null;
 
   final int chapterId;
   final DownloadState state;

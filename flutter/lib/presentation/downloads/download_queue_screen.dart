@@ -49,6 +49,8 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
         case DownloadState.deleted:
           _progress.remove(ev.chapterId);
         case DownloadState.queued:
+        case DownloadState.queuePaused:
+        case DownloadState.queueResumed:
           break;
       }
     });
@@ -62,6 +64,20 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
       appBar: AppBar(
         title: const Text('Download queue'),
         actions: [
+          if (items.isNotEmpty)
+            IconButton(
+              icon: Icon(
+                repo.isPaused ? Icons.play_arrow : Icons.pause,
+              ),
+              tooltip: repo.isPaused ? 'Resume queue' : 'Pause queue',
+              onPressed: () {
+                if (repo.isPaused) {
+                  repo.resumeQueue();
+                } else {
+                  repo.pauseQueue();
+                }
+              },
+            ),
           if (items.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.clear_all),
@@ -104,7 +120,35 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
       ),
       body: items.isEmpty
           ? const _EmptyQueue()
-          : _buildBody(context, repo, items),
+          : Column(
+              children: [
+                if (repo.isPaused)
+                  Material(
+                    color:
+                        Theme.of(context).colorScheme.tertiaryContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.pause_circle_outline, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Queue paused — the running chapter will '
+                              'finish, but no further jobs will start.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                Expanded(child: _buildBody(context, repo, items)),
+              ],
+            ),
     );
   }
 

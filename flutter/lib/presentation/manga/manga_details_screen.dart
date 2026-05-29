@@ -1916,6 +1916,10 @@ class _DownloadIndicator extends StatelessWidget {
           child: Icon(Icons.error_outline, size: 18, color: Colors.redAccent),
         );
       case DownloadState.deleted:
+      // Whole-queue lifecycle events don't carry a chapterId — never
+      // reach a per-chapter indicator. Render nothing.
+      case DownloadState.queuePaused:
+      case DownloadState.queueResumed:
         return const SizedBox.shrink();
     }
   }
