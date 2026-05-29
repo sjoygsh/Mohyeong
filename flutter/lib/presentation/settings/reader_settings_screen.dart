@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/preferences/typed_preferences.dart';
 import '../../data/reader/reader_behavior_preferences.dart';
 import '../../data/reader/reader_preferences.dart';
+import '../../domain/reader/model/reader_scale_type.dart';
 import '../../domain/reader/model/reading_mode.dart';
 
 /// Reader sub-screen: global default reading mode + visual prefs
@@ -20,6 +21,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
     final colorFilter = ref.watch(readerColorFilterProvider);
     final autoHideSeconds = ref.watch(readerAutoHideChromeSecondsProvider);
     final doubleTapSpeed = ref.watch(readerDoubleTapAnimSpeedProvider);
+    final scaleType =
+        ReaderScaleType.fromKey(ref.watch(readerScaleTypeProvider));
+    final sidePadding = ref.watch(readerWebtoonSidePaddingProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Reader')),
       body: ListView(
@@ -112,6 +116,44 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Invert colours',
             subtitle: 'Render pages as a colour negative.',
             provider: readerInvertedColorsProvider,
+          ),
+          ListTile(
+            title: const Text('Scale type'),
+            subtitle: Text(scaleType.label),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<ReaderScaleType>(
+                context: context,
+                builder: (_) => _ScaleTypePickerDialog(current: scaleType),
+              );
+              if (picked != null) {
+                await ref
+                    .read(readerScaleTypeProvider.notifier)
+                    .set(picked.key);
+              }
+            },
+          ),
+          ListTile(
+            title: const Text('Webtoon side padding'),
+            subtitle: Text(_sidePaddingLabel(sidePadding)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<int>(
+                context: context,
+                builder: (_) =>
+                    _SidePaddingPickerDialog(current: sidePadding),
+              );
+              if (picked != null) {
+                await ref
+                    .read(readerWebtoonSidePaddingProvider.notifier)
+                    .set(picked);
+              }
+            },
+          ),
+          _PrefSwitch(
+            title: 'Crop borders',
+            subtitle: 'Trim solid page margins (not yet active).',
+            provider: readerCropBordersProvider,
           ),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -259,6 +301,68 @@ class _DoubleTapSpeedPickerDialog extends StatelessWidget {
 String _autoHideLabel(int seconds) {
   if (seconds <= 0) return 'Off';
   return 'After $seconds second${seconds == 1 ? '' : 's'}';
+}
+
+String _sidePaddingLabel(int pct) => pct <= 0 ? 'None' : '$pct%';
+
+class _ScaleTypePickerDialog extends StatelessWidget {
+  const _ScaleTypePickerDialog({required this.current});
+
+  final ReaderScaleType current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Scale type'),
+      children: [
+        RadioGroup<ReaderScaleType>(
+          groupValue: current,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final t in ReaderScaleType.values)
+                RadioListTile<ReaderScaleType>(
+                  value: t,
+                  title: Text(t.label),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SidePaddingPickerDialog extends StatelessWidget {
+  const _SidePaddingPickerDialog({required this.current});
+
+  final int current;
+
+  static const _options = <int>[0, 5, 10, 15, 20, 25];
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Webtoon side padding'),
+      children: [
+        RadioGroup<int>(
+          groupValue: _options.contains(current) ? current : 0,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final v in _options)
+                RadioListTile<int>(
+                  value: v,
+                  title: Text(_sidePaddingLabel(v)),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _ReadingModePickerDialog extends StatelessWidget {

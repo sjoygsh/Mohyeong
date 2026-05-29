@@ -14,6 +14,7 @@ import '../../data/source/extension_repository.dart';
 import '../../data/track/track_updater.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
+import '../../domain/reader/model/reader_scale_type.dart';
 import '../../domain/reader/model/reading_mode.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_chapter.dart';
@@ -384,10 +385,16 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     final showPageNumber = ref.watch(readerShowPageNumberProvider);
     final grayscale = ref.watch(readerGrayscaleProvider);
     final invert = ref.watch(readerInvertedColorsProvider);
+    final fit = ReaderScaleType.fromKey(ref.watch(readerScaleTypeProvider))
+        .boxFit;
+    final sidePaddingPct =
+        ref.watch(readerWebtoonSidePaddingProvider).clamp(0, 25);
 
     Widget viewport = _ReaderViewport(
       data: data,
       mode: widget.mode,
+      fit: fit,
+      sidePaddingFraction: sidePaddingPct / 100,
       onPageChanged: _onPageChanged,
       onTotalChanged: _onTotalChanged,
       seekRequest: _ViewportSeekRequest(
@@ -600,6 +607,8 @@ class _ReaderViewport extends StatelessWidget {
   const _ReaderViewport({
     required this.data,
     required this.mode,
+    required this.fit,
+    required this.sidePaddingFraction,
     required this.onPageChanged,
     required this.onTotalChanged,
     required this.seekRequest,
@@ -607,6 +616,8 @@ class _ReaderViewport extends StatelessWidget {
 
   final _ReaderData data;
   final ReadingMode mode;
+  final BoxFit fit;
+  final double sidePaddingFraction;
   final ValueChanged<int> onPageChanged;
   final ValueChanged<int> onTotalChanged;
   final _ViewportSeekRequest seekRequest;
@@ -619,6 +630,8 @@ class _ReaderViewport extends StatelessWidget {
       return _LocalPageList(
         paths: data.localPagePaths!,
         mode: mode,
+        fit: fit,
+        sidePaddingFraction: sidePaddingFraction,
         initialPage: data.chapter.lastPageRead,
         onPageChanged: onPageChanged,
         seekRequest: seekRequest,
@@ -635,6 +648,8 @@ class _ReaderViewport extends StatelessWidget {
       source: data.source!,
       chapter: data.chapter,
       mode: mode,
+      fit: fit,
+      sidePaddingFraction: sidePaddingFraction,
       onPageChanged: onPageChanged,
       onTotalChanged: onTotalChanged,
       seekRequest: seekRequest,
@@ -647,6 +662,8 @@ class _PageList extends StatefulWidget {
     required this.source,
     required this.chapter,
     required this.mode,
+    required this.fit,
+    required this.sidePaddingFraction,
     required this.onPageChanged,
     required this.onTotalChanged,
     required this.seekRequest,
@@ -655,6 +672,8 @@ class _PageList extends StatefulWidget {
   final MangaSource source;
   final Chapter chapter;
   final ReadingMode mode;
+  final BoxFit fit;
+  final double sidePaddingFraction;
   final ValueChanged<int> onPageChanged;
   final ValueChanged<int> onTotalChanged;
   final _ViewportSeekRequest seekRequest;
@@ -728,6 +747,7 @@ class _PageListState extends State<_PageList> {
         return _PagesView(
           count: pages.length,
           mode: widget.mode,
+          sidePaddingFraction: widget.sidePaddingFraction,
           initialPage: widget.chapter.lastPageRead,
           onPageChanged: widget.onPageChanged,
           seekRequest: widget.seekRequest,
@@ -736,7 +756,7 @@ class _PageListState extends State<_PageList> {
             final imageUrl = page.imageUrl ?? page.url;
             return SourceImage(
               url: imageUrl,
-              fit: BoxFit.contain,
+              fit: widget.fit,
               headers: page.headers,
               placeholder: (_) => const SizedBox(
                 height: 400,
@@ -765,6 +785,8 @@ class _LocalPageList extends StatelessWidget {
   const _LocalPageList({
     required this.paths,
     required this.mode,
+    required this.fit,
+    required this.sidePaddingFraction,
     required this.initialPage,
     required this.onPageChanged,
     required this.seekRequest,
@@ -772,6 +794,8 @@ class _LocalPageList extends StatelessWidget {
 
   final List<String> paths;
   final ReadingMode mode;
+  final BoxFit fit;
+  final double sidePaddingFraction;
   final int initialPage;
   final ValueChanged<int> onPageChanged;
   final _ViewportSeekRequest seekRequest;
@@ -786,12 +810,13 @@ class _LocalPageList extends StatelessWidget {
     return _PagesView(
       count: paths.length,
       mode: mode,
+      sidePaddingFraction: sidePaddingFraction,
       initialPage: initialPage,
       onPageChanged: onPageChanged,
       seekRequest: seekRequest,
       itemBuilder: (_, i) => Image.file(
         File(paths[i]),
-        fit: BoxFit.contain,
+        fit: fit,
         errorBuilder: (_, error, _) => SizedBox(
           height: 400,
           child: Center(
@@ -815,6 +840,7 @@ class _PagesView extends StatefulWidget {
   const _PagesView({
     required this.count,
     required this.mode,
+    required this.sidePaddingFraction,
     required this.initialPage,
     required this.onPageChanged,
     required this.seekRequest,
@@ -823,6 +849,7 @@ class _PagesView extends StatefulWidget {
 
   final int count;
   final ReadingMode mode;
+  final double sidePaddingFraction;
   final int initialPage;
   final ValueChanged<int> onPageChanged;
   final _ViewportSeekRequest seekRequest;
@@ -911,6 +938,15 @@ class _PagesViewState extends State<_PagesView> {
         child: ListView.builder(
           controller: _scrollController,
           itemCount: widget.count,
+          // Webtoon side padding: inset each page horizontally by a
+          // fraction of the viewport width so strips don't run edge-to-
+          // edge on wide screens. 0 = no inset (the default).
+          padding: widget.sidePaddingFraction <= 0
+              ? EdgeInsets.zero
+              : EdgeInsets.symmetric(
+                  horizontal: MediaQuery.sizeOf(context).width *
+                      widget.sidePaddingFraction,
+                ),
           itemBuilder: widget.itemBuilder,
         ),
       );

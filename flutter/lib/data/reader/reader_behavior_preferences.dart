@@ -54,3 +54,20 @@ final readerInvertedColorsProvider = boolPref('pref_inverted_colors', false);
 /// honouring it needs a screen-brightness plugin which isn't in pubspec.
 final readerCustomBrightnessProvider =
     boolPref('pref_custom_brightness', false);
+
+/// How page images are scaled to the viewport. Stored as the
+/// [ReaderScaleType.key] string; convert via `ReaderScaleType.fromKey`.
+final readerScaleTypeProvider = stringPref('pref_image_scale_type', 'fit_screen');
+
+/// Horizontal padding (percent of viewport width, 0..25) applied to each
+/// page in the continuous webtoon scroll. 0 = edge-to-edge.
+final readerWebtoonSidePaddingProvider =
+    intPref('webtoon_side_padding', 0);
+
+/// Crop solid borders off page images on display. Stored-only — needs an
+/// image-analysis pass that isn't built.
+final readerCropBordersProvider = boolPref('crop_borders', false);
+
+/// Allow zooming wide (landscape) pages beyond fit. Stored-only — the
+/// paged viewer's InteractiveViewer already permits free zoom.
+final readerLandscapeZoomProvider = boolPref('landscape_zoom', false);
