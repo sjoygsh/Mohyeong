@@ -43,3 +43,14 @@ final readerAlwaysShowTransitionProvider =
 /// 0 (instant) / 250 / 500.
 final readerDoubleTapAnimSpeedProvider =
     intPref('pref_double_tap_anim_speed', 500);
+
+/// Render pages in greyscale (desaturate the page art).
+final readerGrayscaleProvider = boolPref('pref_grayscale', false);
+
+/// Invert page colours (negative). Useful for dark-on-light scans.
+final readerInvertedColorsProvider = boolPref('pref_inverted_colors', false);
+
+/// Override the screen brightness while reading. Stored-only for now —
+/// honouring it needs a screen-brightness plugin which isn't in pubspec.
+final readerCustomBrightnessProvider =
+    boolPref('pref_custom_brightness', false);

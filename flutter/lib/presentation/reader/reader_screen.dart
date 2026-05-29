@@ -382,6 +382,34 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
         skipRead: skipRead, skipDupe: skipDupe);
     final showSlider = widget.mode.isPaged && _totalPages > 1;
     final showPageNumber = ref.watch(readerShowPageNumberProvider);
+    final grayscale = ref.watch(readerGrayscaleProvider);
+    final invert = ref.watch(readerInvertedColorsProvider);
+
+    Widget viewport = _ReaderViewport(
+      data: data,
+      mode: widget.mode,
+      onPageChanged: _onPageChanged,
+      onTotalChanged: _onTotalChanged,
+      seekRequest: _ViewportSeekRequest(
+        requestId: _seekRequestId,
+        target: _seekTarget,
+      ),
+    );
+    // Page-art colour adjustments. Applied to the page viewport only (not
+    // the chrome) by wrapping before the gesture/Stack layers. Greyscale
+    // and invert compose by nesting the two ColorFiltered layers.
+    if (grayscale) {
+      viewport = ColorFiltered(
+        colorFilter: _grayscaleFilter,
+        child: viewport,
+      );
+    }
+    if (invert) {
+      viewport = ColorFiltered(
+        colorFilter: _invertFilter,
+        child: viewport,
+      );
+    }
 
     return SafeArea(
       child: Stack(
@@ -393,16 +421,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onTap: _toggleChrome,
-              child: _ReaderViewport(
-                data: data,
-                mode: widget.mode,
-                onPageChanged: _onPageChanged,
-                onTotalChanged: _onTotalChanged,
-                seekRequest: _ViewportSeekRequest(
-                  requestId: _seekRequestId,
-                  target: _seekTarget,
-                ),
-              ),
+              child: viewport,
             ),
           ),
           // Reader colour filter (sepia/yellow/blue tint). Sits above
@@ -487,6 +506,22 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     );
   }
 }
+
+/// Luminance-weighted desaturation (Rec. 709 coefficients).
+const ColorFilter _grayscaleFilter = ColorFilter.matrix(<double>[
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0, 0, 0, 1, 0, //
+]);
+
+/// Colour negative — flip each channel around its midpoint.
+const ColorFilter _invertFilter = ColorFilter.matrix(<double>[
+  -1, 0, 0, 0, 255, //
+  0, -1, 0, 0, 255, //
+  0, 0, -1, 0, 255, //
+  0, 0, 0, 1, 0, //
+]);
 
 class _ViewportSeekRequest {
   const _ViewportSeekRequest({required this.requestId, required this.target});

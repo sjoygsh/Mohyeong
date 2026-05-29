@@ -103,6 +103,16 @@ class ReaderSettingsScreen extends ConsumerWidget {
               }
             },
           ),
+          _PrefSwitch(
+            title: 'Greyscale',
+            subtitle: 'Desaturate page art.',
+            provider: readerGrayscaleProvider,
+          ),
+          _PrefSwitch(
+            title: 'Invert colours',
+            subtitle: 'Render pages as a colour negative.',
+            provider: readerInvertedColorsProvider,
+          ),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
