@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/update_strategy.dart';
 import '../../domain/source/model/source_manga.dart';
+import '../category/category_repository.dart';
 import '../chapter/chapter_repository.dart';
 import '../manga/manga_repository.dart';
 import '../source/extension_repository.dart';
@@ -21,20 +22,41 @@ import '../source/extension_repository.dart';
 /// [LibraryUpdateResult.failures]; one bad source must not prevent the rest
 /// of the library from updating.
 class LibraryUpdater {
-  LibraryUpdater(this._mangas, this._chapters, this._extensions);
+  LibraryUpdater(this._mangas, this._chapters, this._extensions,
+      this._categories);
 
   final MangaRepository _mangas;
   final ChapterRepository _chapters;
   final ExtensionRepository _extensions;
+  final CategoryRepository _categories;
 
-  /// Runs a library update pass over every favourited manga. Emits per-manga
-  /// progress on [progress]; returns a summary when complete.
+  /// Per-category convenience for the Library tab. Resolves the
+  /// category's membership and forwards to [updateAll].
+  Future<LibraryUpdateResult> updateCategory(
+    int categoryId, {
+    void Function(LibraryUpdateProgress)? onProgress,
+  }) async {
+    final mangaIds = await _categories.getMangaIdsInCategory(categoryId);
+    return updateAll(
+      onProgress: onProgress,
+      restrictToMangaIds: mangaIds,
+    );
+  }
+
+  /// Runs a library update pass. By default sweeps every favourited
+  /// manga; pass [restrictToMangaIds] to limit the sweep to a specific
+  /// subset (used by the "Update this category" affordance — the caller
+  /// already knows which manga rows live in the active category, no need
+  /// to re-query the join table here).
   Future<LibraryUpdateResult> updateAll({
     void Function(LibraryUpdateProgress)? onProgress,
+    Set<int>? restrictToMangaIds,
   }) async {
     final favourites = await _mangas.getFavorites();
     final eligible = favourites
         .where((m) => m.updateStrategy == UpdateStrategy.alwaysUpdate)
+        .where((m) =>
+            restrictToMangaIds == null || restrictToMangaIds.contains(m.id))
         .toList(growable: false);
 
     var newChaptersTotal = 0;
@@ -115,5 +137,6 @@ final libraryUpdaterProvider = Provider<LibraryUpdater>((ref) {
     ref.watch(mangaRepositoryProvider),
     ref.watch(chapterRepositoryProvider),
     ref.watch(extensionRepositoryProvider),
+    ref.watch(categoryRepositoryProvider),
   );
 });

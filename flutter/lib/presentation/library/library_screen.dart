@@ -271,13 +271,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   /// Foreground library update. Independent of the workmanager schedule.
-  Future<void> _refreshLibrary() async {
+  /// When [categoryId] is non-null only manga belonging to that category
+  /// are refreshed — used by the "Update this category" affordance.
+  Future<void> _refreshLibrary({int? categoryId}) async {
     if (_updating) return;
     setState(() => _updating = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final updater = ref.read(libraryUpdaterProvider);
-      final result = await updater.updateAll();
+      final result = categoryId == null
+          ? await updater.updateAll()
+          : await updater.updateCategory(categoryId);
       if (!mounted) return;
       final msg = result.newChapters == 0
           ? 'No new chapters found.'
@@ -314,7 +318,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               )
             : const Text('Library'),
         actions: [
-          IconButton(
+          PopupMenuButton<_RefreshScope>(
             icon: _updating
                 ? const SizedBox(
                     width: 18,
@@ -323,7 +327,27 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   )
                 : const Icon(Icons.refresh),
             tooltip: 'Refresh library',
-            onPressed: _updating ? null : _refreshLibrary,
+            enabled: !_updating,
+            onSelected: (scope) {
+              switch (scope) {
+                case _RefreshScope.all:
+                  _refreshLibrary();
+                case _RefreshScope.category:
+                  _refreshLibrary(categoryId: _selectedCategoryId);
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: _RefreshScope.all,
+                child: Text('Update library'),
+              ),
+              PopupMenuItem(
+                value: _RefreshScope.category,
+                // Only the active category — Mihon parity with the
+                // "Update category" pull-down item.
+                child: Text('Update current category'),
+              ),
+            ],
           ),
           IconButton(
             icon: Icon(
@@ -474,6 +498,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 }
+
+/// Scope selector for the library refresh popup menu. `all` sweeps every
+/// favourited manga; `category` restricts the sweep to the currently
+/// visible category tab (uncategorised handled implicitly via category 0).
+enum _RefreshScope { all, category }
 
 /// Holds the async-resolved sets that the filter predicate needs when
 /// either the Downloaded or Tracked axis is active. Either field may be

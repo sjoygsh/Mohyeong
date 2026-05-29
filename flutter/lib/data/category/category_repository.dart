@@ -77,6 +77,29 @@ class CategoryRepository {
     await _db.updateParent(parentId, id);
   }
 
+  /// Manga ids belonging to a specific category. Uncategorised manga
+  /// (the implicit category 0) are surfaced as "every favourite without
+  /// any row in `mangas_categories`" since they aren't represented as a
+  /// physical row. Used by per-category bulk operations like the
+  /// library-update affordance.
+  Future<Set<int>> getMangaIdsInCategory(int categoryId) async {
+    final sql = categoryId == 0
+        ? '''
+          SELECT _id AS manga_id FROM mangas
+          WHERE favorite = 1
+            AND _id NOT IN (SELECT manga_id FROM mangas_categories)
+        '''
+        : '''
+          SELECT manga_id FROM mangas_categories WHERE category_id = ?1
+        ''';
+    final rows = await _db.customSelect(
+      sql,
+      variables: categoryId == 0 ? const [] : [Variable<int>(categoryId)],
+      readsFrom: {_db.mangas, _db.mangasCategories},
+    ).get();
+    return rows.map((r) => r.read<int>('manga_id')).toSet();
+  }
+
   /// Returns the set of category ids the manga is assigned to. The implicit
   /// system category (id=0) is omitted -- it is the absence-of-category
   /// state, not an explicit row.

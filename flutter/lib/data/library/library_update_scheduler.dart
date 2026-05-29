@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
+import '../category/category_repository.dart';
 import '../chapter/chapter_repository.dart';
 import '../database/app_database.dart';
 import '../manga/manga_repository.dart';
@@ -44,7 +45,9 @@ void libraryUpdateCallbackDispatcher() {
       try {
         final mangas = MangaRepository(db);
         final chapters = ChapterRepository(db);
-        final updater = LibraryUpdater(mangas, chapters, extensions);
+        final categories = CategoryRepository(db);
+        final updater =
+            LibraryUpdater(mangas, chapters, extensions, categories);
         await updater.updateAll();
       } finally {
         await extensions.close();
