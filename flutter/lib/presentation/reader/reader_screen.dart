@@ -339,11 +339,47 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     });
   }
 
+  /// Resolve the chapter the prev/next buttons should jump to, honouring
+  /// the skip-read and skip-dupe navigation prefs. Walks [data.siblings]
+  /// (reading order) from the current chapter in [forward] direction,
+  /// skipping chapters already marked read (when [skipRead]) and chapters
+  /// that repeat the current chapter's number — different scanlations of
+  /// the same chapter (when [skipDupe]). Falls back to the immediate
+  /// neighbour if every candidate is skipped, so the buttons never go
+  /// dead while real chapters remain.
+  Chapter? _adjacentChapter(
+    _ReaderData data, {
+    required bool forward,
+    required bool skipRead,
+    required bool skipDupe,
+  }) {
+    final immediate = forward ? data.nextChapter : data.previousChapter;
+    if (immediate == null || (!skipRead && !skipDupe)) return immediate;
+    final siblings = data.siblings;
+    final currentIdx = siblings.indexWhere((c) => c.id == data.chapter.id);
+    if (currentIdx < 0) return immediate;
+    final step = forward ? 1 : -1;
+    for (var i = currentIdx + step; i >= 0 && i < siblings.length; i += step) {
+      final candidate = siblings[i];
+      if (skipRead && candidate.read) continue;
+      if (skipDupe &&
+          candidate.chapterNumber == data.chapter.chapterNumber) {
+        continue;
+      }
+      return candidate;
+    }
+    return immediate;
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    final prev = data.previousChapter;
-    final next = data.nextChapter;
+    final skipRead = ref.watch(readerSkipReadProvider);
+    final skipDupe = ref.watch(readerSkipDupeProvider);
+    final prev = _adjacentChapter(data, forward: false,
+        skipRead: skipRead, skipDupe: skipDupe);
+    final next = _adjacentChapter(data, forward: true,
+        skipRead: skipRead, skipDupe: skipDupe);
     final showSlider = widget.mode.isPaged && _totalPages > 1;
     final showPageNumber = ref.watch(readerShowPageNumberProvider);
 
