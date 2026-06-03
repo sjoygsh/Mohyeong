@@ -63,6 +63,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
     _applyKeepScreenOn();
     _applyBrightness();
+    _applyOrientation();
     _reload();
   }
 
@@ -93,10 +94,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // Release the wakelock + restore system brightness so the reader's
-    // settings don't leak into the rest of the app.
+    // settings don't leak into the rest of the app. Lift any orientation
+    // lock so the rest of the app rotates freely again.
     WakelockPlus.disable();
     ScreenBrightness().resetApplicationScreenBrightness();
+    SystemChrome.setPreferredOrientations(const []);
     super.dispose();
+  }
+
+  /// Pin the screen orientation per the reader's orientation pref. An
+  /// empty list (Free) lets the device sensor decide.
+  void _applyOrientation() {
+    final orientation = ref.read(readerOrientationProvider);
+    SystemChrome.setPreferredOrientations(orientation.orientations);
   }
 
   /// Acquire/release the wakelock per the keep-screen-on pref.

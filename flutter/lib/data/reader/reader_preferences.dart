@@ -6,6 +6,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -62,6 +63,89 @@ enum ReaderColorFilter {
     return ReaderColorFilter.none;
   }
 }
+
+/// Reader screen-orientation lock. Mirrors Mihon's `ReaderOrientation`
+/// enum — [flagValue] matches Mihon's ordinals so an imported
+/// `pref_default_orientation_type_key` carries across without
+/// translation. [DEFAULT]/[FREE] leave rotation to the device sensor;
+/// the rest pin the reader to a fixed (or sensor-constrained) axis via
+/// [orientations] applied with [SystemChrome.setPreferredOrientations].
+enum ReaderOrientation {
+  free(0x00000008, 'Free'),
+  portrait(0x00000010, 'Portrait'),
+  landscape(0x00000018, 'Landscape'),
+  lockedPortrait(0x00000020, 'Locked portrait'),
+  lockedLandscape(0x00000028, 'Locked landscape'),
+  reversePortrait(0x00000030, 'Reverse portrait');
+
+  const ReaderOrientation(this.flagValue, this.label);
+
+  final int flagValue;
+  final String label;
+
+  /// The device orientations to permit while reading. An empty list
+  /// means "no constraint" (let the sensor decide) — matches Android's
+  /// `SCREEN_ORIENTATION_UNSPECIFIED` for [free].
+  List<DeviceOrientation> get orientations {
+    switch (this) {
+      case ReaderOrientation.free:
+        return const [];
+      case ReaderOrientation.portrait:
+        return const [
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ];
+      case ReaderOrientation.landscape:
+        return const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ];
+      case ReaderOrientation.lockedPortrait:
+        return const [DeviceOrientation.portraitUp];
+      case ReaderOrientation.lockedLandscape:
+        return const [DeviceOrientation.landscapeLeft];
+      case ReaderOrientation.reversePortrait:
+        return const [DeviceOrientation.portraitDown];
+    }
+  }
+
+  static ReaderOrientation fromFlag(int? flag) {
+    for (final v in values) {
+      if (v.flagValue == flag) return v;
+    }
+    return ReaderOrientation.free;
+  }
+}
+
+class ReaderOrientationNotifier extends Notifier<ReaderOrientation> {
+  // Mirrors Mihon's `pref_default_orientation_type_key`, dropping the
+  // `pref_`/`_key` affixes to match the rest of the Flutter prefs.
+  static const _key = 'default_orientation_type';
+
+  @override
+  ReaderOrientation build() {
+    _loadFromDisk();
+    return ReaderOrientation.free;
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getInt(_key);
+    final loaded = ReaderOrientation.fromFlag(stored);
+    if (loaded != state) state = loaded;
+  }
+
+  Future<void> set(ReaderOrientation value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, value.flagValue);
+  }
+}
+
+final readerOrientationProvider =
+    NotifierProvider<ReaderOrientationNotifier, ReaderOrientation>(
+  ReaderOrientationNotifier.new,
+);
 
 class ReaderPreferencesNotifier extends Notifier<ReadingMode> {
   // Matches Mihon's `default_reading_mode` int preference so a future

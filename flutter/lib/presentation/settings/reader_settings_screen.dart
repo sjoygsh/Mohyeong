@@ -17,6 +17,7 @@ class ReaderSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final readerMode = ref.watch(readerPreferencesProvider);
     final readerNotifier = ref.read(readerPreferencesProvider.notifier);
+    final orientation = ref.watch(readerOrientationProvider);
     final background = ref.watch(readerBackgroundProvider);
     final colorFilter = ref.watch(readerColorFilterProvider);
     final autoHideSeconds = ref.watch(readerAutoHideChromeSecondsProvider);
@@ -46,6 +47,22 @@ class ReaderSettingsScreen extends ConsumerWidget {
               );
               if (picked != null) {
                 await readerNotifier.setMode(picked);
+              }
+            },
+          ),
+          ListTile(
+            title: const Text('Rotation'),
+            subtitle: Text(orientation.label),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<ReaderOrientation>(
+                context: context,
+                builder: (_) => _OrientationPickerDialog(current: orientation),
+              );
+              if (picked != null) {
+                await ref
+                    .read(readerOrientationProvider.notifier)
+                    .set(picked);
               }
             },
           ),
@@ -434,6 +451,35 @@ class _ReadingModePickerDialog extends StatelessWidget {
                     value: m,
                     title: Text(m.label),
                   ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OrientationPickerDialog extends StatelessWidget {
+  const _OrientationPickerDialog({required this.current});
+
+  final ReaderOrientation current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Rotation'),
+      children: [
+        RadioGroup<ReaderOrientation>(
+          groupValue: current,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final o in ReaderOrientation.values)
+                RadioListTile<ReaderOrientation>(
+                  value: o,
+                  title: Text(o.label),
+                ),
             ],
           ),
         ),
