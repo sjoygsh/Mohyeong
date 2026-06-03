@@ -29,6 +29,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Install debug test builds under app.mohyeong.dev so they sit
+            // alongside the user's existing release install (app.mohyeong)
+            // instead of failing with a signing-key mismatch. The shipping
+            // Flutter build still uses the real app.mohyeong id for the
+            // eventual in-place update; only debug gets the suffix.
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+        }
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
