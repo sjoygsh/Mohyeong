@@ -58,13 +58,29 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   /// doesn't double-tap and stack network requests.
   bool _refreshingDetails = false;
 
+  /// Guards the one-shot auto-fetch so opening the details screen only
+  /// triggers a single source sweep, even though the build runs again on
+  /// every stream emission. Mihon parity with `MangaScreenModel`, which
+  /// kicks off `fetchAllFromSource` the first time it sees an
+  /// un-initialized manga.
+  bool _autoFetchTried = false;
+
   /// Re-fetches the manga's metadata + chapter list from its source and
   /// persists both. Mihon parity with the "Refresh" overflow action —
   /// covers the case where the source has updated the description /
   /// status / cover etc. since the row was first inserted.
-  Future<void> _refreshMangaFromSource(Manga manga) async {
+  ///
+  /// When [silent] is true the fetch runs without the spinner-swap and
+  /// result snackbars; this is the path used by the on-open auto-fetch so
+  /// it doesn't flash UI for the routine first-load case.
+  Future<void> _refreshMangaFromSource(Manga manga,
+      {bool silent = false}) async {
     if (_refreshingDetails) return;
-    setState(() => _refreshingDetails = true);
+    if (!silent) {
+      setState(() => _refreshingDetails = true);
+    } else {
+      _refreshingDetails = true;
+    }
     final messenger = ScaffoldMessenger.of(context);
     try {
       final extRepo = ref.read(extensionRepositoryProvider);
@@ -79,18 +95,34 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
         SourceManga(url: manga.url, title: manga.title),
       );
       final added = await chapterRepo.syncChaptersWithSource(manga.id, fetched);
-      if (!mounted) return;
+      if (!mounted || silent) return;
       final msg = added.isEmpty
           ? 'Refreshed. No new chapters.'
           : 'Refreshed. ${added.length} new chapter'
               '${added.length == 1 ? '' : 's'}.';
       messenger.showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || silent) return;
       messenger.showSnackBar(SnackBar(content: Text('Refresh failed: $e')));
     } finally {
-      if (mounted) setState(() => _refreshingDetails = false);
+      if (silent) {
+        _refreshingDetails = false;
+      } else if (mounted) {
+        setState(() => _refreshingDetails = false);
+      }
     }
+  }
+
+  /// Fires the one-shot on-open auto-fetch when the manga row has never
+  /// been initialized from its source (freshly added from Browse/search).
+  /// Deferred to after the current frame so we don't call setState/persist
+  /// mid-build.
+  void _maybeAutoFetch(Manga manga) {
+    if (_autoFetchTried || manga.initialized) return;
+    _autoFetchTried = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refreshMangaFromSource(manga, silent: true);
+    });
   }
 
   void _toggleChapterSelected(int id) {
@@ -194,6 +226,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
           if (manga == null) {
             return const _MissingManga();
           }
+          _maybeAutoFetch(manga);
           return StreamBuilder<List<Chapter>>(
             stream: chapterRepo.watchByMangaId(widget.mangaId),
             builder: (context, chapSnap) {
@@ -1085,19 +1118,22 @@ class _Backdrop extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Opacity(
-          opacity: 0.25,
-          child: SourceImage(
-            url: url,
-            fit: BoxFit.cover,
-            placeholder: (_) => Container(color: bg),
-            errorWidget: (_, _) => Container(color: bg),
+        // Blur the dimmed cover directly with an [ImageFiltered] rather than
+        // a [BackdropFilter]: the latter has no clip inside a scroll view and
+        // blurs every layer painted behind it — including the chapter list as
+        // it scrolls up under this header, which washed the list out.
+        // [ImageFiltered] only filters its own child, so the bleed is gone.
+        ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: Opacity(
+            opacity: 0.25,
+            child: SourceImage(
+              url: url,
+              fit: BoxFit.cover,
+              placeholder: (_) => Container(color: bg),
+              errorWidget: (_, _) => Container(color: bg),
+            ),
           ),
-        ),
-        // Blur over the dimmed cover.
-        BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-          child: const SizedBox.shrink(),
         ),
         // Transparent → background gradient for legibility.
         DecoratedBox(

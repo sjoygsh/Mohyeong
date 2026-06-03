@@ -13,6 +13,7 @@ import 'data/source/local_source_preferences.dart';
 import 'data/track/tracker_registry.dart';
 import 'presentation/theme/app_theme.dart';
 import 'presentation/home/home_screen.dart';
+import 'presentation/onboarding/onboarding_screen.dart';
 import 'presentation/security/auth_gate.dart';
 
 Future<void> main() async {
@@ -71,7 +72,9 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
       theme: AppTheme.light,
       darkTheme: amoled ? AppTheme.darkAmoled : AppTheme.dark,
       themeMode: themeMode,
-      home: const AuthGate(child: HomeScreen()),
+      home: const AuthGate(
+        child: OnboardingGate(child: HomeScreen()),
+      ),
       debugShowCheckedModeBanner: false,
     );
   }

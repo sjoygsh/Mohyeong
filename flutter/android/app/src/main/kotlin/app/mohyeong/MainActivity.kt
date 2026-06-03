@@ -1,6 +1,17 @@
 package app.mohyeong
 
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.DocumentsContract
+import android.provider.Settings
 import android.view.WindowManager
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -10,6 +21,16 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterFragmentActivity() {
 
     private val secureFlagChannel = "app.mohyeong/secure_flag"
+    private val safChannel = "app.mohyeong/saf"
+    private val permissionsChannel = "app.mohyeong/permissions"
+
+    // The OpenDocumentTree call is async: we stash the in-flight Dart result
+    // and resolve it in onActivityResult once the picker returns.
+    private var pendingTreeResult: MethodChannel.Result? = null
+
+    // The POST_NOTIFICATIONS runtime request is likewise async; resolved in
+    // onRequestPermissionsResult.
+    private var pendingNotificationResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -32,5 +53,266 @@ class MainActivity : FlutterFragmentActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, safChannel)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // Launch the system folder picker. Resolves to the persisted
+                    // tree URI string, or null if the user cancelled. Mirrors
+                    // Mihon's storageLocationPicker (OpenDocumentTree +
+                    // takePersistableUriPermission).
+                    "openTree" -> {
+                        if (pendingTreeResult != null) {
+                            result.error("BUSY", "A folder picker is already open", null)
+                            return@setMethodCallHandler
+                        }
+                        pendingTreeResult = result
+                        try {
+                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                            startActivityForResult(intent, OPEN_TREE_REQUEST)
+                        } catch (e: Exception) {
+                            pendingTreeResult = null
+                            result.error("PICK_FAILED", e.message, null)
+                        }
+                    }
+
+                    // List the immediate children of a tree URI (root) or a
+                    // tree-based document URI (sub-folder). Returns a list of
+                    // maps: { name, uri, isDir, size, mime }.
+                    "listChildren" -> {
+                        val uriString = call.argument<String>("uri")
+                        if (uriString == null) {
+                            result.error("BAD_ARGS", "uri is required", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            result.success(listChildren(uriString))
+                        } catch (e: Exception) {
+                            result.error("LIST_FAILED", e.message, null)
+                        }
+                    }
+
+                    // Read the full bytes of a document URI.
+                    "readBytes" -> {
+                        val uriString = call.argument<String>("uri")
+                        if (uriString == null) {
+                            result.error("BAD_ARGS", "uri is required", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val bytes = contentResolver.openInputStream(Uri.parse(uriString))
+                                ?.use { it.readBytes() }
+                            result.success(bytes)
+                        } catch (e: Exception) {
+                            result.error("READ_FAILED", e.message, null)
+                        }
+                    }
+
+                    // Human-readable name of a tree URI for display in settings /
+                    // onboarding (mirrors UniFile.displayablePath, best-effort).
+                    "displayName" -> {
+                        val uriString = call.argument<String>("uri")
+                        if (uriString == null) {
+                            result.error("BAD_ARGS", "uri is required", null)
+                            return@setMethodCallHandler
+                        }
+                        result.success(displayName(uriString))
+                    }
+
+                    // Whether a persisted permission for this tree URI still
+                    // exists (the user could have revoked it in system settings).
+                    "hasPermission" -> {
+                        val uriString = call.argument<String>("uri")
+                        if (uriString == null) {
+                            result.error("BAD_ARGS", "uri is required", null)
+                            return@setMethodCallHandler
+                        }
+                        val target = Uri.parse(uriString)
+                        val granted = contentResolver.persistedUriPermissions.any {
+                            it.uri == target && it.isReadPermission
+                        }
+                        result.success(granted)
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, permissionsChannel)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // POST_NOTIFICATIONS is only a runtime permission on
+                    // Android 13 (TIRAMISU)+. Below that it's granted by
+                    // install, so report true.
+                    "hasNotificationPermission" -> {
+                        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                            ContextCompat.checkSelfPermission(
+                                this,
+                                Manifest.permission.POST_NOTIFICATIONS,
+                            ) == PackageManager.PERMISSION_GRANTED
+                        result.success(granted)
+                    }
+
+                    "requestNotificationPermission" -> {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                            result.success(true)
+                            return@setMethodCallHandler
+                        }
+                        if (ContextCompat.checkSelfPermission(
+                                this,
+                                Manifest.permission.POST_NOTIFICATIONS,
+                            ) == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            result.success(true)
+                            return@setMethodCallHandler
+                        }
+                        if (pendingNotificationResult != null) {
+                            result.error("BUSY", "A permission request is in flight", null)
+                            return@setMethodCallHandler
+                        }
+                        pendingNotificationResult = result
+                        ActivityCompat.requestPermissions(
+                            this,
+                            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                            NOTIFICATION_REQUEST,
+                        )
+                    }
+
+                    "isIgnoringBatteryOptimizations" -> {
+                        val pm = getSystemService(POWER_SERVICE) as PowerManager
+                        result.success(pm.isIgnoringBatteryOptimizations(packageName))
+                    }
+
+                    "requestIgnoreBatteryOptimizations" -> {
+                        try {
+                            // Mirrors Mihon: a settings dialog, not an
+                            // activity-result flow. The Dart side re-checks
+                            // the grant on resume.
+                            val intent = Intent(
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                Uri.parse("package:$packageName"),
+                            )
+                            startActivity(intent)
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("INTENT_FAILED", e.message, null)
+                        }
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != NOTIFICATION_REQUEST) return
+        val reply = pendingNotificationResult
+        pendingNotificationResult = null
+        val granted = grantResults.isNotEmpty() &&
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        reply?.success(granted)
+    }
+
+    private fun listChildren(uriString: String): List<Map<String, Any?>> {
+        val treeUri = Uri.parse(uriString)
+        // For the root tree URI, the parent document id is the tree document id.
+        // For a sub-folder document URI, it's that document's own id.
+        val parentDocId = if (DocumentsContract.isDocumentUri(this, treeUri)) {
+            DocumentsContract.getDocumentId(treeUri)
+        } else {
+            DocumentsContract.getTreeDocumentId(treeUri)
+        }
+        val childrenUri =
+            DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
+
+        val children = mutableListOf<Map<String, Any?>>()
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+        )
+        contentResolver.query(childrenUri, projection, null, null, null)?.use { c ->
+            val idIdx = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIdx = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val mimeIdx = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            val sizeIdx = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE)
+            while (c.moveToNext()) {
+                val docId = c.getString(idIdx)
+                val mime = c.getString(mimeIdx)
+                val childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                children.add(
+                    mapOf(
+                        "name" to c.getString(nameIdx),
+                        "uri" to childUri.toString(),
+                        "isDir" to (mime == DocumentsContract.Document.MIME_TYPE_DIR),
+                        "size" to (if (c.isNull(sizeIdx)) 0L else c.getLong(sizeIdx)),
+                        "mime" to mime,
+                    )
+                )
+            }
+        }
+        return children
+    }
+
+    private fun displayName(uriString: String): String {
+        val uri = Uri.parse(uriString)
+        // Prefer the actual display name from the provider.
+        try {
+            contentResolver.query(
+                uri,
+                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                null,
+                null,
+                null,
+            )?.use { c ->
+                if (c.moveToFirst() && !c.isNull(0)) return c.getString(0)
+            }
+        } catch (_: Exception) {
+            // Fall through to the tree-id heuristic.
+        }
+        // Fallback: the last path segment of the tree document id
+        // (e.g. "primary:Manga" -> "Manga").
+        val docId = try {
+            if (DocumentsContract.isDocumentUri(this, uri)) {
+                DocumentsContract.getDocumentId(uri)
+            } else {
+                DocumentsContract.getTreeDocumentId(uri)
+            }
+        } catch (_: Exception) {
+            return uri.lastPathSegment ?: uriString
+        }
+        return docId.substringAfterLast('/').substringAfterLast(':')
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != OPEN_TREE_REQUEST) return
+        val reply = pendingTreeResult
+        pendingTreeResult = null
+        val uri = data?.data
+        if (resultCode == Activity.RESULT_OK && uri != null) {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            try {
+                contentResolver.takePersistableUriPermission(uri, flags)
+            } catch (e: SecurityException) {
+                // Some OEMs (InkBook, certain Samsung builds) throw here even
+                // though the grant succeeds. Mihon ignores it; so do we.
+            }
+            reply?.success(uri.toString())
+        } else {
+            reply?.success(null)
+        }
+    }
+
+    companion object {
+        private const val OPEN_TREE_REQUEST = 0x5AF0
+        private const val NOTIFICATION_REQUEST = 0x5AF1
     }
 }

@@ -1,15 +1,21 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../data/source/saf.dart';
+
 /// Image widget that paints whatever a source hands us — local file path,
-/// `file://` URI, or remote HTTP(S) URL. Wraps [CachedNetworkImage] for
-/// network URLs and [Image.file] for local paths so the same call sites
-/// in Library / History / Manga details / Reader / Browse handle both
-/// online sources and the Local source uniformly.
+/// `file://` URI, a SAF `content://` document URI (Local source on Android),
+/// or a remote HTTP(S) URL. Wraps [CachedNetworkImage] for network URLs,
+/// [Image.file] for local paths, and a [_SafImageProvider] for content URIs,
+/// so the same call sites in Library / History / Manga details / Reader /
+/// Browse handle every backend uniformly.
 ///
 /// Detection rules:
+///   * starts with `content://` → read bytes through the native SAF channel
 ///   * starts with `file://` → strip the scheme, render as a file path
 ///   * an absolute filesystem path (`C:\…` on Windows, `/…` elsewhere) →
 ///     render as a file path
@@ -29,6 +35,8 @@ class SourceImage extends StatelessWidget {
   final Map<String, String>? headers;
   final WidgetBuilder? placeholder;
   final Widget Function(BuildContext, Object error)? errorWidget;
+
+  bool get _isContent => url.startsWith('content://');
 
   bool get _isLocal {
     if (url.startsWith('file://')) return true;
@@ -51,6 +59,20 @@ class SourceImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_isContent) {
+      return Image(
+        image: _SafImageProvider(url),
+        fit: fit,
+        frameBuilder: placeholder == null
+            ? null
+            : (ctx, child, frame, wasSync) {
+                if (frame != null || wasSync) return child;
+                return placeholder!(ctx);
+              },
+        errorBuilder: (ctx, error, _) =>
+            errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
+      );
+    }
     if (_isLocal) {
       return Image.file(
         File(_localPath),
@@ -70,6 +92,51 @@ class SourceImage extends StatelessWidget {
           errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
     );
   }
+}
+
+/// [ImageProvider] that loads its bytes from a SAF `content://` document URI
+/// through the native [Saf] channel, then decodes them with the engine's
+/// standard codec path. Caching is handled by Flutter's [ImageCache] keyed on
+/// the URI, so re-displaying a page doesn't re-read it from disk.
+class _SafImageProvider extends ImageProvider<_SafImageProvider> {
+  const _SafImageProvider(this.uri);
+
+  final String uri;
+
+  @override
+  Future<_SafImageProvider> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<_SafImageProvider>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _SafImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
+    return MultiFrameImageStreamCompleter(
+      codec: _loadAsync(key, decode),
+      scale: 1.0,
+      debugLabel: key.uri,
+    );
+  }
+
+  Future<ui.Codec> _loadAsync(
+    _SafImageProvider key,
+    ImageDecoderCallback decode,
+  ) async {
+    final bytes = await Saf.readBytes(key.uri);
+    if (bytes == null || bytes.isEmpty) {
+      throw StateError('SAF read returned no bytes for ${key.uri}');
+    }
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    return decode(buffer);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _SafImageProvider && other.uri == uri;
+
+  @override
+  int get hashCode => uri.hashCode;
 }
 
 class _DefaultErrorBox extends StatelessWidget {
