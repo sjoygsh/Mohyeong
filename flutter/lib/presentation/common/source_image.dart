@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../data/source/local_archive.dart';
 import '../../data/source/saf.dart';
 
 /// Image widget that paints whatever a source hands us — local file path,
@@ -36,6 +37,8 @@ class SourceImage extends StatelessWidget {
   final WidgetBuilder? placeholder;
   final Widget Function(BuildContext, Object error)? errorWidget;
 
+  bool get _isArchive => isArchivePageUrl(url);
+
   bool get _isContent => url.startsWith('content://');
 
   bool get _isLocal {
@@ -59,6 +62,20 @@ class SourceImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_isArchive) {
+      return Image(
+        image: _ArchiveImageProvider(url),
+        fit: fit,
+        frameBuilder: placeholder == null
+            ? null
+            : (ctx, child, frame, wasSync) {
+                if (frame != null || wasSync) return child;
+                return placeholder!(ctx);
+              },
+        errorBuilder: (ctx, error, _) =>
+            errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
+      );
+    }
     if (_isContent) {
       return Image(
         image: _SafImageProvider(url),
@@ -137,6 +154,52 @@ class _SafImageProvider extends ImageProvider<_SafImageProvider> {
 
   @override
   int get hashCode => uri.hashCode;
+}
+
+/// [ImageProvider] that loads a single image entry out of a CBZ/ZIP archive
+/// chapter via [readArchiveEntry] (which reads + caches the archive through
+/// the SAF channel or `dart:io`). Keyed on the full `archive://` URL so
+/// Flutter's [ImageCache] de-dupes re-displays of the same page.
+class _ArchiveImageProvider extends ImageProvider<_ArchiveImageProvider> {
+  const _ArchiveImageProvider(this.url);
+
+  final String url;
+
+  @override
+  Future<_ArchiveImageProvider> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<_ArchiveImageProvider>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _ArchiveImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
+    return MultiFrameImageStreamCompleter(
+      codec: _loadAsync(key, decode),
+      scale: 1.0,
+      debugLabel: key.url,
+    );
+  }
+
+  Future<ui.Codec> _loadAsync(
+    _ArchiveImageProvider key,
+    ImageDecoderCallback decode,
+  ) async {
+    final decoded = decodeArchivePageUrl(key.url);
+    final bytes = await readArchiveEntry(decoded.locator, decoded.entry);
+    if (bytes == null || bytes.isEmpty) {
+      throw StateError('Archive read returned no bytes for ${key.url}');
+    }
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    return decode(buffer);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ArchiveImageProvider && other.url == url;
+
+  @override
+  int get hashCode => url.hashCode;
 }
 
 class _DefaultErrorBox extends StatelessWidget {

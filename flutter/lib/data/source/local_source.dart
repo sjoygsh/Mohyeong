@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_chapter.dart';
 import '../../domain/source/model/source_manga.dart';
+import 'local_archive.dart';
 import 'local_source_preferences.dart';
 import 'saf.dart';
 
@@ -42,8 +43,11 @@ import 'saf.dart';
 /// [SourceImage] renders both `content://` (via the SAF channel) and
 /// `file://` (via `Image.file`) uniformly, so the reader is backend-blind.
 ///
-/// CBZ / RAR archives are not supported in this first cut — only loose
-/// folders. Users with archives can extract them.
+/// A chapter can be either a folder of images (as drawn above) or a single
+/// `.cbz` / `.zip` archive sitting next to the cover. Archive chapters are
+/// unzipped on demand (see [local_archive.dart]); pages inside them are
+/// served as `archive://` URLs that [SourceImage] decodes. RAR/CBR/7z/EPUB
+/// are not supported (no pure-Dart decoder).
 class LocalSource implements MangaSource {
   LocalSource(this._prefs);
 
@@ -145,23 +149,30 @@ class LocalSource implements MangaSource {
     if (root == null) return const [];
     final mangaDir = Directory(p.join(root.path, manga.url));
     if (!mangaDir.existsSync()) return const [];
-    final chapterDirs = mangaDir
+    // Chapters are sub-folders of images or .cbz/.zip archive files.
+    final chapterEntries = mangaDir
         .listSync(followLinks: false)
-        .whereType<Directory>()
+        .where((e) => e is Directory || isArchiveName(p.basename(e.path)))
         .toList()
       ..sort((a, b) =>
           _naturalCompare(p.basename(b.path), p.basename(a.path)));
     final result = <SourceChapter>[];
-    for (final dir in chapterDirs) {
-      final basename = p.basename(dir.path);
-      // Empty-of-pages chapters are filtered so the user doesn't see a
-      // chapter tile that opens to a blank reader.
-      if (_imageFilesIn(dir).isEmpty) continue;
-      final stat = await dir.stat();
+    for (final entry in chapterEntries) {
+      final basename = p.basename(entry.path);
+      final String name;
+      if (entry is Directory) {
+        // Empty-of-pages chapters are filtered so the user doesn't see a
+        // chapter tile that opens to a blank reader.
+        if (_imageFilesIn(entry).isEmpty) continue;
+        name = basename;
+      } else {
+        name = p.basenameWithoutExtension(basename);
+      }
+      final stat = await entry.stat();
       result.add(SourceChapter(
         url: basename,
-        name: basename,
-        chapterNumber: _parseChapterNumber(basename),
+        name: name,
+        chapterNumber: _parseChapterNumber(name),
         dateUpload: stat.modified.millisecondsSinceEpoch,
       ));
     }
@@ -178,16 +189,18 @@ class LocalSource implements MangaSource {
     final root = _rootDir();
     if (root == null) return const [];
     // chapter.url is relative to the manga folder which we don't know here,
-    // so rebuild the absolute path by searching the root for a chapter dir
-    // matching the chapter url.
-    final candidates = <Directory>[];
+    // so rebuild the absolute path by searching the root for a chapter dir or
+    // archive file matching the chapter url.
     for (final mangaEntry in root.listSync(followLinks: false)) {
       if (mangaEntry is! Directory) continue;
-      final chapterDir = Directory(p.join(mangaEntry.path, chapter.url));
-      if (chapterDir.existsSync()) candidates.add(chapterDir);
+      final candidate = p.join(mangaEntry.path, chapter.url);
+      if (isArchiveName(chapter.url)) {
+        if (File(candidate).existsSync()) return _archivePages(candidate);
+      } else if (Directory(candidate).existsSync()) {
+        return _pagesFromDir(Directory(candidate));
+      }
     }
-    if (candidates.isEmpty) return const [];
-    return _pagesFromDir(candidates.first);
+    return const [];
   }
 
   /// Reader-facing helper: resolves the page list for a specific manga +
@@ -198,7 +211,12 @@ class LocalSource implements MangaSource {
     if (_isSaf) return _safPages(chapterUrl);
     final root = _rootDir();
     if (root == null) return const [];
-    final dir = Directory(p.join(root.path, mangaUrl, chapterUrl));
+    final path = p.join(root.path, mangaUrl, chapterUrl);
+    if (isArchiveName(chapterUrl)) {
+      if (!File(path).existsSync()) return const [];
+      return _archivePages(path);
+    }
+    final dir = Directory(path);
     if (!dir.existsSync()) return const [];
     return _pagesFromDir(dir);
   }
@@ -251,29 +269,53 @@ class LocalSource implements MangaSource {
         return e.uri;
       }
     }
-    final chapterDirs = children.where((e) => e.isDir).toList()
+    // No explicit cover.* — fall back to the first page of the first chapter,
+    // which may be a folder or an archive.
+    final chapters = children
+        .where((e) => e.isDir || isArchiveName(e.name))
+        .toList()
       ..sort((a, b) => _naturalCompare(a.name, b.name));
-    for (final c in chapterDirs) {
-      final pages = await _safImageEntries(c.uri);
-      if (pages.isNotEmpty) return pages.first.uri;
+    for (final c in chapters) {
+      if (c.isDir) {
+        final pages = await _safImageEntries(c.uri);
+        if (pages.isNotEmpty) return pages.first.uri;
+      } else {
+        final names = await listArchiveImageEntries(c.uri);
+        if (names.isNotEmpty) {
+          names.sort(_naturalCompare);
+          return encodeArchivePageUrl(c.uri, names.first);
+        }
+      }
     }
     return null;
   }
 
   Future<List<SourceChapter>> _safChapterList(String mangaUri) async {
     final children = await Saf.listChildren(mangaUri);
-    final chapterDirs = children.where((e) => e.isDir).toList()
+    // A chapter is either a sub-folder of images or a .cbz/.zip archive file.
+    final chapters = children
+        .where((e) => e.isDir || isArchiveName(e.name))
+        .toList()
       // Reverse natural order so newest-numbered chapters surface first,
       // matching the filesystem path.
       ..sort((a, b) => _naturalCompare(b.name, a.name));
     final result = <SourceChapter>[];
-    for (final dir in chapterDirs) {
-      final pages = await _safImageEntries(dir.uri);
-      if (pages.isEmpty) continue;
+    for (final entry in chapters) {
+      // Archive chapters are included unconditionally — peeking inside every
+      // archive just to count pages would make listing prohibitively slow.
+      // Folder chapters keep the empty-folder filter so we don't surface a
+      // tile that opens to a blank reader.
+      final String name;
+      if (entry.isDir) {
+        if ((await _safImageEntries(entry.uri)).isEmpty) continue;
+        name = entry.name;
+      } else {
+        name = p.basenameWithoutExtension(entry.name);
+      }
       result.add(SourceChapter(
-        url: dir.uri,
-        name: dir.name,
-        chapterNumber: _parseChapterNumber(dir.name),
+        url: entry.uri,
+        name: name,
+        chapterNumber: _parseChapterNumber(name),
         // SAF doesn't surface a reliable mtime through the children query;
         // leave dateUpload at 0 (Mihon also tolerates unknown dates here).
         dateUpload: 0,
@@ -283,6 +325,7 @@ class LocalSource implements MangaSource {
   }
 
   Future<List<SourcePage>> _safPages(String chapterUri) async {
+    if (isArchiveLocator(chapterUri)) return _archivePages(chapterUri);
     final entries = await _safImageEntries(chapterUri);
     return [
       for (var i = 0; i < entries.length; i++)
@@ -290,6 +333,23 @@ class LocalSource implements MangaSource {
           index: i,
           url: entries[i].uri,
           imageUrl: entries[i].uri,
+        ),
+    ];
+  }
+
+  /// Pages of a `.cbz` / `.zip` chapter, identified by [archiveLocator] (a
+  /// SAF document URI or a filesystem path). Image entries are pulled from
+  /// the archive, natural-sorted to match folder ordering, and handed back
+  /// as `archive://` URLs the image layer can decode.
+  Future<List<SourcePage>> _archivePages(String archiveLocator) async {
+    final names = await listArchiveImageEntries(archiveLocator);
+    names.sort(_naturalCompare);
+    return [
+      for (var i = 0; i < names.length; i++)
+        SourcePage(
+          index: i,
+          url: encodeArchivePageUrl(archiveLocator, names[i]),
+          imageUrl: encodeArchivePageUrl(archiveLocator, names[i]),
         ),
     ];
   }
@@ -342,21 +402,27 @@ class LocalSource implements MangaSource {
         break;
       }
     }
-    // Fallback cover: first image inside the first chapter directory.
+    // Fallback cover: first image of the first chapter (folder or archive).
     if (cover == null) {
       try {
         final children = dir
             .listSync(followLinks: false)
-            .whereType<Directory>()
+            .where((e) => e is Directory || isArchiveName(p.basename(e.path)))
             .toList()
           ..sort((a, b) =>
               _naturalCompare(p.basename(a.path), p.basename(b.path)));
         for (final c in children) {
-          final pages = _imageFilesIn(c);
-          if (pages.isNotEmpty) {
-            cover = pages.first.uri.toString();
-            break;
+          if (c is Directory) {
+            final pages = _imageFilesIn(c);
+            if (pages.isNotEmpty) {
+              cover = pages.first.uri.toString();
+              break;
+            }
           }
+          // Archive covers resolve lazily in the SAF path; for the filesystem
+          // listing we only cheaply probe folders. An archive-only manga
+          // shows no grid cover until its details screen renders, which is an
+          // acceptable trade vs. unzipping every archive during a list walk.
         }
       } catch (_) {
         // Permission denied / IO errors → just leave cover null.
