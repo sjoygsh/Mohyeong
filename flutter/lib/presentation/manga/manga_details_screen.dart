@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
+import '../../data/library/library_updater.dart';
 import '../../data/manga/excluded_scanlators_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/source/extension_repository.dart';
@@ -95,6 +96,10 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
         SourceManga(url: manga.url, title: manga.title),
       );
       final added = await chapterRepo.syncChaptersWithSource(manga.id, fetched);
+      await ref.read(libraryUpdaterProvider).recomputeFetchInterval(
+            manga,
+            hasNewChapters: added.isNotEmpty,
+          );
       if (!mounted || silent) return;
       final msg = added.isEmpty
           ? 'Refreshed. No new chapters.'

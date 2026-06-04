@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/manga/interactor/fetch_interval.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/update_strategy.dart';
 import '../../domain/source/model/source_manga.dart';
@@ -95,7 +96,35 @@ class LibraryUpdater {
       SourceManga(url: manga.url, title: manga.title),
     );
     final added = await _chapters.syncChaptersWithSource(manga.id, fetched);
+    await recomputeFetchInterval(
+      manga,
+      hasNewChapters: added.isNotEmpty,
+    );
     return added.length;
+  }
+
+  /// Recomputes a manga's update interval + projected next-update from its
+  /// current chapter history and persists it. Shared by the library sweep
+  /// and the per-manga details refresh so both keep the Upcoming screen's
+  /// `next_update` column fresh. Mirrors Mihon's post-sync
+  /// `updateFetchInterval` step.
+  Future<void> recomputeFetchInterval(
+    Manga manga, {
+    required bool hasNewChapters,
+  }) async {
+    final chapters = await _chapters.getByMangaId(manga.id);
+    final update = const FetchInterval().toMangaUpdate(
+      manga,
+      chapters,
+      DateTime.now(),
+      hasNewChapters: hasNewChapters,
+    );
+    await _mangas.applyFetchInterval(
+      manga.id,
+      fetchInterval: update.fetchInterval,
+      nextUpdate: update.nextUpdate,
+      lastUpdate: update.lastUpdate,
+    );
   }
 }
 

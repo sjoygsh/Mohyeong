@@ -250,6 +250,47 @@ class MangaRepository {
     );
   }
 
+  /// Persist a recomputed fetch interval + projected next-update for a
+  /// manga (the output of `FetchInterval.toMangaUpdate`). [lastUpdate] is
+  /// written only when non-null (i.e. new chapters arrived this pass).
+  /// Bumps `last_modified_at` for sync ordering.
+  Future<void> applyFetchInterval(
+    int id, {
+    required int fetchInterval,
+    required int nextUpdate,
+    int? lastUpdate,
+  }) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.mangas)..where((t) => t.id.equals(id))).write(
+      db.MangasCompanion(
+        calculateInterval: Value(fetchInterval),
+        nextUpdate: Value(nextUpdate),
+        lastUpdate: lastUpdate == null ? const Value.absent() : Value(lastUpdate),
+        lastModifiedAt: Value(nowMs),
+      ),
+    );
+  }
+
+  /// Library manga with a projected next-update on or after the start of
+  /// today, ordered soonest-first. Mirrors Mihon's `getUpcomingManga`
+  /// (favorite + status in {ONGOING, PUBLISHING_FINISHED}). Feeds the
+  /// Upcoming calendar screen.
+  Future<List<Manga>> getUpcoming() async {
+    final now = DateTime.now();
+    final startOfDay =
+        DateTime(now.year, now.month, now.day).millisecondsSinceEpoch;
+    final rows = await _db.customSelect(
+      'SELECT * FROM mangas '
+      'WHERE next_update >= ?1 AND favorite = 1 AND status IN (1, 4) '
+      'ORDER BY next_update ASC',
+      variables: [Variable<int>(startOfDay)],
+      readsFrom: {_db.mangas},
+    ).get();
+    return rows
+        .map((r) => MangaMapper.fromRow(_db.mangas.map(r.data)))
+        .toList(growable: false);
+  }
+
   /// Toggle the library state of an existing manga without touching the
   /// rest of its row. Adds `dateAdded` when entering the library (matches
   /// the Kotlin behaviour so categorization-by-date sort works), and

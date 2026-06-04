@@ -9,6 +9,7 @@ import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
 import '../reader/reader_screen.dart';
+import '../upcoming/upcoming_screen.dart';
 
 /// Updates tab -- streams `updatesView` (newly fetched chapters in
 /// favourited manga). Mirrors the Kotlin UpdatesTab presentation: cover
@@ -251,12 +252,22 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                             setState(() => _query = '');
                           },
                         )
-                      else if (!_searching)
+                      else if (!_searching) ...[
+                        IconButton(
+                          icon: const Icon(Icons.calendar_month),
+                          tooltip: 'Upcoming',
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const UpcomingScreen(),
+                            ),
+                          ),
+                        ),
                         IconButton(
                           icon: const Icon(Icons.search),
                           tooltip: 'Search updates',
                           onPressed: _openSearch,
                         ),
+                      ],
                       IconButton(
                         icon: Icon(
                           Icons.filter_list,
