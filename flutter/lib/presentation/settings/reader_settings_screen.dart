@@ -223,8 +223,13 @@ class ReaderSettingsScreen extends ConsumerWidget {
           ),
           _PrefSwitch(
             title: 'Volume key navigation',
-            subtitle: 'Turn pages with the volume keys (not yet active).',
+            subtitle: 'Turn pages (or scroll) with the volume keys.',
             provider: readerVolumeKeysProvider,
+          ),
+          _PrefSwitch(
+            title: 'Invert volume keys',
+            subtitle: 'Volume up advances, volume down goes back.',
+            provider: readerVolumeKeysInvertedProvider,
           ),
           ListTile(
             title: const Text('Double-tap zoom speed'),

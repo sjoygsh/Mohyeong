@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -23,6 +24,13 @@ class MainActivity : FlutterFragmentActivity() {
     private val secureFlagChannel = "app.mohyeong/secure_flag"
     private val safChannel = "app.mohyeong/saf"
     private val permissionsChannel = "app.mohyeong/permissions"
+    private val volumeKeysChannel = "app.mohyeong/volume_keys"
+
+    // When true, the reader is consuming hardware volume keys for page
+    // navigation; we forward each press to Dart and suppress the system
+    // volume UI. Toggled from Dart via the volume_keys channel.
+    private var volumeKeysEnabled = false
+    private var volumeChannel: MethodChannel? = null
 
     // The OpenDocumentTree call is async: we stash the in-flight Dart result
     // and resolve it in onActivityResult once the picker returns.
@@ -202,6 +210,36 @@ class MainActivity : FlutterFragmentActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        volumeChannel =
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, volumeKeysChannel)
+        volumeChannel!!.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setEnabled" -> {
+                    volumeKeysEnabled = call.arguments as? Boolean ?: false
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    // Intercept the hardware volume keys while the reader has enabled them.
+    // Forward each key-down (ignoring auto-repeat) to Dart and consume both
+    // the down and up events so the system volume overlay never appears.
+    // Mirrors Mihon, where the reader turns pages with the volume keys.
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (volumeKeysEnabled) {
+            val code = event.keyCode
+            if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    val direction = if (code == KeyEvent.KEYCODE_VOLUME_UP) "up" else "down"
+                    volumeChannel?.invokeMethod("volumeKey", direction)
+                }
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onRequestPermissionsResult(

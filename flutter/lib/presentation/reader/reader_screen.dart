@@ -13,6 +13,7 @@ import '../../data/history/history_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/reader/reader_behavior_preferences.dart';
 import '../../data/reader/reader_preferences.dart';
+import '../../data/reader/reader_volume_keys.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/track/track_updater.dart';
 import '../../domain/chapter/model/chapter.dart';
@@ -412,6 +413,14 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   // [_ViewportRequest] and animates to the new index.
   int _seekRequestId = 0;
   int _seekTarget = 0;
+  // Continuous-mode volume-key scrolling. `_scrollTick` ticks per press; the
+  // webtoon viewport watches it and scrolls roughly one screen in
+  // `_scrollForward`'s direction.
+  int _scrollTick = 0;
+  bool _scrollForward = true;
+  // Last volume-key interception state pushed to the native channel, so we
+  // only call across the platform boundary when it actually changes.
+  bool _volumeKeysApplied = false;
   // Guards the "reaching the last page auto-marks the chapter read" action
   // (Mihon parity) so it fires at most once per chapter session. Reset when
   // the loaded chapter changes via didUpdateWidget.
@@ -430,6 +439,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _armAutoHide();
     });
+    ReaderVolumeKeys.setListener(_onVolumeKey);
   }
 
   @override
@@ -448,7 +458,28 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   @override
   void dispose() {
     _autoHideTimer?.cancel();
+    ReaderVolumeKeys.setListener(null);
+    if (_volumeKeysApplied) ReaderVolumeKeys.setEnabled(false);
     super.dispose();
+  }
+
+  /// Handle a hardware volume-key press relayed from the host activity.
+  /// [up] is true for volume-up. Default mapping: volume-down advances
+  /// (forward), volume-up goes back; the invert pref swaps it. Paged modes
+  /// turn a page (falling through to the adjacent chapter at a boundary);
+  /// continuous modes scroll roughly one screen.
+  void _onVolumeKey(bool up) {
+    if (!mounted) return;
+    var forward = !up;
+    if (ref.read(readerVolumeKeysInvertedProvider)) forward = !forward;
+    if (widget.mode.isPaged) {
+      _navigatePage(forward: forward);
+    } else {
+      setState(() {
+        _scrollForward = forward;
+        _scrollTick++;
+      });
+    }
   }
 
   void _armAutoHide() {
@@ -629,6 +660,20 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     final sidePaddingPct =
         ref.watch(readerWebtoonSidePaddingProvider).clamp(0, 25);
 
+    // Volume-key navigation is intercepted natively only while the reader is
+    // open AND the chrome is hidden — matching Mihon, which leaves the keys
+    // to their normal volume function whenever the reader menu is visible.
+    // Syncing here means a pref change or a chrome toggle (both rebuild) is
+    // picked up automatically; we only cross the platform boundary on change.
+    final wantVolumeKeys =
+        ref.watch(readerVolumeKeysProvider) && !_chromeVisible;
+    if (wantVolumeKeys != _volumeKeysApplied) {
+      _volumeKeysApplied = wantVolumeKeys;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ReaderVolumeKeys.setEnabled(wantVolumeKeys);
+      });
+    }
+
     Widget viewport = _ReaderViewport(
       data: data,
       mode: widget.mode,
@@ -639,6 +684,8 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       seekRequest: _ViewportSeekRequest(
         requestId: _seekRequestId,
         target: _seekTarget,
+        scrollTick: _scrollTick,
+        scrollForward: _scrollForward,
       ),
     );
     // Page-art colour adjustments. Applied to the page viewport only (not
@@ -771,13 +818,26 @@ const ColorFilter _invertFilter = ColorFilter.matrix(<double>[
 ]);
 
 class _ViewportSeekRequest {
-  const _ViewportSeekRequest({required this.requestId, required this.target});
+  const _ViewportSeekRequest({
+    required this.requestId,
+    required this.target,
+    this.scrollTick = 0,
+    this.scrollForward = true,
+  });
 
   /// Monotonic id that ticks every time the user drags the slider — the
   /// viewport listens for this to know whether the request is fresh, since
   /// we may emit two requests with the same `target` index back-to-back.
   final int requestId;
   final int target;
+
+  /// Monotonic id that ticks every time the volume keys ask the continuous
+  /// (webtoon) viewport to scroll by roughly one screen. Paged viewers
+  /// ignore it; the slider-driven [requestId] handles their seeks instead.
+  final int scrollTick;
+
+  /// Direction of the pending [scrollTick]: true scrolls down (forward).
+  final bool scrollForward;
 }
 
 class _PageIndicator extends StatelessWidget {
@@ -1138,6 +1198,21 @@ class _PagesViewState extends State<_PagesView> {
       final target =
           widget.seekRequest.target.clamp(0, (widget.count - 1).clamp(0, widget.count));
       _pageController!.jumpToPage(target);
+    }
+    // Volume-key scroll in continuous mode: animate by roughly one screen.
+    if (widget.seekRequest.scrollTick != old.seekRequest.scrollTick &&
+        _scrollController != null &&
+        _scrollController!.hasClients) {
+      final pos = _scrollController!.position;
+      final step = pos.viewportDimension * 0.8;
+      final target = (pos.pixels +
+              (widget.seekRequest.scrollForward ? step : -step))
+          .clamp(pos.minScrollExtent, pos.maxScrollExtent);
+      _scrollController!.animateTo(
+        target,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
     }
   }
 

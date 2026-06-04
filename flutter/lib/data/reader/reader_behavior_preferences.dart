@@ -89,10 +89,17 @@ final readerTapToNavigateProvider = boolPref('pref_tap_navigation', true);
 final readerTapNavigateInvertProvider =
     boolPref('pref_tap_navigation_invert', false);
 
-/// Use the hardware volume keys to turn pages. Stored-only — Android
-/// doesn't deliver volume key events to Flutter without a platform
-/// channel, which isn't wired.
+/// Use the hardware volume keys to turn pages (paged modes) or scroll
+/// (continuous modes). Wired through the native `app.mohyeong/volume_keys`
+/// channel — see `ReaderVolumeKeys`. Interception is active only while the
+/// reader is open and its chrome is hidden, mirroring Mihon (volume keys
+/// keep their normal function whenever the reader menu is visible).
 final readerVolumeKeysProvider = boolPref('reader_volume_keys', false);
+
+/// Swap the volume-key direction (volume-up advances, volume-down goes
+/// back). Mirrors Mihon's `reader_volume_keys_inverted`.
+final readerVolumeKeysInvertedProvider =
+    boolPref('reader_volume_keys_inverted', false);
 
 /// Show the tap-zone guide overlay when opening a chapter. Stored-only —
 /// the guide overlay itself isn't built yet.
