@@ -3,11 +3,11 @@
 /// mirror the Kotlin app where one exists so a settings import carries
 /// across.
 ///
-/// Only [amoledProvider] is consumed today — `main.dart` swaps in a
-/// pure-black dark theme when it's on. The rest are persisted and shown
-/// in the settings UI but not yet behaviourally wired (date/relative-time
-/// formatting is done ad-hoc at each call site; tablet mode and app
-/// language need layout/localisation work that isn't built).
+/// [amoledProvider] (dark theme), [relativeTimestampsProvider] and
+/// [dateFormatProvider] (History timestamp rendering via `formatTimestamp`)
+/// are wired. [tabletUiModeProvider] and [showImagesInDescriptionProvider]
+/// stay stored-only — they need responsive-layout / description-rendering
+/// work that isn't built.
 library;
 
 import 'typed_preferences.dart';

@@ -312,9 +312,11 @@ class _HistoryTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final readAt = entry.readAt;
     final relative = ref.watch(relativeTimestampsProvider);
+    final datePattern = ref.watch(dateFormatProvider);
     final subtitle = readAt == null
         ? entry.chapterName
-        : '${entry.chapterName} • ${formatTimestamp(readAt, relative: relative)}';
+        : '${entry.chapterName} • '
+            '${formatTimestamp(readAt, relative: relative, pattern: datePattern)}';
     return ListTile(
       leading: _Thumb(url: entry.thumbnailUrl),
       title: Text(

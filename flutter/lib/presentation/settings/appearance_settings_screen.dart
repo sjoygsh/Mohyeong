@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/preferences/appearance_preferences.dart';
 import '../../data/preferences/theme_preference.dart';
+import '../util/timestamp_format.dart';
 import 'pref_tiles.dart';
 
 /// Appearance sub-screen: theme mode, AMOLED dark, and display
@@ -52,6 +53,11 @@ class AppearanceSettingsScreen extends ConsumerWidget {
             subtitle: 'Show history times as "2h ago" instead of dates.',
             provider: relativeTimestampsProvider,
           ),
+          _DateFormatTile(
+            current: ref.watch(dateFormatProvider),
+            onPicked: (pattern) =>
+                ref.read(dateFormatProvider.notifier).set(pattern),
+          ),
           const PrefSectionHeader('Display'),
           PrefSwitch(
             title: 'Tablet UI',
@@ -66,6 +72,76 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Mihon's `DateFormats` presets — an empty pattern means "device default"
+/// (locale-aware short date). Each is previewed against the current date.
+const List<String> _dateFormatPatterns = [
+  '',
+  'MM/dd/yy',
+  'dd/MM/yy',
+  'yyyy-MM-dd',
+  'dd MMM yyyy',
+  'MMM dd, yyyy',
+];
+
+String _dateFormatLabel(String pattern) {
+  final preview = formatDate(DateTime.now(), pattern);
+  return pattern.isEmpty ? 'Default ($preview)' : '$pattern ($preview)';
+}
+
+class _DateFormatTile extends StatelessWidget {
+  const _DateFormatTile({required this.current, required this.onPicked});
+
+  final String current;
+  final ValueChanged<String> onPicked;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: const Text('Date format'),
+      subtitle: Text(_dateFormatLabel(current)),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () async {
+        final picked = await showDialog<String>(
+          context: context,
+          builder: (_) => _DateFormatPickerDialog(current: current),
+        );
+        if (picked != null) onPicked(picked);
+      },
+    );
+  }
+}
+
+class _DateFormatPickerDialog extends StatelessWidget {
+  const _DateFormatPickerDialog({required this.current});
+
+  final String current;
+
+  @override
+  Widget build(BuildContext context) {
+    final groupValue =
+        _dateFormatPatterns.contains(current) ? current : '';
+    return SimpleDialog(
+      title: const Text('Date format'),
+      children: [
+        RadioGroup<String>(
+          groupValue: groupValue,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final p in _dateFormatPatterns)
+                RadioListTile<String>(
+                  value: p,
+                  title: Text(_dateFormatLabel(p)),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

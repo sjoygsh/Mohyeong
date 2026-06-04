@@ -78,6 +78,8 @@ dependencies:
   # Biometric / device-credential app lock (security settings).
   local_auth: ^2.3.0
   archive: ^4.0.9
+  # Locale-aware date formatting for the configurable date-format pref.
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
