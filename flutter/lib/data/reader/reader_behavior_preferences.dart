@@ -101,7 +101,9 @@ final readerVolumeKeysProvider = boolPref('reader_volume_keys', false);
 final readerVolumeKeysInvertedProvider =
     boolPref('reader_volume_keys_inverted', false);
 
-/// Show the tap-zone guide overlay when opening a chapter. Stored-only —
-/// the guide overlay itself isn't built yet.
+/// Show the one-time tap-zone guide overlay the first time a paged chapter
+/// is opened (Mihon's "new user" navigation hint). The reader paints
+/// `_NavZoneOverlay` while this is true and flips it off when the user taps
+/// the overlay away.
 final readerShowNavOverlayProvider =
     boolPref('pref_show_navigation_overlay_new_user', true);

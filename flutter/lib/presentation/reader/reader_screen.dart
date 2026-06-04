@@ -421,6 +421,9 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   // Last volume-key interception state pushed to the native channel, so we
   // only call across the platform boundary when it actually changes.
   bool _volumeKeysApplied = false;
+  // Set once the user taps away the tap-zone guide overlay this session,
+  // so it never re-appears even before the (async) pref write lands.
+  bool _navOverlayDismissed = false;
   // Guards the "reaching the last page auto-marks the chapter read" action
   // (Mihon parity) so it fires at most once per chapter session. Reset when
   // the loaded chapter changes via didUpdateWidget.
@@ -665,6 +668,14 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     // to their normal volume function whenever the reader menu is visible.
     // Syncing here means a pref change or a chrome toggle (both rebuild) is
     // picked up automatically; we only cross the platform boundary on change.
+    // One-time tap-zone guide overlay (Mihon's "new user" navigation hint).
+    // Only meaningful where the tap zones are actually live: paged modes
+    // with tap-to-navigate on. Tapping it through dismisses + persists off.
+    final showNavOverlay = !_navOverlayDismissed &&
+        widget.mode.isPaged &&
+        ref.watch(readerTapToNavigateProvider) &&
+        ref.watch(readerShowNavOverlayProvider);
+
     final wantVolumeKeys =
         ref.watch(readerVolumeKeysProvider) && !_chromeVisible;
     if (wantVolumeKeys != _volumeKeysApplied) {
@@ -795,7 +806,108 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
               ),
             ),
           ),
+          // Tap-zone guide overlay. Sits on top of everything (including
+          // chrome) and swallows the first tap to dismiss itself.
+          if (showNavOverlay)
+            Positioned.fill(
+              child: _NavZoneOverlay(
+                mode: widget.mode,
+                inverted: ref.watch(readerTapNavigateInvertProvider),
+                onDismiss: () {
+                  setState(() => _navOverlayDismissed = true);
+                  ref.read(readerShowNavOverlayProvider.notifier).set(false);
+                },
+              ),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+/// A one-shot translucent guide drawn over the reader the first time a
+/// paged chapter opens, illustrating which screen third turns the page
+/// forward, which goes back, and which toggles the menu. Mirrors Mihon's
+/// `ReaderNavigationOverlayView`. Tapping anywhere dismisses it.
+class _NavZoneOverlay extends StatelessWidget {
+  const _NavZoneOverlay({
+    required this.mode,
+    required this.inverted,
+    required this.onDismiss,
+  });
+
+  final ReadingMode mode;
+  final bool inverted;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    // Which edge advances. Right advances by default; RTL reading and the
+    // invert pref each flip it — matching `_handleViewportTap`.
+    var rightAdvances = true;
+    if (mode == ReadingMode.rightToLeft) rightAdvances = !rightAdvances;
+    if (inverted) rightAdvances = !rightAdvances;
+
+    const next = _NavZoneRegion(
+      color: Color(0x668BC34A),
+      icon: Icons.chevron_right,
+      label: 'Next',
+    );
+    const prev = _NavZoneRegion(
+      color: Color(0x66FFC107),
+      icon: Icons.chevron_left,
+      label: 'Previous',
+    );
+    const menu = _NavZoneRegion(
+      color: Color(0x66607D8B),
+      icon: Icons.menu,
+      label: 'Menu',
+    );
+
+    return GestureDetector(
+      onTap: onDismiss,
+      child: Row(
+        children: [
+          Expanded(child: rightAdvances ? prev : next),
+          const Expanded(child: menu),
+          Expanded(child: rightAdvances ? next : prev),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavZoneRegion extends StatelessWidget {
+  const _NavZoneRegion({
+    required this.color,
+    required this.icon,
+    required this.label,
+  });
+
+  final Color color;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: color,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white, size: 48),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
