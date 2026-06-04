@@ -276,6 +276,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 const SnackBar(content: Text('Marked as read.')),
               );
             },
+            onReachedEnd: () {
+              // Auto-mark on reaching the last page. Silent (no snackbar) and
+              // fire-and-forget — mirrors Mihon marking the chapter read once
+              // the final page is shown, plus the tracker last-read push.
+              unawaited(
+                ref
+                    .read(chapterRepositoryProvider)
+                    .setRead(data.chapter.id, true),
+              );
+              unawaited(
+                ref.read(trackUpdaterProvider).setLastChapterRead(
+                      mangaId: data.chapter.mangaId,
+                      chapterNumber: data.chapter.chapterNumber,
+                    ),
+              );
+            },
           );
         },
       ),
@@ -370,6 +386,7 @@ class _ReaderBody extends ConsumerStatefulWidget {
     required this.onChangeMode,
     required this.onPageChanged,
     required this.onMarkRead,
+    required this.onReachedEnd,
   });
 
   final _ReaderData data;
@@ -380,6 +397,7 @@ class _ReaderBody extends ConsumerStatefulWidget {
   final ValueChanged<ReadingMode> onChangeMode;
   final ValueChanged<int> onPageChanged;
   final VoidCallback onMarkRead;
+  final VoidCallback onReachedEnd;
 
   @override
   ConsumerState<_ReaderBody> createState() => _ReaderBodyState();
@@ -394,6 +412,10 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   // [_ViewportRequest] and animates to the new index.
   int _seekRequestId = 0;
   int _seekTarget = 0;
+  // Guards the "reaching the last page auto-marks the chapter read" action
+  // (Mihon parity) so it fires at most once per chapter session. Reset when
+  // the loaded chapter changes via didUpdateWidget.
+  bool _autoMarkedRead = false;
   // Auto-hide timer for the chrome overlay. Re-armed each time the
   // chrome becomes visible (initial state + every toggle-to-visible).
   // `null` means either auto-hide is disabled (delay = 0) or the
@@ -408,6 +430,19 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _armAutoHide();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant _ReaderBody old) {
+    super.didUpdateWidget(old);
+    // A new chapter was loaded into the same reader: re-arm the auto-mark
+    // guard and reset the page counters so the previous chapter's tail
+    // doesn't carry over.
+    if (widget.data.chapter.id != old.data.chapter.id) {
+      _autoMarkedRead = false;
+      _currentPage = 0;
+      _totalPages = 0;
+    }
   }
 
   @override
@@ -440,6 +475,12 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       setState(() => _currentPage = page);
     }
     widget.onPageChanged(page);
+    // Reaching the final page marks the chapter read (Mihon parity). Guarded
+    // so paging back and forth past the end doesn't re-fire the tracker push.
+    if (!_autoMarkedRead && _totalPages > 0 && page >= _totalPages - 1) {
+      _autoMarkedRead = true;
+      widget.onReachedEnd();
+    }
   }
 
   void _onTotalChanged(int total) {
