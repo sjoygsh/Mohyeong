@@ -73,8 +73,10 @@ final readerScaleTypeProvider = stringPref('pref_image_scale_type', 'fit_screen'
 final readerWebtoonSidePaddingProvider =
     intPref('webtoon_side_padding', 0);
 
-/// Crop solid borders off page images on display. Stored-only — needs an
-/// image-analysis pass that isn't built.
+/// Crop solid borders off page images on display. Honoured by the reader:
+/// when on, each page is routed through `CropBordersImageProvider`, which
+/// samples the page corners for the background colour and trims uniform
+/// margins before the image is painted.
 final readerCropBordersProvider = boolPref('crop_borders', false);
 
 /// Allow zooming wide (landscape) pages beyond fit. Stored-only — the

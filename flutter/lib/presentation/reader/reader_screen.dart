@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -690,6 +689,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       mode: widget.mode,
       fit: fit,
       sidePaddingFraction: sidePaddingPct / 100,
+      cropBorders: ref.watch(readerCropBordersProvider),
       onPageChanged: _onPageChanged,
       onTotalChanged: _onTotalChanged,
       seekRequest: _ViewportSeekRequest(
@@ -1021,6 +1021,7 @@ class _ReaderViewport extends StatelessWidget {
     required this.mode,
     required this.fit,
     required this.sidePaddingFraction,
+    required this.cropBorders,
     required this.onPageChanged,
     required this.onTotalChanged,
     required this.seekRequest,
@@ -1030,6 +1031,7 @@ class _ReaderViewport extends StatelessWidget {
   final ReadingMode mode;
   final BoxFit fit;
   final double sidePaddingFraction;
+  final bool cropBorders;
   final ValueChanged<int> onPageChanged;
   final ValueChanged<int> onTotalChanged;
   final _ViewportSeekRequest seekRequest;
@@ -1044,6 +1046,7 @@ class _ReaderViewport extends StatelessWidget {
         mode: mode,
         fit: fit,
         sidePaddingFraction: sidePaddingFraction,
+        cropBorders: cropBorders,
         initialPage: data.chapter.lastPageRead,
         onPageChanged: onPageChanged,
         seekRequest: seekRequest,
@@ -1062,6 +1065,7 @@ class _ReaderViewport extends StatelessWidget {
       mode: mode,
       fit: fit,
       sidePaddingFraction: sidePaddingFraction,
+      cropBorders: cropBorders,
       onPageChanged: onPageChanged,
       onTotalChanged: onTotalChanged,
       seekRequest: seekRequest,
@@ -1076,6 +1080,7 @@ class _PageList extends StatefulWidget {
     required this.mode,
     required this.fit,
     required this.sidePaddingFraction,
+    required this.cropBorders,
     required this.onPageChanged,
     required this.onTotalChanged,
     required this.seekRequest,
@@ -1086,6 +1091,7 @@ class _PageList extends StatefulWidget {
   final ReadingMode mode;
   final BoxFit fit;
   final double sidePaddingFraction;
+  final bool cropBorders;
   final ValueChanged<int> onPageChanged;
   final ValueChanged<int> onTotalChanged;
   final _ViewportSeekRequest seekRequest;
@@ -1170,6 +1176,7 @@ class _PageListState extends State<_PageList> {
               url: imageUrl,
               fit: widget.fit,
               headers: page.headers,
+              cropBorders: widget.cropBorders,
               placeholder: (_) => const SizedBox(
                 height: 400,
                 child: Center(
@@ -1199,6 +1206,7 @@ class _LocalPageList extends StatelessWidget {
     required this.mode,
     required this.fit,
     required this.sidePaddingFraction,
+    required this.cropBorders,
     required this.initialPage,
     required this.onPageChanged,
     required this.seekRequest,
@@ -1208,6 +1216,7 @@ class _LocalPageList extends StatelessWidget {
   final ReadingMode mode;
   final BoxFit fit;
   final double sidePaddingFraction;
+  final bool cropBorders;
   final int initialPage;
   final ValueChanged<int> onPageChanged;
   final _ViewportSeekRequest seekRequest;
@@ -1226,10 +1235,11 @@ class _LocalPageList extends StatelessWidget {
       initialPage: initialPage,
       onPageChanged: onPageChanged,
       seekRequest: seekRequest,
-      itemBuilder: (_, i) => Image.file(
-        File(paths[i]),
+      itemBuilder: (_, i) => SourceImage(
+        url: paths[i],
         fit: fit,
-        errorBuilder: (_, error, _) => SizedBox(
+        cropBorders: cropBorders,
+        errorWidget: (_, error) => SizedBox(
           height: 400,
           child: Center(
             child: Text(

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/source/local_archive.dart';
 import '../../data/source/saf.dart';
+import 'crop_borders_image.dart';
 
 /// Image widget that paints whatever a source hands us — local file path,
 /// `file://` URI, a SAF `content://` document URI (Local source on Android),
@@ -29,6 +30,7 @@ class SourceImage extends StatelessWidget {
     this.headers,
     this.placeholder,
     this.errorWidget,
+    this.cropBorders = false,
   });
 
   final String url;
@@ -36,6 +38,11 @@ class SourceImage extends StatelessWidget {
   final Map<String, String>? headers;
   final WidgetBuilder? placeholder;
   final Widget Function(BuildContext, Object error)? errorWidget;
+
+  /// Trim solid-colour page margins before display (reader "Crop borders").
+  /// Off everywhere except the reader page list. When on, the backend
+  /// [ImageProvider] is wrapped in a [CropBordersImageProvider].
+  final bool cropBorders;
 
   bool get _isArchive => isArchivePageUrl(url);
 
@@ -60,8 +67,32 @@ class SourceImage extends StatelessWidget {
     return url;
   }
 
+  /// The undecorated backend [ImageProvider] for this URL, used when borders
+  /// are cropped (the crop decorator wraps it and the standard [Image] widget
+  /// renders the trimmed result).
+  ImageProvider _backendProvider() {
+    if (_isArchive) return _ArchiveImageProvider(url);
+    if (_isContent) return _SafImageProvider(url);
+    if (_isLocal) return FileImage(File(_localPath));
+    return CachedNetworkImageProvider(url, headers: headers);
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (cropBorders) {
+      return Image(
+        image: CropBordersImageProvider(_backendProvider()),
+        fit: fit,
+        frameBuilder: placeholder == null
+            ? null
+            : (ctx, child, frame, wasSync) {
+                if (frame != null || wasSync) return child;
+                return placeholder!(ctx);
+              },
+        errorBuilder: (ctx, error, _) =>
+            errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
+      );
+    }
     if (_isArchive) {
       return Image(
         image: _ArchiveImageProvider(url),

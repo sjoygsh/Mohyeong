@@ -176,7 +176,7 @@ class ReaderSettingsScreen extends ConsumerWidget {
           ),
           _PrefSwitch(
             title: 'Crop borders',
-            subtitle: 'Trim solid page margins (not yet active).',
+            subtitle: 'Trim solid page margins off each page.',
             provider: readerCropBordersProvider,
           ),
           const Padding(
