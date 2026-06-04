@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/preferences/appearance_preferences.dart';
 import '../../data/preferences/theme_preference.dart';
+import '../theme/app_theme.dart';
 import '../util/timestamp_format.dart';
 import 'pref_tiles.dart';
 
@@ -42,6 +43,10 @@ class AppearanceSettingsScreen extends ConsumerWidget {
               ],
             ),
           ),
+          _ThemeColorTile(
+            current: AppColorTheme.fromKey(ref.watch(appThemeProvider)),
+            onPicked: (t) => ref.read(appThemeProvider.notifier).set(t.key),
+          ),
           PrefSwitch(
             title: 'AMOLED black',
             subtitle: 'Use a pure-black background in dark mode.',
@@ -71,6 +76,81 @@ class AppearanceSettingsScreen extends ConsumerWidget {
             provider: showImagesInDescriptionProvider,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "App theme" picker — swaps the colour seed that drives the whole
+/// Material 3 scheme. A small swatch previews each theme's accent.
+class _ThemeColorTile extends StatelessWidget {
+  const _ThemeColorTile({required this.current, required this.onPicked});
+
+  final AppColorTheme current;
+  final ValueChanged<AppColorTheme> onPicked;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: _Swatch(current.seed),
+      title: const Text('App theme'),
+      subtitle: Text(current.label),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () async {
+        final picked = await showDialog<AppColorTheme>(
+          context: context,
+          builder: (_) => _ThemeColorPickerDialog(current: current),
+        );
+        if (picked != null) onPicked(picked);
+      },
+    );
+  }
+}
+
+class _ThemeColorPickerDialog extends StatelessWidget {
+  const _ThemeColorPickerDialog({required this.current});
+
+  final AppColorTheme current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('App theme'),
+      children: [
+        RadioGroup<AppColorTheme>(
+          groupValue: current,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final t in AppColorTheme.values)
+                RadioListTile<AppColorTheme>(
+                  value: t,
+                  secondary: _Swatch(t.seed),
+                  title: Text(t.label),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Swatch extends StatelessWidget {
+  const _Swatch(this.color);
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
       ),
     );
   }

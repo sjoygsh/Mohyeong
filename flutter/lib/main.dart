@@ -58,6 +58,7 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themePreferenceProvider);
     final amoled = ref.watch(amoledProvider);
+    final seed = AppColorTheme.fromKey(ref.watch(appThemeProvider)).seed;
     // Keep the periodic task in sync with the preference.
     ref.listen<LibraryUpdateInterval>(
       libraryUpdatePreferenceProvider,
@@ -69,8 +70,8 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
     return MaterialApp(
       title: 'Mohyeong',
       navigatorKey: ref.watch(trackerNavigatorKeyProvider),
-      theme: AppTheme.light,
-      darkTheme: amoled ? AppTheme.darkAmoled : AppTheme.dark,
+      theme: AppTheme.light(seed),
+      darkTheme: amoled ? AppTheme.darkAmoled(seed) : AppTheme.dark(seed),
       themeMode: themeMode,
       home: const AuthGate(
         child: OnboardingGate(child: HomeScreen()),

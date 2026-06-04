@@ -12,6 +12,11 @@ library;
 
 import 'typed_preferences.dart';
 
+/// App colour palette (Mihon's `AppTheme`). Stored as the Kotlin enum name
+/// (e.g. `MIDNIGHT_DUSK`); resolve via `AppColorTheme.fromKey`. Wired into
+/// `main.dart`, which seeds the light/dark `ColorScheme` from the choice.
+final appThemeProvider = stringPref('pref_app_theme', 'DEFAULT');
+
 /// Use a pure-black background for the dark theme (OLED power saving).
 final amoledProvider = boolPref('pref_theme_dark_amoled', false);
 
