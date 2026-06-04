@@ -113,3 +113,41 @@ NotifierProvider<StringPrefNotifier, String> stringPref(
     NotifierProvider<StringPrefNotifier, String>(
       () => StringPrefNotifier(key, defaultValue),
     );
+
+/// String-set preference, persisted via SharedPreferences' string-list
+/// store (Flutter has no native set type). Mihon stores these as a
+/// `StringSet`; we mirror the key and treat order as insignificant.
+class StringSetPrefNotifier extends Notifier<Set<String>> {
+  StringSetPrefNotifier(this.key, this.defaultValue);
+
+  final String key;
+  final Set<String> defaultValue;
+
+  @override
+  Set<String> build() {
+    _load();
+    return defaultValue;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getStringList(key);
+    if (stored == null) return;
+    final set = stored.toSet();
+    if (set.length != state.length || !state.containsAll(set)) state = set;
+  }
+
+  Future<void> set(Set<String> value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(key, value.toList());
+  }
+}
+
+NotifierProvider<StringSetPrefNotifier, Set<String>> stringSetPref(
+  String key,
+  Set<String> defaultValue,
+) =>
+    NotifierProvider<StringSetPrefNotifier, Set<String>>(
+      () => StringSetPrefNotifier(key, defaultValue),
+    );

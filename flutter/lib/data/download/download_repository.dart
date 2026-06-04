@@ -272,6 +272,17 @@ class DownloadRepository {
     return v.clamp(1, 5);
   }
 
+  /// Completes once the queue has fully drained (no running batch and
+  /// nothing pending). Used by the background library-update isolate to
+  /// keep its short-lived process alive until auto-downloads finish, since
+  /// closing the DB/HTTP client mid-download would abort them. Polls rather
+  /// than using a completer because the drain loop is fire-and-forget.
+  Future<void> awaitIdle() async {
+    while (_running || _queue.isNotEmpty) {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+  }
+
   Future<void> _drain() async {
     if (_running || _paused) return;
     _running = true;

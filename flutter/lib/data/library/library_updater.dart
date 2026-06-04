@@ -2,12 +2,15 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/chapter/interactor/filter_chapters_for_download.dart';
+import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/interactor/fetch_interval.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/update_strategy.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../category/category_repository.dart';
 import '../chapter/chapter_repository.dart';
+import '../download/download_repository.dart';
 import '../manga/manga_repository.dart';
 import '../source/extension_repository.dart';
 
@@ -24,12 +27,16 @@ import '../source/extension_repository.dart';
 /// of the library from updating.
 class LibraryUpdater {
   LibraryUpdater(this._mangas, this._chapters, this._extensions,
-      this._categories);
+      this._categories, this._downloads);
 
   final MangaRepository _mangas;
   final ChapterRepository _chapters;
   final ExtensionRepository _extensions;
   final CategoryRepository _categories;
+  final DownloadRepository _downloads;
+
+  late final FilterChaptersForDownload _downloadFilter =
+      FilterChaptersForDownload(_chapters, _categories);
 
   /// Per-category convenience for the Library tab. Resolves the
   /// category's membership and forwards to [updateAll].
@@ -100,7 +107,23 @@ class LibraryUpdater {
       manga,
       hasNewChapters: added.isNotEmpty,
     );
+    await downloadNewChapters(manga, added);
     return added.length;
+  }
+
+  /// Queues downloads for the subset of [newChapters] that pass the
+  /// auto-download preferences (download_new + unread-only + category
+  /// include/exclude), mirroring Mihon's post-sync `downloadChapters`
+  /// step. No-op when auto-download is off or nothing qualifies. Shared by
+  /// the library sweep and the per-manga details refresh.
+  Future<void> downloadNewChapters(
+    Manga manga,
+    List<Chapter> newChapters,
+  ) async {
+    final toDownload = await _downloadFilter.filter(manga, newChapters);
+    for (final chapter in toDownload) {
+      await _downloads.enqueue(manga, chapter);
+    }
   }
 
   /// Recomputes a manga's update interval + projected next-update from its
@@ -167,5 +190,6 @@ final libraryUpdaterProvider = Provider<LibraryUpdater>((ref) {
     ref.watch(chapterRepositoryProvider),
     ref.watch(extensionRepositoryProvider),
     ref.watch(categoryRepositoryProvider),
+    ref.watch(downloadRepositoryProvider),
   );
 });

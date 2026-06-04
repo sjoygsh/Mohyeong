@@ -2,13 +2,14 @@
 /// Keys mirror the Kotlin `DownloadPreferences` names so a settings
 /// import carries values across without translation.
 ///
-/// Only [downloadSlotsProvider] is consumed today — the download queue's
-/// drain loop reads `download_slots` to decide how many chapters to fetch
-/// concurrently. The remaining toggles are persisted and surfaced in the
-/// settings UI but their behaviour is not yet wired (see the progress
-/// notes): wifi-only needs a connectivity plugin, CBZ/split-tall need an
-/// archive/image pipeline, and the auto-download / remove-after-read
-/// flows need hooks into the library updater and read path.
+/// [downloadSlotsProvider] is consumed by the download queue's drain loop
+/// (reads `download_slots` for concurrency). The auto-download family
+/// ([downloadNewChaptersProvider] + [downloadNewUnreadChaptersOnlyProvider]
+/// + the category include/exclude sets) is wired into the library updater
+/// via `FilterChaptersForDownload`. The remaining toggles are persisted and
+/// surfaced in the settings UI but their behaviour is not yet wired: wifi-
+/// only needs a connectivity plugin, CBZ/split-tall need an archive/image
+/// pipeline, and the remove-after-read flow needs a read-path hook.
 library;
 
 import '../preferences/typed_preferences.dart';
@@ -24,6 +25,21 @@ final downloadOnlyOverWifiProvider =
 /// Automatically download new chapters as they're discovered by a
 /// library update.
 final downloadNewChaptersProvider = boolPref('download_new', false);
+
+/// When auto-downloading new chapters, skip chapters whose number is
+/// already marked read elsewhere in the series.
+final downloadNewUnreadChaptersOnlyProvider =
+    boolPref('download_new_unread_chapters_only', false);
+
+/// Category ids (as strings) whose manga are eligible for auto-download.
+/// Empty = all categories eligible (subject to [downloadNewCategoriesExcludeProvider]).
+final downloadNewCategoriesProvider =
+    stringSetPref('download_new_categories', const {});
+
+/// Category ids (as strings) whose manga are excluded from auto-download,
+/// taking precedence over [downloadNewCategoriesProvider].
+final downloadNewCategoriesExcludeProvider =
+    stringSetPref('download_new_categories_exclude', const {});
 
 /// Delete a chapter's download once it's marked read.
 final removeAfterMarkedAsReadProvider =

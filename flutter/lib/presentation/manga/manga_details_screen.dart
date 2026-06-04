@@ -96,10 +96,12 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
         SourceManga(url: manga.url, title: manga.title),
       );
       final added = await chapterRepo.syncChaptersWithSource(manga.id, fetched);
-      await ref.read(libraryUpdaterProvider).recomputeFetchInterval(
-            manga,
-            hasNewChapters: added.isNotEmpty,
-          );
+      final updater = ref.read(libraryUpdaterProvider);
+      await updater.recomputeFetchInterval(
+        manga,
+        hasNewChapters: added.isNotEmpty,
+      );
+      await updater.downloadNewChapters(manga, added);
       if (!mounted || silent) return;
       final msg = added.isEmpty
           ? 'Refreshed. No new chapters.'

@@ -8,6 +8,7 @@ import 'package:workmanager/workmanager.dart';
 import '../category/category_repository.dart';
 import '../chapter/chapter_repository.dart';
 import '../database/app_database.dart';
+import '../download/download_repository.dart';
 import '../manga/manga_repository.dart';
 import '../network/app_http_client.dart';
 import '../source/extension_repository.dart';
@@ -46,9 +47,19 @@ void libraryUpdateCallbackDispatcher() {
         final mangas = MangaRepository(db);
         final chapters = ChapterRepository(db);
         final categories = CategoryRepository(db);
-        final updater =
-            LibraryUpdater(mangas, chapters, extensions, categories);
+        final downloads = DownloadRepository(extensions, http);
+        final updater = LibraryUpdater(
+          mangas,
+          chapters,
+          extensions,
+          categories,
+          downloads,
+        );
         await updater.updateAll();
+        // Auto-downloads (if enabled) were enqueued during the sweep; wait
+        // for them to finish before tearing down the DB/HTTP client this
+        // isolate built, otherwise in-flight page fetches would abort.
+        await downloads.awaitIdle();
       } finally {
         await extensions.close();
         await db.close();
