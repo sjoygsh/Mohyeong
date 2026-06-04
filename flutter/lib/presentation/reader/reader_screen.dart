@@ -9,6 +9,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
+import '../../data/history/history_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/reader/reader_behavior_preferences.dart';
 import '../../data/reader/reader_preferences.dart';
@@ -51,6 +52,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   late int _chapterId = widget.chapterId;
   Future<_ReaderData?>? _data;
 
+  /// The chapter currently being timed for the reading-history record, and
+  /// when its active foreground session last started. Mihon records a
+  /// history entry the moment a chapter is opened (so it surfaces in the
+  /// History tab even if you only view the first page) and accumulates the
+  /// time spent reading on top via the `upsertHistory` ON CONFLICT clause.
+  int? _historyChapterId;
+  DateTime? _sessionStartedAt;
+
   @override
   void initState() {
     super.initState();
@@ -80,9 +89,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         // brightness mid-read.
         WakelockPlus.disable();
         ScreenBrightness().resetApplicationScreenBrightness();
+        // Bank read time and stop the clock so backgrounded time doesn't
+        // inflate the chapter's read duration.
+        _flushReadTime();
+        _sessionStartedAt = null;
       case AppLifecycleState.resumed:
         _applyKeepScreenOn();
         _applyBrightness();
+        // Restart the read-time clock for the chapter still on screen.
+        if (_historyChapterId != null) _sessionStartedAt = DateTime.now();
       case AppLifecycleState.inactive:
       case AppLifecycleState.detached:
         break;
@@ -91,6 +106,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   @override
   void dispose() {
+    // Bank the final read-time slice for the chapter on screen before tearing
+    // the reader down.
+    _flushReadTime();
     WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // Release the wakelock + restore system brightness so the reader's
@@ -131,21 +149,64 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final mangaRepo = ref.read(mangaRepositoryProvider);
     final extRepo = ref.read(extensionRepositoryProvider);
     final downloadRepo = ref.read(downloadRepositoryProvider);
+    final future = _loadReaderData(
+      chapterRepo,
+      mangaRepo,
+      extRepo,
+      downloadRepo,
+      widget.mangaId,
+      _chapterId,
+    );
+    // Stamp a history entry as soon as the chapter resolves, mirroring
+    // Mihon's "open == read" behaviour.
+    future.then((data) {
+      if (data != null && mounted) _startHistorySession(data.chapter.id);
+    });
     setState(() {
-      _data = _loadReaderData(
-        chapterRepo,
-        mangaRepo,
-        extRepo,
-        downloadRepo,
-        widget.mangaId,
-        _chapterId,
-      );
+      _data = future;
     });
   }
 
   void _jumpToChapter(int id) {
+    // Bank the time spent on the chapter we're leaving before switching.
+    _flushReadTime();
     _chapterId = id;
     _reload();
+  }
+
+  /// Begin (or resume) timing a chapter for the reading-history record and
+  /// immediately upsert a `last_read = now` row so the chapter shows up in
+  /// the History tab right away.
+  void _startHistorySession(int chapterId) {
+    _historyChapterId = chapterId;
+    _sessionStartedAt = DateTime.now();
+    unawaited(
+      ref.read(historyRepositoryProvider).upsert(
+            chapterId: chapterId,
+            readAt: DateTime.now(),
+            timeReadMs: 0,
+          ),
+    );
+  }
+
+  /// Add the elapsed foreground time since the last checkpoint onto the
+  /// current chapter's history row and refresh its `last_read` to now. Resets
+  /// the session clock so the same span isn't counted twice. No-op when no
+  /// chapter is being timed.
+  void _flushReadTime() {
+    final chapterId = _historyChapterId;
+    final startedAt = _sessionStartedAt;
+    if (chapterId == null || startedAt == null) return;
+    final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
+    _sessionStartedAt = DateTime.now();
+    if (elapsedMs <= 0) return;
+    unawaited(
+      ref.read(historyRepositoryProvider).upsert(
+            chapterId: chapterId,
+            readAt: DateTime.now(),
+            timeReadMs: elapsedMs,
+          ),
+    );
   }
 
   @override
