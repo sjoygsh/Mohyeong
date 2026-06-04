@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_update_preference.dart';
+import 'category_filter_tile.dart';
 
 /// Library sub-screen: background update interval + display toggles.
 /// Mirror of Mihon's SettingsLibraryScreen.
@@ -46,6 +47,32 @@ class LibrarySettingsScreen extends ConsumerWidget {
               }
             },
           ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
+            child: Text(
+              'Global update',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          CategoryFilterTile(
+            title: 'Categories to include',
+            emptyLabel: 'All',
+            provider: libraryUpdateCategoriesProvider,
+          ),
+          CategoryFilterTile(
+            title: 'Categories to exclude',
+            emptyLabel: 'None',
+            provider: libraryUpdateCategoriesExcludeProvider,
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              'Entries in excluded categories will not be updated even if '
+              'they are also in included categories.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ),
+          const _SmartUpdateSection(),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
             child: Text(
@@ -106,6 +133,54 @@ class LibrarySettingsScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The "Smart update" restriction checkboxes. Toggling a row adds/removes
+/// its token from the [libraryUpdateMangaRestrictionProvider] set. Labels +
+/// token order mirror Mihon's `SettingsLibraryScreen` multi-select.
+class _SmartUpdateSection extends ConsumerWidget {
+  const _SmartUpdateSection();
+
+  static const _entries = <(String, String)>[
+    (MangaUpdateRestriction.hasUnread, 'Skip entries with unread chapter(s)'),
+    (MangaUpdateRestriction.nonRead, 'Skip unstarted entries'),
+    (MangaUpdateRestriction.nonCompleted, 'Skip entries with "Completed" '
+        'status'),
+    (MangaUpdateRestriction.outsideReleasePeriod, 'Predict next release time'),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(libraryUpdateMangaRestrictionProvider);
+    final notifier =
+        ref.read(libraryUpdateMangaRestrictionProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
+          child: Text(
+            'Smart update',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+        for (final (token, label) in _entries)
+          CheckboxListTile(
+            title: Text(label),
+            value: selected.contains(token),
+            onChanged: (checked) {
+              final next = {...selected};
+              if (checked ?? false) {
+                next.add(token);
+              } else {
+                next.remove(token);
+              }
+              notifier.set(next);
+            },
+          ),
+      ],
     );
   }
 }

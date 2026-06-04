@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/chapter/interactor/filter_chapters_for_download.dart';
 import '../../domain/chapter/model/chapter.dart';
@@ -13,6 +14,7 @@ import '../chapter/chapter_repository.dart';
 import '../download/download_repository.dart';
 import '../manga/manga_repository.dart';
 import '../source/extension_repository.dart';
+import 'library_update_preference.dart';
 
 /// Domain service that fetches the latest chapter list for every manga in
 /// the user's library and reconciles it against the persisted state.
@@ -38,6 +40,15 @@ class LibraryUpdater {
   late final FilterChaptersForDownload _downloadFilter =
       FilterChaptersForDownload(_chapters, _categories);
 
+  /// Mihon's `SManga.COMPLETED`. A manga with this source status is skipped
+  /// when the "Skip completed" restriction is active.
+  static const int _statusCompleted = 2;
+
+  /// Default-category sentinel (matches [FilterChaptersForDownload]): a manga
+  /// with no user categories is treated as belonging to category id 0 for the
+  /// global-update include/exclude match.
+  static const int _defaultCategoryId = 0;
+
   /// Per-category convenience for the Library tab. Resolves the
   /// category's membership and forwards to [updateAll].
   Future<LibraryUpdateResult> updateCategory(
@@ -61,11 +72,7 @@ class LibraryUpdater {
     Set<int>? restrictToMangaIds,
   }) async {
     final favourites = await _mangas.getFavorites();
-    final eligible = favourites
-        .where((m) => m.updateStrategy == UpdateStrategy.alwaysUpdate)
-        .where((m) =>
-            restrictToMangaIds == null || restrictToMangaIds.contains(m.id))
-        .toList(growable: false);
+    final eligible = await _selectMangaToUpdate(favourites, restrictToMangaIds);
 
     var newChaptersTotal = 0;
     final failures = <LibraryUpdateFailure>[];
@@ -94,6 +101,84 @@ class LibraryUpdater {
       failures: failures,
     );
   }
+
+  /// Applies the category include/exclude scope and the per-manga "smart
+  /// update" restrictions to the favourite list, returning the manga that
+  /// should actually be fetched this pass. 1:1 port of Mihon's
+  /// `LibraryUpdateJob.addMangaToQueue` filter chain.
+  ///
+  /// Preferences are read straight from [SharedPreferences] so the same
+  /// filtering runs in the background workmanager isolate (no Riverpod).
+  /// [restrictToMangaIds] (the per-category "update this category" path)
+  /// replaces the global include/exclude scope with explicit membership; the
+  /// restrictions still apply on top.
+  Future<List<Manga>> _selectMangaToUpdate(
+    List<Manga> favourites,
+    Set<int>? restrictToMangaIds,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final restrictions =
+        (prefs.getStringList('library_update_manga_restriction') ??
+                const [
+                  MangaUpdateRestriction.hasUnread,
+                  MangaUpdateRestriction.nonCompleted,
+                  MangaUpdateRestriction.nonRead,
+                  MangaUpdateRestriction.outsideReleasePeriod,
+                ])
+            .toSet();
+    final included = _parseIds(prefs.getStringList('library_update_categories'));
+    final excluded =
+        _parseIds(prefs.getStringList('library_update_categories_exclude'));
+    final fetchWindowUpper =
+        const FetchInterval().getWindow(DateTime.now()).$2;
+
+    final out = <Manga>[];
+    for (final manga in favourites) {
+      // Category scope: explicit membership for a per-category run, otherwise
+      // the global include/exclude sets (exclusion wins over inclusion).
+      if (restrictToMangaIds != null) {
+        if (!restrictToMangaIds.contains(manga.id)) continue;
+      } else if (included.isNotEmpty || excluded.isNotEmpty) {
+        final cats = await _categories.getCategoryIdsForManga(manga.id);
+        final effective = cats.isEmpty ? <int>{_defaultCategoryId} : cats;
+        final isIncluded = included.isEmpty || effective.any(included.contains);
+        final isExcluded = effective.any(excluded.contains);
+        if (!isIncluded || isExcluded) continue;
+      }
+
+      // Restrictions that need chapter read-state counts.
+      final chapters = await _chapters.getByMangaId(manga.id);
+      final total = chapters.length;
+      final hasUnread = chapters.any((c) => !c.read);
+      final hasStarted = chapters.any((c) => c.read);
+
+      // One-shot sources are fetched exactly once; skip after the first pull.
+      if (manga.updateStrategy == UpdateStrategy.onlyFetchOnce && total > 0) {
+        continue;
+      }
+      if (restrictions.contains(MangaUpdateRestriction.nonCompleted) &&
+          manga.status == _statusCompleted) {
+        continue;
+      }
+      if (restrictions.contains(MangaUpdateRestriction.hasUnread) && hasUnread) {
+        continue;
+      }
+      if (restrictions.contains(MangaUpdateRestriction.nonRead) &&
+          total > 0 &&
+          !hasStarted) {
+        continue;
+      }
+      if (restrictions.contains(MangaUpdateRestriction.outsideReleasePeriod) &&
+          manga.nextUpdate > fetchWindowUpper) {
+        continue;
+      }
+      out.add(manga);
+    }
+    return out;
+  }
+
+  Set<int> _parseIds(List<String>? raw) =>
+      (raw ?? const []).map(int.tryParse).whereType<int>().toSet();
 
   /// Fetches a single manga's chapter list and persists any new chapters.
   /// Returns the number of chapters newly added to the DB.
