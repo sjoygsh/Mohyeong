@@ -26,6 +26,7 @@ class ReaderSettingsScreen extends ConsumerWidget {
     final zoomStart = ref.watch(readerZoomStartProvider);
     final navModePager = ref.watch(readerNavModePagerProvider);
     final navModeWebtoon = ref.watch(readerNavModeWebtoonProvider);
+    final rotateToFit = ref.watch(readerDualPageRotateProvider);
     final flashEnabled = ref.watch(readerFlashOnPageChangeProvider);
     final flashColor = ref.watch(readerFlashColorProvider);
     final flashInterval = ref.watch(readerFlashIntervalProvider);
@@ -323,6 +324,24 @@ class ReaderSettingsScreen extends ConsumerWidget {
             subtitle: 'Long-press a page for the page actions menu.',
             provider: readerLongTapProvider,
           ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Double pages',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          _PrefSwitch(
+            title: 'Rotate double pages to fit',
+            subtitle: 'Rotate wide (landscape) spreads to fill the screen.',
+            provider: readerDualPageRotateProvider,
+          ),
+          if (rotateToFit)
+            _PrefSwitch(
+              title: 'Invert rotation',
+              subtitle: 'Rotate spreads anticlockwise instead of clockwise.',
+              provider: readerDualPageRotateInvertProvider,
+            ),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(

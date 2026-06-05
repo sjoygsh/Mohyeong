@@ -31,6 +31,8 @@ class SourceImage extends StatelessWidget {
     this.placeholder,
     this.errorWidget,
     this.cropBorders = false,
+    this.rotateToFit = false,
+    this.rotateInvert = false,
   });
 
   final String url;
@@ -43,6 +45,16 @@ class SourceImage extends StatelessWidget {
   /// Off everywhere except the reader page list. When on, the backend
   /// [ImageProvider] is wrapped in a [CropBordersImageProvider].
   final bool cropBorders;
+
+  /// Reader "rotate double pages to fit": when the decoded image is wider
+  /// than it is tall (a landscape double-spread), rotate it 90° so it fills
+  /// a portrait screen. Mirrors Mihon's `dualPageRotateToFit`. Off everywhere
+  /// except the paged reader page list.
+  final bool rotateToFit;
+
+  /// Rotate anticlockwise (−90°) instead of clockwise when [rotateToFit] is
+  /// on. Mihon's `dualPageRotateToFitInvert`.
+  final bool rotateInvert;
 
   bool get _isArchive => isArchivePageUrl(url);
 
@@ -79,6 +91,18 @@ class SourceImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final img = _buildImage(context);
+    if (!rotateToFit) return img;
+    // Probe the undecorated source bytes for orientation and rotate only the
+    // wide (double-spread) pages, leaving normal portrait pages untouched.
+    return _RotateToFitIfWide(
+      provider: _backendProvider(),
+      invert: rotateInvert,
+      child: img,
+    );
+  }
+
+  Widget _buildImage(BuildContext context) {
     if (cropBorders) {
       return Image(
         image: CropBordersImageProvider(_backendProvider()),
@@ -231,6 +255,91 @@ class _ArchiveImageProvider extends ImageProvider<_ArchiveImageProvider> {
 
   @override
   int get hashCode => url.hashCode;
+}
+
+/// Rotates [child] a quarter turn when [provider]'s image is wider than it
+/// is tall, so a landscape double-spread fills a portrait screen (reader
+/// "rotate double pages to fit"). Portrait/square pages pass through
+/// unrotated. The orientation is resolved by listening to the provider's
+/// stream once; until it resolves the child renders unrotated (a single
+/// frame), then the wide pages flip into place. [RotatedBox] swaps the
+/// child's layout constraints, so the inner [BoxFit] still fills correctly.
+class _RotateToFitIfWide extends StatefulWidget {
+  const _RotateToFitIfWide({
+    required this.provider,
+    required this.invert,
+    required this.child,
+  });
+
+  final ImageProvider provider;
+  final bool invert;
+  final Widget child;
+
+  @override
+  State<_RotateToFitIfWide> createState() => _RotateToFitIfWideState();
+}
+
+class _RotateToFitIfWideState extends State<_RotateToFitIfWide> {
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+  bool? _wide;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RotateToFitIfWide old) {
+    super.didUpdateWidget(old);
+    if (old.provider != widget.provider) {
+      _wide = null;
+      _resolve();
+    }
+  }
+
+  void _resolve() {
+    _detach();
+    final stream = widget.provider.resolve(ImageConfiguration.empty);
+    final listener = ImageStreamListener(
+      (info, _) {
+        final wide = info.image.width > info.image.height;
+        info.image.dispose();
+        if (mounted && wide != _wide) setState(() => _wide = wide);
+      },
+      onError: (_, _) {
+        // Leave unrotated on decode failure; the child shows its own error.
+        if (mounted && _wide != false) setState(() => _wide = false);
+      },
+    );
+    _stream = stream;
+    _listener = listener;
+    stream.addListener(listener);
+  }
+
+  void _detach() {
+    if (_stream != null && _listener != null) {
+      _stream!.removeListener(_listener!);
+    }
+    _stream = null;
+    _listener = null;
+  }
+
+  @override
+  void dispose() {
+    _detach();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_wide != true) return widget.child;
+    return RotatedBox(
+      quarterTurns: widget.invert ? 3 : 1,
+      child: widget.child,
+    );
+  }
 }
 
 class _DefaultErrorBox extends StatelessWidget {

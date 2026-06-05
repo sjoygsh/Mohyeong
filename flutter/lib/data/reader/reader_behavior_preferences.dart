@@ -106,6 +106,18 @@ final readerCropBordersProvider = boolPref('crop_borders', false);
 /// paged viewer's InteractiveViewer already permits free zoom.
 final readerLandscapeZoomProvider = boolPref('landscape_zoom', false);
 
+/// Rotate a wide (double-spread) page 90° so it fills the portrait screen
+/// instead of being letterboxed. Paged viewer only — mirrors Mihon's
+/// `dualPageRotateToFit` (`PagerPageHolder.rotateDualPage`), which rotates a
+/// page whose width exceeds its height. Mihon key `pref_dual_page_rotate`.
+final readerDualPageRotateProvider =
+    boolPref('pref_dual_page_rotate', false);
+
+/// Rotate wide pages anticlockwise (−90°) instead of clockwise (90°). Mihon
+/// key `pref_dual_page_rotate_invert`.
+final readerDualPageRotateInvertProvider =
+    boolPref('pref_dual_page_rotate_invert', false);
+
 /// Tap the left/right thirds of the screen to turn pages in the paged
 /// readers. When off, a tap anywhere just toggles the reader chrome.
 final readerTapToNavigateProvider = boolPref('pref_tap_navigation', true);

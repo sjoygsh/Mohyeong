@@ -827,6 +827,11 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       fit: fit,
       sidePaddingFraction: sidePaddingPct / 100,
       cropBorders: ref.watch(readerCropBordersProvider),
+      // Rotate-to-fit applies to the paged viewer only (Mihon parity); the
+      // continuous webtoon viewer keeps its own (unimplemented) variant.
+      rotateToFit: widget.mode.isPaged &&
+          ref.watch(readerDualPageRotateProvider),
+      rotateInvert: ref.watch(readerDualPageRotateInvertProvider),
       onPageChanged: _onPageChanged,
       onTotalChanged: _onTotalChanged,
       seekRequest: _ViewportSeekRequest(
@@ -1171,6 +1176,8 @@ class _ReaderViewport extends StatelessWidget {
     required this.fit,
     required this.sidePaddingFraction,
     required this.cropBorders,
+    required this.rotateToFit,
+    required this.rotateInvert,
     required this.onPageChanged,
     required this.onTotalChanged,
     required this.seekRequest,
@@ -1181,6 +1188,8 @@ class _ReaderViewport extends StatelessWidget {
   final BoxFit fit;
   final double sidePaddingFraction;
   final bool cropBorders;
+  final bool rotateToFit;
+  final bool rotateInvert;
   final ValueChanged<int> onPageChanged;
   final ValueChanged<int> onTotalChanged;
   final _ViewportSeekRequest seekRequest;
@@ -1196,6 +1205,8 @@ class _ReaderViewport extends StatelessWidget {
         fit: fit,
         sidePaddingFraction: sidePaddingFraction,
         cropBorders: cropBorders,
+        rotateToFit: rotateToFit,
+        rotateInvert: rotateInvert,
         initialPage: data.chapter.lastPageRead,
         onPageChanged: onPageChanged,
         seekRequest: seekRequest,
@@ -1215,6 +1226,8 @@ class _ReaderViewport extends StatelessWidget {
       fit: fit,
       sidePaddingFraction: sidePaddingFraction,
       cropBorders: cropBorders,
+      rotateToFit: rotateToFit,
+      rotateInvert: rotateInvert,
       onPageChanged: onPageChanged,
       onTotalChanged: onTotalChanged,
       seekRequest: seekRequest,
@@ -1230,6 +1243,8 @@ class _PageList extends StatefulWidget {
     required this.fit,
     required this.sidePaddingFraction,
     required this.cropBorders,
+    required this.rotateToFit,
+    required this.rotateInvert,
     required this.onPageChanged,
     required this.onTotalChanged,
     required this.seekRequest,
@@ -1241,6 +1256,8 @@ class _PageList extends StatefulWidget {
   final BoxFit fit;
   final double sidePaddingFraction;
   final bool cropBorders;
+  final bool rotateToFit;
+  final bool rotateInvert;
   final ValueChanged<int> onPageChanged;
   final ValueChanged<int> onTotalChanged;
   final _ViewportSeekRequest seekRequest;
@@ -1326,6 +1343,8 @@ class _PageListState extends State<_PageList> {
               fit: widget.fit,
               headers: page.headers,
               cropBorders: widget.cropBorders,
+              rotateToFit: widget.rotateToFit,
+              rotateInvert: widget.rotateInvert,
               placeholder: (_) => const SizedBox(
                 height: 400,
                 child: Center(
@@ -1356,6 +1375,8 @@ class _LocalPageList extends StatelessWidget {
     required this.fit,
     required this.sidePaddingFraction,
     required this.cropBorders,
+    required this.rotateToFit,
+    required this.rotateInvert,
     required this.initialPage,
     required this.onPageChanged,
     required this.seekRequest,
@@ -1366,6 +1387,8 @@ class _LocalPageList extends StatelessWidget {
   final BoxFit fit;
   final double sidePaddingFraction;
   final bool cropBorders;
+  final bool rotateToFit;
+  final bool rotateInvert;
   final int initialPage;
   final ValueChanged<int> onPageChanged;
   final _ViewportSeekRequest seekRequest;
@@ -1388,6 +1411,8 @@ class _LocalPageList extends StatelessWidget {
         url: paths[i],
         fit: fit,
         cropBorders: cropBorders,
+        rotateToFit: rotateToFit,
+        rotateInvert: rotateInvert,
         errorWidget: (_, error) => SizedBox(
           height: 400,
           child: Center(
