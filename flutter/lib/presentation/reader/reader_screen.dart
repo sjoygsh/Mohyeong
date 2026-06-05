@@ -7,6 +7,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/chapter/chapter_repository.dart';
+import '../../data/cover/cover_cache.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/history/history_repository.dart';
 import '../../data/manga/manga_repository.dart';
@@ -369,6 +370,18 @@ class _ReaderData {
   }
 }
 
+/// Lightweight handle to a single page's image, threaded up from the page
+/// list once the pages resolve so the long-press "Set as cover" action can
+/// rebuild the page's [ImageProvider] (via [SourceImage.providerFor]) and
+/// capture its bytes. Carries everything the backend detection needs: the
+/// URL/path plus any per-source HTTP [headers].
+class _PageRef {
+  const _PageRef(this.url, this.headers);
+
+  final String url;
+  final Map<String, String>? headers;
+}
+
 /// The visible reader surface around the page viewport. Holds the
 /// "chrome visible" toggle (tap anywhere on the viewport to hide/show
 /// the header and bottom strip) plus the current/total page state that
@@ -402,6 +415,11 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   bool _chromeVisible = true;
   int _currentPage = 0;
   int _totalPages = 0;
+  // Resolved page image handles, threaded up from the active page list so
+  // the long-press "Set as cover" action can rebuild the current page's
+  // provider and capture its bytes. Null until the pages resolve; cleared
+  // when the loaded chapter changes.
+  List<_PageRef>? _pageRefs;
   // Used by the paged-mode slider to drive the underlying PageController.
   // Bumped whenever the user moves the slider; the viewport reads it via
   // [_ViewportRequest] and animates to the new index.
@@ -460,6 +478,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       _autoMarkedRead = false;
       _currentPage = 0;
       _totalPages = 0;
+      _pageRefs = null;
     }
   }
 
@@ -488,6 +507,56 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
         _scrollForward = forward;
         _scrollTick++;
       });
+    }
+  }
+
+  /// Cache the resolved page handles reported by the active page list so
+  /// the "Set as cover" action can find the current page's image. No
+  /// setState — this doesn't affect what's currently painted.
+  void _onPagesResolved(List<_PageRef> refs) {
+    _pageRefs = refs;
+  }
+
+  /// Capture the current page's bitmap and store it as [data.manga]'s custom
+  /// cover (Mihon's reader "Set as cover"). Gated on the manga being in the
+  /// library — a cover for a non-library entry would be orphaned, so we ask
+  /// the user to add it first, matching Mihon. The page's [ImageProvider] is
+  /// rebuilt through [SourceImage.providerFor] (same backend the viewer used)
+  /// and re-encoded to PNG, then `cover_last_modified` is bumped so every
+  /// cover surface repaints.
+  Future<void> _setCurrentPageAsCover(BuildContext sheetContext) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final manga = widget.data.manga;
+    if (!manga.favorite) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Add this title to your library first.')),
+      );
+      return;
+    }
+    final refs = _pageRefs;
+    if (refs == null || _currentPage < 0 || _currentPage >= refs.length) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('This page isn\'t ready yet.')),
+      );
+      return;
+    }
+    final ref0 = refs[_currentPage];
+    try {
+      final provider =
+          SourceImage.providerFor(ref0.url, headers: ref0.headers);
+      final bytes = await encodeImageProviderToPng(provider);
+      if (bytes == null || bytes.isEmpty) {
+        throw StateError('cover encode produced no bytes');
+      }
+      await ref.read(coverCacheProvider).setCustomCover(manga.id, bytes);
+      await ref.read(mangaRepositoryProvider).bumpCoverLastModified(manga.id);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Cover updated.')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Couldn\'t set cover: $e')),
+      );
     }
   }
 
@@ -677,6 +746,14 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                     );
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('Set as cover'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _setCurrentPageAsCover(ctx);
+              },
+            ),
           ],
         ),
       ),
@@ -841,6 +918,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       rotateInvert: ref.watch(readerDualPageRotateInvertProvider),
       onPageChanged: _onPageChanged,
       onTotalChanged: _onTotalChanged,
+      onPagesResolved: _onPagesResolved,
       seekRequest: _ViewportSeekRequest(
         requestId: _seekRequestId,
         target: _seekTarget,
@@ -1193,6 +1271,7 @@ class _ReaderViewport extends StatelessWidget {
     required this.rotateInvert,
     required this.onPageChanged,
     required this.onTotalChanged,
+    required this.onPagesResolved,
     required this.seekRequest,
   });
 
@@ -1205,6 +1284,7 @@ class _ReaderViewport extends StatelessWidget {
   final bool rotateInvert;
   final ValueChanged<int> onPageChanged;
   final ValueChanged<int> onTotalChanged;
+  final ValueChanged<List<_PageRef>> onPagesResolved;
   final _ViewportSeekRequest seekRequest;
 
   @override
@@ -1222,6 +1302,7 @@ class _ReaderViewport extends StatelessWidget {
         rotateInvert: rotateInvert,
         initialPage: data.chapter.lastPageRead,
         onPageChanged: onPageChanged,
+        onPagesResolved: onPagesResolved,
         seekRequest: seekRequest,
       );
     }
@@ -1243,6 +1324,7 @@ class _ReaderViewport extends StatelessWidget {
       rotateInvert: rotateInvert,
       onPageChanged: onPageChanged,
       onTotalChanged: onTotalChanged,
+      onPagesResolved: onPagesResolved,
       seekRequest: seekRequest,
     );
   }
@@ -1260,6 +1342,7 @@ class _PageList extends StatefulWidget {
     required this.rotateInvert,
     required this.onPageChanged,
     required this.onTotalChanged,
+    required this.onPagesResolved,
     required this.seekRequest,
   });
 
@@ -1273,6 +1356,7 @@ class _PageList extends StatefulWidget {
   final bool rotateInvert;
   final ValueChanged<int> onPageChanged;
   final ValueChanged<int> onTotalChanged;
+  final ValueChanged<List<_PageRef>> onPagesResolved;
   final _ViewportSeekRequest seekRequest;
 
   @override
@@ -1331,10 +1415,15 @@ class _PageListState extends State<_PageList> {
           );
         }
         final pages = snap.data!;
-        // Report total once we know it. Routing through a post-frame
-        // callback because we're inside `build()`.
+        // Report total + page handles once we know them. Routed through a
+        // post-frame callback because we're inside `build()`.
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) widget.onTotalChanged(pages.length);
+          if (!mounted) return;
+          widget.onTotalChanged(pages.length);
+          widget.onPagesResolved([
+            for (final page in pages)
+              _PageRef(page.imageUrl ?? page.url, page.headers),
+          ]);
         });
         if (pages.isEmpty) {
           return const Center(
@@ -1392,6 +1481,7 @@ class _LocalPageList extends StatelessWidget {
     required this.rotateInvert,
     required this.initialPage,
     required this.onPageChanged,
+    required this.onPagesResolved,
     required this.seekRequest,
   });
 
@@ -1404,6 +1494,7 @@ class _LocalPageList extends StatelessWidget {
   final bool rotateInvert;
   final int initialPage;
   final ValueChanged<int> onPageChanged;
+  final ValueChanged<List<_PageRef>> onPagesResolved;
   final _ViewportSeekRequest seekRequest;
 
   @override
@@ -1413,6 +1504,11 @@ class _LocalPageList extends StatelessWidget {
         child: Text('No pages.', style: TextStyle(color: Colors.white70)),
       );
     }
+    // Local pages are already enumerated — report their handles so the
+    // "Set as cover" action can reach them (post-frame: we're in `build`).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      onPagesResolved([for (final path in paths) _PageRef(path, null)]);
+    });
     return _PagesView(
       count: paths.length,
       mode: mode,

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
+import '../../data/cover/cover_cache.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_updater.dart';
@@ -816,7 +817,7 @@ class _DuplicateMangaDialog extends StatelessWidget {
                   height: 56,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
-                    child: _CoverImage(url: d.thumbnailUrl),
+                    child: _CoverImage(mangaId: d.id, url: d.thumbnailUrl),
                   ),
                 ),
                 title: Text(
@@ -1150,7 +1151,7 @@ class _MangaInfoBox extends ConsumerWidget {
                         fullscreenDialog: true,
                       ),
                     ),
-                    child: _CoverImage(url: manga.thumbnailUrl),
+                    child: _CoverImage(mangaId: manga.id, url: manga.thumbnailUrl),
                   ),
                 ),
               ),
@@ -1199,14 +1200,15 @@ class _MangaInfoBox extends ConsumerWidget {
   }
 }
 
-class _Backdrop extends StatelessWidget {
+class _Backdrop extends ConsumerWidget {
   const _Backdrop({required this.manga});
 
   final Manga manga;
 
   @override
-  Widget build(BuildContext context) {
-    final url = manga.thumbnailUrl;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final url =
+        ref.watch(coverCacheProvider).coverUrlFor(manga.id, manga.thumbnailUrl);
     final bg = Theme.of(context).colorScheme.surface;
     if (url == null || url.isEmpty) {
       return Container(color: bg);
@@ -1246,19 +1248,21 @@ class _Backdrop extends StatelessWidget {
   }
 }
 
-class _CoverImage extends StatelessWidget {
-  const _CoverImage({required this.url});
+class _CoverImage extends ConsumerWidget {
+  const _CoverImage({required this.mangaId, required this.url});
 
+  final int mangaId;
   final String? url;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
-    if (url == null || url!.isEmpty) {
+    final resolved = ref.watch(coverCacheProvider).coverUrlFor(mangaId, url);
+    if (resolved == null || resolved.isEmpty) {
       return Container(color: placeholder);
     }
     return SourceImage(
-      url: url!,
+      url: resolved,
       fit: BoxFit.cover,
       placeholder: (_) => Container(color: placeholder),
       errorWidget: (_, _) => Container(color: placeholder),

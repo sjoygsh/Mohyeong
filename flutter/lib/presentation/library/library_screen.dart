@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
+import '../../data/cover/cover_cache.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_repository.dart';
@@ -1418,16 +1419,17 @@ class _BulkCategorySheetState extends State<_BulkCategorySheet> {
   }
 }
 
-class _Cover extends StatelessWidget {
+class _Cover extends ConsumerWidget {
   const _Cover({required this.manga});
 
   final Manga manga;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final placeholderColor =
         Theme.of(context).colorScheme.surfaceContainerHighest;
-    final url = manga.thumbnailUrl;
+    final url =
+        ref.watch(coverCacheProvider).coverUrlFor(manga.id, manga.thumbnailUrl);
     if (url == null || url.isEmpty) {
       return Container(
         color: placeholderColor,
@@ -1931,16 +1933,19 @@ class _MostReadCarouselState extends State<_MostReadCarousel> {
   }
 }
 
-class _MostReadBannerCard extends StatelessWidget {
+class _MostReadBannerCard extends ConsumerWidget {
   const _MostReadBannerCard({required this.item});
 
   final LibraryItem item;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final total = item.totalCount <= 0 ? 1 : item.totalCount;
     final ratio = (item.readCount / total).clamp(0.0, 1.0);
     final percent = (ratio * 100).round();
+    final coverUrl = ref
+        .watch(coverCacheProvider)
+        .coverUrlFor(item.manga.id, item.manga.thumbnailUrl);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1957,10 +1962,9 @@ class _MostReadBannerCard extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (item.manga.thumbnailUrl != null &&
-                  item.manga.thumbnailUrl!.isNotEmpty)
+              if (coverUrl != null && coverUrl.isNotEmpty)
                 SourceImage(
-                  url: item.manga.thumbnailUrl!,
+                  url: coverUrl,
                   fit: BoxFit.cover,
                   errorWidget: (_, _) => ColoredBox(
                     color: Theme.of(context)

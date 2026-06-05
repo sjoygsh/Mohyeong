@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/cover/cover_cache.dart';
 import '../../domain/manga/model/manga.dart';
 import '../common/source_image.dart';
 
@@ -12,14 +14,15 @@ import '../common/source_image.dart';
 /// (not in pubspec) and a MediaStore registration path on Android for
 /// gallery visibility (no analog plumbed yet). Adding those later only
 /// needs a bottom-right `ActionsPill` next to the close pill.
-class MangaCoverViewer extends StatelessWidget {
+class MangaCoverViewer extends ConsumerWidget {
   const MangaCoverViewer({super.key, required this.manga});
 
   final Manga manga;
 
   @override
-  Widget build(BuildContext context) {
-    final url = manga.thumbnailUrl;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final url =
+        ref.watch(coverCacheProvider).coverUrlFor(manga.id, manga.thumbnailUrl);
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(

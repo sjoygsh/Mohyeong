@@ -56,6 +56,14 @@ class SourceImage extends StatelessWidget {
   /// on. Mihon's `dualPageRotateToFitInvert`.
   final bool rotateInvert;
 
+  /// The undecorated backend [ImageProvider] for [url] (same detection rules
+  /// as the widget), exposed so non-widget callers — e.g. the reader's
+  /// "Set as cover" action — can resolve a page's bytes through the same
+  /// network/file/archive/SAF pipeline the viewer uses.
+  static ImageProvider providerFor(String url, {Map<String, String>? headers}) {
+    return SourceImage(url: url, headers: headers)._backendProvider();
+  }
+
   bool get _isArchive => isArchivePageUrl(url);
 
   bool get _isContent => url.startsWith('content://');

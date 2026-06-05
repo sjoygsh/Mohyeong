@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'data/cover/cover_cache.dart';
 import 'data/library/library_update_preference.dart';
 import 'data/library/library_update_scheduler.dart';
 import 'data/network/app_http_client.dart';
@@ -23,11 +24,13 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final localPrefs = LocalSourcePreferences(prefs);
   final repo = ExtensionRepository(storage, http, localPrefs);
+  final coverCache = await CoverCache.create();
   runApp(
     ProviderScope(
       overrides: [
         appHttpClientProvider.overrideWithValue(http),
         extensionRepositoryProvider.overrideWithValue(repo),
+        coverCacheProvider.overrideWithValue(coverCache),
       ],
       child: const MohyeongApp(),
     ),

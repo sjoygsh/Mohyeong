@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../data/cover/cover_cache.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
 import '../common/source_image.dart';
@@ -283,13 +284,13 @@ class _DateHeader extends StatelessWidget {
   }
 }
 
-class _UpcomingTile extends StatelessWidget {
+class _UpcomingTile extends ConsumerWidget {
   const _UpcomingTile({required this.manga});
 
   final Manga manga;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final fallback = Container(
       width: 40,
       height: 56,
@@ -297,7 +298,8 @@ class _UpcomingTile extends StatelessWidget {
       alignment: Alignment.center,
       child: const Icon(Icons.menu_book, size: 20),
     );
-    final url = manga.thumbnailUrl;
+    final url =
+        ref.watch(coverCacheProvider).coverUrlFor(manga.id, manga.thumbnailUrl);
     return ListTile(
       leading: SizedBox(
         width: 40,

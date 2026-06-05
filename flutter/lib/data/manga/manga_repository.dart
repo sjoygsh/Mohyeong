@@ -191,6 +191,20 @@ class MangaRepository {
     );
   }
 
+  /// Stamp `cover_last_modified` with the current time so every cover
+  /// surface busts its decode cache and repaints. Called after a custom
+  /// cover is written/removed (Mihon's `editCover` bumps the same column).
+  /// Bumps `last_modified_at` for sync ordering.
+  Future<void> bumpCoverLastModified(int id) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await (_db.update(_db.mangas)..where((t) => t.id.equals(id))).write(
+      db.MangasCompanion(
+        coverLastModified: Value(nowMs),
+        lastModifiedAt: Value(nowMs),
+      ),
+    );
+  }
+
   /// Overwrite the `chapter_flags` bitfield (chapter sort/filter/display
   /// bits) for a single manga. Used by the chapter settings sheet on the
   /// manga details screen. Bumps `last_modified_at` for sync ordering.
