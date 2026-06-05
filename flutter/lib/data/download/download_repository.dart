@@ -12,6 +12,7 @@ import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/source/model/source_chapter.dart';
 import '../network/app_http_client.dart';
+import '../source/local_archive.dart';
 import '../source/extension_repository.dart';
 
 /// Per-architecture-decisions: downloads live inside the app's data
@@ -194,22 +195,26 @@ class DownloadRepository {
     final dir = await _chapterDir(sourceId, mangaId, chapterId);
     final marker = File(p.join(dir.path, '.done'));
     if (!await marker.exists()) return null;
-    final files = await dir
-        .list()
-        .where((e) =>
-            e is File &&
-            p.basename(e.path) != '.done' &&
-            // A CBZ-archived chapter has no loose page files for the reader
-            // to consume directly; reading from the archive needs a
-            // separate unzip path (see TODO in localPagePaths). Skip the
-            // archive so we don't hand a zip to the image pipeline.
-            p.extension(e.path).toLowerCase() != '.cbz')
+    final entries = await dir.list().toList();
+    // A CBZ-archived chapter has no loose page files; its pages live inside
+    // `<chapterId>.cbz`. Hand the reader `archive://` page URLs that
+    // [SourceImage] decodes via the shared archive pipeline, mirroring how
+    // the Local source serves its `.cbz` chapters.
+    final cbz = entries.firstWhere(
+      (e) => e is File && p.extension(e.path).toLowerCase() == '.cbz',
+      orElse: () => dir, // sentinel: no archive present
+    );
+    if (cbz is File) {
+      final names = await listArchiveImageEntries(cbz.path);
+      names.sort();
+      return [for (final name in names) encodeArchivePageUrl(cbz.path, name)];
+    }
+    final files = entries
+        .whereType<File>()
+        .where((e) => p.basename(e.path) != '.done')
         .map((e) => e.path)
         .toList();
     files.sort();
-    // TODO(cbz-read): when the chapter was saved as CBZ, `files` is empty
-    // here. Reading a CBZ-archived chapter requires unzipping pages from
-    // `<chapterId>.cbz` (the reader path is owned by another module).
     return files;
   }
 
