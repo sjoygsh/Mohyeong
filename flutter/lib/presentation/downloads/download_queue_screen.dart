@@ -24,6 +24,8 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
   // ChapterId -> last reported 0..1 progress. Stale rows are pruned when
   // the snapshot drops them.
   final Map<int, double> _progress = {};
+  // ChapterId -> (downloaded, total) page counts for the "x/y" label.
+  final Map<int, (int, int)> _pageCounts = {};
 
   @override
   void initState() {
@@ -44,10 +46,14 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
       switch (ev.state) {
         case DownloadState.downloading:
           if (ev.progress != null) _progress[ev.chapterId] = ev.progress!;
+          if (ev.downloadedPages != null && ev.totalPages != null) {
+            _pageCounts[ev.chapterId] = (ev.downloadedPages!, ev.totalPages!);
+          }
         case DownloadState.completed:
         case DownloadState.failed:
         case DownloadState.deleted:
           _progress.remove(ev.chapterId);
+          _pageCounts.remove(ev.chapterId);
         case DownloadState.queued:
         case DownloadState.queuePaused:
         case DownloadState.queueResumed:
@@ -199,6 +205,12 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     Key? key,
   }) {
     final progress = _progress[item.chapter.id];
+    // Prefer the live event count; fall back to the snapshot's counts so a
+    // freshly opened screen still shows "x/y" before the next event.
+    final counts = _pageCounts[item.chapter.id] ??
+        (item.totalPages > 0
+            ? (item.downloadedPages, item.totalPages)
+            : null);
     final repo = ref.read(downloadRepositoryProvider);
     return ListTile(
       key: key,
@@ -223,6 +235,13 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
           if (item.current && progress != null) ...[
             const SizedBox(height: 4),
             LinearProgressIndicator(value: progress),
+            if (counts != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${counts.$1}/${counts.$2}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ] else if (item.current) ...[
             const SizedBox(height: 4),
             const LinearProgressIndicator(),

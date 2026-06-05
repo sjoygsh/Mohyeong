@@ -18,7 +18,6 @@ import '../../data/track/track_updater.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
-import '../../domain/reader/model/reader_scale_type.dart';
 import '../../domain/reader/model/reading_mode.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_chapter.dart';
@@ -213,7 +212,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Widget build(BuildContext context) {
     final globalMode = ref.watch(readerPreferencesProvider);
     final background = ref.watch(readerBackgroundProvider);
-    final colorFilter = ref.watch(readerColorFilterProvider);
     return Scaffold(
       backgroundColor: background.color,
       body: FutureBuilder<_ReaderData?>(
@@ -237,7 +235,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             data: data,
             mode: effectiveMode,
             background: background,
-            colorFilter: colorFilter,
             onJumpToChapter: _jumpToChapter,
             onChangeMode: (mode) async {
               // Persist as a per-manga override. Preserve the upper bits
@@ -381,7 +378,6 @@ class _ReaderBody extends ConsumerStatefulWidget {
     required this.data,
     required this.mode,
     required this.background,
-    required this.colorFilter,
     required this.onJumpToChapter,
     required this.onChangeMode,
     required this.onPageChanged,
@@ -392,7 +388,6 @@ class _ReaderBody extends ConsumerStatefulWidget {
   final _ReaderData data;
   final ReadingMode mode;
   final ReaderBackground background;
-  final ReaderColorFilter colorFilter;
   final ValueChanged<int> onJumpToChapter;
   final ValueChanged<ReadingMode> onChangeMode;
   final ValueChanged<int> onPageChanged;
@@ -432,6 +427,13 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   // `null` means either auto-hide is disabled (delay = 0) or the
   // chrome is currently hidden.
   Timer? _autoHideTimer;
+  // E-Ink page-change flash. `_flashColor` is non-null while the flash
+  // overlay is being painted; `_flashTimer` clears it after the
+  // configured duration. `_pagesSinceFlash` counts page changes so the
+  // flash only fires every Nth (interval) page.
+  Color? _flashColor;
+  Timer? _flashTimer;
+  int _pagesSinceFlash = 0;
 
   @override
   void initState() {
@@ -460,6 +462,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   @override
   void dispose() {
     _autoHideTimer?.cancel();
+    _flashTimer?.cancel();
     ReaderVolumeKeys.setListener(null);
     if (_volumeKeysApplied) ReaderVolumeKeys.setEnabled(false);
     super.dispose();
@@ -494,6 +497,44 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     });
   }
 
+  /// Paint a full-screen E-Ink flash on page change when enabled, every
+  /// `interval` pages, for `duration` ms. Mirrors Mihon's
+  /// `pref_reader_flash` clearing the e-paper ghost. For [whiteBlack] the
+  /// flash shows white for the first half then black for the second.
+  void _maybeFlash() {
+    if (!ref.read(readerFlashOnPageChangeProvider)) return;
+    final interval = ref.read(readerFlashIntervalProvider).clamp(1, 10);
+    _pagesSinceFlash++;
+    if (_pagesSinceFlash < interval) return;
+    _pagesSinceFlash = 0;
+
+    final durationMs = ref.read(readerFlashDurationProvider).clamp(1, 5000);
+    final flashColor = ref.read(readerFlashColorProvider);
+    _flashTimer?.cancel();
+
+    switch (flashColor) {
+      case ReaderFlashColor.black:
+        _showFlash(Colors.black, durationMs);
+      case ReaderFlashColor.white:
+        _showFlash(Colors.white, durationMs);
+      case ReaderFlashColor.whiteBlack:
+        // White for the first half, then black for the second half.
+        final half = (durationMs / 2).round().clamp(1, durationMs);
+        _showFlash(Colors.white, half);
+        _flashTimer = Timer(Duration(milliseconds: half), () {
+          if (mounted) _showFlash(Colors.black, half);
+        });
+    }
+  }
+
+  void _showFlash(Color color, int durationMs) {
+    setState(() => _flashColor = color);
+    _flashTimer?.cancel();
+    _flashTimer = Timer(Duration(milliseconds: durationMs), () {
+      if (mounted) setState(() => _flashColor = null);
+    });
+  }
+
   void _toggleChrome() {
     setState(() => _chromeVisible = !_chromeVisible);
     if (_chromeVisible) {
@@ -506,6 +547,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   void _onPageChanged(int page) {
     if (page != _currentPage) {
       setState(() => _currentPage = page);
+      _maybeFlash();
     }
     widget.onPageChanged(page);
     // Reaching the final page marks the chapter read (Mihon parity). Guarded
@@ -536,29 +578,116 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     });
   }
 
-  /// Handle a tap on the page viewport. With tap-to-navigate on (paged
-  /// modes only), tapping the left/right third turns a page — falling
-  /// through to the adjacent chapter at the chapter boundary. The centre
-  /// third (and any tap in continuous mode) just toggles the chrome.
-  void _handleViewportTap(TapUpDetails details, double width) {
+  /// The active tap-zone navigation preset. Mihon keys these separately
+  /// for the paged (pager) and continuous (webtoon) viewers; we follow
+  /// the same split so each viewer honours its own preset.
+  ReaderNavMode get _navMode => widget.mode.isPaged
+      ? ref.read(readerNavModePagerProvider)
+      : ref.read(readerNavModeWebtoonProvider);
+
+  /// Handle a tap on the page viewport. Resolves the tap to one of
+  /// Mihon's navigation regions for the active preset (ported from
+  /// `ViewerNavigation`): PREV/NEXT step a page (falling through to the
+  /// adjacent chapter at a boundary), LEFT/RIGHT step direction-relative,
+  /// and MENU toggles the chrome. Continuous modes scroll instead of
+  /// paging for the page-step regions.
+  void _handleViewportTap(TapUpDetails details, Size size) {
     final tapNav = ref.read(readerTapToNavigateProvider);
-    if (!widget.mode.isPaged || !tapNav || width <= 0) {
+    final navMode = _navMode;
+    if (!tapNav ||
+        navMode == ReaderNavMode.disabled ||
+        size.width <= 0 ||
+        size.height <= 0) {
       _toggleChrome();
       return;
     }
-    final x = details.localPosition.dx;
-    final leftZone = x < width / 3;
-    final rightZone = x > width * 2 / 3;
-    if (!leftZone && !rightZone) {
-      _toggleChrome();
-      return;
+    final nx = (details.localPosition.dx / size.width).clamp(0.0, 1.0);
+    final ny = (details.localPosition.dy / size.height).clamp(0.0, 1.0);
+    var region = navRegionAt(
+      navMode,
+      nx,
+      ny,
+      horizontal: widget.mode.isPaged && widget.mode.isHorizontal,
+    );
+    // Apply the user's invert pref (horizontal axis) — flips PREV/NEXT and
+    // LEFT/RIGHT. Mirrors Mihon's TappingInvertMode applied to regions.
+    if (ref.read(readerTapNavigateInvertProvider)) {
+      region = _invertRegion(region);
     }
-    // Right zone advances by default; RTL reading and the user invert
-    // pref each flip that mapping.
-    var forward = rightZone;
-    if (widget.mode == ReadingMode.rightToLeft) forward = !forward;
-    if (ref.read(readerTapNavigateInvertProvider)) forward = !forward;
-    _navigatePage(forward: forward);
+    switch (region) {
+      case NavRegion.menu:
+        _toggleChrome();
+      case NavRegion.prev:
+        _navigateRegion(forward: false);
+      case NavRegion.next:
+        _navigateRegion(forward: true);
+      case NavRegion.left:
+        // Move-left: previous in LTR, next in RTL.
+        _navigateRegion(forward: widget.mode == ReadingMode.rightToLeft);
+      case NavRegion.right:
+        // Move-right: next in LTR, previous in RTL.
+        _navigateRegion(forward: widget.mode != ReadingMode.rightToLeft);
+    }
+  }
+
+  NavRegion _invertRegion(NavRegion region) {
+    switch (region) {
+      case NavRegion.prev:
+        return NavRegion.next;
+      case NavRegion.next:
+        return NavRegion.prev;
+      case NavRegion.left:
+        return NavRegion.right;
+      case NavRegion.right:
+        return NavRegion.left;
+      case NavRegion.menu:
+        return NavRegion.menu;
+    }
+  }
+
+  /// Long-press page actions sheet. Mihon's `reader_long_tap` gates this:
+  /// when off, a long press does nothing. The full Mihon sheet offers
+  /// set-as-cover / share / save; those page-bitmap actions aren't wired
+  /// into this viewer yet, so the sheet currently exposes the chapter-level
+  /// actions available here (parent can extend with page export later).
+  void _showPageActions(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.bookmark_border),
+              title: Text(
+                widget.data.chapter.bookmark
+                    ? 'Remove bookmark'
+                    : 'Bookmark chapter',
+              ),
+              onTap: () async {
+                Navigator.of(ctx).pop();
+                await ref.read(chapterRepositoryProvider).setBookmark(
+                      widget.data.chapter.id,
+                      !widget.data.chapter.bookmark,
+                    );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Page-step in paged modes; scroll one screen in continuous modes.
+  void _navigateRegion({required bool forward}) {
+    if (widget.mode.isPaged) {
+      _navigatePage(forward: forward);
+    } else {
+      setState(() {
+        _scrollForward = forward;
+        _scrollTick++;
+      });
+    }
   }
 
   /// Turn one page in [forward] direction, or jump to the adjacent
@@ -657,8 +786,16 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     final showPageNumber = ref.watch(readerShowPageNumberProvider);
     final grayscale = ref.watch(readerGrayscaleProvider);
     final invert = ref.watch(readerInvertedColorsProvider);
-    final fit = ReaderScaleType.fromKey(ref.watch(readerScaleTypeProvider))
-        .boxFit;
+    // Paged image scale type (Mihon `pref_image_scale_type_key`). The
+    // continuous webtoon viewer always fits width regardless.
+    final fit = ref.watch(readerImageScaleTypeProvider).boxFit;
+    // Full ARGB colour filter (Mihon `color_filter*`). Only painted when
+    // the master toggle is on and the stored colour isn't transparent.
+    final colorFilterEnabled = ref.watch(readerColorFilterEnabledProvider);
+    final colorFilterColor =
+        ref.watch(readerColorFilterValueProvider.notifier).color;
+    final colorFilterBlend =
+        ref.watch(readerColorFilterModeProvider).blendMode;
     final sidePaddingPct =
         ref.watch(readerWebtoonSidePaddingProvider).clamp(0, 25);
 
@@ -700,8 +837,16 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       ),
     );
     // Page-art colour adjustments. Applied to the page viewport only (not
-    // the chrome) by wrapping before the gesture/Stack layers. Greyscale
-    // and invert compose by nesting the two ColorFiltered layers.
+    // the chrome) by wrapping before the gesture/Stack layers. Greyscale,
+    // invert and the full colour filter compose by nesting ColorFiltered
+    // layers. The colour filter blends the stored ARGB tint over the art
+    // with the chosen blend mode (Mihon `color_filter_mode`).
+    if (colorFilterEnabled && colorFilterColor != null) {
+      viewport = ColorFiltered(
+        colorFilter: ColorFilter.mode(colorFilterColor, colorFilterBlend),
+        child: viewport,
+      );
+    }
     if (grayscale) {
       viewport = ColorFiltered(
         colorFilter: _grayscaleFilter,
@@ -725,20 +870,15 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onTapUp: (d) =>
-                  _handleViewportTap(d, MediaQuery.sizeOf(context).width),
+                  _handleViewportTap(d, MediaQuery.sizeOf(context)),
+              onLongPress: ref.watch(readerLongTapProvider)
+                  ? () => _showPageActions(context)
+                  : null,
               child: viewport,
             ),
           ),
-          // Reader colour filter (sepia/yellow/blue tint). Sits above
-          // the pages but below the chrome so the filter affects only
-          // the page art, not the controls. IgnorePointer so taps still
-          // pass through to the toggle-chrome gesture detector.
-          if (widget.colorFilter.overlay != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: ColoredBox(color: widget.colorFilter.overlay!),
-              ),
-            ),
+          // (Colour filter is applied to the viewport above via
+          // ColorFiltered so it blends per-pixel with the page art.)
           // Top chrome.
           Positioned(
             top: 0,
@@ -806,6 +946,15 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
               ),
             ),
           ),
+          // E-Ink page-change flash. Painted on top of everything for the
+          // configured duration to clear e-paper ghosting. IgnorePointer
+          // so it never eats a tap mid-flash.
+          if (_flashColor != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(color: _flashColor!),
+              ),
+            ),
           // Tap-zone guide overlay. Sits on top of everything (including
           // chrome) and swallows the first tap to dismiss itself.
           if (showNavOverlay)

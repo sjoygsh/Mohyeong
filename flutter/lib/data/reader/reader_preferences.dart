@@ -38,30 +38,156 @@ enum ReaderBackground {
   }
 }
 
-/// Reader colour filter. Mirrors Mihon's reader-tint feature — applied
-/// as a translucent overlay over the page viewport.
-enum ReaderColorFilter {
-  none(0, 'None', null),
-  sepia(1, 'Sepia', Color(0x33704214)),
-  yellow(2, 'Yellow', Color(0x33FFEB3B)),
-  blue(3, 'Blue', Color(0x332962FF));
+/// Reader colour-filter blend mode. Mirrors Mihon's `color_filter_mode`
+/// int pref (ordinals match `ReaderPreferences.ColorFilterMode`): the
+/// full ARGB [readerColorFilterValueProvider] colour is composited over
+/// the page art with the chosen [blendMode].
+enum ReaderColorFilterMode {
+  none(0, 'Default', BlendMode.srcOver),
+  multiply(1, 'Multiply', BlendMode.multiply),
+  screen(2, 'Screen', BlendMode.screen),
+  overlay(3, 'Overlay', BlendMode.overlay),
+  lighten(4, 'Lighten', BlendMode.lighten),
+  darken(5, 'Darken', BlendMode.darken);
 
-  const ReaderColorFilter(this.flagValue, this.label, this.overlay);
+  const ReaderColorFilterMode(this.flagValue, this.label, this.blendMode);
 
   final int flagValue;
   final String label;
 
-  /// `null` for [none]; otherwise the translucent colour painted on top
-  /// of pages. Reader uses `BlendMode.srcOver` (default) so a low alpha
-  /// preserves the underlying art.
-  final Color? overlay;
+  /// Dart [BlendMode] the overlay colour is painted with. Mirrors the
+  /// `BlendMode` Mihon pairs with each ordinal (SrcOver / Modulate /
+  /// Screen / Overlay / Lighten / Darken). We use [BlendMode.multiply]
+  /// for Mihon's `Modulate` — Flutter has no Modulate constant and
+  /// multiply is the closest perceptual match.
+  final BlendMode blendMode;
 
-  static ReaderColorFilter fromFlag(int? flag) {
+  static ReaderColorFilterMode fromFlag(int? flag) {
     for (final v in values) {
       if (v.flagValue == flag) return v;
     }
-    return ReaderColorFilter.none;
+    return ReaderColorFilterMode.none;
   }
+}
+
+/// Flash colour for the E-Ink page-change flash. Mirrors Mihon's
+/// `ReaderPreferences.FlashColor` enum (ordinals 0/1/2, persisted by
+/// name via Mihon's `getEnum`). [whiteBlack] alternates white then black
+/// across the two halves of the flash.
+enum ReaderFlashColor {
+  black(0, 'BLACK', 'Black'),
+  white(1, 'WHITE', 'White'),
+  whiteBlack(2, 'WHITE_BLACK', 'White then black');
+
+  const ReaderFlashColor(this.flagValue, this.storeName, this.label);
+
+  final int flagValue;
+
+  /// The verbatim enum-constant name Mihon persists (it stores the enum
+  /// via `getEnum`, which writes the constant's `name`). Keeping this
+  /// exact lets a settings import carry across.
+  final String storeName;
+  final String label;
+
+  static ReaderFlashColor fromName(String? name) {
+    for (final v in values) {
+      if (v.storeName == name) return v;
+    }
+    return ReaderFlashColor.black;
+  }
+}
+
+/// Tap-zone navigation preset. Mirrors Mihon's `ReaderPreferences.TapZones`
+/// list (index == stored int). Each preset maps a normalised tap point to
+/// a [NavRegion] via [regionAt], porting Mihon's `ViewerNavigation`
+/// rectangle layouts.
+enum ReaderNavMode {
+  defaultMode(0, 'Default'),
+  lShaped(1, 'L-shaped'),
+  kindlish(2, 'Kindlish'),
+  edge(3, 'Edge'),
+  rightAndLeft(4, 'Right and Left'),
+  disabled(5, 'Disabled');
+
+  const ReaderNavMode(this.flagValue, this.label);
+
+  final int flagValue;
+  final String label;
+
+  static ReaderNavMode fromFlag(int? flag) {
+    for (final v in values) {
+      if (v.flagValue == flag) return v;
+    }
+    return ReaderNavMode.defaultMode;
+  }
+}
+
+/// Logical tap-zone region. [prev]/[next] step a page regardless of
+/// reading direction; [left]/[right] are direction-relative (used by the
+/// Right-and-Left preset). [menu] toggles the reader chrome.
+enum NavRegion { menu, prev, next, left, right }
+
+/// Resolves which [NavRegion] a normalised tap at ([x], [y]) (both 0..1)
+/// falls into for [mode]. [horizontal] selects the pager "Default" layout
+/// (Right-and-Left for horizontal pagers, L-shaped for vertical/webtoon),
+/// mirroring Mihon's `PagerConfig`/`WebtoonConfig` `defaultNavigation()`.
+/// Ports the rectangles from Mihon's `viewer/navigation/*Navigation.kt`.
+NavRegion navRegionAt(
+  ReaderNavMode mode,
+  double x,
+  double y, {
+  required bool horizontal,
+}) {
+  switch (mode) {
+    case ReaderNavMode.disabled:
+      return NavRegion.menu;
+    case ReaderNavMode.defaultMode:
+      return horizontal
+          ? _rightAndLeftRegion(x, y)
+          : _lNavRegion(x, y);
+    case ReaderNavMode.lShaped:
+      return _lNavRegion(x, y);
+    case ReaderNavMode.kindlish:
+      return _kindlishRegion(x, y);
+    case ReaderNavMode.edge:
+      return _edgeRegion(x, y);
+    case ReaderNavMode.rightAndLeft:
+      return _rightAndLeftRegion(x, y);
+  }
+}
+
+// LNavigation: top third = PREV, bottom third = NEXT, middle band split
+// left=PREV / centre=MENU / right=NEXT.
+NavRegion _lNavRegion(double x, double y) {
+  if (y < 0.33) return NavRegion.prev;
+  if (y >= 0.66) return NavRegion.next;
+  if (x < 0.33) return NavRegion.prev;
+  if (x >= 0.66) return NavRegion.next;
+  return NavRegion.menu;
+}
+
+// KindlishNavigation: top band = MENU, left column (below top) = PREV,
+// the rest = NEXT.
+NavRegion _kindlishRegion(double x, double y) {
+  if (y < 0.33) return NavRegion.menu;
+  if (x < 0.33) return NavRegion.prev;
+  return NavRegion.next;
+}
+
+// EdgeNavigation: left & right columns = NEXT, centre column bottom third
+// = PREV, centre otherwise = MENU.
+NavRegion _edgeRegion(double x, double y) {
+  if (x < 0.33 || x >= 0.66) return NavRegion.next;
+  if (y >= 0.66) return NavRegion.prev;
+  return NavRegion.menu;
+}
+
+// RightAndLeftNavigation: left column = LEFT, right column = RIGHT,
+// centre column = MENU.
+NavRegion _rightAndLeftRegion(double x, double y) {
+  if (x < 0.33) return NavRegion.left;
+  if (x >= 0.66) return NavRegion.right;
+  return NavRegion.menu;
 }
 
 /// Reader screen-orientation lock. Mirrors Mihon's `ReaderOrientation`
@@ -211,32 +337,301 @@ final readerBackgroundProvider =
   ReaderBackgroundNotifier.new,
 );
 
-class ReaderColorFilterNotifier extends Notifier<ReaderColorFilter> {
-  static const _key = 'reader_color_filter';
+/// Master enable for the full-colour filter. Mirrors Mihon's
+/// `pref_color_filter_key` bool.
+class ReaderColorFilterEnabledNotifier extends Notifier<bool> {
+  static const _key = 'pref_color_filter_key';
 
   @override
-  ReaderColorFilter build() {
+  bool build() {
     _loadFromDisk();
-    return ReaderColorFilter.none;
+    return false;
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getBool(_key);
+    if (stored != null && stored != state) state = stored;
+  }
+
+  Future<void> set(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+  }
+
+  Future<void> toggle() => set(!state);
+}
+
+final readerColorFilterEnabledProvider =
+    NotifierProvider<ReaderColorFilterEnabledNotifier, bool>(
+  ReaderColorFilterEnabledNotifier.new,
+);
+
+/// Full ARGB colour-filter value. Mirrors Mihon's `color_filter_value`
+/// int (a packed 0xAARRGGBB stored as a signed int). `0` (fully
+/// transparent) means no tint even when the filter is enabled.
+class ReaderColorFilterValueNotifier extends Notifier<int> {
+  static const _key = 'color_filter_value';
+
+  @override
+  int build() {
+    _loadFromDisk();
+    return 0;
   }
 
   Future<void> _loadFromDisk() async {
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getInt(_key);
-    final loaded = ReaderColorFilter.fromFlag(stored);
+    if (stored != null && stored != state) state = stored;
+  }
+
+  Future<void> set(int argb) async {
+    state = argb;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, argb);
+  }
+
+  /// The overlay [Color] for the stored ARGB int, or `null` when the
+  /// value is fully transparent (no visible tint).
+  Color? get color {
+    if (state == 0) return null;
+    // Mihon stores the value as a signed int; mask to 32 bits so a
+    // negative (high-alpha) value reconstructs the right ARGB.
+    return Color(state & 0xFFFFFFFF);
+  }
+}
+
+final readerColorFilterValueProvider =
+    NotifierProvider<ReaderColorFilterValueNotifier, int>(
+  ReaderColorFilterValueNotifier.new,
+);
+
+/// Colour-filter blend mode. Mirrors Mihon's `color_filter_mode` int.
+class ReaderColorFilterModeNotifier extends Notifier<ReaderColorFilterMode> {
+  static const _key = 'color_filter_mode';
+
+  @override
+  ReaderColorFilterMode build() {
+    _loadFromDisk();
+    return ReaderColorFilterMode.none;
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getInt(_key);
+    final loaded = ReaderColorFilterMode.fromFlag(stored);
     if (loaded != state) state = loaded;
   }
 
-  Future<void> set(ReaderColorFilter value) async {
+  Future<void> set(ReaderColorFilterMode value) async {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_key, value.flagValue);
   }
 }
 
-final readerColorFilterProvider =
-    NotifierProvider<ReaderColorFilterNotifier, ReaderColorFilter>(
-  ReaderColorFilterNotifier.new,
+final readerColorFilterModeProvider =
+    NotifierProvider<ReaderColorFilterModeNotifier, ReaderColorFilterMode>(
+  ReaderColorFilterModeNotifier.new,
+);
+
+/// Image scale type for the paged readers. Mirrors Mihon's
+/// `pref_image_scale_type_key` int (ordinals 1..6; default 1 = fit
+/// screen). Stored as an int — distinct from the legacy string-based
+/// `readerScaleTypeProvider` so imports carry across verbatim.
+enum ReaderImageScaleType {
+  fitScreen(1, 'Fit screen', BoxFit.contain),
+  stretch(2, 'Stretch', BoxFit.fill),
+  fitWidth(3, 'Fit width', BoxFit.fitWidth),
+  fitHeight(4, 'Fit height', BoxFit.fitHeight),
+  originalSize(5, 'Original size', BoxFit.none),
+  smartFit(6, 'Smart fit', BoxFit.contain);
+
+  const ReaderImageScaleType(this.flagValue, this.label, this.boxFit);
+
+  final int flagValue;
+  final String label;
+
+  /// [BoxFit] applied to each page. Mihon's "Smart fit" picks fit-width
+  /// or fit-height per page based on aspect ratio; without that runtime
+  /// decision we fall back to [BoxFit.contain] (parent can device-verify).
+  final BoxFit boxFit;
+
+  static ReaderImageScaleType fromFlag(int? flag) {
+    for (final v in values) {
+      if (v.flagValue == flag) return v;
+    }
+    return ReaderImageScaleType.fitScreen;
+  }
+}
+
+class ReaderImageScaleTypeNotifier extends Notifier<ReaderImageScaleType> {
+  static const _key = 'pref_image_scale_type_key';
+
+  @override
+  ReaderImageScaleType build() {
+    _loadFromDisk();
+    return ReaderImageScaleType.fitScreen;
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getInt(_key);
+    final loaded = ReaderImageScaleType.fromFlag(stored);
+    if (loaded != state) state = loaded;
+  }
+
+  Future<void> set(ReaderImageScaleType value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, value.flagValue);
+  }
+}
+
+final readerImageScaleTypeProvider =
+    NotifierProvider<ReaderImageScaleTypeNotifier, ReaderImageScaleType>(
+  ReaderImageScaleTypeNotifier.new,
+);
+
+/// Zoom start position for the paged readers. Mirrors Mihon's
+/// `pref_zoom_start_key` int (1=automatic, 2=left, 3=right, 4=centre;
+/// default 1).
+enum ReaderZoomStart {
+  automatic(1, 'Automatic'),
+  left(2, 'Left'),
+  right(3, 'Right'),
+  center(4, 'Center');
+
+  const ReaderZoomStart(this.flagValue, this.label);
+
+  final int flagValue;
+  final String label;
+
+  static ReaderZoomStart fromFlag(int? flag) {
+    for (final v in values) {
+      if (v.flagValue == flag) return v;
+    }
+    return ReaderZoomStart.automatic;
+  }
+}
+
+class ReaderZoomStartNotifier extends Notifier<ReaderZoomStart> {
+  static const _key = 'pref_zoom_start_key';
+
+  @override
+  ReaderZoomStart build() {
+    _loadFromDisk();
+    return ReaderZoomStart.automatic;
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getInt(_key);
+    final loaded = ReaderZoomStart.fromFlag(stored);
+    if (loaded != state) state = loaded;
+  }
+
+  Future<void> set(ReaderZoomStart value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, value.flagValue);
+  }
+}
+
+final readerZoomStartProvider =
+    NotifierProvider<ReaderZoomStartNotifier, ReaderZoomStart>(
+  ReaderZoomStartNotifier.new,
+);
+
+/// E-Ink flash colour. Mirrors Mihon's `pref_reader_flash_mode` enum
+/// pref (persisted by the constant's name).
+class ReaderFlashColorNotifier extends Notifier<ReaderFlashColor> {
+  static const _key = 'pref_reader_flash_mode';
+
+  @override
+  ReaderFlashColor build() {
+    _loadFromDisk();
+    return ReaderFlashColor.black;
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_key);
+    final loaded = ReaderFlashColor.fromName(stored);
+    if (loaded != state) state = loaded;
+  }
+
+  Future<void> set(ReaderFlashColor value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_key, value.storeName);
+  }
+}
+
+final readerFlashColorProvider =
+    NotifierProvider<ReaderFlashColorNotifier, ReaderFlashColor>(
+  ReaderFlashColorNotifier.new,
+);
+
+/// Tap-zone navigation preset for the paged (pager) readers. Mirrors
+/// Mihon's `reader_navigation_mode_pager` int.
+class ReaderNavModePagerNotifier extends Notifier<ReaderNavMode> {
+  static const _key = 'reader_navigation_mode_pager';
+
+  @override
+  ReaderNavMode build() {
+    _loadFromDisk();
+    return ReaderNavMode.defaultMode;
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getInt(_key);
+    final loaded = ReaderNavMode.fromFlag(stored);
+    if (loaded != state) state = loaded;
+  }
+
+  Future<void> set(ReaderNavMode value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, value.flagValue);
+  }
+}
+
+final readerNavModePagerProvider =
+    NotifierProvider<ReaderNavModePagerNotifier, ReaderNavMode>(
+  ReaderNavModePagerNotifier.new,
+);
+
+/// Tap-zone navigation preset for the continuous (webtoon) reader.
+/// Mirrors Mihon's `reader_navigation_mode_webtoon` int.
+class ReaderNavModeWebtoonNotifier extends Notifier<ReaderNavMode> {
+  static const _key = 'reader_navigation_mode_webtoon';
+
+  @override
+  ReaderNavMode build() {
+    _loadFromDisk();
+    return ReaderNavMode.defaultMode;
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getInt(_key);
+    final loaded = ReaderNavMode.fromFlag(stored);
+    if (loaded != state) state = loaded;
+  }
+
+  Future<void> set(ReaderNavMode value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, value.flagValue);
+  }
+}
+
+final readerNavModeWebtoonProvider =
+    NotifierProvider<ReaderNavModeWebtoonNotifier, ReaderNavMode>(
+  ReaderNavModeWebtoonNotifier.new,
 );
 
 /// Auto-hide delay for the reader's top/bottom chrome (header + page

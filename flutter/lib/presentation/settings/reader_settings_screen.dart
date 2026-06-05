@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/preferences/typed_preferences.dart';
 import '../../data/reader/reader_behavior_preferences.dart';
 import '../../data/reader/reader_preferences.dart';
-import '../../domain/reader/model/reader_scale_type.dart';
 import '../../domain/reader/model/reading_mode.dart';
 
 /// Reader sub-screen: global default reading mode + visual prefs
@@ -19,11 +18,18 @@ class ReaderSettingsScreen extends ConsumerWidget {
     final readerNotifier = ref.read(readerPreferencesProvider.notifier);
     final orientation = ref.watch(readerOrientationProvider);
     final background = ref.watch(readerBackgroundProvider);
-    final colorFilter = ref.watch(readerColorFilterProvider);
+    final colorFilterEnabled = ref.watch(readerColorFilterEnabledProvider);
+    final colorFilterMode = ref.watch(readerColorFilterModeProvider);
     final autoHideSeconds = ref.watch(readerAutoHideChromeSecondsProvider);
     final doubleTapSpeed = ref.watch(readerDoubleTapAnimSpeedProvider);
-    final scaleType =
-        ReaderScaleType.fromKey(ref.watch(readerScaleTypeProvider));
+    final scaleType = ref.watch(readerImageScaleTypeProvider);
+    final zoomStart = ref.watch(readerZoomStartProvider);
+    final navModePager = ref.watch(readerNavModePagerProvider);
+    final navModeWebtoon = ref.watch(readerNavModeWebtoonProvider);
+    final flashEnabled = ref.watch(readerFlashOnPageChangeProvider);
+    final flashColor = ref.watch(readerFlashColorProvider);
+    final flashInterval = ref.watch(readerFlashIntervalProvider);
+    final flashDuration = ref.watch(readerFlashDurationProvider);
     final sidePadding = ref.watch(readerWebtoonSidePaddingProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Reader')),
@@ -90,23 +96,33 @@ class ReaderSettingsScreen extends ConsumerWidget {
               }
             },
           ),
-          ListTile(
+          SwitchListTile(
             title: const Text('Colour filter'),
-            subtitle: Text(colorFilter.label),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              final picked = await showDialog<ReaderColorFilter>(
-                context: context,
-                builder: (_) =>
-                    _ReaderColorFilterPickerDialog(current: colorFilter),
-              );
-              if (picked != null) {
-                await ref
-                    .read(readerColorFilterProvider.notifier)
-                    .set(picked);
-              }
-            },
+            subtitle: const Text('Tint pages with a custom ARGB colour.'),
+            value: colorFilterEnabled,
+            onChanged: (v) =>
+                ref.read(readerColorFilterEnabledProvider.notifier).set(v),
           ),
+          if (colorFilterEnabled) ...[
+            const _ColorFilterChannelSliders(),
+            ListTile(
+              title: const Text('Colour filter blend mode'),
+              subtitle: Text(colorFilterMode.label),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                final picked = await showDialog<ReaderColorFilterMode>(
+                  context: context,
+                  builder: (_) =>
+                      _ColorFilterModePickerDialog(current: colorFilterMode),
+                );
+                if (picked != null) {
+                  await ref
+                      .read(readerColorFilterModeProvider.notifier)
+                      .set(picked);
+                }
+              },
+            ),
+          ],
           ListTile(
             title: const Text('Auto-hide chrome'),
             subtitle: Text(_autoHideLabel(autoHideSeconds)),
@@ -146,14 +162,30 @@ class ReaderSettingsScreen extends ConsumerWidget {
             subtitle: Text(scaleType.label),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
-              final picked = await showDialog<ReaderScaleType>(
+              final picked = await showDialog<ReaderImageScaleType>(
                 context: context,
                 builder: (_) => _ScaleTypePickerDialog(current: scaleType),
               );
               if (picked != null) {
                 await ref
-                    .read(readerScaleTypeProvider.notifier)
-                    .set(picked.key);
+                    .read(readerImageScaleTypeProvider.notifier)
+                    .set(picked);
+              }
+            },
+          ),
+          ListTile(
+            title: const Text('Zoom start position'),
+            subtitle: Text(zoomStart.label),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<ReaderZoomStart>(
+                context: context,
+                builder: (_) => _ZoomStartPickerDialog(current: zoomStart),
+              );
+              if (picked != null) {
+                await ref
+                    .read(readerZoomStartProvider.notifier)
+                    .set(picked);
               }
             },
           ),
@@ -248,6 +280,81 @@ class ReaderSettingsScreen extends ConsumerWidget {
               }
             },
           ),
+          ListTile(
+            title: const Text('Tap zones (paged)'),
+            subtitle: Text(navModePager.label),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<ReaderNavMode>(
+                context: context,
+                builder: (_) => _NavModePickerDialog(
+                  title: 'Tap zones (paged)',
+                  current: navModePager,
+                ),
+              );
+              if (picked != null) {
+                await ref
+                    .read(readerNavModePagerProvider.notifier)
+                    .set(picked);
+              }
+            },
+          ),
+          ListTile(
+            title: const Text('Tap zones (webtoon)'),
+            subtitle: Text(navModeWebtoon.label),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<ReaderNavMode>(
+                context: context,
+                builder: (_) => _NavModePickerDialog(
+                  title: 'Tap zones (webtoon)',
+                  current: navModeWebtoon,
+                ),
+              );
+              if (picked != null) {
+                await ref
+                    .read(readerNavModeWebtoonProvider.notifier)
+                    .set(picked);
+              }
+            },
+          ),
+          _PrefSwitch(
+            title: 'Long-tap actions',
+            subtitle: 'Long-press a page for the page actions menu.',
+            provider: readerLongTapProvider,
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'E-Ink',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          _PrefSwitch(
+            title: 'Flash on page change',
+            subtitle: 'Briefly flash the screen to clear e-paper ghosting.',
+            provider: readerFlashOnPageChangeProvider,
+          ),
+          if (flashEnabled) ...[
+            ListTile(
+              title: const Text('Flash colour'),
+              subtitle: Text(flashColor.label),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                final picked = await showDialog<ReaderFlashColor>(
+                  context: context,
+                  builder: (_) => _FlashColorPickerDialog(current: flashColor),
+                );
+                if (picked != null) {
+                  await ref
+                      .read(readerFlashColorProvider.notifier)
+                      .set(picked);
+                }
+              },
+            ),
+            _FlashIntervalSlider(value: flashInterval),
+            _FlashDurationSlider(value: flashDuration),
+          ],
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
@@ -377,21 +484,21 @@ String _sidePaddingLabel(int pct) => pct <= 0 ? 'None' : '$pct%';
 class _ScaleTypePickerDialog extends StatelessWidget {
   const _ScaleTypePickerDialog({required this.current});
 
-  final ReaderScaleType current;
+  final ReaderImageScaleType current;
 
   @override
   Widget build(BuildContext context) {
     return SimpleDialog(
       title: const Text('Scale type'),
       children: [
-        RadioGroup<ReaderScaleType>(
+        RadioGroup<ReaderImageScaleType>(
           groupValue: current,
           onChanged: (picked) => Navigator.of(context).pop(picked),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final t in ReaderScaleType.values)
-                RadioListTile<ReaderScaleType>(
+              for (final t in ReaderImageScaleType.values)
+                RadioListTile<ReaderImageScaleType>(
                   value: t,
                   title: Text(t.label),
                 ),
@@ -399,6 +506,230 @@ class _ScaleTypePickerDialog extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ZoomStartPickerDialog extends StatelessWidget {
+  const _ZoomStartPickerDialog({required this.current});
+
+  final ReaderZoomStart current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Zoom start position'),
+      children: [
+        RadioGroup<ReaderZoomStart>(
+          groupValue: current,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final z in ReaderZoomStart.values)
+                RadioListTile<ReaderZoomStart>(
+                  value: z,
+                  title: Text(z.label),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NavModePickerDialog extends StatelessWidget {
+  const _NavModePickerDialog({required this.title, required this.current});
+
+  final String title;
+  final ReaderNavMode current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: Text(title),
+      children: [
+        RadioGroup<ReaderNavMode>(
+          groupValue: current,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final m in ReaderNavMode.values)
+                RadioListTile<ReaderNavMode>(
+                  value: m,
+                  title: Text(m.label),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FlashColorPickerDialog extends StatelessWidget {
+  const _FlashColorPickerDialog({required this.current});
+
+  final ReaderFlashColor current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Flash colour'),
+      children: [
+        RadioGroup<ReaderFlashColor>(
+          groupValue: current,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final c in ReaderFlashColor.values)
+                RadioListTile<ReaderFlashColor>(
+                  value: c,
+                  title: Text(c.label),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ColorFilterModePickerDialog extends StatelessWidget {
+  const _ColorFilterModePickerDialog({required this.current});
+
+  final ReaderColorFilterMode current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Blend mode'),
+      children: [
+        RadioGroup<ReaderColorFilterMode>(
+          groupValue: current,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final m in ReaderColorFilterMode.values)
+                RadioListTile<ReaderColorFilterMode>(
+                  value: m,
+                  title: Text(m.label),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A/R/G/B sliders that pack into the single `color_filter_value` int
+/// (0xAARRGGBB) Mihon stores. Each slider updates one channel of the
+/// current value.
+class _ColorFilterChannelSliders extends ConsumerWidget {
+  const _ColorFilterChannelSliders();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final argb = ref.watch(readerColorFilterValueProvider) & 0xFFFFFFFF;
+    final notifier = ref.read(readerColorFilterValueProvider.notifier);
+    final a = (argb >> 24) & 0xFF;
+    final r = (argb >> 16) & 0xFF;
+    final g = (argb >> 8) & 0xFF;
+    final b = argb & 0xFF;
+
+    void setChannel(int shift, int value) {
+      final mask = ~(0xFF << shift) & 0xFFFFFFFF;
+      final next = (argb & mask) | ((value & 0xFF) << shift);
+      // Re-sign to a Dart int the same way Mihon stores it (toSigned 32).
+      notifier.set(next.toSigned(32));
+    }
+
+    return Column(
+      children: [
+        _channel(context, 'Alpha', a, (v) => setChannel(24, v)),
+        _channel(context, 'Red', r, (v) => setChannel(16, v)),
+        _channel(context, 'Green', g, (v) => setChannel(8, v)),
+        _channel(context, 'Blue', b, (v) => setChannel(0, v)),
+      ],
+    );
+  }
+
+  Widget _channel(
+    BuildContext context,
+    String label,
+    int value,
+    ValueChanged<int> onChanged,
+  ) {
+    return ListTile(
+      title: Text(label),
+      subtitle: Slider(
+        min: 0,
+        max: 255,
+        divisions: 255,
+        value: value.toDouble(),
+        label: '$value',
+        onChanged: (v) => onChanged(v.round()),
+      ),
+      trailing: Text('$value'),
+    );
+  }
+}
+
+/// Flash interval slider (1..10 pages). Mihon `pref_reader_flash_interval`.
+class _FlashIntervalSlider extends ConsumerWidget {
+  const _FlashIntervalSlider({required this.value});
+
+  final int value;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final v = value.clamp(1, 10);
+    return ListTile(
+      title: const Text('Flash interval'),
+      subtitle: Slider(
+        min: 1,
+        max: 10,
+        divisions: 9,
+        value: v.toDouble(),
+        label: '$v page${v == 1 ? '' : 's'}',
+        onChanged: (n) =>
+            ref.read(readerFlashIntervalProvider.notifier).set(n.round()),
+      ),
+      trailing: Text('$v'),
+    );
+  }
+}
+
+/// Flash duration slider. Mihon stores raw ms with MILLI_CONVERSION=100
+/// (slider 1..15 → 100..1500ms). `pref_reader_flash_duration`.
+class _FlashDurationSlider extends ConsumerWidget {
+  const _FlashDurationSlider({required this.value});
+
+  final int value;
+
+  static const _milliConversion = 100;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final steps = (value / _milliConversion).round().clamp(1, 15);
+    return ListTile(
+      title: const Text('Flash duration'),
+      subtitle: Slider(
+        min: 1,
+        max: 15,
+        divisions: 14,
+        value: steps.toDouble(),
+        label: '${steps * _milliConversion} ms',
+        onChanged: (n) => ref
+            .read(readerFlashDurationProvider.notifier)
+            .set(n.round() * _milliConversion),
+      ),
+      trailing: Text('${steps * _milliConversion} ms'),
     );
   }
 }
@@ -551,31 +882,3 @@ class _ReaderAutoHideChromePickerDialog extends StatelessWidget {
   }
 }
 
-class _ReaderColorFilterPickerDialog extends StatelessWidget {
-  const _ReaderColorFilterPickerDialog({required this.current});
-
-  final ReaderColorFilter current;
-
-  @override
-  Widget build(BuildContext context) {
-    return SimpleDialog(
-      title: const Text('Colour filter'),
-      children: [
-        RadioGroup<ReaderColorFilter>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final f in ReaderColorFilter.values)
-                RadioListTile<ReaderColorFilter>(
-                  value: f,
-                  title: Text(f.label),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}

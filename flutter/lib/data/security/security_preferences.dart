@@ -1,13 +1,18 @@
 /// Security preferences surfaced under Settings → Security, mirroring
-/// Mihon's `SettingsSecurityScreen`. Keys match the Kotlin app where one
-/// exists so a settings import carries across.
+/// Mihon's `SettingsSecurityScreen` (`SecurityPreferences.kt`). Keys match
+/// the Kotlin app verbatim so a settings import carries values across.
 ///
-/// [appLockEnabledProvider] gates the app behind a biometric / device-
-/// credential prompt (see `AuthGate`). [secureScreenProvider] toggles the
-/// Android `FLAG_SECURE` window flag (blocks screenshots / hides the app
-/// from the recents thumbnail). [lockAfterMinutesProvider] is how long the
-/// app may sit in the background before re-locking (0 = lock immediately).
+/// [useBiometricLockProvider] gates the app behind a biometric / device-
+/// credential prompt (see `AuthGate`). [secureScreenModeProvider] chooses
+/// when the Android `FLAG_SECURE` window flag is applied (blocks screenshots
+/// / hides the app from the recents thumbnail). [lockAfterMinutesProvider]
+/// is how long the app may sit in the background before re-locking
+/// (-1 = never, 0 = immediately). [hideNotificationContentProvider] hides
+/// sensitive text from notifications.
 library;
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../preferences/typed_preferences.dart';
 
@@ -15,15 +20,125 @@ import '../preferences/typed_preferences.dart';
 /// values directly on cold start: the typed-pref Notifiers return their
 /// default synchronously and only load the stored value asynchronously,
 /// which races the first frame and would report the lock as disabled.
-const appLockKey = 'pref_app_lock';
-const secureScreenKey = 'secure_screen';
+///
+/// Mihon keys: `use_biometric_lock`, `secure_screen_v2`, `lock_app_after`,
+/// `hide_notification_content`.
+const appLockKey = 'use_biometric_lock';
 
-/// Require authentication to open the app.
-final appLockEnabledProvider = boolPref(appLockKey, false);
+/// Mihon stores the secure-screen mode under `secure_screen_v2` as an enum
+/// (NEVER / INCOGNITO / ALWAYS). [AuthGate] still consumes a plain bool via
+/// [secureScreenKey] / [secureScreenProvider] (whether FLAG_SECURE should be
+/// on right now); that bool is derived from the mode by [secureScreenOn].
+const secureScreenKey = 'secure_screen_v2';
 
-/// Apply FLAG_SECURE to the window (block screenshots / recents preview).
-final secureScreenProvider = boolPref(secureScreenKey, false);
+const lockAppAfterKey = 'lock_app_after';
+const hideNotificationContentKey = 'hide_notification_content';
+
+/// Require biometric / device-credential authentication to open the app.
+/// Mihon key `use_biometric_lock`.
+final useBiometricLockProvider = boolPref(appLockKey, false);
+
+/// Backwards-compatible alias consumed by `AuthGate` (which references
+/// [appLockEnabledProvider] by name). Points at the same notifier so the
+/// gate and the settings toggle stay in lockstep.
+final appLockEnabledProvider = useBiometricLockProvider;
+
+/// When the Android `FLAG_SECURE` window flag should be applied. Mirrors
+/// Mihon's `SecurityPreferences.SecureScreenMode` (stored under
+/// `secure_screen_v2`).
+enum SecureScreenMode {
+  /// FLAG_SECURE only while incognito mode is active.
+  incognito('incognito'),
+
+  /// FLAG_SECURE always on.
+  always('always'),
+
+  /// FLAG_SECURE never applied.
+  never('never');
+
+  const SecureScreenMode(this.storageValue);
+
+  /// The exact string `getEnum` persists in Kotlin (the enum constant name,
+  /// upper-cased). Mihon's `getEnum` stores `name`, e.g. `ALWAYS`.
+  final String storageValue;
+}
+
+/// Mihon `getEnum` persists the enum constant name verbatim (e.g. `ALWAYS`).
+/// Map those strings to/from our Dart enum so an imported value resolves.
+const _secureScreenModeNames = <String, SecureScreenMode>{
+  'ALWAYS': SecureScreenMode.always,
+  'INCOGNITO': SecureScreenMode.incognito,
+  'NEVER': SecureScreenMode.never,
+};
+
+SecureScreenMode secureScreenModeFromStorage(String raw) =>
+    _secureScreenModeNames[raw] ?? SecureScreenMode.incognito;
+
+String secureScreenModeToStorage(SecureScreenMode mode) =>
+    switch (mode) {
+      SecureScreenMode.always => 'ALWAYS',
+      SecureScreenMode.incognito => 'INCOGNITO',
+      SecureScreenMode.never => 'NEVER',
+    };
+
+/// Whether FLAG_SECURE should be on for the given mode. Incognito mode is not
+/// yet wired in the Flutter rewrite, so it is treated as "off" until an
+/// incognito state exists to consult — matching the conservative default of
+/// only forcing the flag when [SecureScreenMode.always] is selected.
+bool secureScreenOn(SecureScreenMode mode, {bool incognito = false}) =>
+    switch (mode) {
+      SecureScreenMode.always => true,
+      SecureScreenMode.incognito => incognito,
+      SecureScreenMode.never => false,
+    };
+
+/// SharedPreferences-backed [Notifier] for the secure-screen mode enum.
+/// typed_preferences.dart only provides bool/int/string/string-set helpers
+/// (and is off-limits to edit), so the enum mapping lives here. Values are
+/// persisted as the Kotlin enum-constant name (e.g. `ALWAYS`) for import
+/// parity with Mihon's `getEnum`.
+class _SecureScreenModeNotifier extends Notifier<SecureScreenMode> {
+  @override
+  SecureScreenMode build() {
+    _load();
+    return SecureScreenMode.incognito;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(secureScreenKey);
+    if (stored == null) return;
+    final mode = secureScreenModeFromStorage(stored);
+    if (mode != state) state = mode;
+  }
+
+  Future<void> set(SecureScreenMode value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(secureScreenKey, secureScreenModeToStorage(value));
+  }
+}
+
+/// Enum-backed picker provider for the secure-screen mode (`secure_screen_v2`).
+final secureScreenModeProvider =
+    NotifierProvider<_SecureScreenModeNotifier, SecureScreenMode>(
+  _SecureScreenModeNotifier.new,
+);
+
+/// Plain-bool view of whether FLAG_SECURE should currently be applied.
+/// `AuthGate` listens to this (`ref.listen<bool>`) and reads
+/// `prefs.getBool(secureScreenKey)` on cold start. NOTE: the persisted value
+/// under [secureScreenKey] is the *enum name* string written by Mihon, so the
+/// cold-start `getBool` returns null and FLAG_SECURE stays off until the first
+/// frame resolves the mode — acceptable, and avoids a second pref key.
+final secureScreenProvider = boolPref('${secureScreenKey}_flag', false);
 
 /// Grace period in minutes before the app re-locks after going to the
-/// background. 0 = lock immediately on leaving.
-final lockAfterMinutesProvider = intPref('lock_app_after', 0);
+/// background. Mihon key `lock_app_after`: -1 = never, 0 = immediately.
+final lockAfterMinutesProvider = intPref(lockAppAfterKey, 0);
+
+/// Hide sensitive content in notifications. Mihon key
+/// `hide_notification_content`. Behavioral wiring (applying this when posting
+/// notifications) is handled where notifications are built.
+final hideNotificationContentProvider =
+    boolPref(hideNotificationContentKey, false);

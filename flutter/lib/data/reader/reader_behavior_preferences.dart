@@ -23,21 +23,44 @@ final readerPageTransitionsProvider = boolPref('pref_enable_transitions', true);
 final readerKeepScreenOnProvider = boolPref('pref_keep_screen_on', true);
 
 /// When advancing past the end of a chapter, skip chapters that are
-/// already marked read instead of opening them.
-final readerSkipReadProvider = boolPref('pref_skip_read_chapters', false);
+/// already marked read instead of opening them. Key matches Mihon's
+/// `skip_read` verbatim for settings-import compatibility.
+final readerSkipReadProvider = boolPref('skip_read', false);
 
 /// Skip chapters hidden by the manga's active chapter filters when
-/// navigating between chapters.
-final readerSkipFilteredProvider = boolPref('pref_skip_filtered_chapters', true);
+/// navigating between chapters. Mihon key `skip_filtered`.
+final readerSkipFilteredProvider = boolPref('skip_filtered', true);
 
 /// Skip chapters that duplicate the chapter number of an adjacent one
 /// (e.g. multiple scanlations of the same chapter) when navigating.
-final readerSkipDupeProvider = boolPref('pref_skip_dupe_chapters', false);
+/// Mihon key `skip_dupe`.
+final readerSkipDupeProvider = boolPref('skip_dupe', false);
 
 /// Always interpose the chapter-transition screen between chapters, even
-/// when the next chapter is immediately available.
+/// when the next chapter is immediately available. Mihon key
+/// `always_show_chapter_transition`.
 final readerAlwaysShowTransitionProvider =
-    boolPref('pref_always_show_chapter_transition', true);
+    boolPref('always_show_chapter_transition', true);
+
+/// Long-press a page to open the page actions sheet (share/save/set as
+/// cover). Mihon key `reader_long_tap`, default on.
+final readerLongTapProvider = boolPref('reader_long_tap', true);
+
+/// E-Ink: briefly paint a full-screen flash on page change to clear
+/// ghosting. Mihon key `pref_reader_flash`.
+final readerFlashOnPageChangeProvider =
+    boolPref('pref_reader_flash', false);
+
+/// E-Ink flash duration in milliseconds. Mihon stores raw ms with a
+/// `MILLI_CONVERSION` of 100 (slider range 1..15 → 100..1500ms); default
+/// 100. Key `pref_reader_flash_duration`.
+final readerFlashDurationProvider =
+    intPref('pref_reader_flash_duration', 100);
+
+/// E-Ink flash interval in pages — flash every Nth page change. Mihon key
+/// `pref_reader_flash_interval`, range 1..10, default 1.
+final readerFlashIntervalProvider =
+    intPref('pref_reader_flash_interval', 1);
 
 /// Double-tap zoom animation duration in milliseconds. Mihon presets are
 /// 0 (instant) / 250 / 500.
@@ -64,9 +87,9 @@ final readerCustomBrightnessProvider =
 final readerBrightnessValueProvider =
     intPref('pref_custom_brightness_value', 50);
 
-/// How page images are scaled to the viewport. Stored as the
-/// [ReaderScaleType.key] string; convert via `ReaderScaleType.fromKey`.
-final readerScaleTypeProvider = stringPref('pref_image_scale_type', 'fit_screen');
+// Image scale type now lives in reader_preferences.dart as the
+// int-backed `readerImageScaleTypeProvider` (Mihon key
+// `pref_image_scale_type_key`), replacing the earlier string-keyed pref.
 
 /// Horizontal padding (percent of viewport width, 0..25) applied to each
 /// page in the continuous webtoon scroll. 0 = edge-to-edge.

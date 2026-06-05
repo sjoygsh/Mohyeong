@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:archive/archive_io.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -195,10 +196,20 @@ class DownloadRepository {
     if (!await marker.exists()) return null;
     final files = await dir
         .list()
-        .where((e) => e is File && p.basename(e.path) != '.done')
+        .where((e) =>
+            e is File &&
+            p.basename(e.path) != '.done' &&
+            // A CBZ-archived chapter has no loose page files for the reader
+            // to consume directly; reading from the archive needs a
+            // separate unzip path (see TODO in localPagePaths). Skip the
+            // archive so we don't hand a zip to the image pipeline.
+            p.extension(e.path).toLowerCase() != '.cbz')
         .map((e) => e.path)
         .toList();
     files.sort();
+    // TODO(cbz-read): when the chapter was saved as CBZ, `files` is empty
+    // here. Reading a CBZ-archived chapter requires unzipping pages from
+    // `<chapterId>.cbz` (the reader path is owned by another module).
     return files;
   }
 
@@ -272,6 +283,39 @@ class DownloadRepository {
     return v.clamp(1, 5);
   }
 
+  /// Whether completed chapters should be archived into a single CBZ.
+  /// Read fresh from SharedPreferences (`save_chapter_as_cbz`, mirroring
+  /// Mihon's key) at finalize time so a settings change applies to the
+  /// next chapter without restart. Defaults to off.
+  Future<bool> _saveAsCbz() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('save_chapter_as_cbz') ?? false;
+  }
+
+  /// Zips the chapter's page images into `<chapterId>.cbz` inside the same
+  /// chapter directory, then writes the `.done` marker and removes the
+  /// loose page files. The `.cbz` and `.done` are the only survivors, so
+  /// existing `.done`-based completion checks keep working unchanged.
+  Future<void> _archiveChapterAsCbz(Directory dir, List<File> pages) async {
+    final cbzPath = p.join(dir.path, '${p.basename(dir.path)}.cbz');
+    final encoder = ZipFileEncoder();
+    encoder.create(cbzPath);
+    try {
+      for (final page in pages) {
+        if (await page.exists()) {
+          await encoder.addFile(page, p.basename(page.path));
+        }
+      }
+    } finally {
+      await encoder.close();
+    }
+    // Drop the loose page images now that they're inside the archive.
+    for (final page in pages) {
+      if (await page.exists()) await page.delete();
+    }
+    await File(p.join(dir.path, '.done')).create();
+  }
+
   /// Completes once the queue has fully drained (no running batch and
   /// nothing pending). Used by the background library-update isolate to
   /// keep its short-lived process alive until auto-downloads finish, since
@@ -323,6 +367,9 @@ class DownloadRepository {
       );
       final dir = await _chapterDir(manga.source, manga.id, chapter.id);
       if (!await dir.exists()) await dir.create(recursive: true);
+      job.totalPages = pages.length;
+      job.downloadedPages = 0;
+      final pageFiles = <File>[];
       for (var i = 0; i < pages.length; i++) {
         final page = pages[i];
         final imageUrl = page.imageUrl ?? page.url;
@@ -331,21 +378,34 @@ class DownloadRepository {
           dir.path,
           '${(i + 1).toString().padLeft(4, '0')}.$ext',
         ));
-        if (await target.exists()) continue;
-        await _dio.download(
-          imageUrl,
-          target.path,
-          options: Options(headers: page.headers),
-        );
+        if (!await target.exists()) {
+          await _dio.download(
+            imageUrl,
+            target.path,
+            options: Options(headers: page.headers),
+          );
+        }
+        pageFiles.add(target);
+        job.downloadedPages = i + 1;
         _events.add(
           DownloadEvent(
             chapterId: chapter.id,
             state: DownloadState.downloading,
             progress: (i + 1) / pages.length,
+            downloadedPages: i + 1,
+            totalPages: pages.length,
           ),
         );
       }
-      await File(p.join(dir.path, '.done')).create();
+      // Optionally archive the chapter into a single CBZ alongside the
+      // page folder, mirroring Mihon's `saveChaptersAsCBZ`. The folder is
+      // removed once the archive is written so a chapter lives as exactly
+      // one of {folder, cbz}, matching Mihon's on-disk shape.
+      if (await _saveAsCbz()) {
+        await _archiveChapterAsCbz(dir, pageFiles);
+      } else {
+        await File(p.join(dir.path, '.done')).create();
+      }
       _events.add(
         DownloadEvent(chapterId: chapter.id, state: DownloadState.completed),
       );
@@ -382,9 +442,21 @@ class DownloadRepository {
         .toList(growable: false);
     return [
       for (final j in running)
-        ActiveDownload(manga: j.manga, chapter: j.chapter, current: true),
+        ActiveDownload(
+          manga: j.manga,
+          chapter: j.chapter,
+          current: true,
+          downloadedPages: j.downloadedPages,
+          totalPages: j.totalPages,
+        ),
       for (final j in _queue)
-        ActiveDownload(manga: j.manga, chapter: j.chapter, current: false),
+        ActiveDownload(
+          manga: j.manga,
+          chapter: j.chapter,
+          current: false,
+          downloadedPages: j.downloadedPages,
+          totalPages: j.totalPages,
+        ),
     ];
   }
 
@@ -453,6 +525,8 @@ class ActiveDownload {
     required this.manga,
     required this.chapter,
     required this.current,
+    this.downloadedPages = 0,
+    this.totalPages = 0,
   });
 
   final Manga manga;
@@ -461,12 +535,24 @@ class ActiveDownload {
   /// True if this is the job currently being downloaded; false for
   /// items still waiting in the queue.
   final bool current;
+
+  /// Pages fetched so far for this chapter (0 until downloading starts).
+  final int downloadedPages;
+
+  /// Total pages in this chapter (0 until the page list resolves).
+  final int totalPages;
 }
 
 class _DownloadJob {
   _DownloadJob({required this.manga, required this.chapter});
   final Manga manga;
   final Chapter chapter;
+
+  /// Pages fetched so far / total pages for the chapter. Both 0 until the
+  /// page list is resolved. Surfaced through [ActiveDownload] so the queue
+  /// screen can show "x/y".
+  int downloadedPages = 0;
+  int totalPages = 0;
 }
 
 enum DownloadState {
@@ -488,24 +574,36 @@ class DownloadEvent {
     required this.state,
     this.progress,
     this.error,
+    this.downloadedPages,
+    this.totalPages,
   });
 
   const DownloadEvent.queuePaused()
       : chapterId = 0,
         state = DownloadState.queuePaused,
         progress = null,
-        error = null;
+        error = null,
+        downloadedPages = null,
+        totalPages = null;
 
   const DownloadEvent.queueResumed()
       : chapterId = 0,
         state = DownloadState.queueResumed,
         progress = null,
-        error = null;
+        error = null,
+        downloadedPages = null,
+        totalPages = null;
 
   final int chapterId;
   final DownloadState state;
   final double? progress;
   final String? error;
+
+  /// Pages fetched so far for this chapter, when known.
+  final int? downloadedPages;
+
+  /// Total pages in this chapter, when known.
+  final int? totalPages;
 }
 
 final downloadRepositoryProvider = Provider<DownloadRepository>((ref) {
