@@ -22,6 +22,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
     final showDownloadBadge = ref.watch(displayDownloadBadgeProvider);
     final showLocalBadge = ref.watch(displayLocalBadgeProvider);
     final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
+    final showContinueReading = ref.watch(showContinueReadingButtonProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Library')),
       body: ListView(
@@ -87,6 +88,17 @@ class LibrarySettingsScreen extends ConsumerWidget {
             ),
             value: showCarousel,
             onChanged: carouselNotifier.setEnabled,
+          ),
+          SwitchListTile(
+            title: const Text('Show continue reading button'),
+            subtitle: const Text(
+              'Overlay a play button on cards to resume the next '
+              'unread chapter.',
+            ),
+            value: showContinueReading,
+            onChanged: ref
+                .read(showContinueReadingButtonProvider.notifier)
+                .setEnabled,
           ),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 24, 16, 8),

@@ -25,18 +25,23 @@ enum LibraryDisplayMode {
 }
 
 class LibraryDisplayModeNotifier extends Notifier<LibraryDisplayMode> {
-  static const _key = 'pref_library_display_mode';
+  // Mirrors Mihon's `LibraryPreferences.displayMode`
+  // (`pref_display_mode_library`). The serialized string values match
+  // `LibraryDisplayMode.Serializer` VERBATIM so a backup/restore from the
+  // Kotlin build carries the user's choice across.
+  static const _key = 'pref_display_mode_library';
 
   @override
   LibraryDisplayMode build() {
     _loadFromDisk();
-    return LibraryDisplayMode.comfortableGrid;
+    // Mihon's default is CompactGrid.
+    return LibraryDisplayMode.compactGrid;
   }
 
   Future<void> _loadFromDisk() async {
     final prefs = await SharedPreferences.getInstance();
-    final resolved = _decode(prefs.getString(_key)) ??
-        LibraryDisplayMode.comfortableGrid;
+    final resolved =
+        _decode(prefs.getString(_key)) ?? LibraryDisplayMode.compactGrid;
     if (resolved != state) state = resolved;
   }
 
@@ -48,13 +53,13 @@ class LibraryDisplayModeNotifier extends Notifier<LibraryDisplayMode> {
 
   static LibraryDisplayMode? _decode(String? raw) {
     switch (raw) {
-      case 'compact':
+      case 'COMPACT_GRID':
         return LibraryDisplayMode.compactGrid;
-      case 'comfortable':
+      case 'COMFORTABLE_GRID':
         return LibraryDisplayMode.comfortableGrid;
-      case 'cover_only':
+      case 'COVER_ONLY_GRID':
         return LibraryDisplayMode.coverOnlyGrid;
-      case 'list':
+      case 'LIST':
         return LibraryDisplayMode.list;
       default:
         return null;
@@ -64,13 +69,13 @@ class LibraryDisplayModeNotifier extends Notifier<LibraryDisplayMode> {
   static String _encode(LibraryDisplayMode mode) {
     switch (mode) {
       case LibraryDisplayMode.compactGrid:
-        return 'compact';
+        return 'COMPACT_GRID';
       case LibraryDisplayMode.comfortableGrid:
-        return 'comfortable';
+        return 'COMFORTABLE_GRID';
       case LibraryDisplayMode.coverOnlyGrid:
-        return 'cover_only';
+        return 'COVER_ONLY_GRID';
       case LibraryDisplayMode.list:
-        return 'list';
+        return 'LIST';
     }
   }
 }
@@ -335,9 +340,27 @@ class DisplayLanguageBadgeNotifier extends _BoolPrefNotifier {
   bool get _default => false;
 }
 
+/// "Show the continue-reading (play) button on library cards". Off by
+/// default in Mihon. When on, a filled play button is overlaid on each
+/// card / list row; tapping it resumes the next unread chapter without
+/// opening the manga details screen first. Mirrors Mihon's
+/// `LibraryPreferences.showContinueReadingButton`
+/// (`display_continue_reading_button`, default false).
+class ShowContinueReadingButtonNotifier extends _BoolPrefNotifier {
+  @override
+  String get _key => 'display_continue_reading_button';
+  @override
+  bool get _default => false;
+}
+
 final displayDownloadBadgeProvider =
     NotifierProvider<DisplayDownloadBadgeNotifier, bool>(
   DisplayDownloadBadgeNotifier.new,
+);
+
+final showContinueReadingButtonProvider =
+    NotifierProvider<ShowContinueReadingButtonNotifier, bool>(
+  ShowContinueReadingButtonNotifier.new,
 );
 
 final displayUnreadBadgeProvider =

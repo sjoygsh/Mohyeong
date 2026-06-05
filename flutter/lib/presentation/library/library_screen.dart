@@ -17,6 +17,7 @@ import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
+import '../reader/reader_screen.dart';
 
 /// Tri-state filters for the library grid. Each axis can be off (show
 /// everything), include-only (show rows where the predicate matches),
@@ -575,6 +576,40 @@ Future<_AsyncFilterSets> _resolveAsyncFilterSets({
   );
 }
 
+/// Resolves the next unread chapter for [mangaId] and opens the reader on
+/// it, mirroring Mihon's library continue-reading button. "Next unread" is
+/// the first chapter (by `sourceOrder` ascending) whose `read` flag is
+/// false — the same ordering the bulk-download path uses. No-op with a
+/// snackbar when everything is read. [ref] must outlive the await (read,
+/// not watch).
+Future<void> _resumeNextUnread(
+  BuildContext context,
+  WidgetRef ref,
+  int mangaId,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final navigator = Navigator.of(context);
+  final chapters = await ref.read(chapterRepositoryProvider).getByMangaId(
+        mangaId,
+      );
+  final unread = chapters.where((c) => !c.read).toList()
+    ..sort((a, b) => a.sourceOrder.compareTo(b.sourceOrder));
+  if (unread.isEmpty) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('No unread chapters left.')),
+    );
+    return;
+  }
+  await navigator.push(
+    MaterialPageRoute<void>(
+      builder: (_) => ReaderScreen(
+        mangaId: mangaId,
+        chapterId: unread.first.id,
+      ),
+    ),
+  );
+}
+
 class _LibraryBody extends ConsumerWidget {
   const _LibraryBody({
     required this.items,
@@ -875,6 +910,7 @@ class _MangaListTile extends ConsumerWidget {
     final showDownloadBadge = ref.watch(displayDownloadBadgeProvider);
     final showLocalBadge = ref.watch(displayLocalBadgeProvider);
     final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
+    final showContinueReading = ref.watch(showContinueReadingButtonProvider);
     final isLocal = manga.source.toString() == LocalSource.sourceId;
     final sourceLangs = showLanguageBadge
         ? ref.watch(installedSourceLangsProvider).valueOrNull
@@ -962,6 +998,14 @@ class _MangaListTile extends ConsumerWidget {
                   );
                 },
               ),
+            if (showContinueReading && !selecting && item.unreadCount > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: _ContinueReadingButton(
+                  size: 28,
+                  onPressed: () => _resumeNextUnread(context, ref, manga.id),
+                ),
+              ),
             if (isSelected)
               Padding(
                 padding: const EdgeInsets.only(left: 4),
@@ -1010,6 +1054,7 @@ class _MangaCard extends ConsumerWidget {
     final showDownloadBadge = ref.watch(displayDownloadBadgeProvider);
     final showLocalBadge = ref.watch(displayLocalBadgeProvider);
     final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
+    final showContinueReading = ref.watch(showContinueReadingButtonProvider);
     final isLocal = manga.source.toString() == LocalSource.sourceId;
     final sourceLangs = showLanguageBadge
         ? ref.watch(installedSourceLangsProvider).valueOrNull
@@ -1094,6 +1139,20 @@ class _MangaCard extends ConsumerWidget {
                       right: 0,
                       bottom: 0,
                       child: _CoverTitleOverlay(title: manga.title),
+                    ),
+                  // Bottom-end resume button. Only when the pref is on,
+                  // there's something unread, and we're not selecting —
+                  // matches Mihon's `onClickContinueReading` placement.
+                  if (showContinueReading &&
+                      !selecting &&
+                      item.unreadCount > 0)
+                    Positioned(
+                      right: 6,
+                      bottom: 6,
+                      child: _ContinueReadingButton(
+                        onPressed: () =>
+                            _resumeNextUnread(context, ref, manga.id),
+                      ),
                     ),
                   // Selection scrim + check icon. Drawn on top of every
                   // other overlay so the selection state is obvious.
@@ -1208,6 +1267,43 @@ class _TextChip extends StatelessWidget {
               color: scheme.onSecondary,
               fontWeight: FontWeight.w600,
             ),
+      ),
+    );
+  }
+}
+
+/// Filled play button overlaid on a card / list row when the
+/// continue-reading pref is on. Mirrors Mihon's `ContinueReadingButton`:
+/// a small rounded `FilledIconButton` using the `primaryContainer`
+/// colour. [size] differs by host (grid corner vs list trailing).
+class _ContinueReadingButton extends StatelessWidget {
+  const _ContinueReadingButton({
+    required this.onPressed,
+    this.size = 32,
+  });
+
+  final VoidCallback onPressed;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: IconButton.filled(
+        padding: EdgeInsets.zero,
+        iconSize: size * 0.6,
+        style: IconButton.styleFrom(
+          backgroundColor: scheme.primaryContainer.withValues(alpha: 0.9),
+          foregroundColor: scheme.onPrimaryContainer,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(6),
+          ),
+        ),
+        tooltip: 'Resume',
+        onPressed: onPressed,
+        icon: const Icon(Icons.play_arrow),
       ),
     );
   }
