@@ -1590,6 +1590,13 @@ class _PagesViewState extends State<_PagesView> {
       reverse: widget.mode == ReadingMode.rightToLeft,
       itemCount: widget.count,
       onPageChanged: _report,
+      // Mount the adjacent page(s) one viewport ahead so their network
+      // images start fetching/decoding before the user swipes to them,
+      // instead of fetching on-demand at swipe time (the source of the
+      // swipe lag). Mihon's HttpPageLoader preloads 4 ahead; this is the
+      // idiomatic Flutter ±1 neighbour preload — deeper preloading would
+      // need a custom cacheExtent tuned on-device.
+      allowImplicitScrolling: true,
       itemBuilder: (ctx, i) => _ZoomablePage(
         child: Center(child: widget.itemBuilder(ctx, i)),
       ),
