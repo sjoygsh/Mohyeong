@@ -30,6 +30,15 @@ class AppHttpClient {
       storage: FileStorage(cookieDir),
       ignoreExpires: false,
     );
+    // TODO(doh): the `doh_provider` pref (network_preferences.dart) is stored
+    // but not yet applied. To honour it, swap the plain `Dio()` for
+    // `Dio()..httpClientAdapter = IOHttpClientAdapter(createHttpClient: ...)`
+    // here (the single shared Dio, so this one site covers the whole app).
+    // The factory resolves the host via a DoH JSON GET (provider URL +
+    // bootstrap IP table ported from Mihon's DohProviders.kt), dials the
+    // resolved IP, then `SecureSocket.secure(socket, host: originalHost)` so
+    // SNI + cert validation still key off the real hostname. Deferred until
+    // after real-server parity (TLS edge cases + IPv6/proxy/TTL caching).
     final dio = Dio()..interceptors.add(CookieManager(jar));
     final c = AppHttpClient._(dio, jar);
     _instance = c;
