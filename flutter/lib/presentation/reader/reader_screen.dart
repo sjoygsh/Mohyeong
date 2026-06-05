@@ -407,6 +407,10 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   // [_ViewportRequest] and animates to the new index.
   int _seekRequestId = 0;
   int _seekTarget = 0;
+  // Whether the pending paged seek (keyed by [_seekRequestId]) should animate
+  // the page turn. Page-turn navigation (tap zones / volume keys) animates
+  // when `pref_enable_transitions` is on; slider drags always jump instantly.
+  bool _seekAnimate = false;
   // Continuous-mode volume-key scrolling. `_scrollTick` ticks per press; the
   // webtoon viewport watches it and scrolls roughly one screen in
   // `_scrollForward`'s direction.
@@ -570,10 +574,11 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     }
   }
 
-  void _seekTo(int page) {
+  void _seekTo(int page, {bool animate = false}) {
     setState(() {
       _currentPage = page;
       _seekTarget = page;
+      _seekAnimate = animate;
       _seekRequestId++;
     });
   }
@@ -695,7 +700,9 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   void _navigatePage({required bool forward}) {
     final target = forward ? _currentPage + 1 : _currentPage - 1;
     if (target >= 0 && target < _totalPages) {
-      _seekTo(target);
+      // Animate the page turn when transitions are enabled (Mihon's
+      // `pref_enable_transitions`); otherwise jump instantly.
+      _seekTo(target, animate: ref.read(readerPageTransitionsProvider));
       return;
     }
     final skipRead = ref.read(readerSkipReadProvider);
@@ -837,6 +844,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       seekRequest: _ViewportSeekRequest(
         requestId: _seekRequestId,
         target: _seekTarget,
+        animate: _seekAnimate,
         scrollTick: _scrollTick,
         scrollForward: _scrollForward,
       ),
@@ -1087,6 +1095,7 @@ class _ViewportSeekRequest {
   const _ViewportSeekRequest({
     required this.requestId,
     required this.target,
+    this.animate = false,
     this.scrollTick = 0,
     this.scrollForward = true,
   });
@@ -1096,6 +1105,10 @@ class _ViewportSeekRequest {
   /// we may emit two requests with the same `target` index back-to-back.
   final int requestId;
   final int target;
+
+  /// Whether the paged viewport should animate to [target] (page-turn with
+  /// transitions on) rather than jump instantly (slider drag).
+  final bool animate;
 
   /// Monotonic id that ticks every time the volume keys ask the continuous
   /// (webtoon) viewport to scroll by roughly one screen. Paged viewers
@@ -1493,7 +1506,15 @@ class _PagesViewState extends State<_PagesView> {
         _pageController != null) {
       final target =
           widget.seekRequest.target.clamp(0, (widget.count - 1).clamp(0, widget.count));
-      _pageController!.jumpToPage(target);
+      if (widget.seekRequest.animate && _pageController!.hasClients) {
+        _pageController!.animateToPage(
+          target,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      } else {
+        _pageController!.jumpToPage(target);
+      }
     }
     // Volume-key scroll in continuous mode: animate by roughly one screen.
     if (widget.seekRequest.scrollTick != old.seekRequest.scrollTick &&
