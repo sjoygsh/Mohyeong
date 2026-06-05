@@ -345,7 +345,9 @@ class DownloadRepository {
           final job = _queue.removeAt(0);
           late final Future<void> f;
           f = _runJob(job).whenComplete(() {
-            _byChapter.remove(job.chapter.id);
+            // Keep errored jobs registered so they can be retried; only
+            // forget jobs that completed or were cancelled.
+            if (!job.errored) _byChapter.remove(job.chapter.id);
             active.remove(f);
           });
           active.add(f);
@@ -362,6 +364,7 @@ class DownloadRepository {
   Future<void> _runJob(_DownloadJob job) async {
     final manga = job.manga;
     final chapter = job.chapter;
+    job.errored = false;
     _events.add(
       DownloadEvent(chapterId: chapter.id, state: DownloadState.downloading),
     );
@@ -388,6 +391,7 @@ class DownloadRepository {
             imageUrl,
             target.path,
             options: Options(headers: page.headers),
+            cancelToken: job.cancelToken,
           );
         }
         pageFiles.add(target);
@@ -414,7 +418,28 @@ class DownloadRepository {
       _events.add(
         DownloadEvent(chapterId: chapter.id, state: DownloadState.completed),
       );
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) {
+        // User cancelled the running download — drop the partial chapter
+        // directory and forget the job (drain removes it since it isn't
+        // flagged errored).
+        final dir = await _chapterDir(manga.source, manga.id, chapter.id);
+        if (await dir.exists()) await dir.delete(recursive: true);
+        _events.add(
+          DownloadEvent(chapterId: chapter.id, state: DownloadState.deleted),
+        );
+        return;
+      }
+      job.errored = true;
+      _events.add(
+        DownloadEvent(
+          chapterId: chapter.id,
+          state: DownloadState.failed,
+          error: e.toString(),
+        ),
+      );
     } catch (e) {
+      job.errored = true;
       _events.add(
         DownloadEvent(
           chapterId: chapter.id,
@@ -442,15 +467,26 @@ class DownloadRepository {
   /// "what's pending". `current` flags the job that's actively
   /// downloading (always at most one — the queue is serial).
   List<ActiveDownload> snapshot() {
-    final running = _byChapter.values
+    // Jobs not in the queue are either actively downloading or have
+    // errored out (errored jobs are left registered for retry).
+    final offQueue = _byChapter.values
         .where((j) => !_queue.contains(j))
         .toList(growable: false);
     return [
-      for (final j in running)
+      for (final j in offQueue.where((j) => !j.errored))
         ActiveDownload(
           manga: j.manga,
           chapter: j.chapter,
           current: true,
+          downloadedPages: j.downloadedPages,
+          totalPages: j.totalPages,
+        ),
+      for (final j in offQueue.where((j) => j.errored))
+        ActiveDownload(
+          manga: j.manga,
+          chapter: j.chapter,
+          current: false,
+          errored: true,
           downloadedPages: j.downloadedPages,
           totalPages: j.totalPages,
         ),
@@ -465,19 +501,50 @@ class DownloadRepository {
     ];
   }
 
-  /// Removes a queued chapter. The currently-running job can't be
-  /// cancelled (Dio download is in-flight and there's no cancel token
-  /// threaded through yet — would need wider plumbing).
-  bool cancelQueued(int chapterId) {
+  /// Cancels a download in any state. A queued job is dropped from the
+  /// queue; an errored job is forgotten; the currently-running job has its
+  /// in-flight image request aborted via its [CancelToken] (the run loop's
+  /// cancel branch then emits `deleted` and the drain loop forgets it).
+  /// Returns `true` if a matching job was found.
+  bool cancel(int chapterId) {
     final job = _byChapter[chapterId];
     if (job == null) return false;
     final idx = _queue.indexOf(job);
-    if (idx < 0) return false; // currently running, not queued.
-    _queue.removeAt(idx);
-    _byChapter.remove(chapterId);
+    if (idx >= 0) {
+      _queue.removeAt(idx);
+      _byChapter.remove(chapterId);
+      _events.add(
+        DownloadEvent(chapterId: chapterId, state: DownloadState.deleted),
+      );
+      return true;
+    }
+    if (job.errored) {
+      _byChapter.remove(chapterId);
+      _events.add(
+        DownloadEvent(chapterId: chapterId, state: DownloadState.deleted),
+      );
+      return true;
+    }
+    // Currently running — abort in-flight work; cleanup happens in _runJob.
+    job.cancelToken.cancel('cancelled by user');
+    return true;
+  }
+
+  /// Re-queues a previously-errored job with a fresh [CancelToken], moving
+  /// it back to the tail of the queue and kicking the drain loop. No-op if
+  /// the chapter isn't currently in an errored state. Returns whether a
+  /// retry was scheduled.
+  bool retry(int chapterId) {
+    final job = _byChapter[chapterId];
+    if (job == null || !job.errored) return false;
+    job.errored = false;
+    job.downloadedPages = 0;
+    job.cancelToken = CancelToken();
+    _queue.add(job);
     _events.add(
-      DownloadEvent(chapterId: chapterId, state: DownloadState.deleted),
+      DownloadEvent(chapterId: chapterId, state: DownloadState.queued),
     );
+    unawaited(_drain());
     return true;
   }
 
@@ -530,6 +597,7 @@ class ActiveDownload {
     required this.manga,
     required this.chapter,
     required this.current,
+    this.errored = false,
     this.downloadedPages = 0,
     this.totalPages = 0,
   });
@@ -538,8 +606,11 @@ class ActiveDownload {
   final Chapter chapter;
 
   /// True if this is the job currently being downloaded; false for
-  /// items still waiting in the queue.
+  /// items still waiting in the queue or sitting in an errored state.
   final bool current;
+
+  /// True if this job's last run failed and it's awaiting a retry.
+  final bool errored;
 
   /// Pages fetched so far for this chapter (0 until downloading starts).
   final int downloadedPages;
@@ -558,6 +629,15 @@ class _DownloadJob {
   /// screen can show "x/y".
   int downloadedPages = 0;
   int totalPages = 0;
+
+  /// Set when the last run failed for a reason other than user cancel.
+  /// Errored jobs stay registered in `_byChapter` (the drain loop leaves
+  /// them) so the queue screen can offer a Retry affordance.
+  bool errored = false;
+
+  /// Aborts the in-flight image request when the user cancels a running
+  /// download. Replaced with a fresh token by [DownloadRepository.retry].
+  CancelToken cancelToken = CancelToken();
 }
 
 enum DownloadState {

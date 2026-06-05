@@ -163,19 +163,22 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     DownloadRepository repo,
     List<ActiveDownload> items,
   ) {
-    // Snapshot orders running-first, then queued. Split them so the
-    // running job stays pinned at the top while only queued rows are
-    // dragged.
-    final running = items.where((i) => i.current).toList(growable: false);
-    final queued = items.where((i) => !i.current).toList(growable: false);
+    // Snapshot orders running, then errored, then queued. Pin the running
+    // and errored rows in a fixed header so only the queued rows — which
+    // are the only reorderable ones — live in the draggable list.
+    final pinned = items.where((i) => i.current || i.errored)
+        .toList(growable: false);
+    final queued = items
+        .where((i) => !i.current && !i.errored)
+        .toList(growable: false);
     return ReorderableListView.builder(
       buildDefaultDragHandles: false,
-      header: running.isEmpty
+      header: pinned.isEmpty
           ? null
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                for (final item in running) _buildTile(item, draggable: false),
+                for (final item in pinned) _buildTile(item, draggable: false),
                 const Divider(height: 1),
               ],
             ),
@@ -214,9 +217,14 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     final repo = ref.read(downloadRepositoryProvider);
     return ListTile(
       key: key,
-      leading: item.current
-          ? const Icon(Icons.downloading)
-          : const Icon(Icons.hourglass_empty),
+      leading: item.errored
+          ? Icon(
+              Icons.error_outline,
+              color: Theme.of(context).colorScheme.error,
+            )
+          : item.current
+              ? const Icon(Icons.downloading)
+              : const Icon(Icons.hourglass_empty),
       title: Text(
         item.manga.title,
         maxLines: 1,
@@ -245,29 +253,41 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
           ] else if (item.current) ...[
             const SizedBox(height: 4),
             const LinearProgressIndicator(),
+          ] else if (item.errored) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Download error',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+            ),
           ],
         ],
       ),
-      trailing: item.current
-          ? null
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  tooltip: 'Cancel',
-                  onPressed: () => repo.cancelQueued(item.chapter.id),
-                ),
-                if (draggable && dragIndex != null)
-                  ReorderableDragStartListener(
-                    index: dragIndex,
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                      child: Icon(Icons.drag_handle),
-                    ),
-                  ),
-              ],
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (item.errored)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Retry',
+              onPressed: () => repo.retry(item.chapter.id),
             ),
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Cancel',
+            onPressed: () => repo.cancel(item.chapter.id),
+          ),
+          if (draggable && dragIndex != null)
+            ReorderableDragStartListener(
+              index: dragIndex,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: Icon(Icons.drag_handle),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
