@@ -353,6 +353,23 @@ class ShowContinueReadingButtonNotifier extends _BoolPrefNotifier {
   bool get _default => false;
 }
 
+/// "Group chapters by volume" — when on, the manga details chapter list
+/// inserts a volume header row whenever the volume number changes (labeled
+/// "Volume N", or "Unknown volume" when the chapter has no volume). Off by
+/// default in Mihon. Mirrors `LibraryPreferences.groupChaptersByVolume`
+/// (`group_chapters_by_volume`, default false).
+class GroupChaptersByVolumeNotifier extends _BoolPrefNotifier {
+  @override
+  String get _key => 'group_chapters_by_volume';
+  @override
+  bool get _default => false;
+}
+
+final groupChaptersByVolumeProvider =
+    NotifierProvider<GroupChaptersByVolumeNotifier, bool>(
+  GroupChaptersByVolumeNotifier.new,
+);
+
 final displayDownloadBadgeProvider =
     NotifierProvider<DisplayDownloadBadgeNotifier, bool>(
   DisplayDownloadBadgeNotifier.new,

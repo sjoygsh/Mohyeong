@@ -23,6 +23,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
     final showLocalBadge = ref.watch(displayLocalBadgeProvider);
     final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
     final showContinueReading = ref.watch(showContinueReadingButtonProvider);
+    final groupChaptersByVolume = ref.watch(groupChaptersByVolumeProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Library')),
       body: ListView(
@@ -98,6 +99,18 @@ class LibrarySettingsScreen extends ConsumerWidget {
             value: showContinueReading,
             onChanged: ref
                 .read(showContinueReadingButtonProvider.notifier)
+                .setEnabled,
+          ),
+          // Verbatim Mihon strings pref_group_chapters_by_volume /
+          // _summary so settings imports read identically.
+          SwitchListTile(
+            title: const Text('Group chapters by volume'),
+            subtitle: const Text(
+              'Show volume headers between chapter groups on the manga page',
+            ),
+            value: groupChaptersByVolume,
+            onChanged: ref
+                .read(groupChaptersByVolumeProvider.notifier)
                 .setEnabled,
           ),
           const Padding(

@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
+import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_updater.dart';
 import '../../data/manga/excluded_scanlators_repository.dart';
 import '../../data/manga/manga_repository.dart';
@@ -238,7 +239,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
             stream: chapterRepo.watchByMangaId(widget.mangaId),
             builder: (context, chapSnap) {
               final chapters = chapSnap.data ?? const <Chapter>[];
-              final nextUnread = _pickNextUnread(chapters);
+              final nextUnread = _pickNextUnread(chapters, manga);
               return PopScope(
                 canPop: !_selecting,
                 onPopInvokedWithResult: (didPop, _) {
@@ -458,6 +459,7 @@ class _ChaptersSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final excludedRepo = ref.watch(excludedScanlatorsRepositoryProvider);
     final downloadRepo = ref.watch(downloadRepositoryProvider);
+    final groupByVolume = ref.watch(groupChaptersByVolumeProvider);
     return StreamBuilder<Set<String>>(
       stream: excludedRepo.watchByMangaId(manga.id),
       builder: (context, excludedSnap) {
@@ -465,7 +467,7 @@ class _ChaptersSection extends ConsumerWidget {
         // Only probe the filesystem when the user has actually engaged
         // the downloaded filter axis. Common path stays sync.
         if (manga.downloadedFilter == TriState.disabled) {
-          return _buildBody(context, excluded, null, downloadRepo);
+          return _buildBody(context, excluded, null, downloadRepo, groupByVolume);
         }
         return FutureBuilder<Set<int>>(
           future: downloadRepo.listDownloadedChapterIds(manga.source, manga.id),
@@ -475,6 +477,7 @@ class _ChaptersSection extends ConsumerWidget {
               excluded,
               downloadedSnap.data ?? const <int>{},
               downloadRepo,
+              groupByVolume,
             );
           },
         );
@@ -487,6 +490,7 @@ class _ChaptersSection extends ConsumerWidget {
     Set<String> excluded,
     Set<int>? downloadedIds,
     DownloadRepository downloadRepo,
+    bool groupByVolume,
   ) {
     final availableScanlators = <String>{
       for (final c in chapters)
@@ -507,20 +511,31 @@ class _ChaptersSection extends ConsumerWidget {
       return unreadOk && bookmarkedOk && downloadedOk;
     }).toList(growable: false);
 
-    final sorted = [...filtered]..sort((a, b) {
-      int cmp;
-      switch (manga.sorting) {
-        case Manga.chapterSortingNumber:
-          cmp = a.chapterNumber.compareTo(b.chapterNumber);
-        case Manga.chapterSortingUploadDate:
-          cmp = a.dateUpload.compareTo(b.dateUpload);
-        case Manga.chapterSortingAlphabet:
-          cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
-        default:
-          cmp = a.sourceOrder.compareTo(b.sourceOrder);
+    // Sort via the shared Mihon `getChapterSort` port. NOTE the SOURCE case
+    // is intentionally inverted vs the other modes (sourceOrder 0 == newest),
+    // so descending source order shows the NEWEST chapter at the top — the
+    // Mihon default — rather than the oldest.
+    final sorted = [...filtered]
+      ..sort((a, b) => _chapterSortCompare(a, b, manga));
+
+    // 1:1 with Mihon's MangaScreen volume grouping: when on, insert a
+    // VolumeHeaderItem each time the volume number changes while walking the
+    // sorted chapter list. A NaN sentinel (which never equals any real value
+    // or null) forces a header before the first chapter.
+    final List<Object> rendered;
+    if (groupByVolume) {
+      rendered = <Object>[];
+      double? lastVolume = double.nan;
+      for (final c in sorted) {
+        if (c.volumeNumber != lastVolume) {
+          rendered.add(_VolumeHeaderItem(c.volumeNumber));
+          lastVolume = c.volumeNumber;
+        }
+        rendered.add(c);
       }
-      return manga.sortDescending() ? -cmp : cmp;
-    });
+    } else {
+      rendered = sorted;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -533,13 +548,16 @@ class _ChaptersSection extends ConsumerWidget {
           excludedScanlators: excluded,
           unreadCount: chapters.where((c) => !c.read).length,
           onBulkDownload: (count) {
-            // Pick the earliest unread chapters in reading order. Match
-            // `_pickNextUnread`'s ascending-sourceOrder convention so
-            // "next" lines up with the Continue Reading FAB.
-            final unread = chapters.where((c) => !c.read).toList()
-              ..sort((a, b) => a.sourceOrder.compareTo(b.sourceOrder));
+            // 1:1 with Mihon's getUnreadChaptersSorted (MangaScreenModel):
+            // sort by getChapterSort, then reverse when the manga sorts
+            // descending, so the EARLIEST unread chapters in reading order
+            // are downloaded first (Download → Next N chapters).
+            final sorted = chapters.where((c) => !c.read).toList()
+              ..sort((a, b) => _chapterSortCompare(a, b, manga));
+            final ordered =
+                manga.sortDescending() ? sorted.reversed.toList() : sorted;
             final take =
-                count == null ? unread : unread.take(count).toList();
+                count == null ? ordered : ordered.take(count).toList();
             for (final c in take) {
               unawaited(downloadRepo.enqueue(manga, c));
             }
@@ -556,45 +574,116 @@ class _ChaptersSection extends ConsumerWidget {
           ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: sorted.length,
-            itemBuilder: (_, i) => _ChapterTile(
-              manga: manga,
-              chapter: sorted[i],
-              chapterRepo: chapterRepo,
-              downloadRepo: downloadRepo,
-              isSelected: selectedIds.contains(sorted[i].id),
-              selecting: selectedIds.isNotEmpty,
-              onToggleSelected: onToggleSelected,
-              // Pass the full (unfiltered, unsorted) chapter list so the
-              // "Mark previous as read" affordance acts over every chapter
-              // earlier in reading order, not just the ones the current
-              // filter happens to show.
-              allChapters: chapters,
-            ),
+            itemCount: rendered.length,
+            itemBuilder: (_, i) {
+              final item = rendered[i];
+              if (item is _VolumeHeaderItem) {
+                return _VolumeHeaderRow(volumeNumber: item.volumeNumber);
+              }
+              final chapter = item as Chapter;
+              return _ChapterTile(
+                manga: manga,
+                chapter: chapter,
+                chapterRepo: chapterRepo,
+                downloadRepo: downloadRepo,
+                isSelected: selectedIds.contains(chapter.id),
+                selecting: selectedIds.isNotEmpty,
+                onToggleSelected: onToggleSelected,
+                // Pass the full (unfiltered, unsorted) chapter list so the
+                // "Mark previous as read" affordance acts over every chapter
+                // earlier in reading order, not just the ones the current
+                // filter happens to show.
+                allChapters: chapters,
+              );
+            },
           ),
       ],
     );
   }
 }
 
+/// Marker entry interleaved into the chapter list when "Group chapters by
+/// volume" is on. Carries the volume number of the group that follows
+/// (null == "Unknown volume"). Mirrors Mihon's private `VolumeHeaderItem`.
+class _VolumeHeaderItem {
+  const _VolumeHeaderItem(this.volumeNumber);
+  final double? volumeNumber;
+}
+
+/// Volume separator row. Mirrors Mihon's `VolumeHeaderListItem`: a primary
+/// coloured title-small label ("Volume N" / "Unknown volume") padded 16/8.
+class _VolumeHeaderRow extends StatelessWidget {
+  const _VolumeHeaderRow({required this.volumeNumber});
+
+  final double? volumeNumber;
+
+  String _label() {
+    final v = volumeNumber;
+    if (v == null) return 'Unknown volume';
+    final n = v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+    return 'Volume $n';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Text(
+        _label(),
+        style: theme.textTheme.titleSmall
+            ?.copyWith(color: theme.colorScheme.primary),
+      ),
+    );
+  }
+}
+
+/// Comparator matching Mihon's `getChapterSort` (ChapterSort.kt) exactly,
+/// including its source-order quirk: because sources return chapters
+/// newest-first (so `sourceOrder == 0` is the NEWEST chapter), the SOURCE
+/// case inverts its direction relative to the number/date/alphabet cases.
+int _chapterSortCompare(Chapter a, Chapter b, Manga manga) {
+  final desc = manga.sortDescending();
+  switch (manga.sorting) {
+    case Manga.chapterSortingNumber:
+      return desc
+          ? b.chapterNumber.compareTo(a.chapterNumber)
+          : a.chapterNumber.compareTo(b.chapterNumber);
+    case Manga.chapterSortingUploadDate:
+      return desc
+          ? b.dateUpload.compareTo(a.dateUpload)
+          : a.dateUpload.compareTo(b.dateUpload);
+    case Manga.chapterSortingAlphabet:
+      return desc
+          ? b.name.toLowerCase().compareTo(a.name.toLowerCase())
+          : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    default: // chapterSortingSource
+      return desc
+          ? a.sourceOrder.compareTo(b.sourceOrder)
+          : b.sourceOrder.compareTo(a.sourceOrder);
+  }
+}
+
 /// Returns the next chapter the user should read, or null if every
 /// chapter is already marked read (or the list is empty).
 ///
-/// Mirrors Mihon's `getNextChapter` behaviour: order chapters by their
-/// source-supplied order, then pick the lowest one that hasn't been
-/// read yet. Excluded scanlators are NOT filtered here — Mihon shows
-/// the FAB even when filters hide chapters, and we want the same.
-Chapter? _pickNextUnread(List<Chapter> chapters) {
-  final unread = chapters.where((c) => !c.read).toList(growable: false);
+/// 1:1 port of Mihon's `List<Chapter>.getNextUnread` (ChapterGetNextUnread.kt):
+/// sort the chapters with the manga's `getChapterSort`, then pick the LAST
+/// unread when the manga sorts descending (else the FIRST). Net effect across
+/// every sort mode: the OLDEST unread chapter in reading order — e.g. Ch.1 on
+/// a fresh manga, not the newest chapter. Excluded scanlators are NOT filtered
+/// here — Mihon shows the FAB even when filters hide chapters, and we match it.
+Chapter? _pickNextUnread(List<Chapter> chapters, Manga manga) {
+  final unread = chapters.where((c) => !c.read).toList();
   if (unread.isEmpty) return null;
-  unread.sort((a, b) => a.sourceOrder.compareTo(b.sourceOrder));
-  return unread.first;
+  unread.sort((a, b) => _chapterSortCompare(a, b, manga));
+  return manga.sortDescending() ? unread.last : unread.first;
 }
 
 /// Floating action button that jumps straight into the next unread
 /// chapter. Label flips between "Start" (no chapters read yet) and
-/// "Continue" (at least one chapter is already read) — same wording as
-/// Mihon's manga details screen.
+/// "Resume" (at least one chapter is already read) — verbatim Mihon
+/// strings `action_start` / `action_resume`.
 class _ContinueReadingFab extends StatelessWidget {
   const _ContinueReadingFab({
     required this.manga,
@@ -610,7 +699,7 @@ class _ContinueReadingFab extends StatelessWidget {
   Widget build(BuildContext context) {
     return FloatingActionButton.extended(
       icon: const Icon(Icons.play_arrow),
-      label: Text(anyRead ? 'Continue' : 'Start'),
+      label: Text(anyRead ? 'Resume' : 'Start'),
       onPressed: () {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
