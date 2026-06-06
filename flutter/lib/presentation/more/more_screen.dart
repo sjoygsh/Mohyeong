@@ -1,67 +1,43 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/source/incognito_preferences.dart';
 import '../about/about_screen.dart';
-import '../backup/backup_screen.dart';
 import '../categories/categories_screen.dart';
 import '../downloads/download_queue_screen.dart';
+import '../home/home_screen.dart';
+import '../settings/data_storage_settings_screen.dart';
 import '../settings/settings_screen.dart';
 import '../stats/stats_screen.dart';
-import '../sync/sync_settings_screen.dart';
 
-/// "More" hub -- equivalent to the Kotlin MoreTab. Routes to Settings,
-/// Categories, Data & Storage, About, etc. Destinations that don't have
-/// a screen yet are left as no-op tiles. Also hosts the global incognito
-/// toggle, mirroring Mihon's MoreScreen.
+/// "More" hub -- equivalent to the Kotlin MoreScreen. Routes to Settings,
+/// Categories, Data and storage, About, etc. Also hosts the global
+/// incognito toggle and the app logo header, mirroring Mihon's MoreScreen.
 class MoreScreen extends ConsumerWidget {
   const MoreScreen({super.key});
+
+  /// Verbatim Kotlin `Constants.URL_HELP`.
+  static const _urlHelp = 'https://sjoygsh.github.io/Mohyeong/help.html';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final incognito = ref.watch(incognitoModeProvider);
-    final entries = <_MoreEntry>[
-      _MoreEntry(
-        icon: Icons.download_outlined,
-        label: 'Download queue',
-        builder: (_) => const DownloadQueueScreen(),
-      ),
-      _MoreEntry(
-        icon: Icons.category_outlined,
-        label: 'Categories',
-        builder: (_) => const CategoriesScreen(),
-      ),
-      _MoreEntry(
-        icon: Icons.bar_chart_outlined,
-        label: 'Statistics',
-        builder: (_) => const StatsScreen(),
-      ),
-      _MoreEntry(
-        icon: Icons.cloud_sync_outlined,
-        label: 'Sync',
-        builder: (_) => const SyncSettingsScreen(),
-      ),
-      _MoreEntry(
-        icon: Icons.backup_outlined,
-        label: 'Backup & restore',
-        builder: (_) => const BackupScreen(),
-      ),
-      _MoreEntry(
-        icon: Icons.settings_outlined,
-        label: 'Settings',
-        builder: (_) => const SettingsScreen(),
-      ),
-      _MoreEntry(
-        icon: Icons.info_outline,
-        label: 'About',
-        builder: (_) => const AboutScreen(),
-      ),
-    ];
+    // Mirrors Kotlin MoreTab.onReselect: tapping the already-selected More
+    // bottom-nav destination (index 4) opens the Settings screen.
+    ref.listen<HomeReselectSignal>(homeReselectProvider, (prev, next) {
+      if (next.tab == 4 && next.tick != (prev?.tick ?? 0)) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+        );
+      }
+    });
 
+    // Kotlin MoreScreen has no app bar; the list starts with a centred logo.
     return Scaffold(
-      appBar: AppBar(title: const Text('More')),
       body: ListView(
         children: [
+          const _LogoHeader(),
           // Verbatim Mihon strings pref_incognito_mode / _summary.
           SwitchListTile(
             secondary: const Icon(Icons.no_encryption_gmailerrorred_outlined),
@@ -71,30 +47,93 @@ class MoreScreen extends ConsumerWidget {
             onChanged: ref.read(incognitoModeProvider.notifier).set,
           ),
           const Divider(height: 1),
-          for (final entry in entries)
-            ListTile(
-              leading: Icon(entry.icon),
-              title: Text(entry.label),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: entry.builder == null
-                  ? null
-                  : () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(builder: entry.builder!),
-                      ),
+          ListTile(
+            leading: const Icon(Icons.get_app),
+            title: const Text('Download queue'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const DownloadQueueScreen(),
+              ),
             ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.label_outlined),
+            title: const Text('Categories'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const CategoriesScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.query_stats),
+            title: const Text('Statistics'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const StatsScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.storage),
+            title: const Text('Data and storage'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const DataStorageSettingsScreen(),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.settings_outlined),
+            title: const Text('Settings'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('About'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AboutScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.help_outline),
+            title: const Text('Help'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => launchUrl(
+              Uri.parse(_urlHelp),
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _MoreEntry {
-  const _MoreEntry({
-    required this.icon,
-    required this.label,
-    this.builder,
-  });
-  final IconData icon;
-  final String label;
-  final WidgetBuilder? builder;
+/// Mirrors Kotlin `LogoHeader`: a centred, `onSurface`-tinted app logo
+/// (64dp) padded 32dp vertically, with a divider beneath it.
+class _LogoHeader extends StatelessWidget {
+  const _LogoHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 32),
+          child: Icon(
+            Icons.menu_book,
+            size: 64,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        const Divider(height: 1),
+      ],
+    );
+  }
 }
