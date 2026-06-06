@@ -24,9 +24,18 @@ final favoritedUrlsForSourceProvider =
 /// Browses a single installed source: tabs for Popular / Latest / Search,
 /// each backed by an infinite-scroll grid pulled from the JS extension.
 class SourceBrowseScreen extends ConsumerStatefulWidget {
-  const SourceBrowseScreen({super.key, required this.sourceId});
+  const SourceBrowseScreen({
+    super.key,
+    required this.sourceId,
+    this.initialQuery,
+  });
 
   final String sourceId;
+
+  /// When non-null/non-empty the screen opens on the Search tab with this
+  /// query pre-run — used by Global search's "open source" affordance,
+  /// mirroring Kotlin handing the query to BrowseSourceScreen.
+  final String? initialQuery;
 
   @override
   ConsumerState<SourceBrowseScreen> createState() => _SourceBrowseScreenState();
@@ -65,8 +74,12 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen> {
           if (source.supportsLatest) const Tab(text: 'Latest'),
           const Tab(text: 'Search'),
         ];
+        final hasInitialQuery =
+            widget.initialQuery != null && widget.initialQuery!.isNotEmpty;
         return DefaultTabController(
           length: tabs.length,
+          // Search is always the last tab; land on it when pre-filled.
+          initialIndex: hasInitialQuery ? tabs.length - 1 : 0,
           child: Scaffold(
             appBar: AppBar(
               title: Text(source.name),
@@ -92,7 +105,10 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen> {
                 _Listing(source: source, mode: _ListingMode.popular),
                 if (source.supportsLatest)
                   _Listing(source: source, mode: _ListingMode.latest),
-                _SearchListing(source: source),
+                _SearchListing(
+                  source: source,
+                  initialQuery: widget.initialQuery,
+                ),
               ],
             ),
           ),
@@ -172,9 +188,10 @@ class _ListingState extends State<_Listing>
 }
 
 class _SearchListing extends StatefulWidget {
-  const _SearchListing({required this.source});
+  const _SearchListing({required this.source, this.initialQuery});
 
   final MangaSource source;
+  final String? initialQuery;
 
   @override
   State<_SearchListing> createState() => _SearchListingState();
@@ -192,6 +209,16 @@ class _SearchListingState extends State<_SearchListing>
 
   @override
   bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialQuery?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      _controller.text = initial;
+      _search(initial);
+    }
+  }
 
   Future<void> _search(String query) async {
     setState(() {
@@ -314,7 +341,7 @@ class _MangaGrid extends ConsumerWidget {
       return const Center(child: CircularProgressIndicator());
     }
     if (items.isEmpty) {
-      return const Center(child: Text('No results.'));
+      return const Center(child: Text('No results found'));
     }
     return NotificationListener<ScrollNotification>(
       onNotification: (n) {
@@ -355,20 +382,29 @@ class _MangaCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
     final url = manga.thumbnailUrl;
+    final sourceIdInt = sourceNumericId(sourceId);
+    final favoritedUrls = ref
+            .watch(favoritedUrlsForSourceProvider(sourceIdInt))
+            .valueOrNull ??
+        const <String>{};
+    final inLibrary = favoritedUrls.contains(manga.url);
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (url == null || url.isEmpty)
-            Container(color: placeholder)
-          else
-            SourceImage(
-              url: url,
-              fit: BoxFit.cover,
-              placeholder: (_) => Container(color: placeholder),
-              errorWidget: (_, _) => Container(color: placeholder),
-            ),
+          // Mirrors Mihon: covers already in the library are dimmed.
+          Opacity(
+            opacity: inLibrary ? 0.34 : 1,
+            child: (url == null || url.isEmpty)
+                ? Container(color: placeholder)
+                : SourceImage(
+                    url: url,
+                    fit: BoxFit.cover,
+                    placeholder: (_) => Container(color: placeholder),
+                    errorWidget: (_, _) => Container(color: placeholder),
+                  ),
+          ),
           DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -381,6 +417,7 @@ class _MangaCard extends ConsumerWidget {
               ),
             ),
           ),
+          if (inLibrary) const _InLibraryBadge(),
           Positioned(
             left: 6,
             right: 6,
@@ -396,12 +433,15 @@ class _MangaCard extends ConsumerWidget {
           // when (url, source) already matches, inserts a non-favourite
           // row otherwise) into the manga details screen — same flow
           // Mihon uses to open a source manga before it's added to the
-          // library.
+          // library. Long-press toggles library membership in place
+          // (Mihon's long-press add/remove).
           Positioned.fill(
             child: Material(
               color: Colors.transparent,
               child: InkWell(
                 onTap: () => _openManga(context, ref),
+                onLongPress: () =>
+                    _toggleFavorite(context, ref, sourceIdInt, inLibrary),
               ),
             ),
           ),
@@ -429,5 +469,79 @@ class _MangaCard extends ConsumerWidget {
         SnackBar(content: Text('Could not open manga: $e')),
       );
     }
+  }
+
+  Future<void> _toggleFavorite(
+    BuildContext context,
+    WidgetRef ref,
+    int sourceIdInt,
+    bool inLibrary,
+  ) async {
+    final repo = ref.read(mangaRepositoryProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    if (inLibrary) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          content: Text('Remove "${manga.title}" from your library?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Remove'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+    try {
+      final row =
+          await repo.insertFromSource(candidate: manga, sourceId: sourceIdInt);
+      await repo.setFavorite(row.id, !inLibrary);
+      ref.invalidate(favoritedUrlsForSourceProvider(sourceIdInt));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(inLibrary ? 'Removed from library' : 'Added to library'),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not update library: $e')),
+      );
+    }
+  }
+}
+
+/// Small "in library" indicator overlaid on a source cover's top-left,
+/// mirroring Mihon's MangaCover in-library badge.
+class _InLibraryBadge extends StatelessWidget {
+  const _InLibraryBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Positioned(
+      top: 0,
+      left: 0,
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: scheme.secondary,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(8),
+            bottomRight: Radius.circular(8),
+          ),
+        ),
+        child: Icon(
+          Icons.collections_bookmark,
+          size: 14,
+          color: scheme.onSecondary,
+        ),
+      ),
+    );
   }
 }

@@ -181,11 +181,15 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
                 ),
               ),
               TextButton(
+                // Mirrors Kotlin: tapping the source header opens the source
+                // with the current query pre-filled.
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) =>
-                          SourceBrowseScreen(sourceId: widget.sourceId),
+                      builder: (_) => SourceBrowseScreen(
+                        sourceId: widget.sourceId,
+                        initialQuery: widget.query,
+                      ),
                     ),
                   );
                 },
@@ -243,7 +247,7 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
                 if (items.isEmpty) {
                   return Center(
                     child: Text(
-                      'No matches.',
+                      'No results found',
                       style: TextStyle(color: theme.colorScheme.outline),
                     ),
                   );
@@ -279,20 +283,29 @@ class _ResultCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
     final url = manga.thumbnailUrl;
+    final sourceIdInt = sourceNumericId(sourceId);
+    final favoritedUrls = ref
+            .watch(favoritedUrlsForSourceProvider(sourceIdInt))
+            .valueOrNull ??
+        const <String>{};
+    final inLibrary = favoritedUrls.contains(manga.url);
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (url == null || url.isEmpty)
-            Container(color: placeholder)
-          else
-            SourceImage(
-              url: url,
-              fit: BoxFit.cover,
-              placeholder: (_) => Container(color: placeholder),
-              errorWidget: (_, _) => Container(color: placeholder),
-            ),
+          // Mirrors Mihon: covers already in the library are dimmed.
+          Opacity(
+            opacity: inLibrary ? 0.34 : 1,
+            child: (url == null || url.isEmpty)
+                ? Container(color: placeholder)
+                : SourceImage(
+                    url: url,
+                    fit: BoxFit.cover,
+                    placeholder: (_) => Container(color: placeholder),
+                    errorWidget: (_, _) => Container(color: placeholder),
+                  ),
+          ),
           DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -305,6 +318,26 @@ class _ResultCard extends ConsumerWidget {
               ),
             ),
           ),
+          if (inLibrary)
+            Positioned(
+              top: 0,
+              left: 0,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.secondary,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(8),
+                    bottomRight: Radius.circular(8),
+                  ),
+                ),
+                child: Icon(
+                  Icons.collections_bookmark,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSecondary,
+                ),
+              ),
+            ),
           Positioned(
             left: 6,
             right: 6,
