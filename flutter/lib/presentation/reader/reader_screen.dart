@@ -18,6 +18,7 @@ import '../../data/source/extension_repository.dart';
 import '../../data/source/incognito_preferences.dart';
 import '../../data/track/track_updater.dart';
 import '../../domain/chapter/model/chapter.dart';
+import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../../domain/reader/model/reading_mode.dart';
@@ -277,9 +278,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               // Explicit user action (no Mihon reader analogue): honour the
               // local mark, but skip the tracker push while incognito —
               // tracking is universally disabled in incognito (Mihon
-              // `updateTrackChapterRead` early-returns).
-              final chapterRepo = ref.read(chapterRepositoryProvider);
-              await chapterRepo.setRead(data.chapter.id, true);
+              // `updateTrackChapterRead` early-returns). Routed through
+              // SetReadStatus so `remove_after_marked_as_read` applies, as it
+              // would when marking read from the chapter list.
+              await ref
+                  .read(setReadStatusProvider)
+                  .setRead(read: true, chapters: [data.chapter]);
               if (!_incognito) {
                 // Fire-and-forget tracker push. Failures are absorbed inside
                 // TrackUpdater; the snackbar below confirms the local write.
@@ -312,6 +316,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 ref.read(trackUpdaterProvider).setLastChapterRead(
                       mangaId: data.chapter.mangaId,
                       chapterNumber: data.chapter.chapterNumber,
+                    ),
+              );
+              // Drop the download `removeAfterReadSlots` chapters back, in
+              // reading order (Mihon `deleteChapterIfNeeded`). Independent of
+              // `remove_after_marked_as_read`.
+              unawaited(
+                ref.read(setReadStatusProvider).deleteReadChapterSlot(
+                      manga: data.manga,
+                      orderedChapters: data.siblings,
+                      current: data.chapter,
                     ),
               );
             },

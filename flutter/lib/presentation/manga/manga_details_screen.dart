@@ -21,6 +21,7 @@ import '../../data/track/tracker_registry.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/chapter/service/missing_chapters.dart';
+import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../../domain/source/model/source.dart';
@@ -168,11 +169,10 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   }
 
   Future<void> _bulkSetRead(List<Chapter> all, bool read) async {
-    final chapterRepo = ref.read(chapterRepositoryProvider);
     final picked = _selectedChapters(all);
-    for (final c in picked) {
-      await chapterRepo.setRead(c.id, read);
-    }
+    await ref
+        .read(setReadStatusProvider)
+        .setRead(read: read, chapters: picked);
     if (read) {
       // Push the highest selected chapter number to trackers, parity
       // with Mihon's per-action sync. We deliberately only push on the
@@ -2042,7 +2042,12 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
               final chapterRepo = widget.chapterRepo;
               switch (action) {
                 case _ChapterAction.markRead:
-                  chapterRepo.setRead(chapter.id, true);
+                  unawaited(
+                    ref.read(setReadStatusProvider).setRead(
+                      read: true,
+                      chapters: [chapter],
+                    ),
+                  );
                   unawaited(
                     ref.read(trackUpdaterProvider).setLastChapterRead(
                           mangaId: chapter.mangaId,
@@ -2050,7 +2055,12 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                         ),
                   );
                 case _ChapterAction.markUnread:
-                  chapterRepo.setRead(chapter.id, false);
+                  unawaited(
+                    ref.read(setReadStatusProvider).setRead(
+                      read: false,
+                      chapters: [chapter],
+                    ),
+                  );
                 case _ChapterAction.markPreviousAsRead:
                   () async {
                     // Strict less-than: the current chapter is not
@@ -2061,9 +2071,9 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                         .where((c) =>
                             c.chapterNumber < chapter.chapterNumber && !c.read)
                         .toList(growable: false);
-                    for (final c in earlier) {
-                      await chapterRepo.setRead(c.id, true);
-                    }
+                    await ref
+                        .read(setReadStatusProvider)
+                        .setRead(read: true, chapters: earlier);
                     if (earlier.isNotEmpty) {
                       // Push the highest chapter number we just marked
                       // (which is strictly less than `chapter`) to

@@ -14,6 +14,7 @@ import '../../data/source/local_source.dart';
 import '../../data/track/track_repository.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/library/model/library_item.dart';
+import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
@@ -242,9 +243,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Future<void> _selectionMarkRead(bool read) async {
     final chapterRepo = ref.read(chapterRepositoryProvider);
+    final setReadStatus = ref.read(setReadStatusProvider);
     final ids = _selected.toList(growable: false);
     for (final id in ids) {
-      await chapterRepo.setReadForManga(id, read);
+      final chapters = await chapterRepo.getByMangaId(id);
+      await setReadStatus.setRead(read: read, chapters: chapters);
     }
     if (!mounted) return;
     _clearSelection();

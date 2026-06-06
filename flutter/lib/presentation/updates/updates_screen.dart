@@ -5,6 +5,7 @@ import '../../data/chapter/chapter_repository.dart';
 import '../../data/library/library_updater.dart';
 import '../../data/updates/updates_filter_prefs.dart';
 import '../../data/updates/updates_repository.dart';
+import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
@@ -76,12 +77,23 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
 
   Future<void> _bulkSetRead(List<LibraryUpdate> visible, bool read) async {
     final repo = ref.read(chapterRepositoryProvider);
-    final ids = visible
+    final setReadStatus = ref.read(setReadStatusProvider);
+    final selected = visible
         .where((u) => _selectedChapterIds.contains(u.chapterId))
-        .map((u) => u.chapterId)
         .toList(growable: false);
-    for (final id in ids) {
-      await repo.setRead(id, read);
+    // Group the selected updates by manga so we can resolve each id back to
+    // a full `Chapter` row (the interactor needs read/lastPageRead/bookmark
+    // to decide what to skip and what download to delete).
+    final idsByManga = <int, Set<int>>{};
+    for (final u in selected) {
+      (idsByManga[u.mangaId] ??= <int>{}).add(u.chapterId);
+    }
+    for (final entry in idsByManga.entries) {
+      final chapters = await repo.getByMangaId(entry.key);
+      final picked = chapters
+          .where((c) => entry.value.contains(c.id))
+          .toList(growable: false);
+      await setReadStatus.setRead(read: read, chapters: picked);
     }
     _clearSelection();
   }
