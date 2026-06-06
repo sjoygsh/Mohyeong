@@ -1,13 +1,20 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:mohyeong/data/category/category_repository.dart';
 import 'package:mohyeong/data/history/history_repository.dart';
+import 'package:mohyeong/data/library/library_repository.dart';
 import 'package:mohyeong/data/library/library_update_preference.dart';
 import 'package:mohyeong/data/library/library_update_scheduler.dart';
 import 'package:mohyeong/data/manga/manga_repository.dart';
+import 'package:mohyeong/data/onboarding/onboarding_preferences.dart';
+import 'package:mohyeong/data/security/security_preferences.dart';
 import 'package:mohyeong/data/source/extension_repository.dart';
 import 'package:mohyeong/data/source/installed_extension.dart';
 import 'package:mohyeong/data/updates/updates_repository.dart';
+import 'package:mohyeong/domain/category/model/category.dart';
+import 'package:mohyeong/domain/library/model/library_item.dart';
 import 'package:mohyeong/domain/manga/model/manga.dart';
 import 'package:mohyeong/domain/source/model/manga_source.dart';
 import 'package:mohyeong/main.dart';
@@ -55,6 +62,22 @@ class _FakeLibraryUpdateScheduler implements LibraryUpdateScheduler {
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _FakeLibraryRepository implements LibraryRepository {
+  @override
+  Stream<List<LibraryItem>> watchAll() => Stream.value(const <LibraryItem>[]);
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeCategoryRepository implements CategoryRepository {
+  @override
+  Stream<List<Category>> watchAll() => Stream.value(const <Category>[]);
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _FakeExtensionRepository implements ExtensionRepository {
   @override
   Stream<List<InstalledExtension>> watchInstalled() =>
@@ -75,10 +98,21 @@ class _FakeExtensionRepository implements ExtensionRepository {
 void main() {
   testWidgets('Home shell renders all five top-level tabs',
       (WidgetTester tester) async {
+    // The home shell sits behind AuthGate + OnboardingGate, which both read
+    // these flags from disk before revealing their child. Seed them so the
+    // gates resolve to "unlocked" + "onboarding done" and render HomeScreen.
+    SharedPreferences.setMockInitialValues({
+      onboardingCompleteKey: true,
+      appLockKey: false,
+    });
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           mangaRepositoryProvider.overrideWithValue(_FakeMangaRepository()),
+          libraryRepositoryProvider
+              .overrideWithValue(_FakeLibraryRepository()),
+          categoryRepositoryProvider
+              .overrideWithValue(_FakeCategoryRepository()),
           historyRepositoryProvider.overrideWithValue(_FakeHistoryRepository()),
           updatesRepositoryProvider.overrideWithValue(_FakeUpdatesRepository()),
           extensionRepositoryProvider
@@ -89,9 +123,12 @@ void main() {
         child: const MohyeongApp(),
       ),
     );
-    // Two pumps -- one for first frame, one to let the empty-state StreamBuilder
-    // resolve its first event.
-    await tester.pump();
+    // Pump a few frames so the gates' async disk reads (SharedPreferences +
+    // the typed-pref Notifiers) settle and the empty-state StreamBuilder
+    // resolves its first event, revealing the home shell.
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
 
     // AppBar title for the default (Library) tab.
     expect(find.text('Library'), findsWidgets);
