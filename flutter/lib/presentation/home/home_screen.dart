@@ -8,21 +8,27 @@ import '../history/history_screen.dart';
 import '../browse/browse_screen.dart';
 import '../more/more_screen.dart';
 
+/// Selected top-level home tab. Held in a provider (rather than local widget
+/// state) so launcher app-shortcuts can jump straight to a tab on launch —
+/// mirrors the Kotlin `MainActivity.handleIntentAction` setting the active tab.
+class HomeTabIndex extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void set(int index) => state = index;
+}
+
+final homeTabIndexProvider =
+    NotifierProvider<HomeTabIndex, int>(HomeTabIndex.new);
+
 /// The five top-level destinations match the Kotlin app's [HomeScreen.Tab]:
 /// Library, Updates, History, Browse, More.
 ///
 /// Each tab is kept alive across switches via [IndexedStack] so list scroll
 /// positions and ongoing requests survive a tap on a different tab -- same
 /// behaviour the Voyager-based Kotlin nav provides.
-class HomeScreen extends ConsumerStatefulWidget {
+class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
-
-  @override
-  ConsumerState<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends ConsumerState<HomeScreen> {
-  int _index = 0;
 
   static const _tabs = <_HomeTab>[
     _HomeTab(
@@ -58,23 +64,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final incognito = ref.watch(incognitoModeProvider);
+    final index = ref.watch(homeTabIndexProvider);
     return Scaffold(
       body: Column(
         children: [
           if (incognito) const _IncognitoBanner(),
           Expanded(
             child: IndexedStack(
-              index: _index,
+              index: index,
               children: _tabs.map((t) => t.child).toList(growable: false),
             ),
           ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        selectedIndex: index,
+        onDestinationSelected: (i) =>
+            ref.read(homeTabIndexProvider.notifier).set(i),
         destinations: [
           for (final tab in _tabs)
             NavigationDestination(

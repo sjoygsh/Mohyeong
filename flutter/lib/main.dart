@@ -9,6 +9,7 @@ import 'data/network/app_http_client.dart';
 import 'data/notification/notification_service.dart';
 import 'data/preferences/appearance_preferences.dart';
 import 'data/preferences/theme_preference.dart';
+import 'data/shortcuts/shortcut_service.dart';
 import 'data/source/extension_repository.dart';
 import 'data/source/incognito_preferences.dart';
 import 'data/source/installed_extension.dart';
@@ -62,6 +63,11 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
       final scheduler = ref.read(libraryUpdateSchedulerProvider);
       final interval = ref.read(libraryUpdatePreferenceProvider);
       scheduler.reschedule(interval);
+      // Register launcher shortcuts; selecting one jumps to that home tab
+      // (also handles the cold-start shortcut that launched the app).
+      ShortcutService.instance.init(
+        (tabIndex) => ref.read(homeTabIndexProvider.notifier).set(tabIndex),
+      );
     });
   }
 

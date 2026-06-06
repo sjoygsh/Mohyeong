@@ -53,6 +53,11 @@ dependencies:
   # mirror Mihon's so behaviour matches.
   flutter_local_notifications: ^19.0.0
 
+  # Launcher app-shortcuts (the home-screen long-press menu): jump straight to
+  # the Library/Updates/History/Browse tabs. Shortcut ids mirror Mihon's
+  # shortcuts.xml so behaviour matches the Kotlin app.
+  quick_actions: ^1.1.0
+
   # Plain preferences
   shared_preferences: ^2.2.2
 
