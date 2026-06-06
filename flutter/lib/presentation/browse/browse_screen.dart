@@ -10,6 +10,7 @@ import '../../data/source/installed_extension.dart';
 import '../../data/source/local_source.dart';
 import '../../data/source/local_source_preferences.dart';
 import '../../data/source/source_preferences.dart';
+import '../home/home_screen.dart';
 import 'global_search_screen.dart';
 import 'migrate_source_screen.dart';
 import 'source_browse_screen.dart';
@@ -18,11 +19,22 @@ import 'sources_filter_screen.dart';
 /// Browse hosts three sub-tabs: Sources (installed sources you can browse),
 /// Extensions (install / uninstall management), and Migrate (moves
 /// favourites from one source to another).
-class BrowseScreen extends StatelessWidget {
+class BrowseScreen extends ConsumerWidget {
   const BrowseScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Mirrors Kotlin BrowseTab.onReselect: tapping the already-selected Browse
+    // bottom-nav destination (index 3) opens the global search screen.
+    ref.listen<HomeReselectSignal>(homeReselectProvider, (prev, next) {
+      if (next.tab == 3 && next.tick != (prev?.tick ?? 0)) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const GlobalSearchScreen(),
+          ),
+        );
+      }
+    });
     return DefaultTabController(
       length: 3,
       child: Scaffold(
