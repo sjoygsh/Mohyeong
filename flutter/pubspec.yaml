@@ -47,6 +47,12 @@ dependencies:
   # Background work (replaces WorkManager-based LibraryUpdateJob)
   workmanager: ^0.9.0
 
+  # Local notifications (replaces the Kotlin Notifications/NotificationManager
+  # stack: library-update progress + new chapters, downloader progress/errors,
+  # incognito-mode persistent notification, app-update prompts). Channel keys
+  # mirror Mihon's so behaviour matches.
+  flutter_local_notifications: ^19.0.0
+
   # Plain preferences
   shared_preferences: ^2.2.2
 

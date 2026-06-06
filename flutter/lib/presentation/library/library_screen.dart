@@ -9,6 +9,7 @@ import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_repository.dart';
 import '../../data/library/library_updater.dart';
 import '../../data/manga/manga_repository.dart';
+import '../../data/notification/notification_service.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/local_source.dart';
 import '../../data/track/track_repository.dart';
@@ -327,11 +328,31 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     if (_updating) return;
     setState(() => _updating = true);
     final messenger = ScaffoldMessenger.of(context);
+    final notifications = NotificationService.instance;
     try {
       final updater = ref.read(libraryUpdaterProvider);
+      // Mirror Mihon's foreground-update progress notification.
+      void onProgress(LibraryUpdateProgress p) {
+        if (p.currentTitle == null) {
+          notifications.cancelLibraryProgress();
+        } else {
+          notifications.showLibraryProgress(
+            current: p.completed,
+            total: p.total,
+            title: p.currentTitle!,
+          );
+        }
+      }
+
       final result = categoryId == null
-          ? await updater.updateAll()
-          : await updater.updateCategory(categoryId);
+          ? await updater.updateAll(onProgress: onProgress)
+          : await updater.updateCategory(categoryId, onProgress: onProgress);
+      await notifications.cancelLibraryProgress();
+      await notifications.showNewChapters(
+        mangaCount: result.mangaWithNewChapters,
+        chapterCount: result.newChapters,
+      );
+      await notifications.showLibraryErrors(result.failures.length);
       if (!mounted) return;
       final msg = result.newChapters == 0
           ? 'No new chapters found.'
@@ -339,6 +360,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               '${result.newChapters == 1 ? '' : 's'} added.';
       messenger.showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
+      await notifications.cancelLibraryProgress();
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text('Refresh failed: $e')));
     } finally {

@@ -6,6 +6,7 @@ import 'data/cover/cover_cache.dart';
 import 'data/library/library_update_preference.dart';
 import 'data/library/library_update_scheduler.dart';
 import 'data/network/app_http_client.dart';
+import 'data/notification/notification_service.dart';
 import 'data/preferences/appearance_preferences.dart';
 import 'data/preferences/theme_preference.dart';
 import 'data/source/extension_repository.dart';
@@ -29,6 +30,9 @@ Future<void> main() async {
   final localPrefs = LocalSourcePreferences(prefs);
   final repo = ExtensionRepository(storage, http, localPrefs);
   final coverCache = await CoverCache.create();
+  // Create notification channels up front (mirrors Mihon creating them in
+  // App.onCreate) so the first notification doesn't have to.
+  await NotificationService.instance.init();
   runApp(
     ProviderScope(
       overrides: [
@@ -72,6 +76,20 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
       (prev, next) {
         if (prev == next) return;
         ref.read(libraryUpdateSchedulerProvider).reschedule(next);
+      },
+    );
+    // Mirror Mihon's persistent incognito notification: show it while global
+    // incognito is on, clear it when turned off. (It starts off every cold
+    // start — see main() — so there's nothing to show at launch.)
+    ref.listen<bool>(
+      incognitoModeProvider,
+      (prev, next) {
+        if (prev == next) return;
+        if (next) {
+          NotificationService.instance.showIncognito();
+        } else {
+          NotificationService.instance.cancelIncognito();
+        }
       },
     );
     return MaterialApp(

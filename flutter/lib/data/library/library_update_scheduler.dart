@@ -11,6 +11,7 @@ import '../database/app_database.dart';
 import '../download/download_repository.dart';
 import '../manga/manga_repository.dart';
 import '../network/app_http_client.dart';
+import '../notification/notification_service.dart';
 import '../source/extension_repository.dart';
 import '../source/installed_extension.dart';
 import '../source/local_source_preferences.dart';
@@ -40,6 +41,11 @@ void libraryUpdateCallbackDispatcher() {
       final prefs = await SharedPreferences.getInstance();
       final localPrefs = LocalSourcePreferences(prefs);
       final extensions = ExtensionRepository(storage, http, localPrefs);
+      // This isolate has its own plugin instance — initialise it so the
+      // background sweep can post progress / new-chapter notifications just
+      // like Mihon's LibraryUpdateJob.
+      final notifications = NotificationService.instance;
+      await notifications.init();
       // Spins up a fresh AppDatabase against the same on-disk file the UI
       // process uses (drift_flutter resolves it via path_provider).
       final db = AppDatabase();
@@ -55,7 +61,25 @@ void libraryUpdateCallbackDispatcher() {
           categories,
           downloads,
         );
-        await updater.updateAll();
+        final result = await updater.updateAll(
+          onProgress: (p) {
+            if (p.currentTitle == null) {
+              notifications.cancelLibraryProgress();
+            } else {
+              notifications.showLibraryProgress(
+                current: p.completed,
+                total: p.total,
+                title: p.currentTitle!,
+              );
+            }
+          },
+        );
+        await notifications.cancelLibraryProgress();
+        await notifications.showNewChapters(
+          mangaCount: result.mangaWithNewChapters,
+          chapterCount: result.newChapters,
+        );
+        await notifications.showLibraryErrors(result.failures.length);
         // Auto-downloads (if enabled) were enqueued during the sweep; wait
         // for them to finish before tearing down the DB/HTTP client this
         // isolate built, otherwise in-flight page fetches would abort.

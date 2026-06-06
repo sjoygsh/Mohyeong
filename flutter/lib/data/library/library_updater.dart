@@ -75,6 +75,7 @@ class LibraryUpdater {
     final eligible = await _selectMangaToUpdate(favourites, restrictToMangaIds);
 
     var newChaptersTotal = 0;
+    var mangaWithNewChapters = 0;
     final failures = <LibraryUpdateFailure>[];
     for (var i = 0; i < eligible.length; i++) {
       final manga = eligible[i];
@@ -86,6 +87,7 @@ class LibraryUpdater {
       try {
         final newCount = await _updateOne(manga);
         newChaptersTotal += newCount;
+        if (newCount > 0) mangaWithNewChapters++;
       } catch (e) {
         failures.add(LibraryUpdateFailure(manga: manga, error: e.toString()));
       }
@@ -98,6 +100,7 @@ class LibraryUpdater {
     return LibraryUpdateResult(
       mangaChecked: eligible.length,
       newChapters: newChaptersTotal,
+      mangaWithNewChapters: mangaWithNewChapters,
       failures: failures,
     );
   }
@@ -259,11 +262,16 @@ class LibraryUpdateResult {
   const LibraryUpdateResult({
     required this.mangaChecked,
     required this.newChapters,
+    required this.mangaWithNewChapters,
     required this.failures,
   });
 
   final int mangaChecked;
   final int newChapters;
+
+  /// How many distinct titles gained at least one new chapter. Drives the
+  /// "N new chapters across M titles" notification copy.
+  final int mangaWithNewChapters;
   final List<LibraryUpdateFailure> failures;
 
   bool get hasFailures => failures.isNotEmpty;
