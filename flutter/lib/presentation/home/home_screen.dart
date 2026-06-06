@@ -18,8 +18,9 @@ class HomeTabIndex extends Notifier<int> {
   void set(int index) => state = index;
 }
 
-final homeTabIndexProvider =
-    NotifierProvider<HomeTabIndex, int>(HomeTabIndex.new);
+final homeTabIndexProvider = NotifierProvider<HomeTabIndex, int>(
+  HomeTabIndex.new,
+);
 
 /// The five top-level destinations match the Kotlin app's [HomeScreen.Tab]:
 /// Library, Updates, History, Browse, More.
@@ -39,8 +40,8 @@ class HomeScreen extends ConsumerWidget {
     ),
     _HomeTab(
       label: 'Updates',
-      icon: Icons.update_outlined,
-      selectedIcon: Icons.update,
+      icon: Icons.new_releases_outlined,
+      selectedIcon: Icons.new_releases,
       child: UpdatesScreen(),
     ),
     _HomeTab(
@@ -67,38 +68,50 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final incognito = ref.watch(incognitoModeProvider);
     final index = ref.watch(homeTabIndexProvider);
-    return Scaffold(
-      body: Column(
-        children: [
-          if (incognito) const _IncognitoBanner(),
-          Expanded(
-            child: IndexedStack(
-              index: index,
-              children: _tabs.map((t) => t.child).toList(growable: false),
+    // Mirrors Kotlin HomeScreen's BackHandler: when not on the Library tab,
+    // the back button returns to it rather than leaving the app.
+    return PopScope(
+      canPop: index == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) ref.read(homeTabIndexProvider.notifier).set(0);
+      },
+      child: Scaffold(
+        body: Column(
+          children: [
+            if (incognito) const _IncognitoBanner(),
+            Expanded(
+              child: IndexedStack(
+                index: index,
+                children: _tabs.map((t) => t.child).toList(growable: false),
+              ),
             ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (i) =>
-            ref.read(homeTabIndexProvider.notifier).set(i),
-        destinations: [
-          for (final tab in _tabs)
-            NavigationDestination(
-              icon: Icon(tab.icon),
-              selectedIcon: Icon(tab.selectedIcon),
-              label: tab.label,
-            ),
-        ],
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: index,
+          onDestinationSelected: (i) =>
+              ref.read(homeTabIndexProvider.notifier).set(i),
+          destinations: [
+            for (final tab in _tabs)
+              NavigationDestination(
+                icon: Icon(tab.icon),
+                selectedIcon: Icon(tab.selectedIcon),
+                label: tab.label,
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Persistent strip shown while global incognito mode is active. Tapping it
-/// turns incognito off — mirroring Mihon's incognito banner / its
-/// "Disable incognito mode" affordance.
+/// Persistent strip shown while global incognito mode is active. Mirrors the
+/// Kotlin `IncognitoModeBanner` (Banners.kt): a thin, full-width strip in the
+/// `primary` colour with centred `onPrimary` text reading "Incognito mode"
+/// (`MR.strings.pref_incognito_mode`), `labelMedium`, 4dp padding.
+///
+/// Tapping it turns incognito off — an invisible convenience over Kotlin's
+/// non-interactive banner; the appearance is unchanged.
 class _IncognitoBanner extends ConsumerWidget {
   const _IncognitoBanner();
 
@@ -106,36 +119,19 @@ class _IncognitoBanner extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     return Material(
-      color: theme.colorScheme.secondaryContainer,
+      color: theme.colorScheme.primary,
       child: InkWell(
         onTap: () => ref.read(incognitoModeProvider.notifier).set(false),
         child: SafeArea(
           bottom: false,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.no_encryption_gmailerrorred_outlined,
-                  size: 20,
-                  color: theme.colorScheme.onSecondaryContainer,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Incognito mode',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSecondaryContainer,
-                    ),
-                  ),
-                ),
-                Text(
-                  'Turn off',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.onSecondaryContainer,
-                  ),
-                ),
-              ],
+            padding: const EdgeInsets.all(4),
+            child: Text(
+              'Incognito mode',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onPrimary,
+              ),
             ),
           ),
         ),
