@@ -5,6 +5,7 @@ import '../../data/manga/manga_repository.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
 import '../../data/source/local_source.dart';
+import '../../data/source/source_id.dart';
 import '../../domain/manga/model/manga.dart';
 import '../common/source_image.dart';
 import '../migration/migration_search_screen.dart';
@@ -43,8 +44,7 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
     final counts = results[0] as Map<int, int>;
     final exts = results[1] as List<InstalledExtension>;
     final extByInt = <int, InstalledExtension>{
-      for (final e in exts)
-        if (int.tryParse(e.id) != null) int.parse(e.id): e,
+      for (final e in exts) sourceNumericId(e.id): e,
     };
     final entries = counts.entries.map((entry) {
       final sourceId = entry.key;

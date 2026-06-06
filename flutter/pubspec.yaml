@@ -80,6 +80,10 @@ dependencies:
   archive: ^4.0.9
   # Locale-aware date formatting for the configurable date-format pref.
   intl: ^0.20.2
+  # MD5 for the source-id contract (Mihon's HttpSource.id = MD5(name/lang/
+  # versionId) first 64 bits, sign bit cleared). Was already pulled in
+  # transitively; declared directly now that we hash extension ids.
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/source/browse_preferences.dart';
 import '../../data/source/extension_repository.dart';
+import '../../data/source/source_id.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../cloudflare/cloudflare_solver_screen.dart';
@@ -289,9 +290,9 @@ class _MangaGrid extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hideInLibrary = ref.watch(hideInLibraryItemsProvider);
-    final sourceIdInt = int.tryParse(sourceId);
+    final sourceIdInt = sourceNumericId(sourceId);
     List<SourceManga> items = this.items;
-    if (hideInLibrary && sourceIdInt != null) {
+    if (hideInLibrary) {
       final favoritedUrls = ref
           .watch(favoritedUrlsForSourceProvider(sourceIdInt))
           .valueOrNull;
@@ -410,13 +411,7 @@ class _MangaCard extends ConsumerWidget {
   }
 
   Future<void> _openManga(BuildContext context, WidgetRef ref) async {
-    final sourceIdInt = int.tryParse(sourceId);
-    if (sourceIdInt == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Source id "$sourceId" is not numeric.')),
-      );
-      return;
-    }
+    final sourceIdInt = sourceNumericId(sourceId);
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {

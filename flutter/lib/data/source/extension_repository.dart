@@ -10,6 +10,7 @@ import 'installed_extension.dart';
 import 'js/js_source.dart';
 import 'local_source.dart';
 import 'local_source_preferences.dart';
+import 'source_id.dart';
 
 /// In-memory cache of loaded [MangaSource] instances plus the install /
 /// uninstall surface used by the browse / extensions UI.
@@ -43,18 +44,48 @@ class ExtensionRepository {
   /// Returns a loaded [MangaSource], spinning up its JS runtime the first
   /// time it's requested. Source id `'0'` is the built-in Local source,
   /// served from the filesystem rather than the JS extension store.
+  ///
+  /// Callers pass either the extension's on-disk slug (browse / search /
+  /// migration, where the source object's id is known) or the numeric
+  /// `mangas.source` value (`manga.source.toString()` from reader /
+  /// details / updater / downloader). For numeric-string slugs the two
+  /// coincide; for non-numeric slugs the numeric form is the hashed id, so
+  /// when a direct lookup misses we resolve the numeric id back to its slug
+  /// via [sourceNumericId].
   Future<MangaSource> getSource(String id) async {
-    final cached = _loaded[id];
+    final slug = await _resolveSlug(id);
+    final cached = _loaded[slug];
     if (cached != null) return cached;
-    if (id == LocalSource.sourceId) {
+    if (slug == LocalSource.sourceId) {
       final local = LocalSource(_localPrefs);
-      _loaded[id] = local;
+      _loaded[slug] = local;
       return local;
     }
-    final source = await _storage.readSource(id);
+    final source = await _storage.readSource(slug);
     final js = await JsSource.load(source, dio: _http.dio);
-    _loaded[id] = js;
+    _loaded[slug] = js;
     return js;
+  }
+
+  /// Maps an incoming source id to the on-disk extension slug. A slug that
+  /// names an installed extension (or the Local source) is returned as-is;
+  /// otherwise, if the id is a numeric source id, we find the installed
+  /// extension whose slug hashes to it. Falls back to the original id when
+  /// nothing matches (the subsequent readSource surfaces a clear error).
+  Future<String> _resolveSlug(String id) async {
+    if (id == LocalSource.sourceId) return id;
+    if (_loaded.containsKey(id)) return id;
+    final installed = await _storage.listInstalled();
+    for (final e in installed) {
+      if (e.id == id) return id;
+    }
+    final numeric = int.tryParse(id);
+    if (numeric != null) {
+      for (final e in installed) {
+        if (sourceNumericId(e.id) == numeric) return e.id;
+      }
+    }
+    return id;
   }
 
   /// Installs from a local JS file. The file is validated by loading it
@@ -158,8 +189,7 @@ final installedSourceLangsProvider =
   await for (final list in repo.watchInstalled()) {
     final m = <int, String>{};
     for (final e in list) {
-      final id = int.tryParse(e.id);
-      if (id != null) m[id] = e.lang;
+      m[sourceNumericId(e.id)] = e.lang;
     }
     yield m;
   }

@@ -5,6 +5,7 @@ import '../../data/manga/manga_repository.dart';
 import '../../data/source/browse_preferences.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
+import '../../data/source/source_id.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
@@ -228,9 +229,8 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
                   );
                 }
                 var items = snap.data!.mangas;
-                final sourceIdInt = int.tryParse(widget.sourceId);
-                if (ref.watch(hideInLibraryItemsProvider) &&
-                    sourceIdInt != null) {
+                final sourceIdInt = sourceNumericId(widget.sourceId);
+                if (ref.watch(hideInLibraryItemsProvider)) {
                   final favoritedUrls = ref
                       .watch(favoritedUrlsForSourceProvider(sourceIdInt))
                       .valueOrNull;
@@ -333,13 +333,7 @@ class _ResultCard extends ConsumerWidget {
   }
 
   Future<void> _openManga(BuildContext context, WidgetRef ref) async {
-    final sourceIdInt = int.tryParse(sourceId);
-    if (sourceIdInt == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Source id "$sourceId" is not numeric.')),
-      );
-      return;
-    }
+    final sourceIdInt = sourceNumericId(sourceId);
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {

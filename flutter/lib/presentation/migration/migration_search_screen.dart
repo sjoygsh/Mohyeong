@@ -5,6 +5,7 @@ import '../../data/manga/manga_repository.dart';
 import '../../data/migration/migration_service.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
+import '../../data/source/source_id.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../common/source_image.dart';
@@ -53,7 +54,9 @@ class _MigrationSearchScreenState
         .then((all) =>
             // Hide the manga's own source — migrating onto the same
             // source is a no-op for the user's intent.
-            all.where((e) => e.id != widget.sourceManga.source.toString())
+            all
+                .where((e) =>
+                    sourceNumericId(e.id) != widget.sourceManga.source)
                 .toList(growable: false))
         .then((filtered) {
       if (filtered.isNotEmpty && _selectedExt == null) {
@@ -158,10 +161,7 @@ class _MigrationSearchScreenState
     if (options == null) return;
     setState(() => _busy = true);
     try {
-      final sourceId = int.tryParse(ext.id);
-      if (sourceId == null) {
-        throw StateError('Source id ${ext.id} is not numeric');
-      }
+      final sourceId = sourceNumericId(ext.id);
       final mangaRepo = ref.read(mangaRepositoryProvider);
       // Find or create the target manga row.
       final target = await mangaRepo.insertFromSource(
