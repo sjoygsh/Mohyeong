@@ -6,10 +6,12 @@
 /// (reads `download_slots` for concurrency). The auto-download family
 /// ([downloadNewChaptersProvider] + [downloadNewUnreadChaptersOnlyProvider]
 /// + the category include/exclude sets) is wired into the library updater
-/// via `FilterChaptersForDownload`. The remaining toggles are persisted and
-/// surfaced in the settings UI but their behaviour is not yet wired: wifi-
-/// only needs a connectivity plugin, CBZ/split-tall need an archive/image
-/// pipeline, and the remove-after-read flow needs a read-path hook.
+/// via `FilterChaptersForDownload`. Wi-Fi-only ([downloadOnlyOverWifiProvider])
+/// gates the queue drain loop, the remove-after-read family hooks the
+/// read-path via `SetReadStatus`, CBZ ([saveChaptersAsCbzProvider]) is applied
+/// at finalize time, and [autoDownloadWhileReadingProvider] drives the reader's
+/// download-ahead. Split-tall ([splitTallImagesProvider]) is persisted but its
+/// image-slicing pipeline is not yet wired.
 library;
 
 import '../preferences/typed_preferences.dart';
@@ -60,3 +62,9 @@ final saveChaptersAsCbzProvider = boolPref('save_chapter_as_cbz', false);
 /// Split tall (webtoon-strip) images into screen-height slices on
 /// download for smoother paging.
 final splitTallImagesProvider = boolPref('split_tall_images', false);
+
+/// Number of chapters to keep downloaded ahead of the one currently being
+/// read. 0 disables download-ahead. Consumed by the reader, which enqueues
+/// the next unread chapters once you pass 25% of a downloaded chapter.
+final autoDownloadWhileReadingProvider =
+    intPref('auto_download_while_reading', 0);

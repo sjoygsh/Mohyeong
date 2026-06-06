@@ -8,6 +8,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/cover/cover_cache.dart';
+import '../../data/download/download_preferences.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/history/history_repository.dart';
 import '../../data/manga/manga_repository.dart';
@@ -549,6 +550,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     // doesn't carry over.
     if (widget.data.chapter.id != old.data.chapter.id) {
       _autoMarkedRead = false;
+      _downloadedAhead = false;
       _currentPage = 0;
       _totalPages = 0;
       _pageRefs = null;
@@ -701,11 +703,62 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       _maybeFlash();
     }
     widget.onPageChanged(page);
+    _maybeDownloadAhead(page);
     // Reaching the final page marks the chapter read (Mihon parity). Guarded
     // so paging back and forth past the end doesn't re-fire the tracker push.
     if (!_autoMarkedRead && _totalPages > 0 && page >= _totalPages - 1) {
       _autoMarkedRead = true;
       widget.onReachedEnd();
+    }
+  }
+
+  // Whether this reader instance has already triggered a download-ahead pass
+  // for the current chapter. Mirrors Mihon's per-chapter single-shot: once we
+  // cross the 25% threshold and enqueue, we don't re-enqueue on every later
+  // page turn within the same chapter.
+  bool _downloadedAhead = false;
+
+  /// Mihon parity (`ReaderViewModel.downloadNextChapters`): once the reader
+  /// passes 25% of a *downloaded* chapter in a *favorited* manga, pre-download
+  /// the next [autoDownloadWhileReadingProvider] unread chapters — but only if
+  /// the immediately-next chapter is already downloaded (jank avoidance).
+  void _maybeDownloadAhead(int page) {
+    if (_downloadedAhead) return;
+    final amount = ref.read(autoDownloadWhileReadingProvider);
+    if (amount == 0) return;
+    if (!widget.data.manga.favorite) return;
+    if (_totalPages <= 0) return;
+    if ((page + 1) / _totalPages <= 0.25) return;
+    // Current chapter must itself be downloaded.
+    if (widget.data.localPagePaths == null) return;
+    final next = widget.data.nextChapter;
+    if (next == null) return;
+    _downloadedAhead = true;
+    unawaited(_downloadAhead(next, amount));
+  }
+
+  Future<void> _downloadAhead(Chapter next, int amount) async {
+    final manga = widget.data.manga;
+    final downloadRepo = ref.read(downloadRepositoryProvider);
+    // Only proceed if the immediately-next chapter is already on disk, so the
+    // pager doesn't stutter pulling its pages mid-read (Mihon's guard).
+    final nextDownloaded =
+        await downloadRepo.isDownloaded(manga.source, manga.id, next.id);
+    if (!nextDownloaded) return;
+    final siblings = widget.data.siblings;
+    final startIdx = siblings.indexWhere((c) => c.id == next.id);
+    if (startIdx < 0) return;
+    // Enqueue the next `amount` *unread* chapters from the next one onward,
+    // in reading order. `enqueue` itself dedupes and skips ones already
+    // downloaded, so we don't filter those here.
+    final toDownload = <Chapter>[];
+    for (var i = startIdx;
+        i < siblings.length && toDownload.length < amount;
+        i++) {
+      if (!siblings[i].read) toDownload.add(siblings[i]);
+    }
+    for (final c in toDownload) {
+      await downloadRepo.enqueue(manga, c);
     }
   }
 

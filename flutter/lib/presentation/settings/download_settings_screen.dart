@@ -7,12 +7,12 @@ import 'pref_tiles.dart';
 
 /// Settings → Downloads. Mirror of Mihon's `SettingsDownloadScreen`.
 ///
-/// Of these, only "Simultaneous downloads" is consumed today — the
-/// download queue reads `download_slots` at drain time. The rest are
-/// persisted (keys mirror Mihon) and surfaced here, but their behaviour
-/// is not yet implemented (no connectivity plugin for Wi-Fi-only, no
-/// archive pipeline for CBZ/split-tall, and no updater/read hooks for
-/// auto-download / remove-after-read).
+/// Most of these are now wired: "Simultaneous downloads" (`download_slots`)
+/// gates the drain loop, Wi-Fi-only gates the network check, the
+/// auto-download family feeds the library updater, remove-after-read /
+/// remove-after-marked-read hook the read path, CBZ is applied at finalize,
+/// and "Auto download while reading" drives the reader's download-ahead.
+/// Only "Split tall images" is persisted-but-unwired (no slicing pipeline).
 class DownloadSettingsScreen extends ConsumerWidget {
   const DownloadSettingsScreen({super.key});
 
@@ -20,6 +20,7 @@ class DownloadSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final slots = ref.watch(downloadSlotsProvider);
     final removeSlots = ref.watch(removeAfterReadSlotsProvider);
+    final downloadAhead = ref.watch(autoDownloadWhileReadingProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Downloads')),
       body: ListView(
@@ -104,10 +105,40 @@ class DownloadSettingsScreen extends ConsumerWidget {
             subtitle: 'Slice long strip images into screen-height pages.',
             provider: splitTallImagesProvider,
           ),
+          const PrefSectionHeader('Download ahead'),
+          ListTile(
+            title: const Text('Auto download while reading'),
+            subtitle: Text(_downloadAheadLabel(downloadAhead)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<int>(
+                context: context,
+                builder: (_) =>
+                    _DownloadAheadPickerDialog(current: downloadAhead),
+              );
+              if (picked != null) {
+                await ref
+                    .read(autoDownloadWhileReadingProvider.notifier)
+                    .set(picked);
+              }
+            },
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Text(
+              'Only works if the current chapter + the next one are already '
+              'downloaded.',
+            ),
+          ),
         ],
       ),
     );
   }
+}
+
+String _downloadAheadLabel(int amount) {
+  if (amount == 0) return 'Disabled';
+  return 'Next $amount unread chapter${amount == 1 ? '' : 's'}';
 }
 
 String _removeSlotsLabel(int slots) {
@@ -138,6 +169,38 @@ class _SlotsPickerDialog extends StatelessWidget {
                 RadioListTile<int>(
                   value: v,
                   title: Text('$v'),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DownloadAheadPickerDialog extends StatelessWidget {
+  const _DownloadAheadPickerDialog({required this.current});
+
+  final int current;
+
+  // Mirrors Mihon's entries: 0 (disabled), 2, 3, 5, 10.
+  static const _options = <int>[0, 2, 3, 5, 10];
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Auto download while reading'),
+      children: [
+        RadioGroup<int>(
+          groupValue: _options.contains(current) ? current : 0,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final v in _options)
+                RadioListTile<int>(
+                  value: v,
+                  title: Text(_downloadAheadLabel(v)),
                 ),
             ],
           ),
