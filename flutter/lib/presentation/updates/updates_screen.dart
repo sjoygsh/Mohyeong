@@ -8,7 +8,8 @@ import '../../data/updates/updates_repository.dart';
 import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
-import '../manga/manga_details_screen.dart';
+import '../downloads/download_queue_screen.dart';
+import '../home/home_screen.dart';
 import '../reader/reader_screen.dart';
 import '../upcoming/upcoming_screen.dart';
 
@@ -75,6 +76,18 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
     });
   }
 
+  /// Toggles every visible row's membership — mirrors Kotlin
+  /// `UpdatesScreenModel.invertSelection`.
+  void _invertSelection(Iterable<int> ids) {
+    setState(() {
+      for (final id in ids) {
+        if (!_selectedChapterIds.add(id)) {
+          _selectedChapterIds.remove(id);
+        }
+      }
+    });
+  }
+
   Future<void> _bulkSetRead(List<LibraryUpdate> visible, bool read) async {
     final repo = ref.read(chapterRepositoryProvider);
     final setReadStatus = ref.read(setReadStatusProvider);
@@ -113,6 +126,54 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
     _clearSelection();
   }
 
+  /// Bulk-action bar shown while a selection is active. Mirrors Kotlin's
+  /// `MangaBottomActionMenu` used by the Updates tab: Bookmark / Remove
+  /// bookmark / Mark read / Mark unread, each shown only when it applies to
+  /// the current selection. (Download / delete-download are gated on per-row
+  /// download state, which is not yet surfaced here.)
+  Widget _buildSelectionBottomBar(List<LibraryUpdate> visible) {
+    final selected = visible
+        .where((u) => _selectedChapterIds.contains(u.chapterId))
+        .toList(growable: false);
+    final anyNotBookmarked = selected.any((u) => !u.bookmark);
+    final allBookmarked =
+        selected.isNotEmpty && selected.every((u) => u.bookmark);
+    final anyUnread = selected.any((u) => !u.read);
+    final anyReadOrStarted =
+        selected.any((u) => u.read || u.lastPageRead > 0);
+    return BottomAppBar(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          if (anyNotBookmarked)
+            IconButton(
+              icon: const Icon(Icons.bookmark_add_outlined),
+              tooltip: 'Bookmark',
+              onPressed: () => _bulkSetBookmark(visible, true),
+            ),
+          if (allBookmarked)
+            IconButton(
+              icon: const Icon(Icons.bookmark_remove_outlined),
+              tooltip: 'Remove bookmark',
+              onPressed: () => _bulkSetBookmark(visible, false),
+            ),
+          if (anyUnread)
+            IconButton(
+              icon: const Icon(Icons.done_all),
+              tooltip: 'Mark as read',
+              onPressed: () => _bulkSetRead(visible, true),
+            ),
+          if (anyReadOrStarted)
+            IconButton(
+              icon: const Icon(Icons.remove_done),
+              tooltip: 'Mark as unread',
+              onPressed: () => _bulkSetRead(visible, false),
+            ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _refresh() async {
     if (_updating) return;
     setState(() => _updating = true);
@@ -139,6 +200,17 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
     final repo = ref.watch(updatesRepositoryProvider);
     final filters = ref.watch(updatesFiltersProvider);
     final scheme = Theme.of(context).colorScheme;
+    // Reselecting the Updates bottom-nav destination opens the download
+    // queue. Mirrors Kotlin `UpdatesTab.onReselect` (push DownloadQueueScreen).
+    ref.listen<HomeReselectSignal>(homeReselectProvider, (prev, next) {
+      if (next.tab == 1 && next.tick != (prev?.tick ?? 0)) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const DownloadQueueScreen(),
+          ),
+        );
+      }
+    });
     return StreamBuilder<List<LibraryUpdate>>(
       stream: repo.watchAll(),
       builder: (context, snapshot) {
@@ -183,28 +255,6 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                     ),
                     title: Text('${_selectedChapterIds.length} selected'),
                     actions: [
-                      if (_selectedChapterIds.length == 1)
-                        IconButton(
-                          icon: const Icon(Icons.menu_book_outlined),
-                          tooltip: 'Open manga details',
-                          onPressed: () {
-                            final id = _selectedChapterIds.single;
-                            final pick = visible.firstWhere(
-                              (u) => u.chapterId == id,
-                              orElse: () => updates.firstWhere(
-                                (u) => u.chapterId == id,
-                              ),
-                            );
-                            _clearSelection();
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => MangaDetailsScreen(
-                                  mangaId: pick.mangaId,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
                       IconButton(
                         icon: const Icon(Icons.select_all),
                         tooltip: 'Select all',
@@ -212,24 +262,10 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                             _selectAll(visible.map((u) => u.chapterId)),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.done_all),
-                        tooltip: 'Mark as read',
-                        onPressed: () => _bulkSetRead(visible, true),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.remove_done),
-                        tooltip: 'Mark as unread',
-                        onPressed: () => _bulkSetRead(visible, false),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.bookmark_add_outlined),
-                        tooltip: 'Bookmark',
-                        onPressed: () => _bulkSetBookmark(visible, true),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.bookmark_remove_outlined),
-                        tooltip: 'Remove bookmark',
-                        onPressed: () => _bulkSetBookmark(visible, false),
+                        icon: const Icon(Icons.flip_to_back),
+                        tooltip: 'Select inverse',
+                        onPressed: () =>
+                            _invertSelection(visible.map((u) => u.chapterId)),
                       ),
                     ],
                   )
@@ -264,22 +300,13 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                             setState(() => _query = '');
                           },
                         )
-                      else if (!_searching) ...[
-                        IconButton(
-                          icon: const Icon(Icons.calendar_month),
-                          tooltip: 'Upcoming',
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const UpcomingScreen(),
-                            ),
-                          ),
-                        ),
+                      else if (!_searching)
                         IconButton(
                           icon: const Icon(Icons.search),
                           tooltip: 'Search updates',
                           onPressed: _openSearch,
                         ),
-                      ],
+                      // Kotlin order: Filter, Calendar (Upcoming), Refresh.
                       IconButton(
                         icon: Icon(
                           Icons.filter_list,
@@ -291,6 +318,16 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                           builder: (_) => const _UpdatesFilterDialog(),
                         ),
                       ),
+                      if (!_searching)
+                        IconButton(
+                          icon: const Icon(Icons.calendar_month),
+                          tooltip: 'Upcoming',
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const UpcomingScreen(),
+                            ),
+                          ),
+                        ),
                       IconButton(
                         icon: _updating
                             ? const SizedBox(
@@ -315,6 +352,20 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
+                // Insert a day header whenever the date_fetch day changes.
+                // The stream is already ordered date_fetch DESC, so a single
+                // pass groups it -- mirrors Kotlin `getUiModel()`'s
+                // insertSeparators over `dateFetch.toLocalDate()`.
+                final rows = <Object>[];
+                String? lastLabel;
+                for (final u in visible) {
+                  final label = _dayLabel(u.dateFetch);
+                  if (label != lastLabel) {
+                    rows.add(label);
+                    lastLabel = label;
+                  }
+                  rows.add(u);
+                }
                 return RefreshIndicator(
                   onRefresh: _refresh,
                   child: visible.isEmpty
@@ -327,24 +378,31 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                                   ? 'No updates match the query.'
                                   : filters.isActive
                                       ? 'No updates match the current filter.'
-                                      : 'No new chapters.',
+                                      : 'No recent updates',
                             ),
                           ],
                         )
                       : ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
-                          itemCount: visible.length,
-                          itemBuilder: (context, i) => _UpdateTile(
-                            update: visible[i],
-                            selected: _selectedChapterIds
-                                .contains(visible[i].chapterId),
-                            selecting: _selecting,
-                            onToggleSelected: _toggleSelected,
-                          ),
+                          itemCount: rows.length,
+                          itemBuilder: (context, i) {
+                            final row = rows[i];
+                            if (row is String) return _DayHeader(label: row);
+                            final u = row as LibraryUpdate;
+                            return _UpdateTile(
+                              update: u,
+                              selected:
+                                  _selectedChapterIds.contains(u.chapterId),
+                              selecting: _selecting,
+                              onToggleSelected: _toggleSelected,
+                            );
+                          },
                         ),
                 );
               },
             ),
+            bottomNavigationBar:
+                _selecting ? _buildSelectionBottomBar(visible) : null,
           ),
         );
       },
@@ -539,6 +597,57 @@ class _Thumb extends StatelessWidget {
           placeholder: (_) => fallback,
           errorWidget: (_, _) => fallback,
         ),
+      ),
+    );
+  }
+}
+
+/// Relative day label for a `date_fetch` epoch-ms value. Mirrors Kotlin's
+/// `relativeDateText`: Today / Yesterday / weekday (within a week) / absolute
+/// date. Kept identical to the History tab's grouping for visual consistency.
+String _dayLabel(int epochMs) {
+  final t = DateTime.fromMillisecondsSinceEpoch(epochMs);
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final that = DateTime(t.year, t.month, t.day);
+  final diffDays = today.difference(that).inDays;
+  if (diffDays == 0) return 'Today';
+  if (diffDays == 1) return 'Yesterday';
+  if (diffDays < 7) return _weekdayName(that.weekday);
+  return '${that.year}-${that.month.toString().padLeft(2, '0')}-'
+      '${that.day.toString().padLeft(2, '0')}';
+}
+
+String _weekdayName(int weekday) {
+  const names = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+  return names[(weekday - 1) % 7];
+}
+
+/// Sticky-style date group header for the updates list. Mirrors Kotlin's
+/// `ListGroupHeader`.
+class _DayHeader extends StatelessWidget {
+  const _DayHeader({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
       ),
     );
   }
