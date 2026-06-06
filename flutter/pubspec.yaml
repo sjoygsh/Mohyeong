@@ -34,6 +34,10 @@ dependencies:
   dio_cookie_manager: ^3.1.1
   cookie_jar: ^4.0.8
 
+  # Network type detection for the "download only over Wi-Fi" enforcement
+  # (mirrors Mihon's NetworkState / activeNetworkState checks).
+  connectivity_plus: ^6.1.0
+
   # WebView (for Cloudflare auto-solve reimplementation)
   webview_flutter: ^4.7.0
 

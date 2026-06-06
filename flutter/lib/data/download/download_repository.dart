@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -29,17 +30,34 @@ import '../source/extension_repository.dart';
 /// be re-queued by the user (already-finished chapters are detected via
 /// the `.done` marker).
 class DownloadRepository {
-  DownloadRepository(this._extensions, this._http);
+  DownloadRepository(this._extensions, this._http) {
+    // A network change might newly permit (or forbid) downloads. Re-kick
+    // the drain loop; it re-checks the current network itself and either
+    // resumes pulling jobs or re-enters the waiting-for-network state.
+    _connSub = _connectivity.onConnectivityChanged.listen((_) {
+      if (_paused || _queue.isEmpty) return;
+      unawaited(_drain());
+    });
+  }
 
   final ExtensionRepository _extensions;
   final AppHttpClient _http;
   Dio get _dio => _http.dio;
+
+  final Connectivity _connectivity = Connectivity();
+  StreamSubscription<List<ConnectivityResult>>? _connSub;
 
   Directory? _rootCache;
   final List<_DownloadJob> _queue = [];
   final Map<int, _DownloadJob> _byChapter = {}; // chapterId -> job
   bool _running = false;
   bool _paused = false;
+
+  /// True while the queue is stalled purely because the current network
+  /// doesn't satisfy the "only over Wi-Fi" policy (or the device is
+  /// offline). Distinct from [isPaused], which is user-initiated.
+  bool _networkBlocked = false;
+  bool get isWaitingForNetwork => _networkBlocked;
 
   final _events = StreamController<DownloadEvent>.broadcast();
   Stream<DownloadEvent> get events => _events.stream;
@@ -288,6 +306,28 @@ class DownloadRepository {
     return v.clamp(1, 5);
   }
 
+  /// Whether downloads are restricted to un-metered (Wi-Fi/Ethernet)
+  /// connections. Read fresh from SharedPreferences at each network check
+  /// (verbatim Mihon key `pref_download_only_over_wifi_key`, default on) so
+  /// toggling the setting takes effect without restart.
+  Future<bool> _downloadOnlyOverWifi() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('pref_download_only_over_wifi_key') ?? true;
+  }
+
+  /// Mirrors Mihon's `checkNetworkState`: downloads are allowed only when
+  /// the device is online, and — when "only over Wi-Fi" is enabled — only
+  /// over an un-metered transport (Wi-Fi or Ethernet). Mobile and other
+  /// transports are treated as metered.
+  Future<bool> _networkAllowsDownload() async {
+    final result = await _connectivity.checkConnectivity();
+    final online = result.any((r) => r != ConnectivityResult.none);
+    if (!online) return false;
+    if (!await _downloadOnlyOverWifi()) return true;
+    return result.any((r) =>
+        r == ConnectivityResult.wifi || r == ConnectivityResult.ethernet);
+  }
+
   /// Whether completed chapters should be archived into a single CBZ.
   /// Read fresh from SharedPreferences (`save_chapter_as_cbz`, mirroring
   /// Mihon's key) at finalize time so a settings change applies to the
@@ -339,9 +379,25 @@ class DownloadRepository {
       final concurrency = await _maxConcurrent();
       final active = <Future<void>>{};
       while (!_paused && (_queue.isNotEmpty || active.isNotEmpty)) {
+        // Gate new jobs on the current network: when "only over Wi-Fi" is
+        // on (or the device is offline) we stop pulling from the queue and
+        // surface a waiting-for-network state, mirroring Mihon's
+        // downloaderStop. The connectivity listener re-kicks the drain once
+        // the network becomes acceptable again.
+        final netOk = _queue.isEmpty ? true : await _networkAllowsDownload();
+        if (netOk && _networkBlocked) {
+          _networkBlocked = false;
+          _events.add(const DownloadEvent.queueResumed());
+        } else if (!netOk && !_networkBlocked && _queue.isNotEmpty) {
+          _networkBlocked = true;
+          _events.add(const DownloadEvent.networkWaiting());
+        }
         // Top up the in-flight set until we hit the concurrency cap or
         // run out of queued jobs.
-        while (!_paused && _queue.isNotEmpty && active.length < concurrency) {
+        while (!_paused &&
+            netOk &&
+            _queue.isNotEmpty &&
+            active.length < concurrency) {
           final job = _queue.removeAt(0);
           late final Future<void> f;
           f = _runJob(job).whenComplete(() {
@@ -586,6 +642,7 @@ class DownloadRepository {
   }
 
   Future<void> close() async {
+    await _connSub?.cancel();
     await _events.close();
   }
 }
@@ -651,6 +708,10 @@ enum DownloadState {
   // queue screen uses them to refresh its pause/resume button.
   queuePaused,
   queueResumed,
+  // Emitted when the drain loop stalls because the current network doesn't
+  // satisfy the "only over Wi-Fi" policy (or the device is offline). The
+  // queue screen uses it to show a waiting-for-network banner.
+  networkWaiting,
 }
 
 class DownloadEvent {
@@ -674,6 +735,14 @@ class DownloadEvent {
   const DownloadEvent.queueResumed()
       : chapterId = 0,
         state = DownloadState.queueResumed,
+        progress = null,
+        error = null,
+        downloadedPages = null,
+        totalPages = null;
+
+  const DownloadEvent.networkWaiting()
+      : chapterId = 0,
+        state = DownloadState.networkWaiting,
         progress = null,
         error = null,
         downloadedPages = null,

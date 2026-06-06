@@ -2297,6 +2297,7 @@ class _DownloadIndicator extends StatelessWidget {
       // reach a per-chapter indicator. Render nothing.
       case DownloadState.queuePaused:
       case DownloadState.queueResumed:
+      case DownloadState.networkWaiting:
         return const SizedBox.shrink();
     }
   }

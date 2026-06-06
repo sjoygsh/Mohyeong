@@ -57,6 +57,7 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
         case DownloadState.queued:
         case DownloadState.queuePaused:
         case DownloadState.queueResumed:
+        case DownloadState.networkWaiting:
           break;
       }
     });
@@ -129,28 +130,16 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
           : Column(
               children: [
                 if (repo.isPaused)
-                  Material(
-                    color:
-                        Theme.of(context).colorScheme.tertiaryContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.pause_circle_outline, size: 20),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Queue paused — the running chapter will '
-                              'finish, but no further jobs will start.',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  _QueueBanner(
+                    icon: Icons.pause_circle_outline,
+                    text: 'Queue paused — the running chapter will finish, '
+                        'but no further jobs will start.',
+                  )
+                else if (repo.isWaitingForNetwork)
+                  _QueueBanner(
+                    icon: Icons.wifi_off,
+                    text: 'Waiting for an allowed network — downloads only '
+                        'run over Wi-Fi while that setting is on.',
                   ),
                 Expanded(child: _buildBody(context, repo, items)),
               ],
@@ -287,6 +276,35 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _QueueBanner extends StatelessWidget {
+  const _QueueBanner({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                text,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
