@@ -102,9 +102,11 @@ final readerWebtoonSidePaddingProvider =
 /// margins before the image is painted.
 final readerCropBordersProvider = boolPref('crop_borders', false);
 
-/// Allow zooming wide (landscape) pages beyond fit. Stored-only — the
-/// paged viewer's InteractiveViewer already permits free zoom.
-final readerLandscapeZoomProvider = boolPref('landscape_zoom', false);
+/// Auto-zoom wide (landscape) pages to fill the viewport on display.
+/// Default `true` to match Mihon's `landscape_zoom` (the auto-zoom
+/// behaviour itself is not yet applied in the paged viewer — the
+/// InteractiveViewer permits manual zoom regardless).
+final readerLandscapeZoomProvider = boolPref('landscape_zoom', true);
 
 /// Rotate a wide (double-spread) page 90° so it fills the portrait screen
 /// instead of being letterboxed. Paged viewer only — mirrors Mihon's

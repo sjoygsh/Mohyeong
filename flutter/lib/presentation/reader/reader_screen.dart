@@ -456,6 +456,11 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   Color? _flashColor;
   Timer? _flashTimer;
   int _pagesSinceFlash = 0;
+  // Transient reading-mode label flashed over the page when a chapter opens
+  // or the reading mode changes, gated by `pref_show_reading_mode` (Mihon's
+  // toast on viewer set). `_readingModeTimer` clears it after a short delay.
+  bool _showReadingModeLabel = false;
+  Timer? _readingModeTimer;
 
   @override
   void initState() {
@@ -463,9 +468,24 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     // Chrome starts visible — arm the initial countdown so the reader
     // settles into a clean view if the user doesn't tap anything.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _armAutoHide();
+      if (mounted) {
+        _armAutoHide();
+        _flashReadingMode();
+      }
     });
     ReaderVolumeKeys.setListener(_onVolumeKey);
+  }
+
+  /// Briefly show the active reading-mode label over the page. Mihon flashes
+  /// this when the viewer is (re)created — on chapter open and on a mode
+  /// change — when `pref_show_reading_mode` is on.
+  void _flashReadingMode() {
+    if (!ref.read(readerShowReadingModeProvider)) return;
+    setState(() => _showReadingModeLabel = true);
+    _readingModeTimer?.cancel();
+    _readingModeTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _showReadingModeLabel = false);
+    });
   }
 
   @override
@@ -479,6 +499,10 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       _currentPage = 0;
       _totalPages = 0;
       _pageRefs = null;
+      _flashReadingMode();
+    } else if (widget.mode != old.mode) {
+      // Reading mode switched on the same chapter — re-flash the label.
+      _flashReadingMode();
     }
   }
 
@@ -486,6 +510,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   void dispose() {
     _autoHideTimer?.cancel();
     _flashTimer?.cancel();
+    _readingModeTimer?.cancel();
     ReaderVolumeKeys.setListener(null);
     if (_volumeKeysApplied) ReaderVolumeKeys.setEnabled(false);
     super.dispose();
@@ -1032,6 +1057,33 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                         alreadyRead: data.chapter.read,
                       ),
                     ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Reading-mode label, flashed centre-screen on chapter open / mode
+          // change when `pref_show_reading_mode` is on. Fades out via the
+          // timer in [_flashReadingMode]; IgnorePointer so it never eats taps.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 200),
+                opacity: _showReadingModeLabel ? 1 : 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xCC000000),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      widget.mode.label,
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                    ),
                   ),
                 ),
               ),
