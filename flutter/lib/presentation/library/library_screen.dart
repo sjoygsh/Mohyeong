@@ -142,7 +142,29 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   late final TextEditingController _searchController =
       TextEditingController();
 
+  // Ids of the entries currently visible in the grid (after category tab,
+  // search and filter narrowing). Updated by [_LibraryBody] during its build
+  // so "Select all" / "Invert selection" operate on the displayed set —
+  // mirrors Mihon, where those act on the active category's items.
+  List<int> _visibleIds = const <int>[];
+
   bool get _selecting => _selected.isNotEmpty;
+
+  void _selectAllVisible() {
+    setState(() => _selected.addAll(_visibleIds));
+  }
+
+  void _invertVisibleSelection() {
+    setState(() {
+      for (final id in _visibleIds) {
+        if (_selected.contains(id)) {
+          _selected.remove(id);
+        } else {
+          _selected.add(id);
+        }
+      }
+    });
+  }
 
   void _toggleSelected(int mangaId) {
     setState(() {
@@ -165,9 +187,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     super.dispose();
   }
 
-  /// Contextual app bar shown while at least one card is selected.
-  /// Mirrors Mihon's library selection bar: back-arrow to dismiss,
-  /// count title, mark-read, mark-unread, move-to-category, delete.
+  /// Contextual app bar shown while at least one card is selected. Mirrors
+  /// Mihon's `LibrarySelectionToolbar`: a cancel (X) action-mode bar with the
+  /// selected count and just two actions — Select all and Invert selection.
+  /// The bulk operations live in the bottom action bar
+  /// ([_buildSelectionBottomBar]), matching Mihon's `LibraryBottomActionMenu`.
   AppBar _buildSelectionAppBar() {
     return AppBar(
       leading: IconButton(
@@ -177,38 +201,65 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       title: Text('${_selected.length}'),
       actions: [
         IconButton(
-          icon: const Icon(Icons.done_all),
-          tooltip: 'Mark as read',
-          onPressed: () => _selectionMarkRead(true),
+          icon: const Icon(Icons.select_all),
+          tooltip: 'Select all',
+          onPressed: _selectAllVisible,
         ),
         IconButton(
-          icon: const Icon(Icons.remove_done),
-          tooltip: 'Mark as unread',
-          onPressed: () => _selectionMarkRead(false),
-        ),
-        IconButton(
-          icon: const Icon(Icons.label_outline),
-          tooltip: 'Move to category',
-          onPressed: _selectionMoveToCategory,
-        ),
-        PopupMenuButton<int?>(
-          icon: const Icon(Icons.download_outlined),
-          tooltip: 'Download chapters',
-          onSelected: _selectionDownloadNext,
-          itemBuilder: (_) => const [
-            PopupMenuItem<int?>(value: 1, child: Text('Next 1 chapter')),
-            PopupMenuItem<int?>(value: 5, child: Text('Next 5 chapters')),
-            PopupMenuItem<int?>(value: 10, child: Text('Next 10 chapters')),
-            PopupMenuItem<int?>(value: 25, child: Text('Next 25 chapters')),
-            PopupMenuItem<int?>(value: null, child: Text('All unread chapters')),
-          ],
-        ),
-        IconButton(
-          icon: const Icon(Icons.delete_outline),
-          tooltip: 'Remove from library',
-          onPressed: _selectionRemoveFromLibrary,
+          icon: const Icon(Icons.flip_to_back),
+          tooltip: 'Invert selection',
+          onPressed: _invertVisibleSelection,
         ),
       ],
+    );
+  }
+
+  /// Bottom action bar for library selection mode. Mirrors Mihon's
+  /// `LibraryBottomActionMenu`: Move to category, Mark read, Mark unread,
+  /// Download, Delete. (Bulk Migrate is not yet wired — single-entry
+  /// migration only.)
+  Widget _buildSelectionBottomBar() {
+    return BottomAppBar(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.label_outline),
+            tooltip: 'Move to category',
+            onPressed: _selectionMoveToCategory,
+          ),
+          IconButton(
+            icon: const Icon(Icons.done_all),
+            tooltip: 'Mark as read',
+            onPressed: () => _selectionMarkRead(true),
+          ),
+          IconButton(
+            icon: const Icon(Icons.remove_done),
+            tooltip: 'Mark as unread',
+            onPressed: () => _selectionMarkRead(false),
+          ),
+          PopupMenuButton<int?>(
+            icon: const Icon(Icons.download_outlined),
+            tooltip: 'Download chapters',
+            onSelected: _selectionDownloadNext,
+            itemBuilder: (_) => const [
+              PopupMenuItem<int?>(value: 1, child: Text('Next 1 chapter')),
+              PopupMenuItem<int?>(value: 5, child: Text('Next 5 chapters')),
+              PopupMenuItem<int?>(value: 10, child: Text('Next 10 chapters')),
+              PopupMenuItem<int?>(value: 25, child: Text('Next 25 chapters')),
+              PopupMenuItem<int?>(
+                value: null,
+                child: Text('All unread chapters'),
+              ),
+            ],
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Remove from library',
+            onPressed: _selectionRemoveFromLibrary,
+          ),
+        ],
+      ),
     );
   }
 
@@ -428,6 +479,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     });
 
     return Scaffold(
+      bottomNavigationBar:
+          _selecting ? _buildSelectionBottomBar() : null,
       appBar: _selecting ? _buildSelectionAppBar() : AppBar(
         title: _searching
             ? TextField(
@@ -560,6 +613,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       selected: _selected,
                       selecting: _selecting,
                       onToggleSelected: _toggleSelected,
+                      onVisibleIdsResolved: (ids) => _visibleIds = ids,
                     );
                   },
                 );
@@ -580,6 +634,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 selected: _selected,
                 selecting: _selecting,
                 onToggleSelected: _toggleSelected,
+                onVisibleIdsResolved: (ids) => _visibleIds = ids,
               );
             },
           );
@@ -671,6 +726,7 @@ class _LibraryBody extends ConsumerWidget {
     required this.selected,
     required this.selecting,
     required this.onToggleSelected,
+    required this.onVisibleIdsResolved,
   });
 
   final List<LibraryItem> items;
@@ -687,6 +743,10 @@ class _LibraryBody extends ConsumerWidget {
   final Set<int> selected;
   final bool selecting;
   final ValueChanged<int> onToggleSelected;
+
+  /// Reports the ids currently shown in the grid (post category/search/filter
+  /// narrowing) so the parent's Select-all / Invert actions act on them.
+  final ValueChanged<List<int>> onVisibleIdsResolved;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -752,6 +812,13 @@ class _LibraryBody extends ConsumerWidget {
     final sorted = sort.axis == LibrarySortAxis.random
         ? ([...filtered]..shuffle(math.Random(ref.watch(randomSortSeedProvider))))
         : ([...filtered]..sort(_compare(sort)));
+
+    // Surface the visible ids so the toolbar's Select-all / Invert act on the
+    // displayed set. Pure assignment in the parent (no setState), so it's safe
+    // to call during build.
+    onVisibleIdsResolved(
+      sorted.map((it) => it.manga.id).toList(growable: false),
+    );
 
     // "Most read" carousel — top 5 favourites by completion ratio
     // (`readCount / totalCount`), only entries the user has actually
