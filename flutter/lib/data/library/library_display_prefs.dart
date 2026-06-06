@@ -97,6 +97,7 @@ enum LibrarySortAxis {
   latestChapter,
   chapterFetchDate,
   dateAdded,
+  random,
 }
 
 enum LibrarySortDirection { ascending, descending }
@@ -151,8 +152,18 @@ class LibrarySortNotifier extends Notifier<LibrarySortPref> {
   }
 
   /// Tapping the active axis flips direction; tapping a different axis
-  /// switches to it with the same direction.
+  /// switches to it with the same direction. Random always sorts ascending
+  /// (the shuffle order is governed by [randomSortSeedProvider] instead).
   Future<void> setAxis(LibrarySortAxis axis) async {
+    if (axis == LibrarySortAxis.random) {
+      await _persist(
+        const LibrarySortPref(
+          axis: LibrarySortAxis.random,
+          direction: LibrarySortDirection.ascending,
+        ),
+      );
+      return;
+    }
     if (state.axis == axis) {
       await _persist(
         state.copyWith(
@@ -191,6 +202,8 @@ class LibrarySortNotifier extends Notifier<LibrarySortPref> {
         return LibrarySortAxis.chapterFetchDate;
       case 'date_added':
         return LibrarySortAxis.dateAdded;
+      case 'random':
+        return LibrarySortAxis.random;
       default:
         return null;
     }
@@ -214,6 +227,8 @@ class LibrarySortNotifier extends Notifier<LibrarySortPref> {
         return 'chapter_fetch';
       case LibrarySortAxis.dateAdded:
         return 'date_added';
+      case LibrarySortAxis.random:
+        return 'random';
     }
   }
 
@@ -241,6 +256,25 @@ class LibrarySortNotifier extends Notifier<LibrarySortPref> {
 final librarySortProvider =
     NotifierProvider<LibrarySortNotifier, LibrarySortPref>(
   LibrarySortNotifier.new,
+);
+
+/// Seed for [LibrarySortAxis.random] ordering. A new seed is generated each
+/// time the user (re-)selects the Random sort, so the shuffle reshuffles.
+/// Mirrors Mihon's `LibraryPreferences.randomSortSeed`
+/// (`library_random_sort_seed`, default 0).
+class RandomSortSeedNotifier extends _IntPrefNotifier {
+  @override
+  String get _key => 'library_random_sort_seed';
+  @override
+  int get _default => 0;
+
+  /// Pick a fresh non-zero seed and persist it.
+  Future<void> regenerate() =>
+      setValue(DateTime.now().microsecondsSinceEpoch & 0x7fffffff);
+}
+
+final randomSortSeedProvider = NotifierProvider<RandomSortSeedNotifier, int>(
+  RandomSortSeedNotifier.new,
 );
 
 /// Toggles the "Most read" carousel on the Library screen. Mirrors
@@ -410,4 +444,86 @@ final displayLocalBadgeProvider =
 final displayLanguageBadgeProvider =
     NotifierProvider<DisplayLanguageBadgeNotifier, bool>(
   DisplayLanguageBadgeNotifier.new,
+);
+
+/// "Show category tabs" — when on (the default) the library shows a strip of
+/// category tabs above the grid. When off, all favourites are shown in a
+/// single ungrouped list. Mirrors Mihon's `LibraryPreferences.categoryTabs`
+/// (`display_category_tabs`, default true).
+class CategoryTabsNotifier extends _BoolPrefNotifier {
+  @override
+  String get _key => 'display_category_tabs';
+  @override
+  bool get _default => true;
+}
+
+/// "Show number of items" — when on, each category tab label is suffixed with
+/// the number of entries in that category. Off by default in Mihon. Mirrors
+/// `LibraryPreferences.categoryNumberOfItems`
+/// (`display_number_of_items`, default false).
+class CategoryNumberOfItemsNotifier extends _BoolPrefNotifier {
+  @override
+  String get _key => 'display_number_of_items';
+  @override
+  bool get _default => false;
+}
+
+final categoryTabsProvider =
+    NotifierProvider<CategoryTabsNotifier, bool>(CategoryTabsNotifier.new);
+
+final categoryNumberOfItemsProvider =
+    NotifierProvider<CategoryNumberOfItemsNotifier, bool>(
+  CategoryNumberOfItemsNotifier.new,
+);
+
+/// Integer Notifier persisted to SharedPreferences under [_key]. Used as the
+/// underlying type for the per-orientation column-count prefs below. 0 means
+/// "Auto" (let the grid pick a column count from the cover width). Mirrors
+/// Mihon's `LibraryPreferences.portraitColumns` / `landscapeColumns`.
+abstract class _IntPrefNotifier extends Notifier<int> {
+  String get _key;
+  int get _default;
+
+  @override
+  int build() {
+    _loadFromDisk();
+    return _default;
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getInt(_key);
+    if (stored != null && stored != state) state = stored;
+  }
+
+  Future<void> setValue(int value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, value);
+  }
+}
+
+/// Library grid columns in portrait orientation; 0 = Auto. Mirrors Mihon's
+/// `pref_library_columns_portrait_key` (default 0).
+class PortraitColumnsNotifier extends _IntPrefNotifier {
+  @override
+  String get _key => 'pref_library_columns_portrait_key';
+  @override
+  int get _default => 0;
+}
+
+/// Library grid columns in landscape orientation; 0 = Auto. Mirrors Mihon's
+/// `pref_library_columns_landscape_key` (default 0).
+class LandscapeColumnsNotifier extends _IntPrefNotifier {
+  @override
+  String get _key => 'pref_library_columns_landscape_key';
+  @override
+  int get _default => 0;
+}
+
+final portraitColumnsProvider =
+    NotifierProvider<PortraitColumnsNotifier, int>(PortraitColumnsNotifier.new);
+
+final landscapeColumnsProvider = NotifierProvider<LandscapeColumnsNotifier, int>(
+  LandscapeColumnsNotifier.new,
 );

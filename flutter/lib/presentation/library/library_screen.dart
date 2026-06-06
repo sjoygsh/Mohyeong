@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -19,6 +21,7 @@ import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
+import '../home/home_screen.dart';
 import '../manga/manga_details_screen.dart';
 import '../reader/reader_screen.dart';
 
@@ -321,6 +324,47 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     _clearSelection();
   }
 
+  /// Opens the tabbed Filter / Sort / Display settings sheet. Mirrors
+  /// Mihon's LibrarySettingsDialog (a TabbedDialog). Filter changes apply
+  /// live through [_filters]; sort/display changes write straight to their
+  /// providers, so there are no Apply/Cancel buttons.
+  void _showSettingsSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => _LibrarySettingsSheet(
+        current: _filters,
+        onFiltersChanged: (next) => setState(() => _filters = next),
+      ),
+    );
+  }
+
+  /// "Open random entry": pick a random favourite from the active category
+  /// (respecting the current search query) and open its details. Mirrors
+  /// Mihon's `getRandomLibraryItemForCurrentCategory`.
+  Future<void> _openRandomEntry() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final items = await ref.read(libraryRepositoryProvider).watchAll().first;
+    final inCategory = items
+        .where((it) => it.inCategory(_selectedCategoryId))
+        .toList(growable: false);
+    final pool = inCategory.isEmpty ? items : inCategory;
+    if (pool.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No entries found.')),
+      );
+      return;
+    }
+    final pick = (pool.toList()..shuffle()).first;
+    await navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => MangaDetailsScreen(mangaId: pick.manga.id),
+      ),
+    );
+  }
+
   /// Foreground library update. Independent of the workmanager schedule.
   /// When [categoryId] is non-null only manga belonging to that category
   /// are refreshed — used by the "Update this category" affordance.
@@ -375,6 +419,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final displayMode = ref.watch(libraryDisplayModeProvider);
     final sortPref = ref.watch(librarySortProvider);
 
+    // Library is tab 0. Mirrors Kotlin `LibraryTab.onReselect`: tapping the
+    // already-active Library destination opens the settings sheet.
+    ref.listen<HomeReselectSignal>(homeReselectProvider, (prev, next) {
+      if (next.tab == 0 && next.tick != (prev?.tick ?? 0)) {
+        _showSettingsSheet();
+      }
+    });
+
     return Scaffold(
       appBar: _selecting ? _buildSelectionAppBar() : AppBar(
         title: _searching
@@ -388,58 +440,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 ),
                 style: Theme.of(context).textTheme.titleLarge,
               )
-            : const Text('Library'),
+            : _LibraryTitle(selectedCategoryId: _selectedCategoryId),
         actions: [
-          PopupMenuButton<_RefreshScope>(
-            icon: _updating
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh),
-            tooltip: 'Refresh library',
-            enabled: !_updating,
-            onSelected: (scope) {
-              switch (scope) {
-                case _RefreshScope.all:
-                  _refreshLibrary();
-                case _RefreshScope.category:
-                  _refreshLibrary(categoryId: _selectedCategoryId);
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: _RefreshScope.all,
-                child: Text('Update library'),
-              ),
-              PopupMenuItem(
-                value: _RefreshScope.category,
-                // Only the active category — Mihon parity with the
-                // "Update category" pull-down item.
-                child: Text('Update current category'),
-              ),
-            ],
-          ),
-          IconButton(
-            icon: Icon(
-              Icons.filter_list,
-              color: _filters.isActive
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
-            ),
-            tooltip: 'Filter',
-            onPressed: () async {
-              final next = await showModalBottomSheet<LibraryFilters>(
-                context: context,
-                showDragHandle: true,
-                builder: (_) => _LibraryFilterSheet(current: _filters),
-              );
-              if (next != null) setState(() => _filters = next);
-            },
-          ),
+          // Mirrors Mihon's LibraryToolbar: a single Filter icon (active-
+          // tinted when any filter is set) opens the tabbed Filter/Sort/
+          // Display sheet; the search icon toggles the in-place search field;
+          // the overflow folds the library-update + random-entry actions.
           IconButton(
             icon: Icon(_searching ? Icons.close : Icons.search),
+            tooltip: 'Search',
             onPressed: () {
               setState(() {
                 if (_searching) {
@@ -453,38 +462,47 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.sort),
-            tooltip: 'Sort',
-            onPressed: () {
-              showModalBottomSheet<void>(
-                context: context,
-                showDragHandle: true,
-                builder: (_) => const _LibrarySortSheet(),
-              );
-            },
+            icon: Icon(
+              Icons.filter_list,
+              color: _filters.isActive
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+            tooltip: 'Filter',
+            onPressed: _showSettingsSheet,
           ),
-          PopupMenuButton<LibraryDisplayMode>(
-            icon: const Icon(Icons.view_module),
-            initialValue: displayMode,
-            onSelected: (mode) => ref
-                .read(libraryDisplayModeProvider.notifier)
-                .setMode(mode),
-            itemBuilder: (_) => const [
+          PopupMenuButton<_LibraryMenuAction>(
+            icon: _updating
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.more_vert),
+            onSelected: (action) {
+              switch (action) {
+                case _LibraryMenuAction.updateLibrary:
+                  _refreshLibrary();
+                case _LibraryMenuAction.updateCategory:
+                  _refreshLibrary(categoryId: _selectedCategoryId);
+                case _LibraryMenuAction.openRandom:
+                  _openRandomEntry();
+              }
+            },
+            itemBuilder: (_) => [
               PopupMenuItem(
-                value: LibraryDisplayMode.comfortableGrid,
-                child: Text('Comfortable grid'),
+                value: _LibraryMenuAction.updateLibrary,
+                enabled: !_updating,
+                child: const Text('Update library'),
               ),
               PopupMenuItem(
-                value: LibraryDisplayMode.compactGrid,
-                child: Text('Compact grid'),
+                value: _LibraryMenuAction.updateCategory,
+                enabled: !_updating,
+                child: const Text('Update category'),
               ),
-              PopupMenuItem(
-                value: LibraryDisplayMode.coverOnlyGrid,
-                child: Text('Cover only'),
-              ),
-              PopupMenuItem(
-                value: LibraryDisplayMode.list,
-                child: Text('List'),
+              const PopupMenuItem(
+                value: _LibraryMenuAction.openRandom,
+                child: Text('Open random entry'),
               ),
             ],
           ),
@@ -571,10 +589,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 }
 
-/// Scope selector for the library refresh popup menu. `all` sweeps every
-/// favourited manga; `category` restricts the sweep to the currently
-/// visible category tab (uncategorised handled implicitly via category 0).
-enum _RefreshScope { all, category }
+/// Overflow-menu actions on the library toolbar. Mirrors Mihon's
+/// LibraryToolbar overflow: "Update library" (sweep every favourite),
+/// "Update category" (only the active category tab), and "Open random
+/// entry" (jump to a random manga in the current category).
+enum _LibraryMenuAction { updateLibrary, updateCategory, openRandom }
 
 /// Holds the async-resolved sets that the filter predicate needs when
 /// either the Downloaded or Tracked axis is active. Either field may be
@@ -689,8 +708,16 @@ class _LibraryBody extends ConsumerWidget {
       if (hasUncategorized) Category.uncategorizedId,
       ...visibleCategories.map((c) => c.id),
     ];
-    // If there's only one effective bucket, hide the tabs entirely.
-    final showTabs = tabIds.length > 1;
+    // Tabs follow Mihon's `showPageTabs`: shown when the "Show category tabs"
+    // pref is on OR a search is active — but still hidden when there's only
+    // one effective bucket to switch between. The per-tab count follows the
+    // "Show number of items" pref (or an active search), per Mihon's
+    // `getItemCountForCategory`.
+    final searching = query.isNotEmpty;
+    final showCategoryTabsPref = ref.watch(categoryTabsProvider);
+    final showCount = ref.watch(categoryNumberOfItemsProvider) || searching;
+    final showTabs =
+        (showCategoryTabsPref || searching) && tabIds.length > 1;
 
     // Pick the active id. Default to the first available tab if the
     // currently-selected one disappeared.
@@ -719,7 +746,12 @@ class _LibraryBody extends ConsumerWidget {
             .toList(growable: false)
         : filteredByQuery;
 
-    final sorted = [...filtered]..sort(_compare(sort));
+    // Random sort shuffles deterministically against the persisted seed
+    // (regenerated whenever the user re-picks Random); every other axis uses
+    // the comparator.
+    final sorted = sort.axis == LibrarySortAxis.random
+        ? ([...filtered]..shuffle(math.Random(ref.watch(randomSortSeedProvider))))
+        : ([...filtered]..sort(_compare(sort)));
 
     // "Most read" carousel — top 5 favourites by completion ratio
     // (`readCount / totalCount`), only entries the user has actually
@@ -751,6 +783,7 @@ class _LibraryBody extends ConsumerWidget {
             tabIds: tabIds,
             categories: visibleCategories,
             activeId: activeId,
+            showCount: showCount,
             countFor: (id) =>
                 items.where((it) => it.inCategory(id)).length,
             onTabSelected: onCategoryChanged,
@@ -763,6 +796,10 @@ class _LibraryBody extends ConsumerWidget {
                   child: _LibraryGrid(
                     items: sorted,
                     displayMode: displayMode,
+                    columns: MediaQuery.of(context).orientation ==
+                            Orientation.landscape
+                        ? ref.watch(landscapeColumnsProvider)
+                        : ref.watch(portraitColumnsProvider),
                     selected: selected,
                     selecting: selecting,
                     onToggleSelected: onToggleSelected,
@@ -794,6 +831,9 @@ class _LibraryBody extends ConsumerWidget {
           return a.chapterFetchedAt.compareTo(b.chapterFetchedAt);
         case LibrarySortAxis.dateAdded:
           return a.manga.dateAdded.compareTo(b.manga.dateAdded);
+        case LibrarySortAxis.random:
+          // Handled by the seeded shuffle in build(); never reached here.
+          return 0;
       }
     }
     return sort.direction == LibrarySortDirection.ascending
@@ -807,6 +847,7 @@ class _CategoryTabs extends StatelessWidget {
     required this.tabIds,
     required this.categories,
     required this.activeId,
+    required this.showCount,
     required this.countFor,
     required this.onTabSelected,
   });
@@ -814,6 +855,7 @@ class _CategoryTabs extends StatelessWidget {
   final List<int> tabIds;
   final List<Category> categories;
   final int activeId;
+  final bool showCount;
   final int Function(int categoryId) countFor;
   final ValueChanged<int> onTabSelected;
 
@@ -838,11 +880,13 @@ class _CategoryTabs extends StatelessWidget {
           itemBuilder: (context, i) {
             final id = tabIds[i];
             final selected = id == activeId;
-            final count = countFor(id);
+            final label = showCount
+                ? '${_labelFor(id)} (${countFor(id)})'
+                : _labelFor(id);
             return Center(
               child: ChoiceChip(
                 selected: selected,
-                label: Text('${_labelFor(id)} ($count)'),
+                label: Text(label),
                 onSelected: (_) => onTabSelected(id),
               ),
             );
@@ -857,6 +901,7 @@ class _LibraryGrid extends StatelessWidget {
   const _LibraryGrid({
     required this.items,
     required this.displayMode,
+    required this.columns,
     required this.selected,
     required this.selecting,
     required this.onToggleSelected,
@@ -864,6 +909,9 @@ class _LibraryGrid extends StatelessWidget {
 
   final List<LibraryItem> items;
   final LibraryDisplayMode displayMode;
+
+  /// Fixed columns per row; 0 = Auto (derive from cover width).
+  final int columns;
   final Set<int> selected;
   final bool selecting;
   final ValueChanged<int> onToggleSelected;
@@ -890,14 +938,25 @@ class _LibraryGrid extends StatelessWidget {
         : 140.0;
     final aspectRatio =
         displayMode == LibraryDisplayMode.comfortableGrid ? 0.58 : 0.66;
+    // 0 columns = Auto: fall back to a max-extent delegate that picks the
+    // column count from the cover width. A fixed count honours the user's
+    // "Items per row" slider.
+    final gridDelegate = columns > 0
+        ? SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            childAspectRatio: aspectRatio,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+          )
+        : SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: maxExtent,
+            childAspectRatio: aspectRatio,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+          );
     return GridView.builder(
       padding: const EdgeInsets.all(8),
-      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: maxExtent,
-        childAspectRatio: aspectRatio,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
+      gridDelegate: gridDelegate,
       itemCount: items.length,
       itemBuilder: (context, i) => _MangaCard(
         item: items[i],
@@ -1541,20 +1600,105 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
-/// Tri-state filter sheet for the library grid. Each row cycles
-/// disabled → include → exclude → disabled on tap. A 'Reset' action
-/// clears everything; 'Apply' pops the sheet with the new state.
-class _LibraryFilterSheet extends StatefulWidget {
-  const _LibraryFilterSheet({required this.current});
+/// Library toolbar title. Mirrors Mihon's `getToolbarTitle`: shows
+/// "Library" while category tabs are on, or the active category's name when
+/// they're off. A trailing count "pill" is appended only when the
+/// "Show number of items" preference ([categoryNumberOfItemsProvider]) is on
+/// — the whole-library count with tabs on, or the per-category count with
+/// tabs off.
+class _LibraryTitle extends ConsumerWidget {
+  const _LibraryTitle({required this.selectedCategoryId});
 
-  final LibraryFilters current;
+  final int selectedCategoryId;
 
   @override
-  State<_LibraryFilterSheet> createState() => _LibraryFilterSheetState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final showTabs = ref.watch(categoryTabsProvider);
+    final showCount = ref.watch(categoryNumberOfItemsProvider);
+    final theme = Theme.of(context);
+
+    return StreamBuilder<List<LibraryItem>>(
+      stream: ref.watch(libraryRepositoryProvider).watchAll(),
+      builder: (context, snap) {
+        final items = snap.data ?? const <LibraryItem>[];
+
+        if (showTabs) {
+          // Tabs on: title is "Library"; count (if shown) is the whole-
+          // library favourites size.
+          return _titleRow(theme, 'Library', showCount ? items.length : null);
+        }
+        // Tabs off: title is the active category name; count (if shown) is
+        // that category's size. Resolve the name asynchronously without
+        // blocking the title.
+        final count = showCount
+            ? items.where((it) => it.inCategory(selectedCategoryId)).length
+            : null;
+        return FutureBuilder<List<Category>>(
+          future: ref.watch(categoryRepositoryProvider).getAll(),
+          builder: (context, catSnap) {
+            final categories = catSnap.data ?? const <Category>[];
+            final match =
+                categories.where((c) => c.id == selectedCategoryId);
+            final name =
+                selectedCategoryId == Category.uncategorizedId || match.isEmpty
+                    ? 'Default'
+                    : match.first.name;
+            return _titleRow(theme, name, count);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _titleRow(ThemeData theme, String text, int? count) {
+    if (count == null) return Text(text);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(child: Text(text, overflow: TextOverflow.ellipsis)),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            '$count',
+            style: theme.textTheme.bodyMedium,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-class _LibraryFilterSheetState extends State<_LibraryFilterSheet> {
+/// Tabbed Filter / Sort / Display settings sheet for the library. Mirrors
+/// Mihon's `LibrarySettingsDialog` (a TabbedDialog with three tabs). Every
+/// change applies live: filter toggles flow back through [onFiltersChanged];
+/// sort and display write straight to their providers — so there are no
+/// Apply/Cancel buttons.
+class _LibrarySettingsSheet extends ConsumerStatefulWidget {
+  const _LibrarySettingsSheet({
+    required this.current,
+    required this.onFiltersChanged,
+  });
+
+  final LibraryFilters current;
+  final ValueChanged<LibraryFilters> onFiltersChanged;
+
+  @override
+  ConsumerState<_LibrarySettingsSheet> createState() =>
+      _LibrarySettingsSheetState();
+}
+
+class _LibrarySettingsSheetState extends ConsumerState<_LibrarySettingsSheet> {
   late LibraryFilters _draft = widget.current;
+
+  void _set(LibraryFilters next) {
+    setState(() => _draft = next);
+    widget.onFiltersChanged(next);
+  }
 
   TriState _cycle(TriState v) {
     switch (v) {
@@ -1567,108 +1711,28 @@ class _LibraryFilterSheetState extends State<_LibraryFilterSheet> {
     }
   }
 
-  IconData _icon(TriState v) {
-    switch (v) {
-      case TriState.disabled:
-        return Icons.check_box_outline_blank;
-      case TriState.enabledIs:
-        return Icons.check_box;
-      case TriState.enabledNot:
-        return Icons.indeterminate_check_box;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
+    final height = MediaQuery.of(context).size.height * 0.6;
+    return SizedBox(
+      height: height,
+      child: DefaultTabController(
+        length: 3,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Row(
+            const TabBar(
+              tabs: [
+                Tab(text: 'Filter'),
+                Tab(text: 'Sort'),
+                Tab(text: 'Display'),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
                 children: [
-                  Text(
-                    'Filters',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: _draft.isActive
-                        ? () => setState(() => _draft = const LibraryFilters())
-                        : null,
-                    child: const Text('Reset'),
-                  ),
-                ],
-              ),
-            ),
-            _FilterRow(
-              label: 'Unread',
-              icon: _icon(_draft.unread),
-              onTap: () => setState(
-                () => _draft = _draft.copyWith(unread: _cycle(_draft.unread)),
-              ),
-            ),
-            _FilterRow(
-              label: 'Started',
-              icon: _icon(_draft.started),
-              onTap: () => setState(
-                () => _draft =
-                    _draft.copyWith(started: _cycle(_draft.started)),
-              ),
-            ),
-            _FilterRow(
-              label: 'Bookmarked',
-              icon: _icon(_draft.bookmarked),
-              onTap: () => setState(
-                () => _draft = _draft.copyWith(
-                  bookmarked: _cycle(_draft.bookmarked),
-                ),
-              ),
-            ),
-            _FilterRow(
-              label: 'Completed',
-              icon: _icon(_draft.completed),
-              onTap: () => setState(
-                () => _draft = _draft.copyWith(
-                  completed: _cycle(_draft.completed),
-                ),
-              ),
-            ),
-            _FilterRow(
-              label: 'Downloaded',
-              icon: _icon(_draft.downloaded),
-              onTap: () => setState(
-                () => _draft = _draft.copyWith(
-                  downloaded: _cycle(_draft.downloaded),
-                ),
-              ),
-            ),
-            _FilterRow(
-              label: 'Tracked',
-              icon: _icon(_draft.tracked),
-              onTap: () => setState(
-                () => _draft = _draft.copyWith(
-                  tracked: _cycle(_draft.tracked),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(_draft),
-                    child: const Text('Apply'),
-                  ),
+                  _buildFilterTab(),
+                  const _SortTab(),
+                  const _DisplayTab(),
                 ],
               ),
             ),
@@ -1677,90 +1741,315 @@ class _LibraryFilterSheetState extends State<_LibraryFilterSheet> {
       ),
     );
   }
+
+  Widget _buildFilterTab() {
+    // Kotlin FilterPage order: Downloaded, Unread, Started, Bookmarked,
+    // Completed, (interval custom — debug only, omitted), Tracked.
+    return ListView(
+      children: [
+        _TriStateRow(
+          label: 'Downloaded',
+          state: _draft.downloaded,
+          onTap: () =>
+              _set(_draft.copyWith(downloaded: _cycle(_draft.downloaded))),
+        ),
+        _TriStateRow(
+          label: 'Unread',
+          state: _draft.unread,
+          onTap: () => _set(_draft.copyWith(unread: _cycle(_draft.unread))),
+        ),
+        _TriStateRow(
+          label: 'Started',
+          state: _draft.started,
+          onTap: () => _set(_draft.copyWith(started: _cycle(_draft.started))),
+        ),
+        _TriStateRow(
+          label: 'Bookmarked',
+          state: _draft.bookmarked,
+          onTap: () =>
+              _set(_draft.copyWith(bookmarked: _cycle(_draft.bookmarked))),
+        ),
+        _TriStateRow(
+          label: 'Completed',
+          state: _draft.completed,
+          onTap: () =>
+              _set(_draft.copyWith(completed: _cycle(_draft.completed))),
+        ),
+        _TriStateRow(
+          label: 'Tracked',
+          state: _draft.tracked,
+          onTap: () => _set(_draft.copyWith(tracked: _cycle(_draft.tracked))),
+        ),
+      ],
+    );
+  }
 }
 
-class _FilterRow extends StatelessWidget {
-  const _FilterRow({
+/// A single tri-state filter row: a leading checkbox-style icon (blank →
+/// included → excluded) and a label. Mirrors Mihon's `TriStateItem`.
+class _TriStateRow extends StatelessWidget {
+  const _TriStateRow({
     required this.label,
-    required this.icon,
+    required this.state,
     required this.onTap,
   });
 
   final String label;
-  final IconData icon;
+  final TriState state;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final IconData icon;
+    switch (state) {
+      case TriState.disabled:
+        icon = Icons.check_box_outline_blank;
+      case TriState.enabledIs:
+        icon = Icons.check_box;
+      case TriState.enabledNot:
+        icon = Icons.disabled_by_default;
+    }
     return ListTile(
-      leading: Icon(icon),
+      leading: Icon(
+        icon,
+        color: state == TriState.disabled ? null : theme.colorScheme.primary,
+      ),
       title: Text(label),
       onTap: onTap,
     );
   }
 }
 
-/// Mihon-style sort sheet: lists every sort axis with an asc/desc arrow
-/// on the currently-active axis. Tapping the active row flips direction;
-/// tapping a different row switches axes (preserving direction). Writes
-/// back through the `librarySortProvider` so the choice persists.
-class _LibrarySortSheet extends ConsumerWidget {
-  const _LibrarySortSheet();
+/// Sort tab of the library settings sheet. Lists each sort axis with an
+/// asc/desc arrow on the active one; tapping the active axis flips
+/// direction, tapping another switches axes. Random sits last with a
+/// Refresh icon and reshuffles each time it's (re-)selected. Mirrors
+/// Mihon's `SortPage`.
+class _SortTab extends ConsumerWidget {
+  const _SortTab();
 
   static const _entries = <(LibrarySortAxis, String)>[
-    (LibrarySortAxis.title, 'Alphabetical'),
-    (LibrarySortAxis.lastRead, 'Last read'),
-    (LibrarySortAxis.lastUpdate, 'Last update'),
-    (LibrarySortAxis.unread, 'Unread count'),
+    (LibrarySortAxis.title, 'Alphabetically'),
     (LibrarySortAxis.totalChapters, 'Total chapters'),
+    (LibrarySortAxis.lastRead, 'Last read'),
+    (LibrarySortAxis.lastUpdate, 'Last update check'),
+    (LibrarySortAxis.unread, 'Unread count'),
     (LibrarySortAxis.latestChapter, 'Latest chapter'),
     (LibrarySortAxis.chapterFetchDate, 'Chapter fetch date'),
     (LibrarySortAxis.dateAdded, 'Date added'),
+    (LibrarySortAxis.random, 'Random'),
   ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final current = ref.watch(librarySortProvider);
     final theme = Theme.of(context);
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Text(
-                'Sort by',
-                style: theme.textTheme.titleMedium,
-              ),
-            ),
-            for (final entry in _entries)
-              ListTile(
-                leading: Icon(
-                  entry.$1 == current.axis
+    return ListView(
+      children: [
+        for (final entry in _entries)
+          ListTile(
+            leading: Icon(
+              entry.$1 == LibrarySortAxis.random
+                  ? (entry.$1 == current.axis ? Icons.refresh : null)
+                  : (entry.$1 == current.axis
                       ? (current.direction == LibrarySortDirection.ascending
                           ? Icons.arrow_upward
                           : Icons.arrow_downward)
-                      : null,
-                  color: entry.$1 == current.axis
-                      ? theme.colorScheme.primary
-                      : null,
+                      : null),
+              color:
+                  entry.$1 == current.axis ? theme.colorScheme.primary : null,
+            ),
+            title: Text(
+              entry.$2,
+              style: entry.$1 == current.axis
+                  ? TextStyle(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    )
+                  : null,
+            ),
+            onTap: () {
+              ref.read(librarySortProvider.notifier).setAxis(entry.$1);
+              if (entry.$1 == LibrarySortAxis.random) {
+                ref.read(randomSortSeedProvider.notifier).regenerate();
+              }
+            },
+          ),
+      ],
+    );
+  }
+}
+
+/// Display tab of the library settings sheet. Mirrors Mihon's `DisplayPage`:
+/// a chip row of display modes, an "items per row" slider (grid modes only),
+/// then Overlay and Tabs sections of checkbox toggles.
+class _DisplayTab extends ConsumerWidget {
+  const _DisplayTab();
+
+  static const _modes = <(LibraryDisplayMode, String)>[
+    (LibraryDisplayMode.compactGrid, 'Compact grid'),
+    (LibraryDisplayMode.comfortableGrid, 'Comfortable grid'),
+    (LibraryDisplayMode.coverOnlyGrid, 'Cover-only grid'),
+    (LibraryDisplayMode.list, 'List'),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(libraryDisplayModeProvider);
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    final columns = isLandscape
+        ? ref.watch(landscapeColumnsProvider)
+        : ref.watch(portraitColumnsProvider);
+    final columnsNotifier = isLandscape
+        ? ref.read(landscapeColumnsProvider.notifier)
+        : ref.read(portraitColumnsProvider.notifier);
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final m in _modes)
+                FilterChip(
+                  selected: mode == m.$1,
+                  onSelected: (_) =>
+                      ref.read(libraryDisplayModeProvider.notifier).setMode(m.$1),
+                  label: Text(m.$2),
                 ),
-                title: Text(
-                  entry.$2,
-                  style: entry.$1 == current.axis
-                      ? TextStyle(
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.w600,
-                        )
-                      : null,
-                ),
-                onTap: () {
-                  ref.read(librarySortProvider.notifier).setAxis(entry.$1);
-                },
-              ),
+            ],
+          ),
+        ),
+        if (mode != LibraryDisplayMode.list)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                const Expanded(child: Text('Items per row')),
+                Text(columns > 0 ? '$columns' : 'Auto'),
+              ],
+            ),
+          ),
+        if (mode != LibraryDisplayMode.list)
+          Slider(
+            value: columns.toDouble().clamp(0, 10),
+            min: 0,
+            max: 10,
+            divisions: 10,
+            label: columns > 0 ? '$columns' : 'Auto',
+            onChanged: (v) => columnsNotifier.setValue(v.round()),
+          ),
+        const _DisplayHeading('Overlay'),
+        _CheckboxRow(
+          label: 'Downloaded chapters',
+          value: ref.watch(displayDownloadBadgeProvider),
+          onChanged: (v) =>
+              ref.read(displayDownloadBadgeProvider.notifier).setEnabled(v),
+        ),
+        _CheckboxRow(
+          label: 'Unread chapters',
+          value: ref.watch(displayUnreadBadgeProvider),
+          onChanged: (v) =>
+              ref.read(displayUnreadBadgeProvider.notifier).setEnabled(v),
+        ),
+        _CheckboxRow(
+          label: 'Local source',
+          value: ref.watch(displayLocalBadgeProvider),
+          onChanged: (v) =>
+              ref.read(displayLocalBadgeProvider.notifier).setEnabled(v),
+        ),
+        _CheckboxRow(
+          label: 'Language',
+          value: ref.watch(displayLanguageBadgeProvider),
+          onChanged: (v) =>
+              ref.read(displayLanguageBadgeProvider.notifier).setEnabled(v),
+        ),
+        _CheckboxRow(
+          label: 'Continue reading button',
+          value: ref.watch(showContinueReadingButtonProvider),
+          onChanged: (v) => ref
+              .read(showContinueReadingButtonProvider.notifier)
+              .setEnabled(v),
+        ),
+        _CheckboxRow(
+          label: 'Most-read carousel',
+          value: ref.watch(showMostReadCarouselProvider),
+          onChanged: (v) =>
+              ref.read(showMostReadCarouselProvider.notifier).setEnabled(v),
+        ),
+        const _DisplayHeading('Tabs'),
+        _CheckboxRow(
+          label: 'Show category tabs',
+          value: ref.watch(categoryTabsProvider),
+          onChanged: (v) =>
+              ref.read(categoryTabsProvider.notifier).setEnabled(v),
+        ),
+        _CheckboxRow(
+          label: 'Show number of items',
+          value: ref.watch(categoryNumberOfItemsProvider),
+          onChanged: (v) =>
+              ref.read(categoryNumberOfItemsProvider.notifier).setEnabled(v),
+        ),
+        SizedBox(height: MediaQuery.of(context).padding.bottom),
+      ],
+    );
+  }
+}
+
+/// Section heading inside the Display tab (e.g. "Overlay", "Tabs").
+/// Mirrors Mihon's `HeadingItem`.
+class _DisplayHeading extends StatelessWidget {
+  const _DisplayHeading(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Text(
+        label,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.primary,
+        ),
+      ),
+    );
+  }
+}
+
+/// A checkbox + label row used by the Display tab. Mirrors Mihon's
+/// `CheckboxItem`.
+class _CheckboxRow extends StatelessWidget {
+  const _CheckboxRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Row(
+          children: [
+            Checkbox(
+              value: value,
+              onChanged: (v) => onChanged(v ?? false),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(label)),
           ],
         ),
       ),

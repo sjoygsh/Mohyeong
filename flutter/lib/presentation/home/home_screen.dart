@@ -22,6 +22,23 @@ final homeTabIndexProvider = NotifierProvider<HomeTabIndex, int>(
   HomeTabIndex.new,
 );
 
+/// Fired when the user taps the bottom-nav destination for the tab they're
+/// already on. Mirrors Kotlin `Tab.onReselect`: each tab decides what to do
+/// (Library opens its settings sheet; the list tabs scroll back to top). The
+/// monotonically increasing [tick] lets listeners distinguish repeated
+/// reselects of the same tab. [tab] is `-1` before any reselect.
+typedef HomeReselectSignal = ({int tab, int tick});
+
+class HomeReselect extends Notifier<HomeReselectSignal> {
+  @override
+  HomeReselectSignal build() => (tab: -1, tick: 0);
+
+  void signal(int tab) => state = (tab: tab, tick: state.tick + 1);
+}
+
+final homeReselectProvider =
+    NotifierProvider<HomeReselect, HomeReselectSignal>(HomeReselect.new);
+
 /// The five top-level destinations match the Kotlin app's [HomeScreen.Tab]:
 /// Library, Updates, History, Browse, More.
 ///
@@ -89,8 +106,15 @@ class HomeScreen extends ConsumerWidget {
         ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: index,
-          onDestinationSelected: (i) =>
-              ref.read(homeTabIndexProvider.notifier).set(i),
+          onDestinationSelected: (i) {
+            // Tapping the already-selected destination is a "reselect" —
+            // forward it to the tab instead of re-setting the same index.
+            if (i == index) {
+              ref.read(homeReselectProvider.notifier).signal(i);
+            } else {
+              ref.read(homeTabIndexProvider.notifier).set(i);
+            }
+          },
           destinations: [
             for (final tab in _tabs)
               NavigationDestination(
