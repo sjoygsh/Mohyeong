@@ -20,6 +20,7 @@ import '../../data/track/track_updater.dart';
 import '../../data/track/tracker_registry.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
+import '../../domain/chapter/service/missing_chapters.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../../domain/source/model/source.dart';
@@ -461,6 +462,7 @@ class _ChaptersSection extends ConsumerWidget {
     final excludedRepo = ref.watch(excludedScanlatorsRepositoryProvider);
     final downloadRepo = ref.watch(downloadRepositoryProvider);
     final groupByVolume = ref.watch(groupChaptersByVolumeProvider);
+    final hideMissing = ref.watch(hideMissingChaptersProvider);
     return StreamBuilder<Set<String>>(
       stream: excludedRepo.watchByMangaId(manga.id),
       builder: (context, excludedSnap) {
@@ -468,7 +470,8 @@ class _ChaptersSection extends ConsumerWidget {
         // Only probe the filesystem when the user has actually engaged
         // the downloaded filter axis. Common path stays sync.
         if (manga.downloadedFilter == TriState.disabled) {
-          return _buildBody(context, excluded, null, downloadRepo, groupByVolume);
+          return _buildBody(
+            context, excluded, null, downloadRepo, groupByVolume, hideMissing);
         }
         return FutureBuilder<Set<int>>(
           future: downloadRepo.listDownloadedChapterIds(manga.source, manga.id),
@@ -479,6 +482,7 @@ class _ChaptersSection extends ConsumerWidget {
               downloadedSnap.data ?? const <int>{},
               downloadRepo,
               groupByVolume,
+              hideMissing,
             );
           },
         );
@@ -492,6 +496,7 @@ class _ChaptersSection extends ConsumerWidget {
     Set<int>? downloadedIds,
     DownloadRepository downloadRepo,
     bool groupByVolume,
+    bool hideMissing,
   ) {
     final availableScanlators = <String>{
       for (final c in chapters)
@@ -519,20 +524,41 @@ class _ChaptersSection extends ConsumerWidget {
     final sorted = [...filtered]
       ..sort((a, b) => _chapterSortCompare(a, b, manga));
 
-    // 1:1 with Mihon's MangaScreen volume grouping: when on, insert a
-    // VolumeHeaderItem each time the volume number changes while walking the
-    // sorted chapter list. A NaN sentinel (which never equals any real value
-    // or null) forces a header before the first chapter.
+    // Build the interleaved render list:
+    //  - "Missing N chapters" separators wherever there's a numeric gap
+    //    between adjacent chapters (unless hidden) — 1:1 with Mihon's
+    //    chapterListItems.insertSeparators (MangaScreenModel).
+    //  - Volume header rows each time the volume number changes (when "Group
+    //    chapters by volume" is on) — 1:1 with MangaScreen's VolumeHeaderItem.
+    // A NaN sentinel (which never equals any real value or null) forces a
+    // volume header before the first chapter.
     final List<Object> rendered;
-    if (groupByVolume) {
+    if (groupByVolume || !hideMissing) {
       rendered = <Object>[];
       double? lastVolume = double.nan;
-      for (final c in sorted) {
-        if (c.volumeNumber != lastVolume) {
+      for (var i = 0; i < sorted.length; i++) {
+        final c = sorted[i];
+        if (!hideMissing) {
+          final missing = _missingCountBetween(
+            before: i > 0 ? sorted[i - 1] : null,
+            after: c,
+            manga: manga,
+          );
+          if (missing > 0) rendered.add(_MissingCountItem(missing));
+        }
+        if (groupByVolume && c.volumeNumber != lastVolume) {
           rendered.add(_VolumeHeaderItem(c.volumeNumber));
           lastVolume = c.volumeNumber;
         }
         rendered.add(c);
+      }
+      if (!hideMissing && sorted.isNotEmpty) {
+        final missing = _missingCountBetween(
+          before: sorted.last,
+          after: null,
+          manga: manga,
+        );
+        if (missing > 0) rendered.add(_MissingCountItem(missing));
       }
     } else {
       rendered = sorted;
@@ -581,6 +607,9 @@ class _ChaptersSection extends ConsumerWidget {
               if (item is _VolumeHeaderItem) {
                 return _VolumeHeaderRow(volumeNumber: item.volumeNumber);
               }
+              if (item is _MissingCountItem) {
+                return _MissingCountRow(count: item.count);
+              }
               final chapter = item as Chapter;
               return _ChapterTile(
                 manga: manga,
@@ -609,6 +638,68 @@ class _ChaptersSection extends ConsumerWidget {
 class _VolumeHeaderItem {
   const _VolumeHeaderItem(this.volumeNumber);
   final double? volumeNumber;
+}
+
+/// Marker entry interleaved into the chapter list for a numeric gap between
+/// two adjacent chapters. Carries the number of missing chapters. Mirrors
+/// Mihon's private `ChapterList.MissingCount`.
+class _MissingCountItem {
+  const _MissingCountItem(this.count);
+  final int count;
+}
+
+/// Number of chapters missing between two adjacent chapter-list entries,
+/// 1:1 with Mihon's `chapterListItems.insertSeparators`
+/// (MangaScreenModel): the lower/higher pair is chosen by the manga's sort
+/// direction, the leading edge reports gaps before chapter 1, and unknown
+/// (negative) chapter numbers contribute no gap.
+int _missingCountBetween({
+  required Chapter? before,
+  required Chapter? after,
+  required Manga manga,
+}) {
+  final desc = manga.sortDescending();
+  final lower = desc ? after : before;
+  final higher = desc ? before : after;
+  if (higher == null) return 0;
+  if (lower == null) {
+    if (!higher.isRecognizedNumber) return 0;
+    final c = higher.chapterNumber.floor() - 1;
+    return c < 0 ? 0 : c;
+  }
+  return calculateChapterGap(higher, lower);
+}
+
+/// Missing-chapter separator row. Mirrors Mihon's
+/// `MissingChapterCountListItem`: a dimmed "Missing N chapters" label flanked
+/// by horizontal dividers.
+class _MissingCountRow extends StatelessWidget {
+  const _MissingCountRow({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = count == 1 ? 'Missing 1 chapter' : 'Missing $count chapters';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          const Expanded(child: Divider()),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              label,
+              style: theme.textTheme.labelMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+          const Expanded(child: Divider()),
+        ],
+      ),
+    );
+  }
 }
 
 /// Volume separator row. Mirrors Mihon's `VolumeHeaderListItem`: a primary

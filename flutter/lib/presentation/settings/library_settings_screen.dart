@@ -24,6 +24,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
     final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
     final showContinueReading = ref.watch(showContinueReadingButtonProvider);
     final groupChaptersByVolume = ref.watch(groupChaptersByVolumeProvider);
+    final hideMissingChapters = ref.watch(hideMissingChaptersProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Library')),
       body: ListView(
@@ -111,6 +112,18 @@ class LibrarySettingsScreen extends ConsumerWidget {
             value: groupChaptersByVolume,
             onChanged: ref
                 .read(groupChaptersByVolumeProvider.notifier)
+                .setEnabled,
+          ),
+          // Verbatim Mihon string pref_hide_missing_chapter_indicators.
+          SwitchListTile(
+            title: const Text('Hide missing chapter indicators'),
+            subtitle: const Text(
+              'Hide the "Missing N chapters" rows between chapters with a '
+              'numbering gap on the manga page',
+            ),
+            value: hideMissingChapters,
+            onChanged: ref
+                .read(hideMissingChaptersProvider.notifier)
                 .setEnabled,
           ),
           const Padding(

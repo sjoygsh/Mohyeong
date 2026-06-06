@@ -365,9 +365,26 @@ class GroupChaptersByVolumeNotifier extends _BoolPrefNotifier {
   bool get _default => false;
 }
 
+/// "Hide missing-chapter indicators" — when off (the default), the manga
+/// details chapter list inserts a "Missing N chapters" divider row wherever
+/// there's a numeric gap between adjacent chapters. When on, those rows are
+/// suppressed. Mirrors Mihon's `LibraryPreferences.hideMissingChapters`
+/// (`pref_hide_missing_chapter_indicators`, default false).
+class HideMissingChaptersNotifier extends _BoolPrefNotifier {
+  @override
+  String get _key => 'pref_hide_missing_chapter_indicators';
+  @override
+  bool get _default => false;
+}
+
 final groupChaptersByVolumeProvider =
     NotifierProvider<GroupChaptersByVolumeNotifier, bool>(
   GroupChaptersByVolumeNotifier.new,
+);
+
+final hideMissingChaptersProvider =
+    NotifierProvider<HideMissingChaptersNotifier, bool>(
+  HideMissingChaptersNotifier.new,
 );
 
 final displayDownloadBadgeProvider =
