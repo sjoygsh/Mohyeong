@@ -87,72 +87,51 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 tooltip: 'Search history',
                 onPressed: _openSearch,
               ),
-            PopupMenuButton<_HistoryMenuAction>(
-              onSelected: (action) {
-                if (action == _HistoryMenuAction.clearAll) {
-                  _confirmClearAll(context, repo);
-                }
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: _HistoryMenuAction.clearAll,
-                  child: Text('Clear history'),
-                ),
-              ],
+            IconButton(
+              icon: const Icon(Icons.delete_sweep),
+              tooltip: 'Clear history',
+              onPressed: () => _confirmClearAll(context, repo),
             ),
           ],
         ),
-        body: Column(
-          children: [
-            _DurationHeader(repo: repo),
-            const Divider(height: 1),
-            Expanded(
-              child: StreamBuilder<List<HistoryWithContext>>(
-                stream: repo.watchRecent(),
-                builder: (context, snap) {
-                  if (snap.hasError) {
-                    return Center(child: Text('Error: ${snap.error}'));
-                  }
-                  if (!snap.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final entries = snap.data!;
-                  if (entries.isEmpty) {
-                    return const Center(
-                      child: Text('No reading history yet.'),
-                    );
-                  }
-                  // Substring match on manga title — same lightweight
-                  // case-insensitive contains the Library search uses.
-                  // Day grouping runs after filtering so the day
-                  // headers only reflect the visible rows.
-                  final q = _query.toLowerCase();
-                  final filtered = q.isEmpty
-                      ? entries
-                      : entries
-                          .where(
-                              (e) => e.mangaTitle.toLowerCase().contains(q))
-                          .toList(growable: false);
-                  if (filtered.isEmpty) {
-                    return const Center(
-                      child: Text('No history matches the query.'),
-                    );
-                  }
-                  final rows = _groupByDay(filtered);
-                  return ListView.builder(
-                    itemCount: rows.length,
-                    itemBuilder: (_, i) {
-                      final row = rows[i];
-                      if (row is _HeaderRow) {
-                        return _DayHeader(label: row.label);
-                      }
-                      return _HistoryTile(entry: (row as _EntryRow).entry);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+        body: StreamBuilder<List<HistoryWithContext>>(
+          stream: repo.watchRecent(),
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return Center(child: Text('Error: ${snap.error}'));
+            }
+            if (!snap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final entries = snap.data!;
+            if (entries.isEmpty) {
+              return const Center(child: Text('Nothing read recently'));
+            }
+            // Substring match on manga title — same lightweight
+            // case-insensitive contains the Library search uses.
+            // Day grouping runs after filtering so the day
+            // headers only reflect the visible rows.
+            final q = _query.toLowerCase();
+            final filtered = q.isEmpty
+                ? entries
+                : entries
+                    .where((e) => e.mangaTitle.toLowerCase().contains(q))
+                    .toList(growable: false);
+            if (filtered.isEmpty) {
+              return const Center(child: Text('No results found'));
+            }
+            final rows = _groupByDay(filtered);
+            return ListView.builder(
+              itemCount: rows.length,
+              itemBuilder: (_, i) {
+                final row = rows[i];
+                if (row is _HeaderRow) {
+                  return _DayHeader(label: row.label);
+                }
+                return _HistoryTile(entry: (row as _EntryRow).entry);
+              },
+            );
+          },
         ),
       ),
     );
@@ -163,11 +142,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Clear history?'),
-        content: const Text(
-          'Every read entry will be removed. This does not affect '
-          'downloaded chapters or your library.',
-        ),
+        title: const Text('Remove everything'),
+        content: const Text('Are you sure? All history will be lost.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -175,7 +151,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Clear'),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -185,10 +161,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
   }
 }
-
-enum _HistoryMenuAction { clearAll }
-
-enum _HistoryRowAction { openDetails, removeEntry, resetManga }
 
 sealed class _Row {
   const _Row();
@@ -266,43 +238,6 @@ class _DayHeader extends StatelessWidget {
   }
 }
 
-class _DurationHeader extends StatelessWidget {
-  const _DurationHeader({required this.repo});
-
-  final HistoryRepository repo;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<int>(
-      future: repo.totalReadDurationMs(),
-      builder: (context, snap) {
-        final ms = snap.data ?? 0;
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              const Icon(Icons.timer_outlined),
-              const SizedBox(width: 12),
-              Text(
-                'Total time read: ${_formatDuration(ms)}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  static String _formatDuration(int ms) {
-    final totalMin = ms ~/ 60000;
-    final h = totalMin ~/ 60;
-    final m = totalMin % 60;
-    if (h == 0) return '$m min';
-    return '${h}h ${m}m';
-  }
-}
-
 class _HistoryTile extends ConsumerWidget {
   const _HistoryTile({required this.entry});
 
@@ -313,22 +248,32 @@ class _HistoryTile extends ConsumerWidget {
     final readAt = entry.readAt;
     final relative = ref.watch(relativeTimestampsProvider);
     final datePattern = ref.watch(dateFormatProvider);
-    final subtitle = readAt == null
-        ? entry.chapterName
-        : '${entry.chapterName} • '
-            '${formatTimestamp(readAt, relative: relative, pattern: datePattern)}';
+    final time = readAt == null
+        ? ''
+        : formatTimestamp(readAt, relative: relative, pattern: datePattern);
+    // Mirrors Kotlin's `recent_manga_time` ("Ch. %1$s - %2$s"): the chapter
+    // *number* plus the read time, falling back to just the time when the
+    // number is unset (-1).
+    final subtitle = entry.chapterNumber > -1
+        ? 'Ch. ${_formatChapterNumber(entry.chapterNumber)} - $time'
+        : time;
     return ListTile(
-      leading: _Thumb(url: entry.thumbnailUrl),
+      // Cover tap opens the manga details screen (Kotlin onClickCover);
+      // tapping the rest of the row resumes reading (Kotlin onClickResume).
+      leading: GestureDetector(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => MangaDetailsScreen(mangaId: entry.mangaId),
+          ),
+        ),
+        child: _Thumb(url: entry.thumbnailUrl),
+      ),
       title: Text(
         entry.mangaTitle,
-        maxLines: 1,
+        maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-      // Mihon's behaviour: tap a history row to resume reading the
-      // chapter that row represents, rather than detouring through the
-      // manga details screen. Long-press exposes the per-row delete +
-      // per-manga reset entry points.
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => ReaderScreen(
@@ -337,62 +282,71 @@ class _HistoryTile extends ConsumerWidget {
           ),
         ),
       ),
-      onLongPress: () => _showRowMenu(context, ref),
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline),
-        tooltip: 'Remove from history',
-        onPressed: () => ref
-            .read(historyRepositoryProvider)
-            .removeById(entry.historyId),
+        tooltip: 'Remove',
+        onPressed: () => _confirmDelete(context, ref),
       ),
     );
   }
 
-  Future<void> _showRowMenu(BuildContext context, WidgetRef ref) async {
+  /// Per-entry delete confirmation. Mirrors Kotlin `HistoryDeleteDialog`:
+  /// removes this entry's read date, or — when the checkbox is ticked —
+  /// resets every chapter's history for this manga.
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
     final repo = ref.read(historyRepositoryProvider);
-    final action = await showModalBottomSheet<_HistoryRowAction>(
+    var removeEverything = false;
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.menu_book_outlined),
-              title: const Text('Open manga details'),
-              onTap: () =>
-                  Navigator.of(ctx).pop(_HistoryRowAction.openDetails),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Remove'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This will remove the read date of this chapter. '
+                'Are you sure?',
+              ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Reset all chapters for this entry'),
+                value: removeEverything,
+                onChanged: (v) =>
+                    setState(() => removeEverything = v ?? false),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
             ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline),
-              title: const Text('Remove from history'),
-              onTap: () =>
-                  Navigator.of(ctx).pop(_HistoryRowAction.removeEntry),
-            ),
-            ListTile(
-              leading: const Icon(Icons.layers_clear_outlined),
-              title: const Text('Reset history for this manga'),
-              onTap: () =>
-                  Navigator.of(ctx).pop(_HistoryRowAction.resetManga),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Remove'),
             ),
           ],
         ),
       ),
     );
-    if (action == null || !context.mounted) return;
-    switch (action) {
-      case _HistoryRowAction.openDetails:
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => MangaDetailsScreen(mangaId: entry.mangaId),
-          ),
-        );
-      case _HistoryRowAction.removeEntry:
-        await repo.removeById(entry.historyId);
-      case _HistoryRowAction.resetManga:
-        await repo.resetByMangaId(entry.mangaId);
+    if (confirmed != true) return;
+    if (removeEverything) {
+      await repo.resetByMangaId(entry.mangaId);
+    } else {
+      await repo.removeById(entry.historyId);
     }
   }
+}
 
+/// Formats a chapter number the way Kotlin's `formatChapterNumber` does:
+/// drop a trailing ".0" for whole numbers, otherwise keep the decimals.
+String _formatChapterNumber(double n) {
+  if (n == n.roundToDouble()) return n.toInt().toString();
+  return n.toString();
 }
 
 class _Thumb extends StatelessWidget {
