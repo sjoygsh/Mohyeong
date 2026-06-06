@@ -88,6 +88,19 @@ class ExtensionRepository {
     return id;
   }
 
+  /// The installed-extension slug that owns [sourceId], or null when no
+  /// installed extension hashes to it. Mirrors Mihon's
+  /// `ExtensionManager.getExtensionPackage(sourceId)` — in the JS rewrite the
+  /// slug stands in for the APK package name. Used to resolve per-extension
+  /// incognito state.
+  Future<String?> getExtensionPackage(int sourceId) async {
+    final installed = await _storage.listInstalled();
+    for (final e in installed) {
+      if (sourceNumericId(e.id) == sourceId) return e.id;
+    }
+    return null;
+  }
+
   /// Installs from a local JS file. The file is validated by loading it
   /// once in a throwaway runtime to read the manifest before persisting.
   Future<InstalledExtension> installFromFile(File file) async {

@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../preferences/typed_preferences.dart';
+import '../source/incognito_preferences.dart';
 
 /// SharedPreferences keys. Exposed so [AuthGate] can read the persisted
 /// values directly on cold start: the typed-pref Notifiers return their
@@ -26,9 +27,9 @@ import '../preferences/typed_preferences.dart';
 const appLockKey = 'use_biometric_lock';
 
 /// Mihon stores the secure-screen mode under `secure_screen_v2` as an enum
-/// (NEVER / INCOGNITO / ALWAYS). [AuthGate] still consumes a plain bool via
-/// [secureScreenKey] / [secureScreenProvider] (whether FLAG_SECURE should be
-/// on right now); that bool is derived from the mode by [secureScreenOn].
+/// (NEVER / INCOGNITO / ALWAYS). [AuthGate] consumes a plain bool via
+/// [flagSecureProvider] (whether FLAG_SECURE should be on right now); that
+/// bool is derived from the mode + global incognito by [secureScreenOn].
 const secureScreenKey = 'secure_screen_v2';
 
 const lockAppAfterKey = 'lock_app_after';
@@ -81,10 +82,10 @@ String secureScreenModeToStorage(SecureScreenMode mode) =>
       SecureScreenMode.never => 'NEVER',
     };
 
-/// Whether FLAG_SECURE should be on for the given mode. Incognito mode is not
-/// yet wired in the Flutter rewrite, so it is treated as "off" until an
-/// incognito state exists to consult — matching the conservative default of
-/// only forcing the flag when [SecureScreenMode.always] is selected.
+/// Whether FLAG_SECURE should be on for the given mode. With
+/// [SecureScreenMode.incognito] the flag tracks the live global incognito
+/// state (see [flagSecureProvider]). 1:1 with Mihon's
+/// `SecureActivityDelegate`: `ALWAYS || (INCOGNITO && incognitoMode)`.
 bool secureScreenOn(SecureScreenMode mode, {bool incognito = false}) =>
     switch (mode) {
       SecureScreenMode.always => true,
@@ -125,13 +126,16 @@ final secureScreenModeProvider =
   _SecureScreenModeNotifier.new,
 );
 
-/// Plain-bool view of whether FLAG_SECURE should currently be applied.
-/// `AuthGate` listens to this (`ref.listen<bool>`) and reads
-/// `prefs.getBool(secureScreenKey)` on cold start. NOTE: the persisted value
-/// under [secureScreenKey] is the *enum name* string written by Mihon, so the
-/// cold-start `getBool` returns null and FLAG_SECURE stays off until the first
-/// frame resolves the mode — acceptable, and avoids a second pref key.
-final secureScreenProvider = boolPref('${secureScreenKey}_flag', false);
+/// Derived live view of whether the Android `FLAG_SECURE` window flag should
+/// be applied right now: from the secure-screen mode combined with the global
+/// incognito state. `AuthGate` listens to this and reflects it onto the host
+/// window via the secure-flag method channel. 1:1 with Mihon's
+/// `SecureActivityDelegate` combine of `secureScreen` + `incognitoMode`.
+final flagSecureProvider = Provider<bool>((ref) {
+  final mode = ref.watch(secureScreenModeProvider);
+  final incognito = ref.watch(incognitoModeProvider);
+  return secureScreenOn(mode, incognito: incognito);
+});
 
 /// Grace period in minutes before the app re-locks after going to the
 /// background. Mihon key `lock_app_after`: -1 = never, 0 = immediately.

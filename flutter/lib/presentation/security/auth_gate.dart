@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/security/secure_screen.dart';
 import '../../data/security/security_preferences.dart';
+import '../../data/source/incognito_preferences.dart';
 
 /// Wraps the app behind a biometric / device-credential lock when the
 /// app-lock preference is on. Mirrors Mihon's `UnlockActivity` flow:
@@ -13,7 +14,7 @@ import '../../data/security/security_preferences.dart';
 /// - Re-locks when the app returns from the background after more than the
 ///   configured grace period ([lockAfterMinutesProvider]; 0 = immediately).
 /// - Keeps the Android `FLAG_SECURE` window flag in sync with
-///   [secureScreenProvider].
+///   [flagSecureProvider].
 ///
 /// Unverified end-to-end — depends on `local_auth` + the secure-flag method
 /// channel, neither of which has run on a device yet.
@@ -52,7 +53,16 @@ class _AuthGateState extends ConsumerState<AuthGate>
   Future<void> _resolveInitialLock() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-    SecureScreen.setSecure(prefs.getBool(secureScreenKey) ?? false);
+    // Cold-start FLAG_SECURE: derive from the persisted secure-screen mode
+    // (stored as the Kotlin enum-name string) and the global incognito state,
+    // matching [flagSecureProvider]. The runtime listener below keeps it in
+    // sync as either changes.
+    final modeRaw = prefs.getString(secureScreenKey);
+    final mode = modeRaw == null
+        ? SecureScreenMode.incognito
+        : secureScreenModeFromStorage(modeRaw);
+    final incognito = prefs.getBool(incognitoModeKey) ?? false;
+    SecureScreen.setSecure(secureScreenOn(mode, incognito: incognito));
     final enabled = prefs.getBool(appLockKey) ?? false;
     setState(() {
       _ready = true;
@@ -126,7 +136,7 @@ class _AuthGateState extends ConsumerState<AuthGate>
   @override
   Widget build(BuildContext context) {
     // Keep the secure-screen flag in sync with the preference at runtime.
-    ref.listen<bool>(secureScreenProvider, (_, next) {
+    ref.listen<bool>(flagSecureProvider, (_, next) {
       SecureScreen.setSecure(next);
     });
 

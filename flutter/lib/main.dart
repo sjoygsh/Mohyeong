@@ -9,6 +9,7 @@ import 'data/network/app_http_client.dart';
 import 'data/preferences/appearance_preferences.dart';
 import 'data/preferences/theme_preference.dart';
 import 'data/source/extension_repository.dart';
+import 'data/source/incognito_preferences.dart';
 import 'data/source/installed_extension.dart';
 import 'data/source/local_source_preferences.dart';
 import 'data/track/tracker_registry.dart';
@@ -22,6 +23,9 @@ Future<void> main() async {
   final http = await AppHttpClient.instance();
   final storage = await ExtensionStorage.create();
   final prefs = await SharedPreferences.getInstance();
+  // Global incognito mode is per-session: clear it on every cold start, as
+  // Mihon does in MainActivity. Per-extension incognito persists.
+  await prefs.setBool(incognitoModeKey, false);
   final localPrefs = LocalSourcePreferences(prefs);
   final repo = ExtensionRepository(storage, http, localPrefs);
   final coverCache = await CoverCache.create();

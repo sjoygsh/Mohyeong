@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/source/extension_repository.dart';
+import '../../data/source/incognito_preferences.dart';
 import '../../data/source/installed_extension.dart';
 import '../../data/source/local_source.dart';
 import '../../data/source/local_source_preferences.dart';
@@ -275,6 +276,7 @@ class _ExtensionsTab extends ConsumerWidget {
             return const Center(child: CircularProgressIndicator());
           }
           final extensions = snap.data!;
+          final incognitoExtensions = ref.watch(incognitoExtensionsProvider);
           if (extensions.isEmpty) {
             return const Center(
               child: Padding(
@@ -292,12 +294,37 @@ class _ExtensionsTab extends ConsumerWidget {
             itemBuilder: (_, i) {
               final e = extensions[i];
               final canUpdate = e.installUrl != null;
+              final incognito = incognitoExtensions.contains(e.id);
               return ListTile(
                 title: Text(e.name),
                 subtitle: Text('${e.lang.toUpperCase()} • v${e.versionCode}'),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    IconButton(
+                      icon: Icon(
+                        incognito
+                            ? Icons.no_encryption_gmailerrorred
+                            : Icons.no_encryption_gmailerrorred_outlined,
+                      ),
+                      color: incognito
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                      // Verbatim Mihon string
+                      // pref_incognito_mode_extension_summary.
+                      tooltip: 'Pause reading history for extension',
+                      onPressed: () {
+                        final notifier =
+                            ref.read(incognitoExtensionsProvider.notifier);
+                        final next = {...incognitoExtensions};
+                        if (incognito) {
+                          next.remove(e.id);
+                        } else {
+                          next.add(e.id);
+                        }
+                        notifier.set(next);
+                      },
+                    ),
                     if (canUpdate)
                       IconButton(
                         icon: const Icon(Icons.refresh),

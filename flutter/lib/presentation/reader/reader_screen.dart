@@ -15,6 +15,7 @@ import '../../data/reader/reader_behavior_preferences.dart';
 import '../../data/reader/reader_preferences.dart';
 import '../../data/reader/reader_volume_keys.dart';
 import '../../data/source/extension_repository.dart';
+import '../../data/source/incognito_preferences.dart';
 import '../../data/track/track_updater.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
@@ -59,6 +60,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// time spent reading on top via the `upsertHistory` ON CONFLICT clause.
   int? _historyChapterId;
   DateTime? _sessionStartedAt;
+
+  /// Resolved once per session from the manga's source (see [_loadReaderData]).
+  /// While true the reader persists nothing — no history, no progress, no
+  /// tracker pushes — mirroring Mihon's `ReaderViewModel.incognitoMode`.
+  bool _incognito = false;
 
   @override
   void initState() {
@@ -156,11 +162,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       downloadRepo,
       widget.mangaId,
       _chapterId,
+      globalIncognito: ref.read(incognitoModeProvider),
+      incognitoExtensions: ref.read(incognitoExtensionsProvider),
     );
     // Stamp a history entry as soon as the chapter resolves, mirroring
-    // Mihon's "open == read" behaviour.
+    // Mihon's "open == read" behaviour — unless the source is incognito, in
+    // which case nothing is recorded for the whole session.
     future.then((data) {
-      if (data != null && mounted) _startHistorySession(data.chapter.id);
+      if (data != null && mounted) {
+        _incognito = data.incognito;
+        if (!_incognito) _startHistorySession(data.chapter.id);
+      }
     });
     setState(() {
       _data = future;
@@ -250,6 +262,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               _reload();
             },
             onPageChanged: (page) {
+              // Skip persisting progress in incognito (Mihon
+              // `updateChapterProgress` is gated on `!incognitoMode`).
+              if (_incognito) return;
               // Fire-and-forget: avoid blocking the pager. Errors here are
               // not user-facing — they only impact sync resume.
               unawaited(
@@ -259,16 +274,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               );
             },
             onMarkRead: () async {
+              // Explicit user action (no Mihon reader analogue): honour the
+              // local mark, but skip the tracker push while incognito —
+              // tracking is universally disabled in incognito (Mihon
+              // `updateTrackChapterRead` early-returns).
               final chapterRepo = ref.read(chapterRepositoryProvider);
               await chapterRepo.setRead(data.chapter.id, true);
-              // Fire-and-forget tracker push. Failures are absorbed inside
-              // TrackUpdater; the snackbar below confirms the local write.
-              unawaited(
-                ref.read(trackUpdaterProvider).setLastChapterRead(
-                      mangaId: data.chapter.mangaId,
-                      chapterNumber: data.chapter.chapterNumber,
-                    ),
-              );
+              if (!_incognito) {
+                // Fire-and-forget tracker push. Failures are absorbed inside
+                // TrackUpdater; the snackbar below confirms the local write.
+                unawaited(
+                  ref.read(trackUpdaterProvider).setLastChapterRead(
+                        mangaId: data.chapter.mangaId,
+                        chapterNumber: data.chapter.chapterNumber,
+                      ),
+                );
+              }
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Marked as read.')),
@@ -278,6 +299,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               // Auto-mark on reaching the last page. Silent (no snackbar) and
               // fire-and-forget — mirrors Mihon marking the chapter read once
               // the final page is shown, plus the tracker last-read push.
+              // Suppressed entirely in incognito (Mihon
+              // `updateChapterProgressOnComplete` only runs from the
+              // `!incognitoMode` branch of `updateChapterProgress`).
+              if (_incognito) return;
               unawaited(
                 ref
                     .read(chapterRepositoryProvider)
@@ -303,8 +328,10 @@ Future<_ReaderData?> _loadReaderData(
   ExtensionRepository extRepo,
   DownloadRepository downloadRepo,
   int mangaId,
-  int chapterId,
-) async {
+  int chapterId, {
+  required bool globalIncognito,
+  required Set<String> incognitoExtensions,
+}) async {
   final manga = await mangaRepo.getById(mangaId);
   if (manga == null) return null;
   final siblings = await chapterRepo.getByMangaId(mangaId);
@@ -330,6 +357,15 @@ Future<_ReaderData?> _loadReaderData(
     }
   }
 
+  // Resolve incognito once for the whole session (1:1 with Mihon's
+  // `by lazy { getIncognitoState.await(manga?.source) }`).
+  final incognito = await resolveIncognitoState(
+    globalIncognito: globalIncognito,
+    incognitoExtensions: incognitoExtensions,
+    extensionRepository: extRepo,
+    sourceId: manga.source,
+  );
+
   return _ReaderData(
     chapter: target,
     manga: manga,
@@ -337,6 +373,7 @@ Future<_ReaderData?> _loadReaderData(
     source: source,
     sourceError: sourceError,
     localPagePaths: localPages,
+    incognito: incognito,
   );
 }
 
@@ -348,6 +385,7 @@ class _ReaderData {
     required this.source,
     required this.sourceError,
     required this.localPagePaths,
+    required this.incognito,
   });
 
   final Chapter chapter;
@@ -356,6 +394,7 @@ class _ReaderData {
   final MangaSource? source;
   final Object? sourceError;
   final List<String>? localPagePaths;
+  final bool incognito;
 
   Chapter? get previousChapter {
     final idx = siblings.indexWhere((c) => c.id == chapter.id);

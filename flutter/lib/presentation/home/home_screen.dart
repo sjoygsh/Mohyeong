@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/source/incognito_preferences.dart';
 import '../library/library_screen.dart';
 import '../updates/updates_screen.dart';
 import '../history/history_screen.dart';
@@ -58,10 +59,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final incognito = ref.watch(incognitoModeProvider);
     return Scaffold(
-      body: IndexedStack(
-        index: _index,
-        children: _tabs.map((t) => t.child).toList(growable: false),
+      body: Column(
+        children: [
+          if (incognito) const _IncognitoBanner(),
+          Expanded(
+            child: IndexedStack(
+              index: _index,
+              children: _tabs.map((t) => t.child).toList(growable: false),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -74,6 +83,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               label: tab.label,
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Persistent strip shown while global incognito mode is active. Tapping it
+/// turns incognito off — mirroring Mihon's incognito banner / its
+/// "Disable incognito mode" affordance.
+class _IncognitoBanner extends ConsumerWidget {
+  const _IncognitoBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.secondaryContainer,
+      child: InkWell(
+        onTap: () => ref.read(incognitoModeProvider.notifier).set(false),
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.no_encryption_gmailerrorred_outlined,
+                  size: 20,
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Incognito mode',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                ),
+                Text(
+                  'Turn off',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

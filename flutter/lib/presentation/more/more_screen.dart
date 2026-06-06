@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/source/incognito_preferences.dart';
 import '../about/about_screen.dart';
 import '../backup/backup_screen.dart';
 import '../categories/categories_screen.dart';
@@ -10,12 +12,14 @@ import '../sync/sync_settings_screen.dart';
 
 /// "More" hub -- equivalent to the Kotlin MoreTab. Routes to Settings,
 /// Categories, Data & Storage, About, etc. Destinations that don't have
-/// a screen yet are left as no-op tiles.
-class MoreScreen extends StatelessWidget {
+/// a screen yet are left as no-op tiles. Also hosts the global incognito
+/// toggle, mirroring Mihon's MoreScreen.
+class MoreScreen extends ConsumerWidget {
   const MoreScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final incognito = ref.watch(incognitoModeProvider);
     final entries = <_MoreEntry>[
       _MoreEntry(
         icon: Icons.download_outlined,
@@ -56,22 +60,29 @@ class MoreScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('More')),
-      body: ListView.builder(
-        itemCount: entries.length,
-        itemBuilder: (context, i) {
-          final entry = entries[i];
-          final builder = entry.builder;
-          return ListTile(
-            leading: Icon(entry.icon),
-            title: Text(entry.label),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: builder == null
-                ? null
-                : () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(builder: builder),
-                    ),
-          );
-        },
+      body: ListView(
+        children: [
+          // Verbatim Mihon strings pref_incognito_mode / _summary.
+          SwitchListTile(
+            secondary: const Icon(Icons.no_encryption_gmailerrorred_outlined),
+            title: const Text('Incognito mode'),
+            subtitle: const Text('Pauses reading history'),
+            value: incognito,
+            onChanged: ref.read(incognitoModeProvider.notifier).set,
+          ),
+          const Divider(height: 1),
+          for (final entry in entries)
+            ListTile(
+              leading: Icon(entry.icon),
+              title: Text(entry.label),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: entry.builder == null
+                  ? null
+                  : () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(builder: entry.builder!),
+                      ),
+            ),
+        ],
       ),
     );
   }
