@@ -16,6 +16,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themePreferenceProvider);
     final themeNotifier = ref.read(themePreferenceProvider.notifier);
+    final datePattern = ref.watch(dateFormatProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Appearance')),
       body: ListView(
@@ -48,20 +49,9 @@ class AppearanceSettingsScreen extends ConsumerWidget {
             onPicked: (t) => ref.read(appThemeProvider.notifier).set(t.key),
           ),
           PrefSwitch(
-            title: 'AMOLED black',
-            subtitle: 'Use a pure-black background in dark mode.',
+            title: 'Pure black dark mode',
             provider: amoledProvider,
-          ),
-          const PrefSectionHeader('Timestamps'),
-          PrefSwitch(
-            title: 'Relative timestamps',
-            subtitle: 'Show history times as "2h ago" instead of dates.',
-            provider: relativeTimestampsProvider,
-          ),
-          _DateFormatTile(
-            current: ref.watch(dateFormatProvider),
-            onPicked: (pattern) =>
-                ref.read(dateFormatProvider.notifier).set(pattern),
+            enabled: themeMode != ThemeMode.light,
           ),
           const PrefSectionHeader('Display'),
           PrefSwitch(
@@ -69,10 +59,20 @@ class AppearanceSettingsScreen extends ConsumerWidget {
             subtitle: 'Force the two-pane layout (not yet active).',
             provider: tabletUiModeProvider,
           ),
+          _DateFormatTile(
+            current: datePattern,
+            onPicked: (pattern) =>
+                ref.read(dateFormatProvider.notifier).set(pattern),
+          ),
           PrefSwitch(
-            title: 'Images in description',
-            subtitle: 'Render images embedded in manga descriptions '
-                '(not yet active).',
+            title: 'Relative timestamps',
+            subtitle:
+                '"Today" instead of "${formatDate(DateTime.now(), datePattern)}"',
+            provider: relativeTimestampsProvider,
+          ),
+          PrefSwitch(
+            title: 'Render images in manga descriptions',
+            subtitle: 'Not yet active.',
             provider: showImagesInDescriptionProvider,
           ),
         ],

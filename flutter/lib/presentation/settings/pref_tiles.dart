@@ -10,13 +10,13 @@ class PrefSwitch extends ConsumerWidget {
   const PrefSwitch({
     super.key,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.provider,
     this.enabled = true,
   });
 
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final NotifierProvider<BoolPrefNotifier, bool> provider;
   final bool enabled;
 
@@ -25,7 +25,7 @@ class PrefSwitch extends ConsumerWidget {
     final value = ref.watch(provider);
     return SwitchListTile(
       title: Text(title),
-      subtitle: Text(subtitle),
+      subtitle: subtitle == null ? null : Text(subtitle!),
       value: value,
       onChanged:
           enabled ? (v) => ref.read(provider.notifier).set(v) : null,
