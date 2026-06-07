@@ -155,6 +155,14 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
     });
   }
 
+  void _invertSelection(Iterable<int> ids) {
+    setState(() {
+      for (final id in ids) {
+        if (!_selectedChapterIds.add(id)) _selectedChapterIds.remove(id);
+      }
+    });
+  }
+
   /// Resolves the selected ids back to `Chapter` rows from the current
   /// stream snapshot. Anything that no longer exists in the snapshot is
   /// dropped silently (rare race when the source-fetch happens to wipe a
@@ -217,6 +225,34 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
     _clearSelection();
   }
 
+  /// Bulk "Mark previous as read" — only meaningful for a single selected
+  /// chapter (parity with Kotlin's MangaBottomActionMenu, where the button
+  /// is shown only when exactly one chapter is selected). Marks every
+  /// strictly-earlier unread chapter as read and pushes the highest such
+  /// chapter number to trackers.
+  Future<void> _bulkMarkPreviousAsRead(List<Chapter> all) async {
+    final picked = _selectedChapters(all);
+    if (picked.length != 1) return;
+    final chapter = picked.first;
+    final earlier = all
+        .where((c) => c.chapterNumber < chapter.chapterNumber && !c.read)
+        .toList(growable: false);
+    await ref
+        .read(setReadStatusProvider)
+        .setRead(read: true, chapters: earlier);
+    if (earlier.isNotEmpty) {
+      final highest =
+          earlier.map((c) => c.chapterNumber).reduce((a, b) => a > b ? a : b);
+      unawaited(
+        ref.read(trackUpdaterProvider).setLastChapterRead(
+              mangaId: widget.mangaId,
+              chapterNumber: highest,
+            ),
+      );
+    }
+    _clearSelection();
+  }
+
   @override
   Widget build(BuildContext context) {
     final mangaRepo = ref.watch(mangaRepositoryProvider);
@@ -255,6 +291,21 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                           chapter: nextUnread,
                           anyRead: chapters.any((c) => c.read),
                         ),
+                  bottomNavigationBar: _selecting
+                      ? _ChapterSelectionBar(
+                          picked: _selectedChapters(chapters),
+                          onBookmark: () => _bulkSetBookmark(chapters, true),
+                          onRemoveBookmark: () =>
+                              _bulkSetBookmark(chapters, false),
+                          onMarkRead: () => _bulkSetRead(chapters, true),
+                          onMarkUnread: () => _bulkSetRead(chapters, false),
+                          onMarkPrevious: () =>
+                              _bulkMarkPreviousAsRead(chapters),
+                          onDownload: () => _bulkDownload(manga, chapters),
+                          onDelete: () =>
+                              _bulkDeleteDownloads(manga, chapters),
+                        )
+                      : null,
                   body: CustomScrollView(
                   slivers: [
                   if (_selecting)
@@ -269,6 +320,10 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                       ),
                       title: Text('${_selectedChapterIds.length} selected'),
                       actions: [
+                        // Parity with Kotlin: the selection toolbar only
+                        // carries Select all + Invert selection. All the
+                        // bulk chapter actions live in the bottom action
+                        // menu (MangaBottomActionMenu) below.
                         IconButton(
                           icon: const Icon(Icons.select_all),
                           tooltip: 'Select all',
@@ -276,35 +331,10 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                               _selectAll(chapters.map((c) => c.id)),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.done_all),
-                          tooltip: 'Mark as read',
-                          onPressed: () => _bulkSetRead(chapters, true),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.remove_done),
-                          tooltip: 'Mark as unread',
-                          onPressed: () => _bulkSetRead(chapters, false),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.bookmark_add_outlined),
-                          tooltip: 'Bookmark',
-                          onPressed: () => _bulkSetBookmark(chapters, true),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.bookmark_remove_outlined),
-                          tooltip: 'Remove bookmark',
-                          onPressed: () => _bulkSetBookmark(chapters, false),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.download_outlined),
-                          tooltip: 'Download',
-                          onPressed: () => _bulkDownload(manga, chapters),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: 'Delete downloads',
+                          icon: const Icon(Icons.flip_to_back),
+                          tooltip: 'Invert selection',
                           onPressed: () =>
-                              _bulkDeleteDownloads(manga, chapters),
+                              _invertSelection(chapters.map((c) => c.id)),
                         ),
                       ],
                     )
@@ -776,6 +806,96 @@ Chapter? _pickNextUnread(List<Chapter> chapters, Manga manga) {
 /// chapter. Label flips between "Start" (no chapters read yet) and
 /// "Resume" (at least one chapter is already read) — verbatim Mihon
 /// strings `action_start` / `action_resume`.
+/// Bottom action menu shown while chapters are multi-selected, mirroring
+/// Kotlin's `MangaBottomActionMenu`. Button order and conditional
+/// visibility follow the Kotlin source: Bookmark, Remove bookmark, Mark as
+/// read, Mark as unread, Mark previous as read (single selection only),
+/// Download, Delete.
+class _ChapterSelectionBar extends StatelessWidget {
+  const _ChapterSelectionBar({
+    required this.picked,
+    required this.onBookmark,
+    required this.onRemoveBookmark,
+    required this.onMarkRead,
+    required this.onMarkUnread,
+    required this.onMarkPrevious,
+    required this.onDownload,
+    required this.onDelete,
+  });
+
+  final List<Chapter> picked;
+  final VoidCallback onBookmark;
+  final VoidCallback onRemoveBookmark;
+  final VoidCallback onMarkRead;
+  final VoidCallback onMarkUnread;
+  final VoidCallback onMarkPrevious;
+  final VoidCallback onDownload;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final showBookmark = picked.any((c) => !c.bookmark);
+    final showRemoveBookmark =
+        picked.isNotEmpty && picked.every((c) => c.bookmark);
+    final showMarkRead = picked.any((c) => !c.read);
+    final showMarkUnread = picked.any((c) => c.read || c.lastPageRead > 0);
+    final showMarkPrevious = picked.length == 1;
+
+    return BottomAppBar(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          if (showBookmark)
+            IconButton(
+              icon: const Icon(Icons.bookmark_add_outlined),
+              tooltip: 'Bookmark',
+              onPressed: onBookmark,
+            ),
+          if (showRemoveBookmark)
+            IconButton(
+              icon: const Icon(Icons.bookmark_remove_outlined),
+              tooltip: 'Remove bookmark',
+              onPressed: onRemoveBookmark,
+            ),
+          if (showMarkRead)
+            IconButton(
+              icon: const Icon(Icons.done_all),
+              tooltip: 'Mark as read',
+              onPressed: onMarkRead,
+            ),
+          if (showMarkUnread)
+            IconButton(
+              icon: const Icon(Icons.remove_done),
+              tooltip: 'Mark as unread',
+              onPressed: onMarkUnread,
+            ),
+          if (showMarkPrevious)
+            IconButton(
+              icon: const Icon(Icons.playlist_add_check),
+              tooltip: 'Mark previous as read',
+              onPressed: onMarkPrevious,
+            ),
+          // Download/Delete are always offered: per-chapter download state
+          // is tracked inside each row, so we can't cheaply compute the
+          // "any not downloaded" / "any downloaded" gates the Kotlin menu
+          // uses. Functionality is identical; only the conditional hiding
+          // is relaxed.
+          IconButton(
+            icon: const Icon(Icons.download_outlined),
+            tooltip: 'Download',
+            onPressed: onDownload,
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Delete downloads',
+            onPressed: onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ContinueReadingFab extends StatelessWidget {
   const _ContinueReadingFab({
     required this.manga,
