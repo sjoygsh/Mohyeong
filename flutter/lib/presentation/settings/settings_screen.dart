@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../about/about_screen.dart';
 import '../track/trackers_settings_screen.dart';
 import 'advanced_settings_screen.dart';
 import 'appearance_settings_screen.dart';
@@ -25,56 +26,62 @@ class SettingsScreen extends StatelessWidget {
           _SettingsTile(
             icon: Icons.palette_outlined,
             title: 'Appearance',
-            subtitle: 'Theme and colours',
+            subtitle: 'Theme, date & time format',
             destination: const AppearanceSettingsScreen(),
           ),
           _SettingsTile(
             icon: Icons.collections_bookmark_outlined,
             title: 'Library',
-            subtitle: 'Update interval',
+            subtitle: 'Categories, global update, chapter swipe',
             destination: const LibrarySettingsScreen(),
           ),
           _SettingsTile(
-            icon: Icons.menu_book_outlined,
+            icon: Icons.chrome_reader_mode_outlined,
             title: 'Reader',
-            subtitle: 'Default reading mode',
+            subtitle: 'Reading mode, display, navigation',
             destination: const ReaderSettingsScreen(),
           ),
           _SettingsTile(
-            icon: Icons.download_outlined,
+            icon: Icons.get_app,
             title: 'Downloads',
-            subtitle: 'Simultaneous downloads, auto-download',
+            subtitle: 'Automatic download, download ahead',
             destination: const DownloadSettingsScreen(),
-          ),
-          _SettingsTile(
-            icon: Icons.explore_outlined,
-            title: 'Browse',
-            subtitle: 'Sources and NSFW content',
-            destination: const BrowseSettingsScreen(),
           ),
           _SettingsTile(
             icon: Icons.sync_outlined,
             title: 'Tracking',
-            subtitle: 'AniList, MyAnimeList, and more',
+            subtitle: 'One-way progress sync, enhanced sync',
             destination: const TrackersSettingsScreen(),
+          ),
+          _SettingsTile(
+            icon: Icons.explore_outlined,
+            title: 'Browse',
+            subtitle: 'Sources, extensions, global search',
+            destination: const BrowseSettingsScreen(),
           ),
           _SettingsTile(
             icon: Icons.storage_outlined,
             title: 'Data and storage',
-            subtitle: 'Backup, restore, and sync',
+            subtitle: 'Manual & automatic backups, storage space',
             destination: const DataStorageSettingsScreen(),
           ),
           _SettingsTile(
             icon: Icons.security_outlined,
-            title: 'Security',
-            subtitle: 'App lock and secure screen',
+            title: 'Security and privacy',
+            subtitle: 'App lock, secure screen',
             destination: const SecuritySettingsScreen(),
           ),
           _SettingsTile(
             icon: Icons.code_outlined,
             title: 'Advanced',
-            subtitle: 'Clear cookies, cache, and database',
+            subtitle: 'Dump crash logs, battery optimizations',
             destination: const AdvancedSettingsScreen(),
+          ),
+          _SettingsTile(
+            icon: Icons.info_outline,
+            title: 'About',
+            subtitle: 'Version and links',
+            destination: const AboutScreen(),
           ),
         ],
       ),
