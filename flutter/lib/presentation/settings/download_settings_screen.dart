@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/download/download_preferences.dart';
-import '../../domain/category/model/category.dart';
 import 'category_filter_tile.dart';
 import 'pref_tiles.dart';
 
@@ -100,7 +99,15 @@ class DownloadSettingsScreen extends ConsumerWidget {
             provider: downloadNewUnreadChaptersOnlyProvider,
             enabled: downloadNew,
           ),
-          _AutoDownloadCategoriesTile(enabled: downloadNew),
+          CategoryTriStateTile(
+            title: 'Categories',
+            message:
+                'Entries in excluded categories will not be downloaded even '
+                'if they are also in included categories.',
+            includedProvider: downloadNewCategoriesProvider,
+            excludedProvider: downloadNewCategoriesExcludeProvider,
+            enabled: downloadNew,
+          ),
           const PrefSectionHeader('Download ahead'),
           ListTile(
             title: const Text('Auto download while reading'),
@@ -150,168 +157,6 @@ String _removeSlotsLabel(int slots) {
     4 => 'Fifth to last read chapter',
     _ => 'Disabled',
   };
-}
-
-/// The auto-download "Categories" tri-state tile: each category is neutral,
-/// included, or excluded. Mirrors Mihon's `TriStateListDialog` + the
-/// `getCategoriesLabel` subtitle ("Include: …\nExclude: …").
-class _AutoDownloadCategoriesTile extends ConsumerWidget {
-  const _AutoDownloadCategoriesTile({required this.enabled});
-
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final included = ref.watch(downloadNewCategoriesProvider);
-    final excluded = ref.watch(downloadNewCategoriesExcludeProvider);
-    final categories =
-        ref.watch(userCategoriesProvider).valueOrNull ?? const <Category>[];
-    return ListTile(
-      title: const Text('Categories'),
-      subtitle: Text(_categoriesLabel(categories, included, excluded)),
-      trailing: const Icon(Icons.chevron_right),
-      enabled: enabled && categories.isNotEmpty,
-      onTap: () async {
-        final result = await showDialog<_TriStateResult>(
-          context: context,
-          builder: (_) => _TriStateCategoryDialog(
-            categories: categories,
-            included: included,
-            excluded: excluded,
-          ),
-        );
-        if (result != null) {
-          await ref
-              .read(downloadNewCategoriesProvider.notifier)
-              .set(result.included);
-          await ref
-              .read(downloadNewCategoriesExcludeProvider.notifier)
-              .set(result.excluded);
-        }
-      },
-    );
-  }
-}
-
-String _categoriesLabel(
-  List<Category> all,
-  Set<String> included,
-  Set<String> excluded,
-) {
-  final inc =
-      all.where((c) => included.contains(c.id.toString())).toList();
-  final exc =
-      all.where((c) => excluded.contains(c.id.toString())).toList();
-  final allExcluded = all.isNotEmpty && exc.length == all.length;
-
-  final String incText;
-  if (inc.isNotEmpty && inc.length != all.length) {
-    incText = inc.map((c) => c.name).join(', ');
-  } else if (all.isNotEmpty && inc.length == all.length) {
-    incText = 'All';
-  } else if (allExcluded) {
-    incText = 'None';
-  } else {
-    incText = 'All';
-  }
-
-  final String excText;
-  if (exc.isEmpty) {
-    excText = 'None';
-  } else if (allExcluded) {
-    excText = 'All';
-  } else {
-    excText = exc.map((c) => c.name).join(', ');
-  }
-
-  return 'Include: $incText\nExclude: $excText';
-}
-
-class _TriStateResult {
-  const _TriStateResult(this.included, this.excluded);
-  final Set<String> included;
-  final Set<String> excluded;
-}
-
-class _TriStateCategoryDialog extends StatefulWidget {
-  const _TriStateCategoryDialog({
-    required this.categories,
-    required this.included,
-    required this.excluded,
-  });
-
-  final List<Category> categories;
-  final Set<String> included;
-  final Set<String> excluded;
-
-  @override
-  State<_TriStateCategoryDialog> createState() =>
-      _TriStateCategoryDialogState();
-}
-
-class _TriStateCategoryDialogState extends State<_TriStateCategoryDialog> {
-  late final Set<String> _included = {...widget.included};
-  late final Set<String> _excluded = {...widget.excluded};
-
-  // neutral -> include -> exclude -> neutral
-  void _cycle(String id) {
-    setState(() {
-      if (_included.contains(id)) {
-        _included.remove(id);
-        _excluded.add(id);
-      } else if (_excluded.contains(id)) {
-        _excluded.remove(id);
-      } else {
-        _included.add(id);
-      }
-    });
-  }
-
-  IconData _iconFor(String id) {
-    if (_included.contains(id)) return Icons.check_box;
-    if (_excluded.contains(id)) return Icons.indeterminate_check_box;
-    return Icons.check_box_outline_blank;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Categories'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(8, 0, 8, 12),
-              child: Text(
-                'Entries in excluded categories will not be downloaded even '
-                'if they are also in included categories.',
-              ),
-            ),
-            for (final c in widget.categories)
-              ListTile(
-                leading: Icon(_iconFor(c.id.toString())),
-                title: Text(c.name),
-                onTap: () => _cycle(c.id.toString()),
-              ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(
-            _TriStateResult(_included, _excluded),
-          ),
-          child: const Text('OK'),
-        ),
-      ],
-    );
-  }
 }
 
 class _DownloadAheadPickerDialog extends StatelessWidget {

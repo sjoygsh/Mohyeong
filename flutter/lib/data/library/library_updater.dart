@@ -74,6 +74,13 @@ class LibraryUpdater {
     final favourites = await _mangas.getFavorites();
     final eligible = await _selectMangaToUpdate(favourites, restrictToMangaIds);
 
+    // Read once per sweep: when on, each entry also has its details refreshed
+    // (cover/description/status), not just its chapter list. Mirrors Kotlin's
+    // `autoUpdateMetadata`. Read straight from prefs so this works in the
+    // background workmanager isolate (no Riverpod).
+    final prefs = await SharedPreferences.getInstance();
+    final refreshMetadata = prefs.getBool('auto_update_metadata') ?? false;
+
     var newChaptersTotal = 0;
     var mangaWithNewChapters = 0;
     final failures = <LibraryUpdateFailure>[];
@@ -85,7 +92,7 @@ class LibraryUpdater {
         currentTitle: manga.title,
       ));
       try {
-        final newCount = await _updateOne(manga);
+        final newCount = await _updateOne(manga, refreshMetadata);
         newChaptersTotal += newCount;
         if (newCount > 0) mangaWithNewChapters++;
       } catch (e) {
@@ -184,9 +191,17 @@ class LibraryUpdater {
       (raw ?? const []).map(int.tryParse).whereType<int>().toSet();
 
   /// Fetches a single manga's chapter list and persists any new chapters.
-  /// Returns the number of chapters newly added to the DB.
-  Future<int> _updateOne(Manga manga) async {
+  /// When [refreshMetadata] is set, the manga's details (cover/description/
+  /// status) are pulled and persisted first, matching Kotlin's
+  /// `autoUpdateMetadata` path. Returns the number of chapters newly added.
+  Future<int> _updateOne(Manga manga, bool refreshMetadata) async {
     final source = await _extensions.getSource(manga.source.toString());
+    if (refreshMetadata) {
+      final details = await source.fetchMangaDetails(
+        SourceManga(url: manga.url, title: manga.title),
+      );
+      await _mangas.applySourceDetails(manga.id, details);
+    }
     final fetched = await source.fetchChapterList(
       SourceManga(url: manga.url, title: manga.title),
     );

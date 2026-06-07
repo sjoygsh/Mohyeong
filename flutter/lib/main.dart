@@ -84,6 +84,17 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
         ref.read(libraryUpdateSchedulerProvider).reschedule(next);
       },
     );
+    // Re-register the periodic task when the device restrictions change so the
+    // new workmanager Constraints take effect (matches Kotlin's setupTask).
+    ref.listen<Set<String>>(
+      libraryUpdateDeviceRestrictionProvider,
+      (prev, next) {
+        if (prev == next) return;
+        ref
+            .read(libraryUpdateSchedulerProvider)
+            .reschedule(ref.read(libraryUpdatePreferenceProvider));
+      },
+    );
     // Mirror Mihon's persistent incognito notification: show it while global
     // incognito is on, clear it when turned off. (It starts off every cold
     // start — see main() — so there's nothing to show at launch.)

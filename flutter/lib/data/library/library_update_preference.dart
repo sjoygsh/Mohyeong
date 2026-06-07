@@ -10,10 +10,12 @@ import '../preferences/typed_preferences.dart';
 /// interval passed to workmanager. `0` means "manual only" — no scheduled
 /// work.
 enum LibraryUpdateInterval {
-  manual(0, 'Manual only'),
+  // Labels copied verbatim from Kotlin (`update_never`/`update_12hour`/… ).
+  manual(0, 'Off'),
   every12h(12, 'Every 12 hours'),
   daily(24, 'Daily'),
   every48h(48, 'Every 2 days'),
+  every72h(72, 'Every 3 days'),
   weekly(168, 'Weekly');
 
   const LibraryUpdateInterval(this.hours, this.label);
@@ -89,6 +91,34 @@ final libraryUpdateMangaRestrictionProvider = stringSetPref(
     MangaUpdateRestriction.outsideReleasePeriod,
   },
 );
+
+/// Device-state restrictions on the background library update, mirroring
+/// Kotlin's `autoUpdateDeviceRestrictions` set. Tokens match the Kotlin
+/// `LibraryPreferences.DEVICE_*` constants so a settings import carries over.
+/// Read by [LibraryUpdateScheduler] when building the workmanager
+/// `Constraints`. Defaults to Wi-Fi-only, matching Mihon.
+abstract final class DeviceRestriction {
+  /// Only run while connected to an unmetered (typically Wi-Fi) network.
+  static const onlyOnWifi = 'wifi';
+
+  /// Only run on a network the OS reports as not metered.
+  static const networkNotMetered = 'network_not_metered';
+
+  /// Only run while the device is charging.
+  static const charging = 'ac';
+}
+
+/// The active device-restriction set (Settings → Library → Global update).
+final libraryUpdateDeviceRestrictionProvider = stringSetPref(
+  'library_update_restriction',
+  const {DeviceRestriction.onlyOnWifi},
+);
+
+/// "Automatically refresh metadata" — when on, the library sweep also pulls
+/// fresh manga details (cover/description/status) per entry, not just the
+/// chapter list. Mirrors Kotlin's `autoUpdateMetadata` (default false).
+final autoUpdateMetadataProvider =
+    boolPref('auto_update_metadata', false);
 
 /// Categories to include in the global library update (empty = all).
 final libraryUpdateCategoriesProvider =

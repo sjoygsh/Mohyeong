@@ -122,10 +122,30 @@ class LibraryUpdateScheduler {
       libraryUpdateTaskName,
       libraryUpdateTaskName,
       frequency: Duration(hours: interval.hours),
-      constraints: Constraints(
-        networkType: NetworkType.connected,
-      ),
+      constraints: await _buildConstraints(),
       existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
+    );
+  }
+
+  /// Builds the workmanager [Constraints] from the user's device-restriction
+  /// preference ([libraryUpdateDeviceRestrictionProvider]). Read straight from
+  /// [SharedPreferences] so the same mapping applies whether called from the
+  /// UI isolate or app start. Wi-Fi-only / not-metered both map to
+  /// [NetworkType.unmetered] (Android treats Wi-Fi as unmetered); otherwise a
+  /// plain connection is required. Charging adds `requiresCharging`. Mirrors
+  /// Kotlin `LibraryUpdateJob.setupTask`'s constraint builder.
+  Future<Constraints> _buildConstraints() async {
+    final prefs = await SharedPreferences.getInstance();
+    final restrictions =
+        (prefs.getStringList('library_update_restriction') ??
+                const [DeviceRestriction.onlyOnWifi])
+            .toSet();
+    final unmetered =
+        restrictions.contains(DeviceRestriction.onlyOnWifi) ||
+            restrictions.contains(DeviceRestriction.networkNotMetered);
+    return Constraints(
+      networkType: unmetered ? NetworkType.unmetered : NetworkType.connected,
+      requiresCharging: restrictions.contains(DeviceRestriction.charging),
     );
   }
 
@@ -141,7 +161,7 @@ class LibraryUpdateScheduler {
     await Workmanager().registerOneOffTask(
       libraryUpdateOneOffTaskName,
       libraryUpdateOneOffTaskName,
-      constraints: Constraints(networkType: NetworkType.connected),
+      constraints: await _buildConstraints(),
       existingWorkPolicy: ExistingWorkPolicy.replace,
     );
   }

@@ -3,10 +3,31 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_update_preference.dart';
+import '../categories/categories_screen.dart';
 import 'category_filter_tile.dart';
+import 'pref_tiles.dart';
 
-/// Library sub-screen: background update interval + display toggles.
-/// Mirror of Mihon's SettingsLibraryScreen.
+/// Settings → Library. Mirror of Mihon's `SettingsLibraryScreen`, grouped
+/// into Categories / Global update / Behavior, plus a Mohyeong-specific
+/// Display/Badges section.
+///
+/// Wired 1:1 with Kotlin where the backing subsystem exists: the update
+/// interval drives the workmanager schedule, the device restrictions
+/// ([libraryUpdateDeviceRestrictionProvider]) feed the task's `Constraints`,
+/// the tri-state categories scope the sweep, "Automatically refresh metadata"
+/// ([autoUpdateMetadataProvider]) makes the sweep also pull manga details, and
+/// smart-update + hide-missing + group-by-volume hook their respective paths.
+///
+/// Intentional differences from Kotlin's screen:
+///   * "Edit categories" only navigates (default-category assignment on
+///     favouriting and per-category "categorized display settings" aren't
+///     implemented yet, so those two Kotlin items are omitted rather than
+///     shipped as dead switches).
+///   * The "Show updates count badge", chapter-swipe actions, mark-duplicate
+///     and keep-downloaded-removed items are omitted for the same reason —
+///     their subsystems don't exist yet.
+///   * The Display/Badges section is a Mohyeong addition: the Flutter build
+///     has no separate library display bottom-sheet, so these live here.
 class LibrarySettingsScreen extends ConsumerWidget {
   const LibrarySettingsScreen({super.key});
 
@@ -15,29 +36,37 @@ class LibrarySettingsScreen extends ConsumerWidget {
     final interval = ref.watch(libraryUpdatePreferenceProvider);
     final intervalNotifier =
         ref.read(libraryUpdatePreferenceProvider.notifier);
+    final categoryCount =
+        ref.watch(userCategoriesProvider).valueOrNull?.length ?? 0;
     final showCarousel = ref.watch(showMostReadCarouselProvider);
-    final carouselNotifier =
-        ref.read(showMostReadCarouselProvider.notifier);
     final showUnreadBadge = ref.watch(displayUnreadBadgeProvider);
     final showDownloadBadge = ref.watch(displayDownloadBadgeProvider);
     final showLocalBadge = ref.watch(displayLocalBadgeProvider);
     final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
     final showContinueReading = ref.watch(showContinueReadingButtonProvider);
-    final groupChaptersByVolume = ref.watch(groupChaptersByVolumeProvider);
-    final hideMissingChapters = ref.watch(hideMissingChaptersProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Library')),
       body: ListView(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'Updates',
-              style: TextStyle(fontWeight: FontWeight.w600),
+          // ── Categories ──────────────────────────────────────────────
+          const PrefSectionHeader('Categories'),
+          ListTile(
+            title: const Text('Edit categories'),
+            subtitle: Text(
+              categoryCount == 1 ? '1 category' : '$categoryCount categories',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const CategoriesScreen(),
+              ),
             ),
           ),
+
+          // ── Global update ───────────────────────────────────────────
+          const PrefSectionHeader('Global update'),
           ListTile(
-            title: const Text('Update interval'),
+            title: const Text('Automatic updates'),
             subtitle: Text(interval.label),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
@@ -50,46 +79,57 @@ class LibrarySettingsScreen extends ConsumerWidget {
               }
             },
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
-            child: Text(
-              'Global update',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
+          _DeviceRestrictionSection(
+            enabled: interval != LibraryUpdateInterval.manual,
           ),
-          CategoryFilterTile(
-            title: 'Categories to include',
-            emptyLabel: 'All',
-            provider: libraryUpdateCategoriesProvider,
+          CategoryTriStateTile(
+            title: 'Categories',
+            message: 'Entries in excluded categories will not be updated even '
+                'if they are also in included categories.',
+            includedProvider: libraryUpdateCategoriesProvider,
+            excludedProvider: libraryUpdateCategoriesExcludeProvider,
           ),
-          CategoryFilterTile(
-            title: 'Categories to exclude',
-            emptyLabel: 'None',
-            provider: libraryUpdateCategoriesExcludeProvider,
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Text(
-              'Entries in excluded categories will not be updated even if '
-              'they are also in included categories.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
+          PrefSwitch(
+            title: 'Automatically refresh metadata',
+            subtitle: 'Check for new cover and details when updating library',
+            provider: autoUpdateMetadataProvider,
           ),
           const _SmartUpdateSection(),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
-            child: Text(
-              'Display',
-              style: TextStyle(fontWeight: FontWeight.w600),
+
+          // ── Behavior ────────────────────────────────────────────────
+          const PrefSectionHeader('Behavior'),
+          // Verbatim Mihon string pref_hide_missing_chapter_indicators.
+          SwitchListTile(
+            title: const Text('Hide missing chapter indicators'),
+            subtitle: const Text(
+              'Hide the "Missing N chapters" rows between chapters with a '
+              'numbering gap on the manga page',
             ),
+            value: ref.watch(hideMissingChaptersProvider),
+            onChanged:
+                ref.read(hideMissingChaptersProvider.notifier).setEnabled,
           ),
+          // Verbatim Mihon strings pref_group_chapters_by_volume / _summary.
+          SwitchListTile(
+            title: const Text('Group chapters by volume'),
+            subtitle: const Text(
+              'Show volume headers between chapter groups on the manga page',
+            ),
+            value: ref.watch(groupChaptersByVolumeProvider),
+            onChanged:
+                ref.read(groupChaptersByVolumeProvider.notifier).setEnabled,
+          ),
+
+          // ── Display (Mohyeong-specific) ─────────────────────────────
+          const PrefSectionHeader('Display'),
           SwitchListTile(
             title: const Text('Show "Most read" carousel'),
             subtitle: const Text(
               'Highlights the favourites you are furthest through.',
             ),
             value: showCarousel,
-            onChanged: carouselNotifier.setEnabled,
+            onChanged:
+                ref.read(showMostReadCarouselProvider.notifier).setEnabled,
           ),
           SwitchListTile(
             title: const Text('Show continue reading button'),
@@ -102,37 +142,9 @@ class LibrarySettingsScreen extends ConsumerWidget {
                 .read(showContinueReadingButtonProvider.notifier)
                 .setEnabled,
           ),
-          // Verbatim Mihon strings pref_group_chapters_by_volume /
-          // _summary so settings imports read identically.
-          SwitchListTile(
-            title: const Text('Group chapters by volume'),
-            subtitle: const Text(
-              'Show volume headers between chapter groups on the manga page',
-            ),
-            value: groupChaptersByVolume,
-            onChanged: ref
-                .read(groupChaptersByVolumeProvider.notifier)
-                .setEnabled,
-          ),
-          // Verbatim Mihon string pref_hide_missing_chapter_indicators.
-          SwitchListTile(
-            title: const Text('Hide missing chapter indicators'),
-            subtitle: const Text(
-              'Hide the "Missing N chapters" rows between chapters with a '
-              'numbering gap on the manga page',
-            ),
-            value: hideMissingChapters,
-            onChanged: ref
-                .read(hideMissingChaptersProvider.notifier)
-                .setEnabled,
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
-            child: Text(
-              'Badges',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
+
+          // ── Badges ──────────────────────────────────────────────────
+          const PrefSectionHeader('Badges'),
           SwitchListTile(
             title: const Text('Unread count'),
             subtitle: const Text(
@@ -175,6 +187,59 @@ class LibrarySettingsScreen extends ConsumerWidget {
   }
 }
 
+/// "Automatic updates device restrictions" — the Wi-Fi / unmetered / charging
+/// constraints applied to the background sweep. Toggling a row updates
+/// [libraryUpdateDeviceRestrictionProvider]; a `main.dart` listener
+/// re-registers the workmanager task so the new `Constraints` take effect.
+/// Disabled (greyed) when the interval is "Off", mirroring Kotlin's
+/// `enabled = autoUpdateInterval > 0`.
+class _DeviceRestrictionSection extends ConsumerWidget {
+  const _DeviceRestrictionSection({required this.enabled});
+
+  final bool enabled;
+
+  static const _entries = <(String, String)>[
+    (DeviceRestriction.onlyOnWifi, 'Only on Wi-Fi'),
+    (DeviceRestriction.networkNotMetered, 'Only on unmetered network'),
+    (DeviceRestriction.charging, 'When charging'),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(libraryUpdateDeviceRestrictionProvider);
+    final notifier =
+        ref.read(libraryUpdateDeviceRestrictionProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Text(
+            'Automatic updates device restrictions',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+        for (final (token, label) in _entries)
+          CheckboxListTile(
+            title: Text(label),
+            value: selected.contains(token),
+            onChanged: enabled
+                ? (checked) {
+                    final next = {...selected};
+                    if (checked ?? false) {
+                      next.add(token);
+                    } else {
+                      next.remove(token);
+                    }
+                    notifier.set(next);
+                  }
+                : null,
+          ),
+      ],
+    );
+  }
+}
+
 /// The "Smart update" restriction checkboxes. Toggling a row adds/removes
 /// its token from the [libraryUpdateMangaRestrictionProvider] set. Labels +
 /// token order mirror Mihon's `SettingsLibraryScreen` multi-select.
@@ -198,7 +263,7 @@ class _SmartUpdateSection extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Padding(
-          padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
           child: Text(
             'Smart update',
             style: TextStyle(fontWeight: FontWeight.w600),
@@ -231,7 +296,7 @@ class _IntervalPickerDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SimpleDialog(
-      title: const Text('Update interval'),
+      title: const Text('Automatic updates'),
       children: [
         RadioGroup<LibraryUpdateInterval>(
           groupValue: current,
