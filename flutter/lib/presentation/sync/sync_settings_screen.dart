@@ -132,26 +132,34 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             ),
           ),
           const Divider(),
+          // "What to sync" group (Kotlin pref_sync_data_category).
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'What to sync',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
           SwitchListTile(
-            title: const Text('Sync categories'),
+            title: const Text('Categories'),
             value: data.syncCategories,
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(syncCategories: v)),
           ),
           SwitchListTile(
-            title: const Text('Sync chapters'),
+            title: const Text('Chapters'),
             value: data.syncChapters,
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(syncChapters: v)),
           ),
           SwitchListTile(
-            title: const Text('Sync tracking'),
+            title: const Text('Tracking'),
             value: data.syncTracking,
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(syncTracking: v)),
           ),
           SwitchListTile(
-            title: const Text('Sync history'),
+            title: const Text('History'),
             value: data.syncHistory,
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(syncHistory: v)),
@@ -254,13 +262,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   static bool _needsHost(SyncService s) =>
       s == SyncService.syncYomi || s == SyncService.webDav;
 
-  static String _hostLabel(SyncService s) {
-    return switch (s) {
-      SyncService.syncYomi => 'SyncYomi host',
-      SyncService.webDav => 'WebDAV URL',
-      _ => 'Host',
-    };
-  }
+  // Kotlin uses a single "Server URL" title (pref_sync_host) for both the
+  // SyncYomi and WebDAV host fields.
+  static String _hostLabel(SyncService s) => 'Server URL';
 
   static String _hostHint(SyncService s) {
     return switch (s) {
@@ -270,13 +274,15 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     };
   }
 
+  // Credential field title per service, matching Kotlin SettingsSyncScreen:
+  // WebDAV → Password, Google Drive / Dropbox → Access token, else → API key.
   static String _secretLabel(SyncService s) {
     return switch (s) {
-      SyncService.syncYomi => 'API key',
       SyncService.webDav => 'Password',
-      SyncService.googleDrive => 'Google access token',
-      SyncService.dropbox => 'Dropbox access token',
-      SyncService.none => 'Secret',
+      SyncService.googleDrive => 'Access token',
+      SyncService.dropbox => 'Access token',
+      SyncService.syncYomi => 'API key',
+      SyncService.none => 'API key',
     };
   }
 

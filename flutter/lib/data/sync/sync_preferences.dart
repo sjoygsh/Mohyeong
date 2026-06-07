@@ -31,9 +31,10 @@ enum SyncService {
     return SyncService.values[value];
   }
 
+  // Labels match Kotlin SettingsSyncScreen's sync_service_* strings verbatim.
   String get label => switch (this) {
-        SyncService.none => 'Off',
-        SyncService.syncYomi => 'SyncYomi',
+        SyncService.none => 'Disabled',
+        SyncService.syncYomi => 'SyncYomi-compatible server',
         SyncService.webDav => 'WebDAV',
         SyncService.googleDrive => 'Google Drive',
         SyncService.dropbox => 'Dropbox',
