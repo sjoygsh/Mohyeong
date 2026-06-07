@@ -15,18 +15,18 @@ class SecuritySettingsScreen extends ConsumerWidget {
   /// Idle-timeout options. Keys are Mihon's `lock_app_after` minute values:
   /// -1 = never, 0 = immediately. The remaining entries are whole minutes.
   static const _lockAfterOptions = <int, String>{
-    -1: 'Never',
-    0: 'Immediately',
+    0: 'Always',
     1: 'After 1 minute',
+    2: 'After 2 minutes',
     5: 'After 5 minutes',
     10: 'After 10 minutes',
-    30: 'After 30 minutes',
+    -1: 'Never',
   };
 
   static const _secureScreenLabels = <SecureScreenMode, String>{
-    SecureScreenMode.never: 'Never',
-    SecureScreenMode.incognito: 'Incognito',
     SecureScreenMode.always: 'Always',
+    SecureScreenMode.incognito: 'Incognito mode',
+    SecureScreenMode.never: 'Never',
   };
 
   @override
@@ -35,42 +35,39 @@ class SecuritySettingsScreen extends ConsumerWidget {
     final lockAfter = ref.watch(lockAfterMinutesProvider);
     final secureMode = ref.watch(secureScreenModeProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Security')),
+      appBar: AppBar(title: const Text('Security and privacy')),
       body: ListView(
         children: [
-          const PrefSectionHeader('App lock'),
+          const PrefSectionHeader('Security'),
           PrefSwitch(
-            title: 'Lock with biometrics',
-            subtitle: 'Ask for biometrics or device credentials to open '
-                'the app.',
+            title: 'Require unlock',
             provider: useBiometricLockProvider,
           ),
           ListTile(
             enabled: useBiometric,
             title: const Text('Lock when idle'),
-            subtitle: Text(_lockAfterOptions[lockAfter] ?? 'Immediately'),
+            subtitle: Text(_lockAfterOptions[lockAfter] ?? 'Always'),
             trailing: const Icon(Icons.chevron_right),
             onTap: useBiometric ? () => _pickLockAfter(context, ref) : null,
           ),
-          const PrefSectionHeader('Privacy'),
+          PrefSwitch(
+            title: 'Hide notification content',
+            provider: hideNotificationContentProvider,
+          ),
           ListTile(
             title: const Text('Secure screen'),
-            subtitle: Text(_secureScreenLabels[secureMode] ?? 'Incognito'),
+            subtitle:
+                Text(_secureScreenLabels[secureMode] ?? 'Incognito mode'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _pickSecureScreen(context, ref),
           ),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
-              'Block screenshots and hide the app contents in the recent '
-              'apps list.',
+              'Secure screen hides app contents when switching apps and '
+              'block screenshots',
               style: TextStyle(fontSize: 12),
             ),
-          ),
-          PrefSwitch(
-            title: 'Hide notification content',
-            subtitle: 'Keep titles and cover art out of notifications.',
-            provider: hideNotificationContentProvider,
           ),
         ],
       ),
