@@ -69,14 +69,64 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     final items = repo.snapshot();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Download queue'),
+        // Title carries a count pill of the queued chapters, mirroring
+        // Kotlin's DownloadQueueScreen.
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Flexible(
+              child: Text(
+                'Download queue',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (items.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: _CountPill(count: items.length),
+              ),
+          ],
+        ),
         actions: [
           if (items.isNotEmpty)
-            IconButton(
-              icon: Icon(
-                repo.isPaused ? Icons.play_arrow : Icons.pause,
-              ),
-              tooltip: repo.isPaused ? 'Resume queue' : 'Pause queue',
+            PopupMenuButton<_QueueSort>(
+              icon: const Icon(Icons.sort),
+              tooltip: 'Sort',
+              onSelected: (s) => _applySort(repo, s),
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: _QueueSort.dateNewest,
+                  child: Text('By upload date · Newest'),
+                ),
+                PopupMenuItem(
+                  value: _QueueSort.dateOldest,
+                  child: Text('By upload date · Oldest'),
+                ),
+                PopupMenuItem(
+                  value: _QueueSort.numberAsc,
+                  child: Text('By chapter number · Ascending'),
+                ),
+                PopupMenuItem(
+                  value: _QueueSort.numberDesc,
+                  child: Text('By chapter number · Descending'),
+                ),
+              ],
+            ),
+          if (items.isNotEmpty)
+            PopupMenuButton<String>(
+              onSelected: (_) => _confirmClearQueue(context, repo),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'cancel_all', child: Text('Cancel all')),
+              ],
+            ),
+        ],
+      ),
+      floatingActionButton: items.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              icon: Icon(repo.isPaused ? Icons.play_arrow : Icons.pause),
+              label: Text(repo.isPaused ? 'Resume' : 'Pause'),
               onPressed: () {
                 if (repo.isPaused) {
                   repo.resumeQueue();
@@ -85,46 +135,6 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
                 }
               },
             ),
-          if (items.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.clear_all),
-              tooltip: 'Clear queue',
-              onPressed: () async {
-                final ok = await showDialog<bool>(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    title: const Text('Clear download queue?'),
-                    content: const Text(
-                      'Queued chapters will be removed. The currently '
-                      'downloading chapter will finish.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: const Text('Cancel'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.of(context).pop(true),
-                        child: const Text('Clear'),
-                      ),
-                    ],
-                  ),
-                );
-                if (ok == true) {
-                  final removed = repo.clearQueue();
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(removed == 1
-                          ? 'Removed 1 chapter'
-                          : 'Removed $removed chapters'),
-                    ),
-                  );
-                }
-              },
-            ),
-        ],
-      ),
       body: items.isEmpty
           ? const _EmptyQueue()
           : Column(
@@ -145,6 +155,56 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
               ],
             ),
     );
+  }
+
+  void _applySort(DownloadRepository repo, _QueueSort sort) {
+    switch (sort) {
+      case _QueueSort.dateNewest:
+        repo.sortQueue((a, b) => b.dateUpload.compareTo(a.dateUpload));
+      case _QueueSort.dateOldest:
+        repo.sortQueue((a, b) => a.dateUpload.compareTo(b.dateUpload));
+      case _QueueSort.numberAsc:
+        repo.sortQueue((a, b) => a.chapterNumber.compareTo(b.chapterNumber));
+      case _QueueSort.numberDesc:
+        repo.sortQueue((a, b) => b.chapterNumber.compareTo(a.chapterNumber));
+    }
+  }
+
+  Future<void> _confirmClearQueue(
+    BuildContext context,
+    DownloadRepository repo,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Clear download queue?'),
+        content: const Text(
+          'Queued chapters will be removed. The currently '
+          'downloading chapter will finish.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      final removed = repo.clearQueue();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(removed == 1
+              ? 'Removed 1 chapter'
+              : 'Removed $removed chapters'),
+        ),
+      );
+    }
   }
 
   Widget _buildBody(
@@ -281,6 +341,35 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
   }
 }
 
+/// Sort options for the download queue, mirroring Kotlin's Sort menu.
+enum _QueueSort { dateNewest, dateOldest, numberAsc, numberDesc }
+
+/// Small rounded count badge shown next to the app-bar title (Kotlin's
+/// Pill).
+class _CountPill extends StatelessWidget {
+  const _CountPill({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .onSurface
+            .withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        '$count',
+        style: Theme.of(context).textTheme.labelLarge,
+      ),
+    );
+  }
+}
+
 class _QueueBanner extends StatelessWidget {
   const _QueueBanner({required this.icon, required this.text});
 
@@ -327,7 +416,7 @@ class _EmptyQueue extends StatelessWidget {
               color: Theme.of(context).colorScheme.outline,
             ),
             const SizedBox(height: 12),
-            const Text('No downloads in progress.'),
+            const Text('No downloads'),
           ],
         ),
       ),

@@ -627,6 +627,22 @@ class DownloadRepository {
     return true;
   }
 
+  /// Sorts the queued jobs in place by [compare] (parity with Kotlin's
+  /// DownloadQueueScreen "Sort" menu — by upload date / chapter number,
+  /// ascending or descending). The currently-running job is untouched
+  /// since it isn't in `_queue`. Emits a `queued` event so the queue
+  /// screen repaints.
+  void sortQueue(int Function(Chapter a, Chapter b) compare) {
+    if (_queue.length < 2) return;
+    _queue.sort((a, b) => compare(a.chapter, b.chapter));
+    _events.add(
+      DownloadEvent(
+        chapterId: _queue.first.chapter.id,
+        state: DownloadState.queued,
+      ),
+    );
+  }
+
   /// Drops every queued chapter, leaving the in-flight job to finish.
   /// Returns the number of jobs removed.
   int clearQueue() {
