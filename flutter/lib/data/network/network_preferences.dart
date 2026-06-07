@@ -26,7 +26,7 @@ const dohShecan = 12;
 
 /// Display labels keyed by provider id, in Mihon's menu order.
 const dohProviderLabels = <int, String>{
-  dohOff: 'Off',
+  dohOff: 'Disabled',
   dohCloudflare: 'Cloudflare',
   dohGoogle: 'Google',
   dohAdGuard: 'AdGuard',

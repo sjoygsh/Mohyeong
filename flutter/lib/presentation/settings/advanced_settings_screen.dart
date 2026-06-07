@@ -29,15 +29,15 @@ class AdvancedSettingsScreen extends ConsumerWidget {
           const PrefSectionHeader('Logging'),
           PrefSwitch(
             title: 'Verbose logging',
-            subtitle: 'Print network and debug logs. Requires an app '
-                'restart.',
+            subtitle:
+                'Print verbose logs to system log (reduces app performance)',
             provider: verboseLoggingProvider,
           ),
-          const PrefSectionHeader('Network'),
+          const PrefSectionHeader('Networking'),
           ListTile(
             leading: const Icon(Icons.dns_outlined),
-            title: const Text('DNS over HTTPS'),
-            subtitle: Text(dohProviderLabels[doh] ?? 'Off'),
+            title: const Text('DNS over HTTPS (DoH)'),
+            subtitle: Text(dohProviderLabels[doh] ?? 'Disabled'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _pickDoh(context, ref),
           ),
@@ -70,7 +70,7 @@ class AdvancedSettingsScreen extends ConsumerWidget {
             leading: const Icon(Icons.delete_sweep_outlined),
             title: const Text('Clear database'),
             subtitle: const Text(
-              'Remove manga that are not in your library, freeing space.',
+              'Delete history for entries that are not saved in your library',
             ),
             onTap: () => _clearDatabase(context, ref),
           ),
@@ -84,7 +84,7 @@ class AdvancedSettingsScreen extends ConsumerWidget {
     final picked = await showDialog<int>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('DNS over HTTPS'),
+        title: const Text('DNS over HTTPS (DoH)'),
         children: [
           RadioGroup<int>(
             groupValue: current,
