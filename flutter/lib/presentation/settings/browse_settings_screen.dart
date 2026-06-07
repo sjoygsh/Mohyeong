@@ -20,16 +20,23 @@ class BrowseSettingsScreen extends ConsumerWidget {
         children: [
           const PrefSectionHeader('Sources'),
           PrefSwitch(
-            title: 'Hide in-library items',
-            subtitle: 'Hide manga already in your library from source '
-                'browse and search results.',
+            title: 'Hide entries already in library',
             provider: hideInLibraryItemsProvider,
           ),
-          const PrefSectionHeader('NSFW content'),
+          const PrefSectionHeader('NSFW (18+) sources'),
           PrefSwitch(
-            title: 'Show NSFW sources',
-            subtitle: 'Display sources flagged 18+ (not yet active).',
+            title: 'Show in sources and extensions lists',
+            subtitle: 'Not yet active.',
             provider: showNsfwSourceProvider,
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              'This does not prevent unofficial or potentially incorrectly '
+              'flagged extensions from surfacing NSFW (18+) content within '
+              'the app.',
+              style: TextStyle(fontSize: 12),
+            ),
           ),
         ],
       ),
