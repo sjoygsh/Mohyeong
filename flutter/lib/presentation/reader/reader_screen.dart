@@ -1992,7 +1992,7 @@ class _SourceUnavailable extends StatelessWidget {
   }
 }
 
-class _ReaderHeader extends StatelessWidget {
+class _ReaderHeader extends ConsumerStatefulWidget {
   const _ReaderHeader({
     required this.manga,
     required this.chapter,
@@ -2005,6 +2005,33 @@ class _ReaderHeader extends StatelessWidget {
   final ReadingMode mode;
   final ValueChanged<ReadingMode> onChangeMode;
 
+  @override
+  ConsumerState<_ReaderHeader> createState() => _ReaderHeaderState();
+}
+
+class _ReaderHeaderState extends ConsumerState<_ReaderHeader> {
+  // Optimistic bookmark state. Seeded from the loaded chapter (which is
+  // resolved once per reader session) and flipped locally so the filled /
+  // outline icon updates immediately, mirroring Kotlin's top-bar bookmark
+  // toggle which reflects state without a full reload.
+  late bool _bookmarked = widget.chapter.bookmark;
+
+  @override
+  void didUpdateWidget(covariant _ReaderHeader old) {
+    super.didUpdateWidget(old);
+    if (widget.chapter.id != old.chapter.id) {
+      _bookmarked = widget.chapter.bookmark;
+    }
+  }
+
+  Future<void> _toggleBookmark() async {
+    final next = !_bookmarked;
+    setState(() => _bookmarked = next);
+    await ref
+        .read(chapterRepositoryProvider)
+        .setBookmark(widget.chapter.id, next);
+  }
+
   Future<void> _pickMode(BuildContext context) async {
     final picked = await showDialog<ReadingMode>(
       context: context,
@@ -2012,7 +2039,7 @@ class _ReaderHeader extends StatelessWidget {
         title: const Text('Reading mode'),
         children: [
           RadioGroup<ReadingMode>(
-            groupValue: mode,
+            groupValue: widget.mode,
             onChanged: (v) => Navigator.of(ctx).pop(v),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -2029,8 +2056,8 @@ class _ReaderHeader extends StatelessWidget {
         ],
       ),
     );
-    if (picked != null && picked != mode) {
-      onChangeMode(picked);
+    if (picked != null && picked != widget.mode) {
+      widget.onChangeMode(picked);
     }
   }
 
@@ -2050,15 +2077,15 @@ class _ReaderHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  manga.title,
+                  widget.manga.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white),
                 ),
                 Text(
-                  chapter.name.isEmpty
-                      ? 'Chapter ${chapter.chapterNumber}'
-                      : chapter.name,
+                  widget.chapter.name.isEmpty
+                      ? 'Chapter ${widget.chapter.chapterNumber}'
+                      : widget.chapter.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
@@ -2066,9 +2093,18 @@ class _ReaderHeader extends StatelessWidget {
               ],
             ),
           ),
+          // Bookmark toggle — Kotlin's primary reader top-bar action.
+          IconButton(
+            icon: Icon(
+              _bookmarked ? Icons.bookmark : Icons.bookmark_border,
+              color: Colors.white,
+            ),
+            tooltip: _bookmarked ? 'Remove bookmark' : 'Bookmark',
+            onPressed: _toggleBookmark,
+          ),
           IconButton(
             icon: const Icon(Icons.tune, color: Colors.white),
-            tooltip: 'Reading mode (${mode.label})',
+            tooltip: 'Reading mode (${widget.mode.label})',
             onPressed: () => _pickMode(context),
           ),
         ],
