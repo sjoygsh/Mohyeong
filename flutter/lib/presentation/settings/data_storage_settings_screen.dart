@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/source/local_source_preferences.dart';
 import '../../data/source/saf.dart';
@@ -14,10 +15,30 @@ class DataStorageSettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Data and storage')),
+      appBar: AppBar(
+        title: const Text('Data and storage'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: 'Guide',
+            onPressed: () => launchUrl(
+              Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html#storage'),
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         children: [
           const _StorageLocationTile(),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              'Used for automatic backups, chapter downloads, and local '
+              'source.',
+              style: TextStyle(fontSize: 12),
+            ),
+          ),
           const Divider(height: 1),
           ListTile(
             title: const Text('Backup & restore'),
@@ -104,7 +125,7 @@ class _StorageLocationTileState extends ConsumerState<_StorageLocationTile> {
           : const Icon(Icons.folder_outlined),
       title: const Text('Storage location'),
       subtitle: Text(
-        uri == null ? 'Not set — tap to choose a folder' : (_displayName ?? uri),
+        uri == null ? 'No storage location set' : (_displayName ?? uri),
       ),
       onTap: _picking ? null : _pick,
     );
