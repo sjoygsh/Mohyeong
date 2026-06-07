@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
+import '../background/workmanager_tasks.dart';
 import '../category/category_repository.dart';
 import '../chapter/chapter_repository.dart';
 import '../database/app_database.dart';
@@ -24,79 +25,73 @@ import 'library_updater.dart';
 const String libraryUpdateTaskName = 'mohyeong.library_update';
 const String libraryUpdateOneOffTaskName = 'mohyeong.library_update_once';
 
-/// Background-callback entry point. Workmanager runs this in a fresh
-/// isolate (so no Flutter UI state and no Riverpod overrides exist here) —
-/// every dependency must be built from scratch.
-///
-/// Marked as a `vm:entry-point` so tree-shaking doesn't drop it.
-@pragma('vm:entry-point')
-void libraryUpdateCallbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    if (task != libraryUpdateTaskName && task != libraryUpdateOneOffTaskName) {
-      return Future.value(true);
-    }
+/// Runs the library sweep inside the background isolate. Invoked from the
+/// shared [backgroundCallbackDispatcher] for both the periodic and one-off
+/// task names. The callback runs in a fresh isolate (no Flutter UI state, no
+/// Riverpod overrides) so every dependency is built from scratch. Returns
+/// `false` on failure so workmanager honours its retry policy.
+Future<bool> runLibraryUpdateTask() async {
+  try {
+    final http = await AppHttpClient.instance();
+    final storage = await ExtensionStorage.create();
+    final prefs = await SharedPreferences.getInstance();
+    final localPrefs = LocalSourcePreferences(prefs);
+    final extensions = ExtensionRepository(storage, http, localPrefs);
+    // This isolate has its own plugin instance — initialise it so the
+    // background sweep can post progress / new-chapter notifications just
+    // like Mihon's LibraryUpdateJob.
+    final notifications = NotificationService.instance;
+    await notifications.init();
+    // Spins up a fresh AppDatabase against the same on-disk file the UI
+    // process uses (drift_flutter resolves it via path_provider).
+    final db = AppDatabase();
     try {
-      final http = await AppHttpClient.instance();
-      final storage = await ExtensionStorage.create();
-      final prefs = await SharedPreferences.getInstance();
-      final localPrefs = LocalSourcePreferences(prefs);
-      final extensions = ExtensionRepository(storage, http, localPrefs);
-      // This isolate has its own plugin instance — initialise it so the
-      // background sweep can post progress / new-chapter notifications just
-      // like Mihon's LibraryUpdateJob.
-      final notifications = NotificationService.instance;
-      await notifications.init();
-      // Spins up a fresh AppDatabase against the same on-disk file the UI
-      // process uses (drift_flutter resolves it via path_provider).
-      final db = AppDatabase();
-      try {
-        final mangas = MangaRepository(db);
-        final chapters = ChapterRepository(db);
-        final categories = CategoryRepository(db);
-        final downloads = DownloadRepository(extensions, http);
-        final updater = LibraryUpdater(
-          mangas,
-          chapters,
-          extensions,
-          categories,
-          downloads,
-        );
-        final result = await updater.updateAll(
-          onProgress: (p) {
-            if (p.currentTitle == null) {
-              notifications.cancelLibraryProgress();
-            } else {
-              notifications.showLibraryProgress(
-                current: p.completed,
-                total: p.total,
-                title: p.currentTitle!,
-              );
-            }
-          },
-        );
-        await notifications.cancelLibraryProgress();
-        await notifications.showNewChapters(
-          mangaCount: result.mangaWithNewChapters,
-          chapterCount: result.newChapters,
-        );
-        await notifications.showLibraryErrors(result.failures.length);
-        // Auto-downloads (if enabled) were enqueued during the sweep; wait
-        // for them to finish before tearing down the DB/HTTP client this
-        // isolate built, otherwise in-flight page fetches would abort.
-        await downloads.awaitIdle();
-      } finally {
-        await extensions.close();
-        await db.close();
-      }
-      return Future.value(true);
-    } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint('libraryUpdate background task failed: $e\n$st');
-      }
-      // Returning false lets workmanager honour its retry policy.
-      return Future.value(false);
+      final mangas = MangaRepository(db);
+      final chapters = ChapterRepository(db);
+      final categories = CategoryRepository(db);
+      final downloads = DownloadRepository(extensions, http);
+      final updater = LibraryUpdater(
+        mangas,
+        chapters,
+        extensions,
+        categories,
+        downloads,
+      );
+      final result = await updater.updateAll(
+        onProgress: (p) {
+          if (p.currentTitle == null) {
+            notifications.cancelLibraryProgress();
+          } else {
+            notifications.showLibraryProgress(
+              current: p.completed,
+              total: p.total,
+              title: p.currentTitle!,
+            );
+          }
+        },
+      );
+      await notifications.cancelLibraryProgress();
+      await notifications.showNewChapters(
+        mangaCount: result.mangaWithNewChapters,
+        chapterCount: result.newChapters,
+      );
+      await notifications.showLibraryErrors(result.failures.length);
+      // Auto-downloads (if enabled) were enqueued during the sweep; wait
+      // for them to finish before tearing down the DB/HTTP client this
+      // isolate built, otherwise in-flight page fetches would abort.
+      await downloads.awaitIdle();
+    } finally {
+      await extensions.close();
+      await db.close();
     }
-  });
+    return true;
+  } catch (e, st) {
+    if (kDebugMode) {
+      debugPrint('libraryUpdate background task failed: $e\n$st');
+    }
+    // Returning false lets workmanager honour its retry policy.
+    return false;
+  }
 }
 
 /// UI-side façade over the workmanager scheduling surface. Responsible for
@@ -105,16 +100,11 @@ void libraryUpdateCallbackDispatcher() {
 class LibraryUpdateScheduler {
   LibraryUpdateScheduler();
 
-  bool _initialised = false;
-
   /// Boots the workmanager engine and registers (or removes) the periodic
   /// task to match [interval]. Idempotent — safe to call from app start
   /// and again after the user changes the preference.
   Future<void> reschedule(LibraryUpdateInterval interval) async {
-    if (!_initialised) {
-      await Workmanager().initialize(libraryUpdateCallbackDispatcher);
-      _initialised = true;
-    }
+    await ensureWorkmanagerInitialized();
     // Always cancel first so changing the cadence drops the old registration.
     await Workmanager().cancelByUniqueName(libraryUpdateTaskName);
     if (interval == LibraryUpdateInterval.manual) return;
@@ -154,10 +144,7 @@ class LibraryUpdateScheduler {
   /// fetch — running it via workmanager (instead of in-process) means it
   /// continues even if the user backgrounds the app.
   Future<void> runOnce() async {
-    if (!_initialised) {
-      await Workmanager().initialize(libraryUpdateCallbackDispatcher);
-      _initialised = true;
-    }
+    await ensureWorkmanagerInitialized();
     await Workmanager().registerOneOffTask(
       libraryUpdateOneOffTaskName,
       libraryUpdateOneOffTaskName,

@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/sync/sync_manager.dart';
 import '../../data/sync/sync_preferences.dart';
+import '../../data/sync/sync_scheduler.dart';
 import '../../data/sync/sync_transport.dart';
 
 class SyncSettingsScreen extends ConsumerStatefulWidget {
@@ -165,6 +166,46 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 setState(() => _data = data.copyWith(syncHistory: v)),
           ),
           const Divider(),
+          // ── Automation (Kotlin pref_sync_automation) ────────────────
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Automation',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          SwitchListTile(
+            title: const Text('Sync automatically'),
+            subtitle: const Text('Run periodic syncs in the background'),
+            value: data.autoSyncEnabled,
+            onChanged: (v) =>
+                setState(() => _data = data.copyWith(autoSyncEnabled: v)),
+          ),
+          ListTile(
+            title: const Text('Sync interval'),
+            subtitle: Text(_intervalLabel(data.autoSyncIntervalHours)),
+            trailing: const Icon(Icons.chevron_right),
+            enabled: data.autoSyncEnabled && !_busy,
+            onTap: () async {
+              final picked = await showDialog<int>(
+                context: context,
+                builder: (_) => _SyncIntervalPickerDialog(
+                  current: data.autoSyncIntervalHours,
+                ),
+              );
+              if (picked != null) {
+                setState(() =>
+                    _data = data.copyWith(autoSyncIntervalHours: picked));
+              }
+            },
+          ),
+          SwitchListTile(
+            title: const Text('Sync on app start'),
+            value: data.syncOnAppStart,
+            onChanged: (v) =>
+                setState(() => _data = data.copyWith(syncOnAppStart: v)),
+          ),
+          const Divider(),
           if (data.lastSyncTimestamp > 0)
             Padding(
               padding: const EdgeInsets.symmetric(
@@ -222,11 +263,19 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   Future<void> _save(SyncPreferences prefs) async {
     setState(() => _busy = true);
     try {
-      await prefs.write(_data!.copyWith(
+      final toSave = _data!.copyWith(
         host: _hostCtl.text.trim(),
         username: _usernameCtl.text.trim(),
-      ));
+      );
+      await prefs.write(toSave);
       await prefs.setApiKey(_apiKeyCtl.text);
+      // Apply the auto-sync schedule from the just-saved prefs (mirrors
+      // Kotlin re-running SyncDataJob.setupTask when these change).
+      await ref.read(syncSchedulerProvider).reschedule(
+            enabled: toSave.autoSyncEnabled,
+            intervalHours: toSave.autoSyncIntervalHours,
+            service: toSave.service,
+          );
       _setStatus('Saved.');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -298,6 +347,49 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: child,
       );
+}
+
+/// Labels for the auto-sync interval, matching Kotlin's update_*hour strings.
+String _intervalLabel(int hours) {
+  return switch (hours) {
+    6 => 'Every 6 hours',
+    12 => 'Every 12 hours',
+    24 => 'Daily',
+    48 => 'Every 2 days',
+    _ => 'Every $hours hours',
+  };
+}
+
+class _SyncIntervalPickerDialog extends StatelessWidget {
+  const _SyncIntervalPickerDialog({required this.current});
+
+  final int current;
+
+  // Mirrors Mihon's SettingsSyncScreen entries: 6, 12, 24, 48.
+  static const _options = <int>[6, 12, 24, 48];
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Sync interval'),
+      children: [
+        RadioGroup<int>(
+          groupValue: _options.contains(current) ? current : 12,
+          onChanged: (picked) => Navigator.of(context).pop(picked),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final v in _options)
+                RadioListTile<int>(
+                  value: v,
+                  title: Text(_intervalLabel(v)),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _ServicePickerDialog extends StatelessWidget {

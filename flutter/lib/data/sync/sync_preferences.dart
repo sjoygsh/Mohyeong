@@ -54,6 +54,13 @@ class _Keys {
   static const syncTracking = 'pref_sync_tracking';
   static const syncHistory = 'pref_sync_history';
 
+  // Automation (Kotlin SyncPreferences.autoSync*/syncOnAppStart). Kept in the
+  // file's own `pref_sync_*` namespace for internal consistency — sync config
+  // is device-local and not part of the cross-app settings-import surface.
+  static const autoSyncEnabled = 'pref_sync_auto_enabled';
+  static const autoSyncIntervalHours = 'pref_sync_auto_interval_hours';
+  static const syncOnAppStart = 'pref_sync_on_app_start';
+
   // Secure-storage keys.
   static const apiKeySecret = 'sync_api_key';
 }
@@ -69,6 +76,9 @@ class SyncPreferencesData {
     required this.syncChapters,
     required this.syncTracking,
     required this.syncHistory,
+    required this.autoSyncEnabled,
+    required this.autoSyncIntervalHours,
+    required this.syncOnAppStart,
   });
 
   final SyncService service;
@@ -80,6 +90,9 @@ class SyncPreferencesData {
   final bool syncChapters;
   final bool syncTracking;
   final bool syncHistory;
+  final bool autoSyncEnabled;
+  final int autoSyncIntervalHours;
+  final bool syncOnAppStart;
 
   SyncPreferencesData copyWith({
     SyncService? service,
@@ -91,6 +104,9 @@ class SyncPreferencesData {
     bool? syncChapters,
     bool? syncTracking,
     bool? syncHistory,
+    bool? autoSyncEnabled,
+    int? autoSyncIntervalHours,
+    bool? syncOnAppStart,
   }) {
     return SyncPreferencesData(
       service: service ?? this.service,
@@ -102,6 +118,10 @@ class SyncPreferencesData {
       syncChapters: syncChapters ?? this.syncChapters,
       syncTracking: syncTracking ?? this.syncTracking,
       syncHistory: syncHistory ?? this.syncHistory,
+      autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
+      autoSyncIntervalHours:
+          autoSyncIntervalHours ?? this.autoSyncIntervalHours,
+      syncOnAppStart: syncOnAppStart ?? this.syncOnAppStart,
     );
   }
 }
@@ -130,6 +150,10 @@ class SyncPreferences {
       syncChapters: _prefs.getBool(_Keys.syncChapters) ?? true,
       syncTracking: _prefs.getBool(_Keys.syncTracking) ?? true,
       syncHistory: _prefs.getBool(_Keys.syncHistory) ?? true,
+      autoSyncEnabled: _prefs.getBool(_Keys.autoSyncEnabled) ?? false,
+      autoSyncIntervalHours:
+          _prefs.getInt(_Keys.autoSyncIntervalHours) ?? 12,
+      syncOnAppStart: _prefs.getBool(_Keys.syncOnAppStart) ?? false,
     );
   }
 
@@ -143,6 +167,10 @@ class SyncPreferences {
     await _prefs.setBool(_Keys.syncChapters, data.syncChapters);
     await _prefs.setBool(_Keys.syncTracking, data.syncTracking);
     await _prefs.setBool(_Keys.syncHistory, data.syncHistory);
+    await _prefs.setBool(_Keys.autoSyncEnabled, data.autoSyncEnabled);
+    await _prefs.setInt(
+        _Keys.autoSyncIntervalHours, data.autoSyncIntervalHours);
+    await _prefs.setBool(_Keys.syncOnAppStart, data.syncOnAppStart);
   }
 
   Future<String> getApiKey() async {

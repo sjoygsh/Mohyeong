@@ -12,6 +12,8 @@ import 'package:mohyeong/data/onboarding/onboarding_preferences.dart';
 import 'package:mohyeong/data/security/security_preferences.dart';
 import 'package:mohyeong/data/source/extension_repository.dart';
 import 'package:mohyeong/data/source/installed_extension.dart';
+import 'package:mohyeong/data/sync/sync_preferences.dart';
+import 'package:mohyeong/data/sync/sync_scheduler.dart';
 import 'package:mohyeong/data/updates/updates_repository.dart';
 import 'package:mohyeong/domain/category/model/category.dart';
 import 'package:mohyeong/domain/library/model/library_item.dart';
@@ -54,6 +56,24 @@ class _FakeUpdatesRepository implements UpdatesRepository {
 class _FakeLibraryUpdateScheduler implements LibraryUpdateScheduler {
   @override
   Future<void> reschedule(LibraryUpdateInterval interval) async {}
+
+  @override
+  Future<void> runOnce() async {}
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Test-only sync scheduler that swallows reschedule / runOnce calls for the
+/// same reason as [_FakeLibraryUpdateScheduler] — the workmanager MethodChannel
+/// has no platform implementation under flutter_test.
+class _FakeSyncScheduler implements SyncScheduler {
+  @override
+  Future<void> reschedule({
+    required bool enabled,
+    required int intervalHours,
+    required SyncService service,
+  }) async {}
 
   @override
   Future<void> runOnce() async {}
@@ -119,6 +139,7 @@ void main() {
               .overrideWithValue(_FakeExtensionRepository()),
           libraryUpdateSchedulerProvider
               .overrideWithValue(_FakeLibraryUpdateScheduler()),
+          syncSchedulerProvider.overrideWithValue(_FakeSyncScheduler()),
         ],
         child: const MohyeongApp(),
       ),

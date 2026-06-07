@@ -14,6 +14,8 @@ import 'data/source/extension_repository.dart';
 import 'data/source/incognito_preferences.dart';
 import 'data/source/installed_extension.dart';
 import 'data/source/local_source_preferences.dart';
+import 'data/sync/sync_preferences.dart';
+import 'data/sync/sync_scheduler.dart';
 import 'data/track/tracker_registry.dart';
 import 'presentation/theme/app_theme.dart';
 import 'presentation/home/home_screen.dart';
@@ -63,12 +65,32 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
       final scheduler = ref.read(libraryUpdateSchedulerProvider);
       final interval = ref.read(libraryUpdatePreferenceProvider);
       scheduler.reschedule(interval);
+      // Schedule cross-device sync if enabled, and optionally trigger a
+      // one-off sync on app start. Mirrors Mihon's App.onCreate.
+      _setupSync();
       // Register launcher shortcuts; selecting one jumps to that home tab
       // (also handles the cold-start shortcut that launched the app).
       ShortcutService.instance.init(
         (tabIndex) => ref.read(homeTabIndexProvider.notifier).set(tabIndex),
       );
     });
+  }
+
+  /// Re-registers the periodic sync task from the saved auto-sync prefs and,
+  /// when `sync on app start` is on with a configured service, kicks off a
+  /// one-off sync. 1:1 with Mihon's App.onCreate sync block.
+  Future<void> _setupSync() async {
+    final prefs = await ref.read(syncPreferencesProvider.future);
+    final data = prefs.read();
+    final scheduler = ref.read(syncSchedulerProvider);
+    await scheduler.reschedule(
+      enabled: data.autoSyncEnabled,
+      intervalHours: data.autoSyncIntervalHours,
+      service: data.service,
+    );
+    if (data.syncOnAppStart && data.service != SyncService.none) {
+      await scheduler.runOnce();
+    }
   }
 
   @override
