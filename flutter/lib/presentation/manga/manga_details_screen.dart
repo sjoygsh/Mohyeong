@@ -598,19 +598,29 @@ class _ChaptersSection extends ConsumerWidget {
           mangaForSheet: manga,
           availableScanlators: availableScanlators,
           excludedScanlators: excluded,
-          unreadCount: chapters.where((c) => !c.read).length,
-          onBulkDownload: (count) {
-            // 1:1 with Mihon's getUnreadChaptersSorted (MangaScreenModel):
-            // sort by getChapterSort, then reverse when the manga sorts
-            // descending, so the EARLIEST unread chapters in reading order
-            // are downloaded first (Download → Next N chapters).
-            final sorted = chapters.where((c) => !c.read).toList()
-              ..sort((a, b) => _chapterSortCompare(a, b, manga));
-            final ordered =
-                manga.sortDescending() ? sorted.reversed.toList() : sorted;
-            final take =
-                count == null ? ordered : ordered.take(count).toList();
-            for (final c in take) {
+          onBulkDownload: (scope, count) {
+            Iterable<Chapter> target;
+            switch (scope) {
+              case _DownloadScope.next:
+                // 1:1 with Mihon's getUnreadChaptersSorted: sort by
+                // getChapterSort, reverse when the manga sorts descending,
+                // so the EARLIEST unread chapters in reading order are
+                // taken first, then take N.
+                final sorted = chapters.where((c) => !c.read).toList()
+                  ..sort((a, b) => _chapterSortCompare(a, b, manga));
+                final ordered = manga.sortDescending()
+                    ? sorted.reversed.toList()
+                    : sorted;
+                target = count == null ? ordered : ordered.take(count);
+              case _DownloadScope.unread:
+                // getUnreadChapters: every unread chapter (order is
+                // irrelevant since all get enqueued).
+                target = chapters.where((c) => !c.read);
+              case _DownloadScope.bookmarked:
+                // getBookmarkedChapters.
+                target = chapters.where((c) => c.bookmark);
+            }
+            for (final c in target) {
               unawaited(downloadRepo.enqueue(manga, c));
             }
           },
@@ -1934,7 +1944,6 @@ class _ChapterListHeader extends StatelessWidget {
     required this.mangaForSheet,
     this.availableScanlators = const {},
     this.excludedScanlators = const {},
-    this.unreadCount = 0,
     this.onBulkDownload,
   });
 
@@ -1956,14 +1965,10 @@ class _ChapterListHeader extends StatelessWidget {
   /// Currently-excluded set. Drives the badge dot on the people icon.
   final Set<String> excludedScanlators;
 
-  /// Total unread chapter count (across the unfiltered list). Drives
-  /// availability of the bulk-download popup — hidden when 0.
-  final int unreadCount;
-
-  /// Bulk-download callback. `null` count means "all unread"; a positive
-  /// integer means "next N unread in reading order". Null callback hides
-  /// the menu entirely (the empty-chapters branch passes null here).
-  final void Function(int? count)? onBulkDownload;
+  /// Bulk-download callback. `scope` selects which chapters to enqueue;
+  /// `count` carries N for [_DownloadScope.next] and is ignored otherwise.
+  /// A null callback hides the menu entirely.
+  final void Function(_DownloadScope scope, int? count)? onBulkDownload;
 
   @override
   Widget build(BuildContext context) {
@@ -2013,21 +2018,26 @@ class _ChapterListHeader extends StatelessWidget {
                 excluded: excludedScanlators,
               ),
             ),
-          if (manga != null && onBulkDownload != null && unreadCount > 0)
-            PopupMenuButton<int?>(
+          if (manga != null && onBulkDownload != null)
+            PopupMenuButton<(_DownloadScope, int?)>(
               icon: const Icon(Icons.download_outlined),
               tooltip: 'Download',
-              onSelected: onBulkDownload,
+              onSelected: (v) => onBulkDownload!(v.$1, v.$2),
+              // Parity with Kotlin DownloadDropdownMenu: Next 1/5/10/25,
+              // Unread, Bookmarked — always shown, no unread-count gating.
               itemBuilder: (_) => [
                 for (final n in const [1, 5, 10, 25])
-                  if (unreadCount >= n)
-                    PopupMenuItem<int?>(
-                      value: n,
-                      child: Text('Next $n chapter${n == 1 ? '' : 's'}'),
-                    ),
-                const PopupMenuItem<int?>(
-                  value: null,
-                  child: Text('All unread chapters'),
+                  PopupMenuItem<(_DownloadScope, int?)>(
+                    value: (_DownloadScope.next, n),
+                    child: Text(n == 1 ? 'Next chapter' : 'Next $n chapters'),
+                  ),
+                const PopupMenuItem<(_DownloadScope, int?)>(
+                  value: (_DownloadScope.unread, null),
+                  child: Text('Unread'),
+                ),
+                const PopupMenuItem<(_DownloadScope, int?)>(
+                  value: (_DownloadScope.bookmarked, null),
+                  child: Text('Bookmarked'),
                 ),
               ],
             ),
@@ -2349,6 +2359,10 @@ enum _ChapterAction {
   download,
   deleteDownload,
 }
+
+/// Bulk-download scopes offered by the chapter-header download menu,
+/// mirroring Kotlin's DownloadAction (NEXT_N / UNREAD / BOOKMARKED).
+enum _DownloadScope { next, unread, bookmarked }
 
 /// Plain-text bookmark-note dialog. Mihon parity — bookmarking a
 /// chapter optionally captures a short note (where you left off, what
