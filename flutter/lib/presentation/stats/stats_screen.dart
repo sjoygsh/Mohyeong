@@ -1,17 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/download/download_repository.dart';
 import '../../data/history/history_repository.dart';
 import '../../data/library/library_repository.dart';
+import '../../data/library/library_update_preference.dart';
 import '../../data/track/track_repository.dart';
 import '../../data/track/tracker_registry.dart';
 import '../../domain/library/model/library_item.dart';
 
-/// Mihon-equivalent Statistics screen. Pulls one snapshot from
-/// `libraryView` + the cumulative read duration from `history`, then
-/// renders headline totals plus a per-tracker score breakdown.
+/// Statistics screen — 1:1 with Mihon's `StatsScreenContent`: four
+/// `SectionCard`s (Overview / Entries / Chapters / Trackers), each laid out
+/// as a `Row` of equal-weight metric items. The Overview row shows large
+/// figures with primary-tinted icons; the rest are compact figure/label
+/// pairs. Data is a one-shot snapshot pulled when the screen opens.
 class StatsScreen extends ConsumerWidget {
   const StatsScreen({super.key});
+
+  // Source status value matching SManga.COMPLETED.
+  static const int _statusCompleted = 2;
+  // LocalSource numeric id (slug '0' → 0).
+  static const int _localSourceId = 0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -19,11 +29,12 @@ class StatsScreen extends ConsumerWidget {
     final historyRepo = ref.watch(historyRepositoryProvider);
     final trackRepo = ref.watch(trackRepositoryProvider);
     final registry = ref.watch(trackerRegistryProvider);
+    final downloadRepo = ref.watch(downloadRepositoryProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Statistics')),
       body: FutureBuilder<_Stats>(
-        future: _load(libraryRepo, historyRepo, trackRepo, registry),
+        future: _load(libraryRepo, historyRepo, trackRepo, registry, downloadRepo),
         builder: (context, snap) {
           if (snap.hasError) {
             return Center(child: Text('Failed to load stats: ${snap.error}'));
@@ -33,82 +44,61 @@ class StatsScreen extends ConsumerWidget {
           }
           final s = snap.data!;
           return ListView(
+            padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
-              _Section(title: 'Library'),
-              _StatTile(
-                icon: Icons.collections_bookmark_outlined,
-                label: 'Total manga',
-                value: '${s.mangaCount}',
-              ),
-              _StatTile(
-                icon: Icons.menu_book_outlined,
-                label: 'Total chapters',
-                value: '${s.totalChapters}',
-              ),
-              _StatTile(
-                icon: Icons.done_all,
-                label: 'Read chapters',
-                value: '${s.readChapters}',
-              ),
-              _StatTile(
-                icon: Icons.remove_done,
-                label: 'Unread chapters',
-                value: '${s.unreadChapters}',
-              ),
-              _StatTile(
-                icon: Icons.bookmark_outline,
-                label: 'Bookmarked chapters',
-                value: '${s.bookmarkedChapters}',
-              ),
-              _StatTile(
-                icon: Icons.check_circle_outline,
-                label: 'Completed manga (locally)',
-                value: '${s.completedManga}',
-              ),
-              _StatTile(
-                icon: Icons.track_changes,
-                label: 'Tracked manga',
-                value: '${s.trackedManga}',
-              ),
-              _Section(title: 'Sources & categories'),
-              _StatTile(
-                icon: Icons.dns_outlined,
-                label: 'Sources in library',
-                value: '${s.sourceCount}',
-              ),
-              _StatTile(
-                icon: Icons.folder_outlined,
-                label: 'Categories in use',
-                value: '${s.categoryCount}',
-              ),
-              _Section(title: 'Time'),
-              _StatTile(
-                icon: Icons.timer_outlined,
-                label: 'Total time read',
-                value: _formatDuration(s.totalReadMs),
-              ),
-              _StatTile(
-                icon: Icons.av_timer,
-                label: 'Average per manga',
-                value: s.mangaCount == 0
-                    ? '0 min'
-                    : _formatDuration(s.totalReadMs ~/ s.mangaCount),
-              ),
-              if (s.trackScores.isNotEmpty) ...[
-                _Section(title: 'Track scores'),
-                _StatTile(
-                  icon: Icons.star_rate,
-                  label: 'Mean score (all trackers)',
-                  value: _formatScore(s.overallMeanScore),
+              _SectionCard(
+                title: 'Overview',
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _OverviewItem(
+                      icon: Icons.collections_bookmark_outlined,
+                      value: '${s.libraryMangaCount}',
+                      label: 'In library',
+                    ),
+                    _OverviewItem(
+                      icon: Icons.schedule_outlined,
+                      value: _formatDuration(s.totalReadMs),
+                      label: 'Read duration',
+                    ),
+                    _OverviewItem(
+                      icon: Icons.local_library_outlined,
+                      value: '${s.completedMangaCount}',
+                      label: 'Completed entries',
+                    ),
+                  ],
                 ),
-                for (final group in s.trackScores)
-                  _StatTile(
-                    icon: Icons.star_border,
-                    label: group.trackerName,
-                    value:
-                        '${_formatScore(group.meanScore)}  (${group.ratedCount})',
-                  ),
-              ],
+              ),
+              _SectionCard(
+                title: 'Entries',
+                child: Row(
+                  children: [
+                    _StatItem('${s.globalUpdateItemCount}', 'In global update'),
+                    _StatItem('${s.startedMangaCount}', 'Started'),
+                    _StatItem('${s.localMangaCount}', 'Local'),
+                  ],
+                ),
+              ),
+              _SectionCard(
+                title: 'Chapters',
+                child: Row(
+                  children: [
+                    _StatItem('${s.totalChapterCount}', 'Total'),
+                    _StatItem('${s.readChapterCount}', 'Read'),
+                    _StatItem('${s.downloadCount}', 'Downloaded'),
+                  ],
+                ),
+              ),
+              _SectionCard(
+                title: 'Trackers',
+                child: Row(
+                  children: [
+                    _StatItem('${s.trackedTitleCount}', 'Tracked entries'),
+                    _StatItem(_formatMeanScore(s), 'Mean score'),
+                    _StatItem('${s.trackerCount}', 'Used'),
+                  ],
+                ),
+              ),
             ],
           );
         },
@@ -116,25 +106,31 @@ class StatsScreen extends ConsumerWidget {
     );
   }
 
+  // Mirrors Mihon's `Duration.toDurationString`: "Xd Xh Xm Xs", dropping
+  // zero components, hiding minutes once both days and hours are present,
+  // hiding seconds once days or hours are present. Blank → "None".
   static String _formatDuration(int ms) {
-    final totalMin = ms ~/ 60000;
-    if (totalMin == 0) return '0 min';
-    final days = totalMin ~/ (60 * 24);
-    final hours = (totalMin % (60 * 24)) ~/ 60;
-    final mins = totalMin % 60;
+    final totalSec = ms ~/ 1000;
+    final days = totalSec ~/ 86400;
+    final hours = (totalSec % 86400) ~/ 3600;
+    final minutes = (totalSec % 3600) ~/ 60;
+    final seconds = totalSec % 60;
     final parts = <String>[];
-    if (days > 0) parts.add('${days}d');
-    if (hours > 0) parts.add('${hours}h');
-    if (mins > 0 || parts.isEmpty) parts.add('${mins}m');
-    return parts.join(' ');
+    if (days != 0) parts.add('${days}d');
+    if (hours != 0) parts.add('${hours}h');
+    if (minutes != 0 && (days == 0 || hours == 0)) parts.add('${minutes}m');
+    if (seconds != 0 && days == 0 && hours == 0) parts.add('${seconds}s');
+    return parts.isEmpty ? 'None' : parts.join(' ');
   }
 
-  // Scores are normalised to the 0..10 scale at the data layer (Kitsu's
-  // 0..20 native scale, for example, is halved on the way in). One
-  // decimal is enough to keep aggregate means readable without showing
-  // spurious precision.
-  static String _formatScore(double score) =>
-      '${score.toStringAsFixed(1)} / 10';
+  // Mihon: "%.2f ★" (English locale) when there is at least one tracked
+  // title with a score, otherwise the not-applicable string.
+  static String _formatMeanScore(_Stats s) {
+    if (s.trackedTitleCount > 0 && !s.meanScore.isNaN) {
+      return '${s.meanScore.toStringAsFixed(2)} ★';
+    }
+    return 'N/A';
+  }
 }
 
 Future<_Stats> _load(
@@ -142,180 +138,281 @@ Future<_Stats> _load(
   HistoryRepository history,
   TrackRepository tracks,
   TrackerRegistry registry,
+  DownloadRepository downloads,
 ) async {
-  // Pull the first emission of the library stream — this is a one-shot
-  // snapshot for the screen, not a live feed.
-  final items = await library.watchAll().first;
+  // One-shot snapshot of the library, de-duplicated by manga id (a manga in
+  // multiple categories appears once per category in the view).
+  final raw = await library.watchAll().first;
+  final seen = <int>{};
+  final items = <LibraryItem>[];
+  for (final i in raw) {
+    if (seen.add(i.manga.id)) items.add(i);
+  }
+
   final totalReadMs = await history.totalReadDurationMs();
-  final trackRows = await tracks.getAll();
-  // Tracked-in-library count: only intersect with manga that are
-  // currently favourited so a tracker row left over from a removed
-  // series doesn't inflate the number.
+  final downloadCount = await downloads.totalDownloadedCount();
+
+  // Logged-in trackers: only these count toward "Used" and feed the mean
+  // score / tracked-title figures (matches Mihon's loggedInTrackers gate).
+  final loggedInIds = <int>{};
+  for (final t in registry.all) {
+    if (await t.isLoggedIn) loggedInIds.add(t.id);
+  }
+
+  // Per-manga track rows restricted to logged-in trackers.
   final libraryIds = {for (final i in items) i.manga.id};
-  final libraryTrackRows =
-      trackRows.where((t) => libraryIds.contains(t.mangaId)).toList(
-            growable: false,
-          );
-  final trackedManga =
-      libraryTrackRows.map((t) => t.mangaId).toSet().length;
-  // Group track rows by trackerId for the score breakdown. Only count
-  // rows with a positive score — Mihon treats `0.0` as "no score set"
-  // and including those would tank every average.
-  final byTracker = <int, List<double>>{};
-  for (final t in libraryTrackRows) {
-    if (t.score <= 0) continue;
-    byTracker.putIfAbsent(t.trackerId, () => []).add(t.score);
+  final allRows = await tracks.getAll();
+  final byManga = <int, List<double>>{}; // mangaId -> all logged-in track scores
+  for (final r in allRows) {
+    if (!libraryIds.contains(r.mangaId)) continue;
+    if (!loggedInIds.contains(r.trackerId)) continue;
+    byManga.putIfAbsent(r.mangaId, () => []).add(r.score);
   }
-  final groups = <_TrackerScoreGroup>[];
-  for (final entry in byTracker.entries) {
-    final scores = entry.value;
-    if (scores.isEmpty) continue;
-    final mean = scores.reduce((a, b) => a + b) / scores.length;
-    // Unknown ids fall through to a synthetic label — happens when a
-    // tracker was uninstalled but the manga_sync row was kept.
-    final name =
-        registry.byId(entry.key)?.name ?? 'Tracker ${entry.key}';
-    groups.add(_TrackerScoreGroup(
-      trackerName: name,
-      meanScore: mean,
-      ratedCount: scores.length,
-    ));
+  final trackedTitleCount = byManga.length;
+  // Mean score: per-manga average of its positive (>0) scores, then the
+  // average of those per-manga means. NaN when nothing is scored.
+  final perMangaMeans = <double>[];
+  for (final scores in byManga.values) {
+    final scored = scores.where((v) => v > 0).toList(growable: false);
+    if (scored.isEmpty) continue;
+    perMangaMeans.add(scored.reduce((a, b) => a + b) / scored.length);
   }
-  groups.sort((a, b) => a.trackerName.compareTo(b.trackerName));
-  final allScores = byTracker.values.expand((l) => l).toList(growable: false);
-  final overallMean = allScores.isEmpty
-      ? 0.0
-      : allScores.reduce((a, b) => a + b) / allScores.length;
-  return _Stats.fromItems(items, totalReadMs, trackedManga, groups, overallMean);
+  final meanScore = perMangaMeans.isEmpty
+      ? double.nan
+      : perMangaMeans.reduce((a, b) => a + b) / perMangaMeans.length;
+
+  // Global-update item count: replicate Mihon's `getGlobalUpdateItemCount`
+  // category include/exclude + the three relevant update restrictions
+  // (skip-completed, skip-unread, skip-not-started). Prefs read straight
+  // from disk so the snapshot reflects the persisted settings.
+  final prefs = await SharedPreferences.getInstance();
+  final restrictions =
+      (prefs.getStringList('library_update_manga_restriction') ??
+              const [
+                MangaUpdateRestriction.hasUnread,
+                MangaUpdateRestriction.nonCompleted,
+                MangaUpdateRestriction.nonRead,
+                MangaUpdateRestriction.outsideReleasePeriod,
+              ])
+          .toSet();
+  final included =
+      _parseIds(prefs.getStringList('library_update_categories'));
+  final excluded =
+      _parseIds(prefs.getStringList('library_update_categories_exclude'));
+
+  return _Stats.fromItems(
+    items,
+    totalReadMs: totalReadMs,
+    downloadCount: downloadCount,
+    trackedTitleCount: trackedTitleCount,
+    meanScore: meanScore,
+    trackerCount: loggedInIds.length,
+    restrictions: restrictions,
+    includedCategories: included,
+    excludedCategories: excluded,
+  );
 }
+
+Set<int> _parseIds(List<String>? raw) =>
+    (raw ?? const []).map(int.tryParse).whereType<int>().toSet();
 
 class _Stats {
   const _Stats({
-    required this.mangaCount,
-    required this.totalChapters,
-    required this.readChapters,
-    required this.unreadChapters,
-    required this.bookmarkedChapters,
-    required this.completedManga,
+    required this.libraryMangaCount,
+    required this.completedMangaCount,
     required this.totalReadMs,
-    required this.sourceCount,
-    required this.categoryCount,
-    required this.trackedManga,
-    required this.trackScores,
-    required this.overallMeanScore,
+    required this.globalUpdateItemCount,
+    required this.startedMangaCount,
+    required this.localMangaCount,
+    required this.totalChapterCount,
+    required this.readChapterCount,
+    required this.downloadCount,
+    required this.trackedTitleCount,
+    required this.meanScore,
+    required this.trackerCount,
   });
 
-  final int mangaCount;
-  final int totalChapters;
-  final int readChapters;
-  final int unreadChapters;
-  final int bookmarkedChapters;
-  final int completedManga;
+  final int libraryMangaCount;
+  final int completedMangaCount;
   final int totalReadMs;
-  final int sourceCount;
-  final int categoryCount;
-  final int trackedManga;
-  final List<_TrackerScoreGroup> trackScores;
-  final double overallMeanScore;
+  final int globalUpdateItemCount;
+  final int startedMangaCount;
+  final int localMangaCount;
+  final int totalChapterCount;
+  final int readChapterCount;
+  final int downloadCount;
+  final int trackedTitleCount;
+  final double meanScore;
+  final int trackerCount;
 
   factory _Stats.fromItems(
-    List<LibraryItem> items,
-    int readMs,
-    int trackedManga,
-    List<_TrackerScoreGroup> trackScores,
-    double overallMeanScore,
-  ) {
+    List<LibraryItem> items, {
+    required int totalReadMs,
+    required int downloadCount,
+    required int trackedTitleCount,
+    required double meanScore,
+    required int trackerCount,
+    required Set<String> restrictions,
+    required Set<int> includedCategories,
+    required Set<int> excludedCategories,
+  }) {
+    var completed = 0;
+    var started = 0;
+    var local = 0;
     var totalChapters = 0;
     var readChapters = 0;
-    var unreadChapters = 0;
-    var bookmarkedChapters = 0;
-    var completedManga = 0;
-    final sources = <int>{};
-    final categories = <int>{};
+    var globalUpdate = 0;
     for (final i in items) {
       totalChapters += i.totalCount;
       readChapters += i.readCount;
-      unreadChapters += i.unreadCount;
-      bookmarkedChapters += i.bookmarkCount;
-      if (i.totalCount > 0 && i.readCount == i.totalCount) {
-        completedManga++;
+      final hasStarted = i.readCount > 0;
+      if (i.manga.status == StatsScreen._statusCompleted && i.unreadCount == 0) {
+        completed++;
       }
-      sources.add(i.manga.source);
-      // Category id 0 is Mihon's implicit "Default" bucket assigned to
-      // every uncategorised manga — skip it so a fresh library reads as
-      // "0 categories in use" instead of "1".
-      for (final c in i.categoryIds) {
-        if (c != 0) categories.add(c);
-      }
+      if (hasStarted) started++;
+      if (i.manga.source == StatsScreen._localSourceId) local++;
+
+      // Category scope (exclusion wins over inclusion).
+      final cats = i.categoryIds;
+      final isIncluded =
+          includedCategories.isEmpty || cats.any(includedCategories.contains);
+      final isExcluded = cats.any(excludedCategories.contains);
+      if (!isIncluded || isExcluded) continue;
+      // Restriction filter — the entry counts toward the global update only
+      // when NONE of the active skip-conditions apply.
+      final skip = (restrictions.contains(MangaUpdateRestriction.nonCompleted) &&
+              i.manga.status == StatsScreen._statusCompleted) ||
+          (restrictions.contains(MangaUpdateRestriction.hasUnread) &&
+              i.unreadCount != 0) ||
+          (restrictions.contains(MangaUpdateRestriction.nonRead) &&
+              i.totalCount > 0 &&
+              !hasStarted);
+      if (!skip) globalUpdate++;
     }
     return _Stats(
-      mangaCount: items.length,
-      totalChapters: totalChapters,
-      readChapters: readChapters,
-      unreadChapters: unreadChapters,
-      bookmarkedChapters: bookmarkedChapters,
-      completedManga: completedManga,
-      totalReadMs: readMs,
-      sourceCount: sources.length,
-      categoryCount: categories.length,
-      trackedManga: trackedManga,
-      trackScores: trackScores,
-      overallMeanScore: overallMeanScore,
+      libraryMangaCount: items.length,
+      completedMangaCount: completed,
+      totalReadMs: totalReadMs,
+      globalUpdateItemCount: globalUpdate,
+      startedMangaCount: started,
+      localMangaCount: local,
+      totalChapterCount: totalChapters,
+      readChapterCount: readChapters,
+      downloadCount: downloadCount,
+      trackedTitleCount: trackedTitleCount,
+      meanScore: meanScore,
+      trackerCount: trackerCount,
     );
   }
 }
 
-class _TrackerScoreGroup {
-  const _TrackerScoreGroup({
-    required this.trackerName,
-    required this.meanScore,
-    required this.ratedCount,
-  });
-
-  final String trackerName;
-  final double meanScore;
-  final int ratedCount;
-}
-
-class _Section extends StatelessWidget {
-  const _Section({required this.title});
+/// Section title (titleSmall) + an ElevatedCard with an extra-large rounded
+/// shape, mirroring Mihon's `SectionCard`.
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.title, required this.child});
 
   final String title;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.w600,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+        ),
+        Card(
+          elevation: 1,
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: IntrinsicHeight(child: child),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Large figure + label with a primary-tinted icon below (Overview row).
+class _OverviewItem extends StatelessWidget {
+  const _OverviewItem({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
             ),
+          ),
+          const SizedBox(height: 8),
+          Icon(icon, color: theme.colorScheme.primary),
+        ],
       ),
     );
   }
 }
 
-class _StatTile extends StatelessWidget {
-  const _StatTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
+/// Compact figure + label (Entries / Chapters / Trackers rows).
+class _StatItem extends StatelessWidget {
+  const _StatItem(this.value, this.label);
 
-  final IconData icon;
-  final String label;
   final String value;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(label),
-      trailing: Text(
-        value,
-        style: Theme.of(context).textTheme.titleMedium,
+    final theme = Theme.of(context);
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
+            ),
+          ),
+        ],
       ),
     );
   }

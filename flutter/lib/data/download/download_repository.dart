@@ -140,6 +140,28 @@ class DownloadRepository {
     return count;
   }
 
+  /// Total number of fully-downloaded chapters across every source/manga.
+  /// Walks the whole downloads tree counting `.done` markers. Mirrors
+  /// Mihon's `DownloadManager.getDownloadCount()` (used by the Statistics
+  /// screen). Returns 0 when nothing has been downloaded yet.
+  Future<int> totalDownloadedCount() async {
+    final root = await _root();
+    if (!await root.exists()) return 0;
+    var count = 0;
+    await for (final sourceDir in root.list()) {
+      if (sourceDir is! Directory) continue;
+      await for (final mangaDir in sourceDir.list()) {
+        if (mangaDir is! Directory) continue;
+        await for (final chapterDir in mangaDir.list()) {
+          if (chapterDir is! Directory) continue;
+          final marker = File(p.join(chapterDir.path, '.done'));
+          if (await marker.exists()) count++;
+        }
+      }
+    }
+    return count;
+  }
+
   /// Set of `(sourceId, mangaId)` pairs that have at least one fully
   /// downloaded chapter. Walks the downloads root once so the library
   /// filter sheet can apply a Downloaded axis without an N-call probe.
