@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/track/tracker.dart';
 import '../../data/track/tracker_registry.dart';
@@ -21,13 +22,37 @@ class TrackersSettingsScreen extends ConsumerWidget {
         .where((t) => t.category == TrackerCategory.advanced)
         .toList(growable: false);
     return Scaffold(
-      appBar: AppBar(title: const Text('Trackers')),
+      appBar: AppBar(
+        title: const Text('Tracking'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: 'Tracking guide',
+            onPressed: () => launchUrl(
+              Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html#tracking'),
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         children: [
-          const _SectionHeader('Online services'),
+          const _SectionHeader('Trackers'),
           for (final t in online) _TrackerTile(tracker: t),
-          if (advanced.isNotEmpty) const _SectionHeader('Advanced'),
-          for (final t in advanced) _TrackerTile(tracker: t),
+          const _InfoText(
+            'One-way sync to update the chapter progress in external tracker '
+            'services. Set up tracking for individual entries from their '
+            'tracking button.',
+          ),
+          if (advanced.isNotEmpty) ...[
+            const _SectionHeader('Enhanced trackers'),
+            for (final t in advanced) _TrackerTile(tracker: t),
+            const _InfoText(
+              'Some source extensions include built-in tracking. Install one '
+              'of the matching extensions below to enable — entries are then '
+              'tracked automatically when added to your library.',
+            ),
+          ],
         ],
       ),
     );
@@ -47,6 +72,20 @@ class _SectionHeader extends StatelessWidget {
         label,
         style: const TextStyle(fontWeight: FontWeight.w600),
       ),
+    );
+  }
+}
+
+class _InfoText extends StatelessWidget {
+  const _InfoText(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Text(text, style: const TextStyle(fontSize: 12)),
     );
   }
 }
