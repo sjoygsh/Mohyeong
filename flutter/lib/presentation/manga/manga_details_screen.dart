@@ -383,13 +383,6 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                               ),
                             ),
                           ),
-                        if (manga.favorite)
-                          IconButton(
-                            icon: const Icon(Icons.update),
-                            tooltip: 'Fetch interval',
-                            onPressed: () =>
-                                _editFetchInterval(context, ref, manga),
-                          ),
                         IconButton(
                           icon: _refreshingDetails
                               ? const SizedBox(
@@ -412,6 +405,8 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                     child: _MangaActionRow(
                       manga: manga,
                       onAddToLibrary: () => _toggleFavorite(context, ref, manga),
+                      onEditInterval: () =>
+                          _editFetchInterval(context, ref, manga),
                       onTracking: () => _openTrackingSheet(context, manga),
                       onOpenInBrowser: () => _openInBrowser(context, ref, manga),
                     ),
@@ -1567,20 +1562,36 @@ class _MangaActionRow extends StatelessWidget {
   const _MangaActionRow({
     required this.manga,
     required this.onAddToLibrary,
+    required this.onEditInterval,
     required this.onTracking,
     required this.onOpenInBrowser,
   });
 
   final Manga manga;
   final VoidCallback onAddToLibrary;
+  final VoidCallback onEditInterval;
   final VoidCallback onTracking;
   final VoidCallback onOpenInBrowser;
+
+  /// Mirrors Kotlin's MangaActionRow "Next Update" label: "N/A" for
+  /// finished series (no expected update), "Update soon" within a day, or
+  /// the whole-day count otherwise.
+  String _nextUpdateLabel() {
+    final next = manga.expectedNextUpdate;
+    if (next == null) return 'N/A';
+    final days = next.difference(DateTime.now()).inDays;
+    if (days <= 0) return 'Update soon';
+    return days == 1 ? '1 day' : '$days days';
+  }
 
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
     final muted =
         Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
+    // A manually-set interval is stored as a negative value (Kotlin
+    // parity); highlight the button with the accent colour in that case.
+    final customInterval = manga.fetchInterval < 0;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: Row(
@@ -1593,6 +1604,15 @@ class _MangaActionRow extends StatelessWidget {
               onPressed: onAddToLibrary,
             ),
           ),
+          if (manga.favorite)
+            Expanded(
+              child: _ActionButton(
+                icon: Icons.hourglass_empty,
+                label: _nextUpdateLabel(),
+                color: customInterval ? primary : muted,
+                onPressed: onEditInterval,
+              ),
+            ),
           Expanded(
             child: _ActionButton(
               icon: Icons.sync_outlined,
