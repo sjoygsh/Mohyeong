@@ -8,6 +8,7 @@ import '../../data/source/local_source.dart';
 import '../../data/source/source_id.dart';
 import '../../domain/manga/model/manga.dart';
 import '../common/source_image.dart';
+import '../migration/migration_config_screen.dart';
 import '../migration/migration_search_screen.dart';
 
 /// Browse → Migrate tab. Lists every source the user currently has
@@ -288,6 +289,14 @@ class _MigrateSourceMangaListScreenState
     extends ConsumerState<MigrateSourceMangaListScreen> {
   Future<List<Manga>>? _future;
 
+  // Multi-select for batch migration. Long-press enters selection mode;
+  // tapping then toggles. The Continue FAB hands the selection off to
+  // MigrationConfigScreen. Mirrors Mihon's MigrateMangaScreen selection.
+  final Set<int> _selected = <int>{};
+  List<Manga> _lastLoaded = const <Manga>[];
+
+  bool get _selectionMode => _selected.isNotEmpty;
+
   @override
   void initState() {
     super.initState();
@@ -304,10 +313,45 @@ class _MigrateSourceMangaListScreenState
     await next;
   }
 
+  void _toggleSelection(Manga m) {
+    setState(() {
+      if (!_selected.add(m.id)) _selected.remove(m.id);
+    });
+  }
+
+  void _clearSelection() => setState(_selected.clear);
+
+  void _continue() {
+    final chosen =
+        _lastLoaded.where((m) => _selected.contains(m.id)).toList();
+    if (chosen.isEmpty) return;
+    _clearSelection();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MigrationConfigScreen(mangas: chosen),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.sourceName)),
+      appBar: _selectionMode
+          ? AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: _clearSelection,
+              ),
+              title: Text('${_selected.length}'),
+            )
+          : AppBar(title: Text(widget.sourceName)),
+      floatingActionButton: _selectionMode
+          ? FloatingActionButton.extended(
+              onPressed: _continue,
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('Continue'),
+            )
+          : null,
       body: FutureBuilder<List<Manga>>(
         future: _future,
         builder: (context, snap) {
@@ -323,6 +367,7 @@ class _MigrateSourceMangaListScreenState
             );
           }
           final mangas = snap.data ?? const <Manga>[];
+          _lastLoaded = mangas;
           if (mangas.isEmpty) {
             return const Center(
               child: Padding(
@@ -340,7 +385,13 @@ class _MigrateSourceMangaListScreenState
               itemCount: mangas.length,
               itemBuilder: (_, i) {
                 final m = mangas[i];
+                final selected = _selected.contains(m.id);
                 return ListTile(
+                  selected: selected,
+                  selectedTileColor: Theme.of(context)
+                      .colorScheme
+                      .primaryContainer
+                      .withValues(alpha: 0.4),
                   leading: SizedBox(
                     width: 40,
                     height: 56,
@@ -383,6 +434,10 @@ class _MigrateSourceMangaListScreenState
                           overflow: TextOverflow.ellipsis,
                         ),
                   onTap: () {
+                    if (_selectionMode) {
+                      _toggleSelection(m);
+                      return;
+                    }
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) =>
@@ -390,6 +445,7 @@ class _MigrateSourceMangaListScreenState
                       ),
                     );
                   },
+                  onLongPress: () => _toggleSelection(m),
                 );
               },
             ),

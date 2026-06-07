@@ -24,6 +24,18 @@ class SourcePreferences {
   static const String keyDisabledSources = 'hidden_catalogues';
   static const String keyPinnedSources = 'pinned_catalogues';
 
+  // Migration source selection + smart-search tuning. Keys + shapes match
+  // Mihon so a settings backup round-trips. `migration_sources` is stored
+  // exactly as Mihon's `getLongArray` does — a single comma-joined string
+  // value, not a string list.
+  static const String keyMigrationSources = 'migration_sources';
+  static const String keyMigrationDeepSearch = 'migration_deep_search';
+  static const String keyMigrationPrioritizeByChapters =
+      'migration_prioritize_by_chapters';
+  static const String keyMigrationHideUnmatched = 'migration_hide_unmatched';
+  static const String keyMigrationHideWithoutUpdates =
+      'migration_hide_without_updates';
+
   final SharedPreferences _prefs;
 
   final StreamController<Set<String>> _enabledLangs =
@@ -95,6 +107,47 @@ class SourcePreferences {
         ? (current.toSet()..remove(code))
         : (current.toSet()..add(code));
     await setEnabledLanguages(next);
+  }
+
+  /// The ordered set of source ids the user last chose on the migration
+  /// config screen. Empty when never configured (callers then fall back to
+  /// pinned / non-disabled, mirroring Mihon's `initSources`).
+  List<int> getMigrationSources() {
+    final raw = _prefs.getString(keyMigrationSources);
+    if (raw == null || raw.isEmpty) return const <int>[];
+    return raw.split(',').map(int.tryParse).whereType<int>().toList();
+  }
+
+  Future<void> setMigrationSources(List<int> ids) async {
+    await _prefs.setString(keyMigrationSources, ids.join(','));
+  }
+
+  bool getMigrationDeepSearch() =>
+      _prefs.getBool(keyMigrationDeepSearch) ?? false;
+
+  Future<void> setMigrationDeepSearch(bool value) async {
+    await _prefs.setBool(keyMigrationDeepSearch, value);
+  }
+
+  bool getMigrationPrioritizeByChapters() =>
+      _prefs.getBool(keyMigrationPrioritizeByChapters) ?? false;
+
+  Future<void> setMigrationPrioritizeByChapters(bool value) async {
+    await _prefs.setBool(keyMigrationPrioritizeByChapters, value);
+  }
+
+  bool getMigrationHideUnmatched() =>
+      _prefs.getBool(keyMigrationHideUnmatched) ?? false;
+
+  Future<void> setMigrationHideUnmatched(bool value) async {
+    await _prefs.setBool(keyMigrationHideUnmatched, value);
+  }
+
+  bool getMigrationHideWithoutUpdates() =>
+      _prefs.getBool(keyMigrationHideWithoutUpdates) ?? false;
+
+  Future<void> setMigrationHideWithoutUpdates(bool value) async {
+    await _prefs.setBool(keyMigrationHideWithoutUpdates, value);
   }
 
   Future<void> toggleSource(String id) async {
