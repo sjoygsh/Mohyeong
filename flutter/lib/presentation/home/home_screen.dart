@@ -45,7 +45,7 @@ final homeReselectProvider =
 /// Each tab is kept alive across switches via [IndexedStack] so list scroll
 /// positions and ongoing requests survive a tap on a different tab -- same
 /// behaviour the Voyager-based Kotlin nav provides.
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   static const _tabs = <_HomeTab>[
@@ -82,7 +82,33 @@ class HomeScreen extends ConsumerWidget {
   ];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  /// Whether the bottom navigation bar is currently shown. It hides while the
+  /// active tab is scrolled toward its content and reappears when scrolling
+  /// back toward the top — a 1:1 port of Kotlin HomeScreen's
+  /// `hideOnScrollConnection` driving an `AnimatedVisibility` with
+  /// `expandVertically()` / `shrinkVertically()`.
+  bool _bottomNavVisible = true;
+
+  /// Mirrors the Kotlin `onPreScroll` thresholds (±1px): scrolling toward the
+  /// end of the list hides the nav, scrolling back toward the top reveals it.
+  bool _onScroll(ScrollNotification notification) {
+    if (notification is! ScrollUpdateNotification) return false;
+    if (notification.metrics.axis != Axis.vertical) return false;
+    final delta = notification.scrollDelta ?? 0;
+    if (delta > 1 && _bottomNavVisible) {
+      setState(() => _bottomNavVisible = false);
+    } else if (delta < -1 && !_bottomNavVisible) {
+      setState(() => _bottomNavVisible = true);
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final incognito = ref.watch(incognitoModeProvider);
     final index = ref.watch(homeTabIndexProvider);
     // Mirrors Kotlin HomeScreen's BackHandler: when not on the Library tab,
@@ -97,32 +123,52 @@ class HomeScreen extends ConsumerWidget {
           children: [
             if (incognito) const _IncognitoBanner(),
             Expanded(
-              child: IndexedStack(
-                index: index,
-                children: _tabs.map((t) => t.child).toList(growable: false),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _onScroll,
+                child: IndexedStack(
+                  index: index,
+                  children: HomeScreen._tabs
+                      .map((t) => t.child)
+                      .toList(growable: false),
+                ),
               ),
             ),
           ],
         ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: index,
-          onDestinationSelected: (i) {
-            // Tapping the already-selected destination is a "reselect" —
-            // forward it to the tab instead of re-setting the same index.
-            if (i == index) {
-              ref.read(homeReselectProvider.notifier).signal(i);
-            } else {
-              ref.read(homeTabIndexProvider.notifier).set(i);
-            }
-          },
-          destinations: [
-            for (final tab in _tabs)
-              NavigationDestination(
-                icon: Icon(tab.icon),
-                selectedIcon: Icon(tab.selectedIcon),
-                label: tab.label,
-              ),
-          ],
+        // shrinkTowards = Bottom: collapse the bar toward the screen edge while
+        // freeing its layout space (so content expands up), matching Kotlin's
+        // shrinkVertically(). The bar widget itself is built once and clipped.
+        bottomNavigationBar: TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 1, end: _bottomNavVisible ? 1 : 0),
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          builder: (context, factor, child) => ClipRect(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              heightFactor: factor,
+              child: child,
+            ),
+          ),
+          child: NavigationBar(
+            selectedIndex: index,
+            onDestinationSelected: (i) {
+              // Tapping the already-selected destination is a "reselect" —
+              // forward it to the tab instead of re-setting the same index.
+              if (i == index) {
+                ref.read(homeReselectProvider.notifier).signal(i);
+              } else {
+                ref.read(homeTabIndexProvider.notifier).set(i);
+              }
+            },
+            destinations: [
+              for (final tab in HomeScreen._tabs)
+                NavigationDestination(
+                  icon: Icon(tab.icon),
+                  selectedIcon: Icon(tab.selectedIcon),
+                  label: tab.label,
+                ),
+            ],
+          ),
         ),
       ),
     );
