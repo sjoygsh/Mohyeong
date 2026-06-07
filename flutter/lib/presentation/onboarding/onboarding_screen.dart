@@ -152,13 +152,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Welcome to Mohyeong!',
+                      'Welcome!',
                       style: theme.textTheme.headlineSmall,
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Just a few things to set up before you start reading.',
+                      "Let's set some things up first. You can always change "
+                      'these in the settings later too.',
                       style: theme.textTheme.bodyMedium,
                       textAlign: TextAlign.center,
                     ),
@@ -198,7 +199,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     const Spacer(),
                     FilledButton(
                       onPressed: canAccept ? _next : null,
-                      child: Text(_isLast ? 'Finish' : 'Next'),
+                      child: Text(_isLast ? 'Get started' : 'Next'),
                     ),
                   ],
                 ),
@@ -325,52 +326,32 @@ class _StorageStepState extends ConsumerState<_StorageStep> {
   Widget build(BuildContext context) {
     final uri = ref.watch(storageDirProvider);
     final theme = Theme.of(context);
+    final selected =
+        uri == null ? 'No storage location set' : (_displayName ?? uri);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Storage', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
         Text(
-          'Choose a folder where Mohyeong stores downloads, local manga, '
-          'and automatic backups. You can change this later in '
-          'Settings → Data and storage.',
+          'Select a folder where Mohyeong will store chapter downloads, '
+          'backups, and more.\n\nA dedicated folder is recommended.\n\n'
+          'Selected folder: $selected',
           style: theme.textTheme.bodyMedium,
         ),
-        const SizedBox(height: 16),
-        FilledButton.tonalIcon(
+        const SizedBox(height: 8),
+        FilledButton(
           onPressed: _picking ? null : _pick,
-          icon: const Icon(Icons.folder_open),
-          label: Text(uri == null ? 'Select a folder' : 'Change folder'),
+          child: const Text('Select a folder'),
         ),
-        if (uri != null) ...[
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Icon(Icons.check_circle, color: Colors.green, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _displayName ?? uri,
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ),
-            ],
-          ),
-        ],
-        const SizedBox(height: 24),
+        const SizedBox(height: 8),
         const Divider(),
         const SizedBox(height: 8),
         Text(
-          'Not sure what to pick?',
-          style: theme.textTheme.titleSmall,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Read about how Mohyeong uses this folder.',
+          'Updating from an older version and not sure what to select? Refer '
+          'to the storage guide for more information.',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 8),
-        OutlinedButton(
+        FilledButton(
           onPressed: () => _openUrl(_storageHelpUrl),
           child: const Text('Storage guide'),
         ),
@@ -428,21 +409,12 @@ class _PermissionStepState extends ConsumerState<_PermissionStep>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Permissions', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Text(
-          'These are optional, but recommended so library updates and '
-          'downloads work reliably in the background.',
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 16),
         _PermissionRow(
-          title: 'Notifications',
-          subtitle: 'Show progress for library updates and downloads.',
+          title: 'Notification permission',
+          subtitle: 'Get notified for library updates and more.',
           granted: _notifications,
           onRequest: () async {
             await AppPermissions.requestNotificationPermission();
@@ -450,8 +422,9 @@ class _PermissionStepState extends ConsumerState<_PermissionStep>
           },
         ),
         _PermissionRow(
-          title: 'Ignore battery optimizations',
-          subtitle: 'Stop the system from killing background updates.',
+          title: 'Background battery usage',
+          subtitle: 'Avoid interruptions to long-running library updates, '
+              'downloads, and backup restores.',
           granted: _battery,
           onRequest: () async {
             await AppPermissions.requestIgnoreBatteryOptimizations();
@@ -503,32 +476,27 @@ class _GuidesStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Guides', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 16),
-        Text('New here?', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 4),
         Text(
-          'Learn how to add sources and start building your library.',
+          'New to Mohyeong? We recommend checking out the getting started '
+          'guide.',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 8),
-        OutlinedButton(
+        FilledButton(
           onPressed: () => _openUrl(_gettingStartedUrl),
-          child: const Text('Getting started'),
+          child: const Text('Getting started guide'),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 8),
         const Divider(),
         const SizedBox(height: 8),
-        Text('Coming from another app?', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 4),
         Text(
-          'Restore a Mihon or Mohyeong backup to bring your library across.',
+          'Reinstalling Mohyeong?',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 8),
-        OutlinedButton(
+        FilledButton(
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const BackupScreen()),
           ),

@@ -23,6 +23,11 @@ class MangaNotesScreen extends ConsumerStatefulWidget {
 }
 
 class _MangaNotesScreenState extends ConsumerState<MangaNotesScreen> {
+  /// Matches Kotlin `MangaNotesTextArea.MAX_LENGTH` (250) and its 90% warn
+  /// threshold, after which the remaining-character counter turns red.
+  static const int _maxLength = 250;
+  static const int _warnLength = 225; // 90% of _maxLength
+
   late final TextEditingController _controller =
       TextEditingController(text: widget.manga.notes);
   Timer? _debounce;
@@ -86,17 +91,47 @@ class _MangaNotesScreenState extends ConsumerState<MangaNotesScreen> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: TextField(
-            controller: _controller,
-            maxLines: null,
-            expands: true,
-            textAlignVertical: TextAlignVertical.top,
-            keyboardType: TextInputType.multiline,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: 'Notes (markdown supported)',
-              alignLabelWithHint: true,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  maxLines: null,
+                  expands: true,
+                  maxLength: _maxLength,
+                  textAlignVertical: TextAlignVertical.top,
+                  keyboardType: TextInputType.multiline,
+                  // Custom counter is rendered below the field instead.
+                  buildCounter: (_, {
+                    required int currentLength,
+                    required bool isFocused,
+                    int? maxLength,
+                  }) =>
+                      null,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: 'Enjoyed the part where…',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _controller,
+                builder: (context, value, _) {
+                  final remaining = _maxLength - value.text.characters.length;
+                  return Text(
+                    '$remaining',
+                    style: TextStyle(
+                      color: value.text.characters.length > _warnLength
+                          ? Theme.of(context).colorScheme.error
+                          : null,
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
         ),
       ),
