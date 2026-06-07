@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/cover/cover_cache.dart';
 import '../../data/manga/manga_repository.dart';
@@ -69,7 +70,19 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(upcomingMangaProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Upcoming')),
+      appBar: AppBar(
+        title: const Text('Upcoming'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: 'Upcoming Guide',
+            onPressed: () => launchUrl(
+              Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html'),
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
+        ],
+      ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
@@ -110,7 +123,11 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
             final d = _dateOnly(m.nextUpdate);
             if (lastHeader == null || d != lastHeader) {
               lastHeader = d;
-              rows.add(_DateHeader(key: _headerKeys[d], date: d));
+              rows.add(_DateHeader(
+                key: _headerKeys[d],
+                date: d,
+                mangaCount: eventsByDay[d] ?? 0,
+              ));
             }
             rows.add(_UpcomingTile(manga: m));
           }
@@ -266,19 +283,64 @@ class _MonthCalendar extends StatelessWidget {
 }
 
 class _DateHeader extends StatelessWidget {
-  const _DateHeader({super.key, required this.date});
+  const _DateHeader({
+    super.key,
+    required this.date,
+    required this.mangaCount,
+  });
 
   final DateTime date;
+  final int mangaCount;
+
+  // Mirrors Kotlin relativeDateText: Today/Tomorrow/Yesterday collapse to
+  // a word, everything else falls back to an absolute date.
+  String _relativeText() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final diff = date.difference(today).inDays;
+    switch (diff) {
+      case 0:
+        return 'Today';
+      case 1:
+        return 'Tomorrow';
+      case -1:
+        return 'Yesterday';
+      default:
+        return DateFormat('EEEE, MMM d').format(date);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        DateFormat('EEEE, MMM d').format(date),
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
+      child: Row(
+        children: [
+          Text(
+            _relativeText(),
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: scheme.primary,
+              borderRadius: BorderRadius.circular(10),
             ),
+            child: Text(
+              '$mangaCount',
+              style: TextStyle(
+                color: scheme.onPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

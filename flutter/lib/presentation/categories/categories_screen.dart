@@ -14,10 +14,11 @@ class CategoriesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(categoryRepositoryProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Categories')),
-      floatingActionButton: FloatingActionButton(
+      appBar: AppBar(title: const Text('Edit categories')),
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _promptCreate(context, repo),
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('Add'),
       ),
       body: StreamBuilder<List<Category>>(
         stream: repo.watchAll(),
@@ -32,7 +33,10 @@ class CategoriesScreen extends ConsumerWidget {
               .where((c) => !c.isSystemCategory)
               .toList(growable: false);
           if (categories.isEmpty) {
-            return const _Message(text: 'No categories yet. Tap + to add one.');
+            return const _Message(
+              text: 'You have no categories. Tap the plus button to create '
+                  'one for organizing your library.',
+            );
           }
           return ReorderableListView.builder(
             buildDefaultDragHandles: false,
@@ -48,27 +52,21 @@ class CategoriesScreen extends ConsumerWidget {
                   index: i,
                   child: const Icon(Icons.drag_handle),
                 ),
-                trailing: PopupMenuButton<_RowAction>(
-                  onSelected: (action) {
-                    switch (action) {
-                      case _RowAction.rename:
-                        _promptRename(context, repo, c);
-                      case _RowAction.delete:
-                        _confirmDelete(context, repo, c);
-                    }
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
-                      value: _RowAction.rename,
-                      child: Text('Rename'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      tooltip: 'Rename category',
+                      onPressed: () => _promptRename(context, repo, c),
                     ),
-                    PopupMenuItem(
-                      value: _RowAction.delete,
-                      child: Text('Delete'),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      tooltip: 'Delete',
+                      onPressed: () => _confirmDelete(context, repo, c),
                     ),
                   ],
                 ),
-                onTap: () => _promptRename(context, repo, c),
               );
             },
           );
@@ -100,9 +98,19 @@ class CategoriesScreen extends ConsumerWidget {
     BuildContext context,
     CategoryRepository repo,
   ) async {
-    final name = await _promptForName(context, title: 'New category');
-    if (name == null || name.isEmpty) return;
     final existing = await repo.getAll();
+    if (!context.mounted) return;
+    final taken = {
+      for (final c in existing)
+        if (!c.isSystemCategory) c.name.toLowerCase(),
+    };
+    final name = await _promptForName(
+      context,
+      title: 'Add category',
+      confirmLabel: 'Add',
+      takenNames: taken,
+    );
+    if (name == null || name.isEmpty) return;
     // Append at the end, after the highest existing order.
     final maxOrder = existing.fold<int>(0, (m, c) => c.order > m ? c.order : m);
     await repo.insert(name: name, order: maxOrder + 1, flags: 0);
@@ -113,10 +121,18 @@ class CategoriesScreen extends ConsumerWidget {
     CategoryRepository repo,
     Category category,
   ) async {
+    final existing = await repo.getAll();
+    if (!context.mounted) return;
+    final taken = {
+      for (final c in existing)
+        if (!c.isSystemCategory && c.id != category.id) c.name.toLowerCase(),
+    };
     final name = await _promptForName(
       context,
       title: 'Rename category',
+      confirmLabel: 'OK',
       initialValue: category.name,
+      takenNames: taken,
     );
     if (name == null || name.isEmpty || name == category.name) return;
     await repo.update(id: category.id, name: name);
@@ -130,10 +146,8 @@ class CategoriesScreen extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Delete "${category.name}"?'),
-        content: const Text(
-          'Manga assigned to this category will be moved to Uncategorized.',
-        ),
+        title: const Text('Delete category'),
+        content: Text('Do you wish to delete the category "${category.name}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -141,7 +155,7 @@ class CategoriesScreen extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -154,36 +168,97 @@ class CategoriesScreen extends ConsumerWidget {
   Future<String?> _promptForName(
     BuildContext context, {
     required String title,
+    required String confirmLabel,
     String initialValue = '',
+    Set<String> takenNames = const {},
   }) {
-    final controller = TextEditingController(text: initialValue);
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Name'),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('OK'),
-          ),
-        ],
+      builder: (ctx) => _NameDialog(
+        title: title,
+        confirmLabel: confirmLabel,
+        initialValue: initialValue,
+        takenNames: takenNames,
       ),
     );
   }
 }
 
-enum _RowAction { rename, delete }
+/// Create/rename dialog with the same inline validation as Kotlin's
+/// CategoryCreateDialog/CategoryRenameDialog: the confirm button stays
+/// disabled until the name is non-empty, changed (rename) and unique.
+class _NameDialog extends StatefulWidget {
+  const _NameDialog({
+    required this.title,
+    required this.confirmLabel,
+    required this.initialValue,
+    required this.takenNames,
+  });
+
+  final String title;
+  final String confirmLabel;
+  final String initialValue;
+  final Set<String> takenNames;
+
+  @override
+  State<_NameDialog> createState() => _NameDialogState();
+}
+
+class _NameDialogState extends State<_NameDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialValue);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  String get _name => _controller.text.trim();
+
+  bool get _isDuplicate =>
+      _name.isNotEmpty && widget.takenNames.contains(_name.toLowerCase());
+
+  bool get _canConfirm =>
+      _name.isNotEmpty && !_isDuplicate && _name != widget.initialValue;
+
+  String? get _supportText {
+    if (_name.isEmpty) return '*required';
+    if (_isDuplicate) return 'A category with this name already exists!';
+    return null;
+  }
+
+  void _submit() {
+    if (_canConfirm) Navigator.of(context).pop(_name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: InputDecoration(
+          labelText: 'Name',
+          errorText: _supportText,
+        ),
+        onChanged: (_) => setState(() {}),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _canConfirm ? _submit : null,
+          child: Text(widget.confirmLabel),
+        ),
+      ],
+    );
+  }
+}
 
 class _Message extends StatelessWidget {
   const _Message({required this.text});

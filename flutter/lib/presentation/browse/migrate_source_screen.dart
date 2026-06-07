@@ -25,13 +25,31 @@ class MigrateSourceTab extends ConsumerStatefulWidget {
   ConsumerState<MigrateSourceTab> createState() => _MigrateSourceTabState();
 }
 
+enum _SortMode { alphabetical, count }
+
 class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
   Future<_MigrateSourcesData>? _future;
+
+  // Mirrors Kotlin MigrateSourceScreen's sticky-header sort controls.
+  // Default is most-favourites-first, matching the prior implicit order.
+  _SortMode _sortMode = _SortMode.count;
+  bool _ascending = false;
 
   @override
   void initState() {
     super.initState();
     _future = _load();
+  }
+
+  List<_MigrateSourceEntry> _sorted(List<_MigrateSourceEntry> entries) {
+    final sorted = [...entries];
+    sorted.sort((a, b) {
+      final cmp = _sortMode == _SortMode.alphabetical
+          ? a.name.toLowerCase().compareTo(b.name.toLowerCase())
+          : a.count.compareTo(b.count);
+      return _ascending ? cmp : -cmp;
+    });
+    return sorted;
   }
 
   Future<_MigrateSourcesData> _load() async {
@@ -112,13 +130,28 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
             ),
           );
         }
-        return RefreshIndicator(
-          onRefresh: _refresh,
-          child: ListView.builder(
-            itemCount: entries.length,
-            itemBuilder: (_, i) {
-              final e = entries[i];
-              return ListTile(
+        final sorted = _sorted(entries);
+        return Column(
+          children: [
+            _SortHeader(
+              sortMode: _sortMode,
+              ascending: _ascending,
+              onToggleMode: () => setState(() {
+                _sortMode = _sortMode == _SortMode.alphabetical
+                    ? _SortMode.count
+                    : _SortMode.alphabetical;
+              }),
+              onToggleDirection: () =>
+                  setState(() => _ascending = !_ascending),
+            ),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refresh,
+                child: ListView.builder(
+                  itemCount: sorted.length,
+                  itemBuilder: (_, i) {
+                    final e = sorted[i];
+                    return ListTile(
                 title: Text(e.name),
                 subtitle: e.lang == null && e.installed
                     ? null
@@ -158,10 +191,55 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
                   );
                 },
               );
-            },
-          ),
+                  },
+                ),
+              ),
+            ),
+          ],
         );
       },
+    );
+  }
+}
+
+class _SortHeader extends StatelessWidget {
+  const _SortHeader({
+    required this.sortMode,
+    required this.ascending,
+    required this.onToggleMode,
+    required this.onToggleDirection,
+  });
+
+  final _SortMode sortMode;
+  final bool ascending;
+  final VoidCallback onToggleMode;
+  final VoidCallback onToggleDirection;
+
+  @override
+  Widget build(BuildContext context) {
+    final alpha = sortMode == _SortMode.alphabetical;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Select a source to migrate from',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          IconButton(
+            icon: Icon(alpha ? Icons.sort_by_alpha : Icons.numbers),
+            tooltip: alpha ? 'Alphabetically' : 'Total entries',
+            onPressed: onToggleMode,
+          ),
+          IconButton(
+            icon: Icon(ascending ? Icons.arrow_upward : Icons.arrow_downward),
+            tooltip: ascending ? 'Ascending' : 'Descending',
+            onPressed: onToggleDirection,
+          ),
+        ],
+      ),
     );
   }
 }
