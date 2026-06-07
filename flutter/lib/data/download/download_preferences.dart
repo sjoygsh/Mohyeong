@@ -2,23 +2,33 @@
 /// Keys mirror the Kotlin `DownloadPreferences` names so a settings
 /// import carries values across without translation.
 ///
-/// [downloadSlotsProvider] is consumed by the download queue's drain loop
-/// (reads `download_slots` for concurrency). The auto-download family
-/// ([downloadNewChaptersProvider] + [downloadNewUnreadChaptersOnlyProvider]
-/// + the category include/exclude sets) is wired into the library updater
-/// via `FilterChaptersForDownload`. Wi-Fi-only ([downloadOnlyOverWifiProvider])
-/// gates the queue drain loop, the remove-after-read family hooks the
-/// read-path via `SetReadStatus`, CBZ ([saveChaptersAsCbzProvider]) is applied
-/// at finalize time, and [autoDownloadWhileReadingProvider] drives the reader's
-/// download-ahead. Split-tall ([splitTallImagesProvider]) is persisted but its
-/// image-slicing pipeline is not yet wired.
+/// [parallelSourceLimitProvider] caps how many chapters the queue drains at
+/// once and [parallelPageLimitProvider] caps how many pages of a chapter
+/// download concurrently (both read by `DownloadRepository` at drain time).
+/// The auto-download family ([downloadNewChaptersProvider] +
+/// [downloadNewUnreadChaptersOnlyProvider] + the category include/exclude
+/// sets) is wired into the library updater via `FilterChaptersForDownload`.
+/// Wi-Fi-only ([downloadOnlyOverWifiProvider]) gates the queue drain loop, the
+/// remove-after-read family ([removeAfterMarkedAsReadProvider],
+/// [removeAfterReadSlotsProvider], [removeBookmarkedChaptersProvider],
+/// [removeExcludeCategoriesProvider]) hooks the read-path via `SetReadStatus`,
+/// CBZ ([saveChaptersAsCbzProvider]) is applied at finalize time, and
+/// [autoDownloadWhileReadingProvider] drives the reader's download-ahead.
+/// Split-tall ([splitTallImagesProvider]) is persisted but its image-slicing
+/// pipeline is not yet wired.
 library;
 
 import '../preferences/typed_preferences.dart';
 
-/// Number of chapters the download queue fetches in parallel (1..5).
-/// Read by `DownloadRepository` at drain time.
-final downloadSlotsProvider = intPref('download_slots', 1);
+/// Max chapters the download queue drains in parallel (1..10). Read by
+/// `DownloadRepository` at the start of each drain batch.
+final parallelSourceLimitProvider =
+    intPref('download_parallel_source_limit', 5);
+
+/// Max pages of a single chapter that download concurrently (1..15). Read
+/// by `DownloadRepository` per chapter.
+final parallelPageLimitProvider =
+    intPref('download_parallel_page_limit', 5);
 
 /// Restrict downloads to unmetered (Wi-Fi) connections.
 final downloadOnlyOverWifiProvider =
@@ -53,7 +63,13 @@ final removeAfterReadSlotsProvider = intPref('remove_after_read_slots', -1);
 
 /// Exclude bookmarked chapters from any auto-removal.
 final removeBookmarkedChaptersProvider =
-    boolPref('pref_remove_bookmarked_chapters', false);
+    boolPref('pref_remove_bookmarked', false);
+
+/// Category ids (as strings) whose manga are protected from auto-removal of
+/// read chapters. Empty = no exclusions. Mirrors Kotlin
+/// `removeExcludeCategories`.
+final removeExcludeCategoriesProvider =
+    stringSetPref('remove_exclude_categories', const {});
 
 /// Archive each downloaded chapter as a single CBZ file instead of a
 /// folder of page images.

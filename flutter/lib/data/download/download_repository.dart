@@ -297,13 +297,22 @@ class DownloadRepository {
   }
 
   /// How many chapters to download concurrently. Read fresh from
-  /// SharedPreferences (`download_slots`, 1..5) at the start of each drain
-  /// so a settings change takes effect on the next batch. Defaults to
-  /// serial (1) when unset or out of range.
+  /// SharedPreferences (`download_parallel_source_limit`, 1..10) at the start
+  /// of each drain so a settings change takes effect on the next batch.
+  /// Defaults to 5 (Mihon's default) when unset, clamped to range.
   Future<int> _maxConcurrent() async {
     final prefs = await SharedPreferences.getInstance();
-    final v = prefs.getInt('download_slots') ?? 1;
-    return v.clamp(1, 5);
+    final v = prefs.getInt('download_parallel_source_limit') ?? 5;
+    return v.clamp(1, 10);
+  }
+
+  /// How many pages of a single chapter to download concurrently. Read fresh
+  /// from SharedPreferences (`download_parallel_page_limit`, 1..15) per
+  /// chapter. Defaults to 5 (Mihon's default) when unset, clamped to range.
+  Future<int> _maxPageConcurrent() async {
+    final prefs = await SharedPreferences.getInstance();
+    final v = prefs.getInt('download_parallel_page_limit') ?? 5;
+    return v.clamp(1, 15);
   }
 
   /// Whether downloads are restricted to un-metered (Wi-Fi/Ethernet)
@@ -433,35 +442,49 @@ class DownloadRepository {
       if (!await dir.exists()) await dir.create(recursive: true);
       job.totalPages = pages.length;
       job.downloadedPages = 0;
-      final pageFiles = <File>[];
-      for (var i = 0; i < pages.length; i++) {
-        final page = pages[i];
-        final imageUrl = page.imageUrl ?? page.url;
-        final ext = _extForUrl(imageUrl);
-        final target = File(p.join(
-          dir.path,
-          '${(i + 1).toString().padLeft(4, '0')}.$ext',
-        ));
-        if (!await target.exists()) {
-          await _dio.download(
-            imageUrl,
-            target.path,
-            options: Options(headers: page.headers),
-            cancelToken: job.cancelToken,
-          );
+      // Download pages with bounded concurrency (Mihon's parallelPageLimit).
+      // Files are slotted by index so the CBZ archive stays page-ordered even
+      // though completions interleave. The first error stops scheduling new
+      // pages, in-flight ones drain, then it is rethrown for the catch below.
+      final pageLimit = await _maxPageConcurrent();
+      final pageSlots = List<File?>.filled(pages.length, null);
+      var completed = 0;
+      var nextIndex = 0;
+      Object? firstError;
+      StackTrace? firstStack;
+      final active = <Future<void>>{};
+      while (nextIndex < pages.length || active.isNotEmpty) {
+        while (firstError == null &&
+            nextIndex < pages.length &&
+            active.length < pageLimit) {
+          final i = nextIndex++;
+          late final Future<void> f;
+          f = _downloadPage(dir, pages[i], i, job).then((file) {
+            pageSlots[i] = file;
+            completed++;
+            job.downloadedPages = completed;
+            _events.add(
+              DownloadEvent(
+                chapterId: chapter.id,
+                state: DownloadState.downloading,
+                progress: completed / pages.length,
+                downloadedPages: completed,
+                totalPages: pages.length,
+              ),
+            );
+          }).catchError((Object e, StackTrace s) {
+            firstError ??= e;
+            firstStack ??= s;
+          }).whenComplete(() => active.remove(f));
+          active.add(f);
         }
-        pageFiles.add(target);
-        job.downloadedPages = i + 1;
-        _events.add(
-          DownloadEvent(
-            chapterId: chapter.id,
-            state: DownloadState.downloading,
-            progress: (i + 1) / pages.length,
-            downloadedPages: i + 1,
-            totalPages: pages.length,
-          ),
-        );
+        if (active.isEmpty) break;
+        await Future.any(active);
       }
+      if (firstError != null) {
+        Error.throwWithStackTrace(firstError!, firstStack!);
+      }
+      final pageFiles = pageSlots.whereType<File>().toList();
       // Optionally archive the chapter into a single CBZ alongside the
       // page folder, mirroring Mihon's `saveChaptersAsCBZ`. The folder is
       // removed once the archive is written so a chapter lives as exactly
@@ -504,6 +527,32 @@ class DownloadRepository {
         ),
       );
     }
+  }
+
+  /// Downloads one page image into [dir] as a zero-padded, 1-based filename
+  /// (`0001.jpg`, …) and returns the target file. Skips the network fetch if
+  /// the file already exists (resumable). Honours the job's cancel token.
+  Future<File> _downloadPage(
+    Directory dir,
+    SourcePage page,
+    int index,
+    _DownloadJob job,
+  ) async {
+    final imageUrl = page.imageUrl ?? page.url;
+    final ext = _extForUrl(imageUrl);
+    final target = File(p.join(
+      dir.path,
+      '${(index + 1).toString().padLeft(4, '0')}.$ext',
+    ));
+    if (!await target.exists()) {
+      await _dio.download(
+        imageUrl,
+        target.path,
+        options: Options(headers: page.headers),
+        cancelToken: job.cancelToken,
+      );
+    }
+    return target;
   }
 
   String _extForUrl(String url) {

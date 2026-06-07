@@ -4,19 +4,17 @@
 ///
 ///  * [setRead] flips the read flag for a batch of chapters and, when
 ///    `pref_remove_after_marked_as_read_key` is on, deletes their downloads
-///    (skipping bookmarked chapters unless `pref_remove_bookmarked_chapters`
-///    is on). 1:1 with `SetReadStatus.await`.
+///    (skipping bookmarked chapters unless `pref_remove_bookmarked` is on,
+///    and skipping manga in `remove_exclude_categories`). 1:1 with
+///    `SetReadStatus.await`.
 ///  * [deleteReadChapterSlot] deletes the download `removeAfterReadSlots`
 ///    chapters behind the one just finished, in reading order. 1:1 with
 ///    `ReaderViewModel.deleteChapterIfNeeded`.
-///
-/// Mihon also honours a `removeExcludeCategories` set here; that preference
-/// has no Flutter equivalent yet, so the per-category exclusion is not
-/// applied.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/category/category_repository.dart';
 import '../../../data/chapter/chapter_repository.dart';
 import '../../../data/download/download_preferences.dart';
 import '../../../data/download/download_repository.dart';
@@ -82,11 +80,29 @@ class SetReadStatus {
     await _deleteIfAllowed(manga, orderedChapters[targetIndex]);
   }
 
-  /// Deletes [chapter]'s download unless it's bookmarked and bookmarked
-  /// chapters are protected — mirroring `DownloadManager.getChaptersToDelete`.
+  /// Deletes [chapter]'s download unless it's protected — mirroring
+  /// `DownloadManager.getChaptersToDelete`: bookmarked chapters are kept
+  /// unless [removeBookmarkedChaptersProvider] is on, and manga in an
+  /// excluded category ([removeExcludeCategoriesProvider]) keep their read
+  /// chapters. Every chapter reaching this path is being removed because it
+  /// just became read, so an excluded manga is skipped outright.
   Future<void> _deleteIfAllowed(Manga manga, Chapter chapter) async {
     if (chapter.bookmark && !_ref.read(removeBookmarkedChaptersProvider)) {
       return;
+    }
+    final excluded = _ref
+        .read(removeExcludeCategoriesProvider)
+        .map(int.tryParse)
+        .whereType<int>()
+        .toSet();
+    if (excluded.isNotEmpty) {
+      final cats =
+          await _ref.read(categoryRepositoryProvider).getCategoryIdsForManga(
+                manga.id,
+              );
+      // Mihon treats an uncategorized manga as category 0 for this check.
+      final effective = cats.isEmpty ? const {0} : cats;
+      if (effective.intersection(excluded).isNotEmpty) return;
     }
     await _ref
         .read(downloadRepositoryProvider)

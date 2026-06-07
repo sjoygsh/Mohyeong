@@ -33,6 +33,69 @@ class PrefSwitch extends ConsumerWidget {
   }
 }
 
+/// An integer slider preference matching Mihon's `SliderPreference`: a
+/// title (optional subtitle) above a discrete slider with a trailing value
+/// readout. [value] is clamped into `[min, max]` for display so an
+/// out-of-range stored value still renders.
+class PrefSlider extends StatelessWidget {
+  const PrefSlider({
+    super.key,
+    required this.title,
+    this.subtitle,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String? subtitle;
+  final int value;
+  final int min;
+  final int max;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final clamped = value.clamp(min, max);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.bodyLarge),
+          if (subtitle != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                subtitle!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: Slider(
+                  value: clamped.toDouble(),
+                  min: min.toDouble(),
+                  max: max.toDouble(),
+                  divisions: max - min,
+                  label: '$clamped',
+                  onChanged: (v) => onChanged(v.round()),
+                ),
+              ),
+              SizedBox(
+                width: 28,
+                child: Text('$clamped', textAlign: TextAlign.end),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// A section header row matching the bold labels Mihon uses to group
 /// related preferences.
 class PrefSectionHeader extends StatelessWidget {
