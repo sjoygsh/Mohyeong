@@ -41,7 +41,7 @@ class DownloadSettingsScreen extends ConsumerWidget {
             },
           ),
           PrefSwitch(
-            title: 'Only download over Wi-Fi',
+            title: 'Only on Wi-Fi',
             subtitle: 'Pause downloads on metered connections.',
             provider: downloadOnlyOverWifiProvider,
           ),
@@ -53,8 +53,7 @@ class DownloadSettingsScreen extends ConsumerWidget {
             provider: downloadNewChaptersProvider,
           ),
           PrefSwitch(
-            title: 'Download new unread chapters only',
-            subtitle: "Skip chapters whose number you've already read.",
+            title: 'Skip downloading duplicate read chapters',
             provider: downloadNewUnreadChaptersOnlyProvider,
           ),
           CategoryFilterTile(
@@ -67,10 +66,9 @@ class DownloadSettingsScreen extends ConsumerWidget {
             emptyLabel: 'None',
             provider: downloadNewCategoriesExcludeProvider,
           ),
-          const PrefSectionHeader('Auto-remove'),
+          const PrefSectionHeader('Delete chapters'),
           PrefSwitch(
-            title: 'Remove after marked as read',
-            subtitle: 'Delete a chapter download once you mark it read.',
+            title: 'After manually marked as read',
             provider: removeAfterMarkedAsReadProvider,
           ),
           ListTile(
@@ -90,19 +88,17 @@ class DownloadSettingsScreen extends ConsumerWidget {
             },
           ),
           PrefSwitch(
-            title: 'Exclude bookmarked chapters',
-            subtitle: "Don't auto-remove chapters you've bookmarked.",
+            title: 'Allow deleting bookmarked chapters',
             provider: removeBookmarkedChaptersProvider,
           ),
           const PrefSectionHeader('Storage format'),
           PrefSwitch(
-            title: 'Save chapters as CBZ',
-            subtitle: 'Archive each chapter into a single CBZ file.',
+            title: 'Save as CBZ archive',
             provider: saveChaptersAsCbzProvider,
           ),
           PrefSwitch(
             title: 'Split tall images',
-            subtitle: 'Slice long strip images into screen-height pages.',
+            subtitle: 'Improves reader performance',
             provider: splitTallImagesProvider,
           ),
           const PrefSectionHeader('Download ahead'),
