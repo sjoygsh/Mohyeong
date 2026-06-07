@@ -17,6 +17,7 @@ import '../../data/reader/reader_preferences.dart';
 import '../../data/reader/reader_volume_keys.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/incognito_preferences.dart';
+import '../../data/track/track_preferences.dart';
 import '../../data/track/track_updater.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/chapter/service/set_read_status.dart';
@@ -285,13 +286,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               await ref
                   .read(setReadStatusProvider)
                   .setRead(read: true, chapters: [data.chapter]);
-              if (!_incognito) {
-                // Fire-and-forget tracker push. Failures are absorbed inside
-                // TrackUpdater; the snackbar below confirms the local write.
+              if (!_incognito && ref.read(autoUpdateTrackProvider)) {
+                // Fire-and-forget tracker push, gated by "Update progress after
+                // reading" (Mihon `autoUpdateTrack`). Failures are absorbed
+                // inside TrackUpdater; the snackbar below confirms the local
+                // write. `volumeNumber` lets "track by volume" report the
+                // volume instead of the chapter when recognised.
                 unawaited(
                   ref.read(trackUpdaterProvider).setLastChapterRead(
                         mangaId: data.chapter.mangaId,
                         chapterNumber: data.chapter.chapterNumber,
+                        volumeNumber: data.chapter.volumeNumber,
                       ),
                 );
               }
@@ -313,12 +318,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                     .read(chapterRepositoryProvider)
                     .setRead(data.chapter.id, true),
               );
-              unawaited(
-                ref.read(trackUpdaterProvider).setLastChapterRead(
-                      mangaId: data.chapter.mangaId,
-                      chapterNumber: data.chapter.chapterNumber,
-                    ),
-              );
+              // Mirrors Mihon `updateChapterProgressOnComplete` →
+              // `updateTrackChapterRead`, gated by "Update progress after
+              // reading" (`autoUpdateTrack`).
+              if (ref.read(autoUpdateTrackProvider)) {
+                unawaited(
+                  ref.read(trackUpdaterProvider).setLastChapterRead(
+                        mangaId: data.chapter.mangaId,
+                        chapterNumber: data.chapter.chapterNumber,
+                        volumeNumber: data.chapter.volumeNumber,
+                      ),
+                );
+              }
               // Drop the download `removeAfterReadSlots` chapters back, in
               // reading order (Mihon `deleteChapterIfNeeded`). Independent of
               // `remove_after_marked_as_read`.

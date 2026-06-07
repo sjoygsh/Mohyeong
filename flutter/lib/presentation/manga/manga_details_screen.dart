@@ -37,6 +37,18 @@ import 'manga_cover_viewer.dart';
 import 'manga_notes_screen.dart';
 import 'scanlator_filter_sheet.dart';
 
+/// Highest recognised volume number across [chapters], or null when none is
+/// known — fed to `trackOnMarkRead` so "track by volume" reports the volume.
+/// Mirrors Mihon `chapters.mapNotNull { it.volumeNumber }.maxOrNull()`.
+double? _maxVolumeNumber(List<Chapter> chapters) {
+  double? max;
+  for (final c in chapters) {
+    final v = c.volumeNumber;
+    if (v != null && (max == null || v > max)) max = v;
+  }
+  return max;
+}
+
 /// Manga details: cover + metadata header followed by the chapter list.
 /// Promoted to a stateful widget to own chapter multi-select state — the
 /// app bar swaps into a selection bar when at least one chapter row is
@@ -176,6 +188,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
     ];
   }
 
+
   Future<void> _bulkSetRead(List<Chapter> all, bool read) async {
     final picked = _selectedChapters(all);
     await ref
@@ -185,16 +198,21 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
       // Push the highest selected chapter number to trackers, parity
       // with Mihon's per-action sync. We deliberately only push on the
       // mark-read branch — marking unread shouldn't regress trackers.
+      // Routed through `trackOnMarkRead` so the "Update progress when marked
+      // as read" preference (Always / Always ask / Never) is honoured.
       final highest = picked.fold<double>(
         -1,
         (m, c) => c.chapterNumber > m ? c.chapterNumber : m,
       );
-      if (highest > 0) {
+      if (highest > 0 && mounted) {
         unawaited(
-          ref.read(trackUpdaterProvider).setLastChapterRead(
-                mangaId: widget.mangaId,
-                chapterNumber: highest,
-              ),
+          trackOnMarkRead(
+            ref,
+            context,
+            mangaId: widget.mangaId,
+            chapterNumber: highest,
+            volumeNumber: _maxVolumeNumber(picked),
+          ),
         );
       }
     }
@@ -240,14 +258,17 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
     await ref
         .read(setReadStatusProvider)
         .setRead(read: true, chapters: earlier);
-    if (earlier.isNotEmpty) {
+    if (earlier.isNotEmpty && mounted) {
       final highest =
           earlier.map((c) => c.chapterNumber).reduce((a, b) => a > b ? a : b);
       unawaited(
-        ref.read(trackUpdaterProvider).setLastChapterRead(
-              mangaId: widget.mangaId,
-              chapterNumber: highest,
-            ),
+        trackOnMarkRead(
+          ref,
+          context,
+          mangaId: widget.mangaId,
+          chapterNumber: highest,
+          volumeNumber: _maxVolumeNumber(earlier),
+        ),
       );
     }
     _clearSelection();
@@ -2199,10 +2220,13 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                     ),
                   );
                   unawaited(
-                    ref.read(trackUpdaterProvider).setLastChapterRead(
-                          mangaId: chapter.mangaId,
-                          chapterNumber: chapter.chapterNumber,
-                        ),
+                    trackOnMarkRead(
+                      ref,
+                      context,
+                      mangaId: chapter.mangaId,
+                      chapterNumber: chapter.chapterNumber,
+                      volumeNumber: chapter.volumeNumber,
+                    ),
                   );
                 case _ChapterAction.markUnread:
                   unawaited(
@@ -2224,7 +2248,7 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                     await ref
                         .read(setReadStatusProvider)
                         .setRead(read: true, chapters: earlier);
-                    if (earlier.isNotEmpty) {
+                    if (earlier.isNotEmpty && context.mounted) {
                       // Push the highest chapter number we just marked
                       // (which is strictly less than `chapter`) to
                       // trackers so progress stays consistent.
@@ -2232,10 +2256,13 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                           .map((c) => c.chapterNumber)
                           .reduce((a, b) => a > b ? a : b);
                       unawaited(
-                        ref.read(trackUpdaterProvider).setLastChapterRead(
-                              mangaId: chapter.mangaId,
-                              chapterNumber: highest,
-                            ),
+                        trackOnMarkRead(
+                          ref,
+                          context,
+                          mangaId: chapter.mangaId,
+                          chapterNumber: highest,
+                          volumeNumber: _maxVolumeNumber(earlier),
+                        ),
                       );
                     }
                   }();

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/track/track_preferences.dart';
 import '../../data/track/tracker.dart';
 import '../../data/track/tracker_registry.dart';
 import '../../domain/track/model/tracker.dart';
+import '../settings/pref_tiles.dart';
 
 /// Trackers settings page — lists every registered tracker and lets the
 /// user log in / out. Split into "Online" and "Advanced" sections matching
@@ -37,6 +39,31 @@ class TrackersSettingsScreen extends ConsumerWidget {
       ),
       body: ListView(
         children: [
+          // Top-level tracking behaviour (Mihon SettingsTrackingScreen: three
+          // ungrouped items above the "Trackers" service group).
+          PrefSwitch(
+            title: 'Update progress after reading',
+            provider: autoUpdateTrackProvider,
+          ),
+          PrefSwitch(
+            title: 'Track by volume',
+            subtitle: 'Report volume number to trackers instead of chapter '
+                'number, when known',
+            provider: trackByVolumeProvider,
+          ),
+          Consumer(
+            builder: (context, ref, _) {
+              final state = AutoTrackState.fromKey(
+                ref.watch(autoUpdateTrackOnMarkReadProvider),
+              );
+              return ListTile(
+                title: const Text('Update progress when marked as read'),
+                subtitle: Text(state.label),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _pickAutoTrackState(context, ref, state),
+              );
+            },
+          ),
           const _SectionHeader('Trackers'),
           for (final t in online) _TrackerTile(tracker: t),
           const _InfoText(
@@ -56,6 +83,43 @@ class TrackersSettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Single-choice radio dialog for the "Update progress when marked as read"
+  /// preference (Mihon `autoUpdateTrackOnMarkRead` ListPreference:
+  /// Always / Always ask / Never).
+  Future<void> _pickAutoTrackState(
+    BuildContext context,
+    WidgetRef ref,
+    AutoTrackState current,
+  ) async {
+    final picked = await showDialog<AutoTrackState>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Update progress when marked as read'),
+        children: [
+          RadioGroup<AutoTrackState>(
+            groupValue: current,
+            onChanged: (v) => Navigator.of(ctx).pop(v),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final state in AutoTrackState.values)
+                  RadioListTile<AutoTrackState>(
+                    value: state,
+                    title: Text(state.label),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked != null) {
+      await ref
+          .read(autoUpdateTrackOnMarkReadProvider.notifier)
+          .set(picked.key);
+    }
   }
 }
 
