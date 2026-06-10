@@ -12,23 +12,48 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/reader/model/reading_mode.dart';
 
-/// Reader background. Mirrors Mihon's `reader_color_value` int pref —
-/// values chosen to match Mihon's `ReaderBackgroundColor` ordinals so
-/// imported settings carry across without translation.
+/// Reader background. Mirrors Mihon's `pref_reader_theme_key` int pref —
+/// stored values match Mihon verbatim (0=White, 1=Black, 2=Gray,
+/// 3=Automatic) so imported settings carry across without translation.
+/// Gray is Mihon's `grayBackgroundColor` (0xFF202125); Automatic follows
+/// the app theme (gray in dark mode, white otherwise — Mihon's
+/// `automaticBackgroundColor()`).
 enum ReaderBackground {
-  black(0, 'Black', Colors.black, Colors.white),
-  gray(1, 'Grey', Color(0xFF1E1E1E), Colors.white),
-  white(2, 'White', Colors.white, Colors.black);
+  white(0, 'White', Colors.white, Colors.black),
+  black(1, 'Black', Colors.black, Colors.white),
+  gray(2, 'Gray', Color(0xFF202125), Colors.white),
+  automatic(3, 'Auto', Colors.white, Colors.black);
 
-  const ReaderBackground(this.flagValue, this.label, this.color, this.onColor);
+  const ReaderBackground(this.flagValue, this.label, this._color, this._onColor);
 
   final int flagValue;
   final String label;
-  final Color color;
+  final Color _color;
+  final Color _onColor;
+
+  /// The order Mihon's settings picker lists the entries in
+  /// (Black / Gray / White / Auto).
+  static const pickerOrder = <ReaderBackground>[black, gray, white, automatic];
+
+  /// Background colour for the given app-theme [brightness]. [automatic]
+  /// resolves like Mihon: gray in dark mode, white otherwise.
+  Color resolveColor(Brightness brightness) {
+    if (this == ReaderBackground.automatic) {
+      return brightness == Brightness.dark
+          ? ReaderBackground.gray._color
+          : Colors.white;
+    }
+    return _color;
+  }
 
   /// Foreground colour the reader chrome should switch to so labels
-  /// stay legible against [color].
-  final Color onColor;
+  /// stay legible against [resolveColor].
+  Color resolveOnColor(Brightness brightness) {
+    if (this == ReaderBackground.automatic) {
+      return brightness == Brightness.dark ? Colors.white : Colors.black;
+    }
+    return _onColor;
+  }
 
   static ReaderBackground fromFlag(int? flag) {
     for (final v in values) {
@@ -77,7 +102,7 @@ enum ReaderColorFilterMode {
 enum ReaderFlashColor {
   black(0, 'BLACK', 'Black'),
   white(1, 'WHITE', 'White'),
-  whiteBlack(2, 'WHITE_BLACK', 'White then black');
+  whiteBlack(2, 'WHITE_BLACK', 'White and Black');
 
   const ReaderFlashColor(this.flagValue, this.storeName, this.label);
 
@@ -103,8 +128,8 @@ enum ReaderFlashColor {
 /// rectangle layouts.
 enum ReaderNavMode {
   defaultMode(0, 'Default'),
-  lShaped(1, 'L-shaped'),
-  kindlish(2, 'Kindlish'),
+  lShaped(1, 'L shaped'),
+  kindlish(2, 'Kindle-ish'),
   edge(3, 'Edge'),
   rightAndLeft(4, 'Right and Left'),
   disabled(5, 'Disabled');
@@ -308,9 +333,9 @@ final readerPreferencesProvider =
 );
 
 class ReaderBackgroundNotifier extends Notifier<ReaderBackground> {
-  // Matches Mihon's `reader_color_value` key so settings imports carry
-  // through without remapping.
-  static const _key = 'reader_color_value';
+  // Matches Mihon's `pref_reader_theme_key` (default 1 = Black) so
+  // settings imports carry through without remapping.
+  static const _key = 'pref_reader_theme_key';
 
   @override
   ReaderBackground build() {

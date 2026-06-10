@@ -9,11 +9,11 @@ enum ReadingMode {
   /// Per-manga "inherit global" sentinel. Resolves to the user's
   /// chosen default when reading.
   defaultMode(0x0, 'Default'),
-  leftToRight(0x1, 'Left to right'),
-  rightToLeft(0x2, 'Right to left'),
-  verticalPaged(0x3, 'Vertical (paged)'),
-  webtoon(0x4, 'Webtoon (continuous)'),
-  continuousVertical(0x5, 'Vertical (continuous)');
+  leftToRight(0x1, 'Paged (left to right)'),
+  rightToLeft(0x2, 'Paged (right to left)'),
+  verticalPaged(0x3, 'Paged (vertical)'),
+  webtoon(0x4, 'Long strip'),
+  continuousVertical(0x5, 'Long strip with gaps');
 
   const ReadingMode(this.flagValue, this.label);
 

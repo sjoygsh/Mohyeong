@@ -228,8 +228,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Widget build(BuildContext context) {
     final globalMode = ref.watch(readerPreferencesProvider);
     final background = ref.watch(readerBackgroundProvider);
+    final brightness = Theme.of(context).brightness;
     return Scaffold(
-      backgroundColor: background.color,
+      backgroundColor: background.resolveColor(brightness),
       body: FutureBuilder<_ReaderData?>(
         future: _data,
         builder: (context, snap) {
@@ -238,7 +239,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           }
           if (!snap.hasData) {
             return Center(
-              child: CircularProgressIndicator(color: background.onColor),
+              child: CircularProgressIndicator(
+                color: background.resolveOnColor(brightness),
+              ),
             );
           }
           final data = snap.data;
