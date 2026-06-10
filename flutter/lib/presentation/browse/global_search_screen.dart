@@ -6,6 +6,7 @@ import '../../data/source/browse_preferences.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
 import '../../data/source/source_id.dart';
+import '../../data/source/source_preferences.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
@@ -30,6 +31,10 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
   late final TextEditingController _controller =
       TextEditingController(text: widget.initialQuery ?? '');
   String _activeQuery = '';
+  // Kotlin SearchScreenModel defaults: pinned sources only, all sections
+  // visible regardless of result count.
+  bool _pinnedOnly = true;
+  bool _onlyShowHasResults = false;
 
   @override
   void initState() {
@@ -74,6 +79,47 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
             onPressed: _submit,
           ),
         ],
+        // Kotlin GlobalSearchToolbar's filter chip row: Pinned / All source
+        // scope plus the "Has results" visibility toggle.
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  FilterChip(
+                    selected: _pinnedOnly,
+                    avatar: const Icon(Icons.push_pin_outlined, size: 18),
+                    label: const Text('Pinned'),
+                    onSelected: (_) => setState(() => _pinnedOnly = true),
+                  ),
+                  const SizedBox(width: 8),
+                  FilterChip(
+                    selected: !_pinnedOnly,
+                    avatar: const Icon(Icons.done_all, size: 18),
+                    label: const Text('All'),
+                    onSelected: (_) => setState(() => _pinnedOnly = false),
+                  ),
+                  const SizedBox(width: 8),
+                  const SizedBox(
+                    height: 24,
+                    child: VerticalDivider(width: 8),
+                  ),
+                  const SizedBox(width: 8),
+                  FilterChip(
+                    selected: _onlyShowHasResults,
+                    label: const Text('Has results'),
+                    onSelected: (v) =>
+                        setState(() => _onlyShowHasResults = v),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
       body: _activeQuery.isEmpty
           ? const _IdleHint()
@@ -88,11 +134,27 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
                 if (!snap.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final sources = snap.data!;
+                var sources = snap.data!;
                 if (sources.isEmpty) {
                   return const Center(
                     child: Text('No installed sources to search.'),
                   );
+                }
+                if (_pinnedOnly) {
+                  final pinned = ref
+                          .watch(sourcePreferencesProvider)
+                          .valueOrNull
+                          ?.getPinnedSources() ??
+                      const <String>{};
+                  sources = sources
+                      .where((s) => pinned.contains(s.id))
+                      .toList(growable: false);
+                  if (sources.isEmpty) {
+                    // Verbatim Mihon string no_pinned_sources.
+                    return const Center(
+                      child: Text('You have no pinned sources'),
+                    );
+                  }
                 }
                 return ListView.builder(
                   itemCount: sources.length,
@@ -101,6 +163,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
                     sourceId: sources[i].id,
                     sourceName: sources[i].name,
                     query: _activeQuery,
+                    onlyShowHasResults: _onlyShowHasResults,
                   ),
                 );
               },
@@ -138,11 +201,16 @@ class _SourceSection extends ConsumerStatefulWidget {
     required this.sourceId,
     required this.sourceName,
     required this.query,
+    this.onlyShowHasResults = false,
   });
 
   final String sourceId;
   final String sourceName;
   final String query;
+
+  /// Kotlin `SearchItemResult.isVisible`: while the "Has results" chip is
+  /// on, only successfully-loaded, non-empty sections render.
+  final bool onlyShowHasResults;
 
   @override
   ConsumerState<_SourceSection> createState() => _SourceSectionState();
@@ -150,6 +218,9 @@ class _SourceSection extends ConsumerStatefulWidget {
 
 class _SourceSectionState extends ConsumerState<_SourceSection> {
   Future<MangasPage>? _future;
+  // Tracks whether the search resolved with at least one result, for the
+  // "Has results" visibility gate. Null until the future settles.
+  bool? _hasResults;
 
   @override
   void initState() {
@@ -158,15 +229,36 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
   }
 
   void _kick() {
+    _hasResults = null;
     final repo = ref.read(extensionRepositoryProvider);
     _future = repo
         .getSource(widget.sourceId)
-        .then((s) => s.fetchSearch(widget.query, 1));
+        .then((s) => s.fetchSearch(widget.query, 1))
+        .then((page) {
+      if (mounted && _hasResults != page.mangas.isNotEmpty) {
+        // Schedule after this frame — the FutureBuilder consumes the value
+        // in the same build otherwise.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _hasResults = page.mangas.isNotEmpty);
+        });
+      }
+      return page;
+    }, onError: (Object e) {
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _hasResults = false);
+        });
+      }
+      throw e; // ignore: only_throw_errors
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    if (widget.onlyShowHasResults && _hasResults != true) {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Column(
