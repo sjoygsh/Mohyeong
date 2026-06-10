@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/manga/manga_repository.dart';
 import '../../data/source/browse_preferences.dart';
@@ -364,6 +365,29 @@ class _MangaGrid extends ConsumerWidget {
       return const Center(child: CircularProgressIndicator());
     }
     if (items.isEmpty) {
+      // Local source empty state carries the guide link (Kotlin
+      // BrowseSourceScreen's EmptyScreen action for LocalSource).
+      if (sourceId == '0') {
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('No results found'),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                icon: const Icon(Icons.help_outline),
+                label: const Text('Local source guide'),
+                onPressed: () => launchUrl(
+                  Uri.parse(
+                    'https://sjoygsh.github.io/Mohyeong/help.html#local-source',
+                  ),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
       return const Center(child: Text('No results found'));
     }
     // Kotlin sourceDisplayMode: compact grid (title over cover),

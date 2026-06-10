@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/source/model/source_chapter.dart';
@@ -126,6 +127,21 @@ class ChapterRepository {
     final existing = await getByMangaId(mangaId);
     final existingByUrl = {for (final c in existing) c.url: c};
     final nowMs = DateTime.now().millisecondsSinceEpoch;
+    // "Mark duplicate read chapter as read → After fetching new chapter"
+    // (Kotlin MARK_DUPLICATE_CHAPTER_READ_NEW): a new chapter whose number
+    // matches an already-read row is inserted read and left out of the
+    // "new chapters" result so it doesn't spam the Updates tab.
+    final sharedPrefs = await SharedPreferences.getInstance();
+    final markDuplicateAsRead =
+        (sharedPrefs.getStringList('mark_duplicate_read_chapter_read') ??
+                const [])
+            .contains('new');
+    final readChapterNumbers = markDuplicateAsRead
+        ? {
+            for (final c in existing)
+              if (c.read && c.chapterNumber >= 0) c.chapterNumber,
+          }
+        : const <double>{};
     final added = <Chapter>[];
     final updatedCompanions = <db.ChaptersCompanion>[];
     // Source returns chapters in display order (typically newest first).
@@ -135,10 +151,13 @@ class ChapterRepository {
       final s = fetched[i];
       final prior = existingByUrl[s.url];
       if (prior == null) {
+        final duplicateRead = markDuplicateAsRead &&
+            s.chapterNumber >= 0 &&
+            readChapterNumbers.contains(s.chapterNumber);
         final inserted = Chapter(
           id: -1,
           mangaId: mangaId,
-          read: false,
+          read: duplicateRead,
           bookmark: false,
           lastPageRead: 0,
           dateFetch: nowMs,
@@ -158,7 +177,7 @@ class ChapterRepository {
                 url: s.url,
                 name: s.name,
                 scanlator: Value(s.scanlator),
-                read: 0,
+                read: duplicateRead ? 1 : 0,
                 bookmark: 0,
                 lastPageRead: 0,
                 chapterNumber: s.chapterNumber,
@@ -171,7 +190,7 @@ class ChapterRepository {
                 volumeNumber: Value(s.volumeNumber),
               ),
             );
-        added.add(inserted.copyWith(id: id));
+        if (!duplicateRead) added.add(inserted.copyWith(id: id));
       } else {
         updatedCompanions.add(
           db.ChaptersCompanion(

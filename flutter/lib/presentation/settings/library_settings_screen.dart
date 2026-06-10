@@ -24,8 +24,8 @@ import 'pref_tiles.dart';
 /// Intentional differences from Kotlin's screen:
 ///   * Per-category "categorized display settings" aren't implemented, so
 ///     that Kotlin item is omitted rather than shipped as a dead switch.
-///   * The mark-duplicate and keep-downloaded-removed items are omitted for
-///     the same reason — their subsystems don't exist yet.
+///   * The keep-downloaded-removed item is omitted for the same reason —
+///     its subsystem doesn't exist yet.
 ///   * The Display/Badges section is a Mohyeong addition: the Flutter build
 ///     has no separate library display bottom-sheet, so these live here.
 class LibrarySettingsScreen extends ConsumerWidget {
@@ -134,6 +134,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
             title: 'Chapter on swipe to right',
             provider: swipeToEndActionProvider,
           ),
+          const _MarkDuplicateReadSection(),
 
           // ── Display (Mohyeong-specific) ─────────────────────────────
           const PrefSectionHeader('Display'),
@@ -281,6 +282,51 @@ class _SmartUpdateSection extends ConsumerWidget {
           padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
           child: Text(
             'Smart update',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+        for (final (token, label) in _entries)
+          CheckboxListTile(
+            title: Text(label),
+            value: selected.contains(token),
+            onChanged: (checked) {
+              final next = {...selected};
+              if (checked ?? false) {
+                next.add(token);
+              } else {
+                next.remove(token);
+              }
+              notifier.set(next);
+            },
+          ),
+      ],
+    );
+  }
+}
+
+/// Kotlin's "Mark duplicate read chapter as read" MultiSelectListPreference
+/// (Behavior group): two independent checkboxes for the `existing` / `new`
+/// tokens. Verbatim Mihon strings.
+class _MarkDuplicateReadSection extends ConsumerWidget {
+  const _MarkDuplicateReadSection();
+
+  static const _entries = <(String, String)>[
+    (MarkDuplicateRead.readExisting, 'After reading a chapter'),
+    (MarkDuplicateRead.readNew, 'After fetching new chapter'),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(markDuplicateReadChapterAsReadProvider);
+    final notifier =
+        ref.read(markDuplicateReadChapterAsReadProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Text(
+            'Mark duplicate read chapter as read',
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
         ),

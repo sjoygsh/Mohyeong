@@ -120,6 +120,21 @@ final libraryUpdateDeviceRestrictionProvider = stringSetPref(
 final autoUpdateMetadataProvider =
     boolPref('auto_update_metadata', false);
 
+/// Tokens of the "Mark duplicate read chapter as read" multi-select
+/// (Kotlin `MARK_DUPLICATE_CHAPTER_READ_*`).
+abstract final class MarkDuplicateRead {
+  /// Mark an existing unread duplicate read after reading a chapter.
+  static const readExisting = 'existing';
+
+  /// Mark a newly fetched chapter read when a read duplicate exists.
+  static const readNew = 'new';
+}
+
+/// "Mark duplicate read chapter as read" (Settings → Library → Behavior).
+/// Mihon `markDuplicateReadChapterAsRead`, default empty (off).
+final markDuplicateReadChapterAsReadProvider =
+    stringSetPref('mark_duplicate_read_chapter_read', const {});
+
 /// "Clear chapter cache on app launch" (Data and storage). Mihon
 /// `autoClearChapterCache`, key `auto_clear_chapter_cache`, default false.
 final autoClearChapterCacheProvider =

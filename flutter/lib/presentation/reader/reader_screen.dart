@@ -13,6 +13,7 @@ import '../../data/cover/cover_cache.dart';
 import '../../data/download/download_preferences.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/history/history_repository.dart';
+import '../../data/library/library_update_preference.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/reader/reader_behavior_preferences.dart';
 import '../../data/reader/reader_image_actions.dart';
@@ -349,6 +350,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                     .read(chapterRepositoryProvider)
                     .setRead(data.chapter.id, true),
               );
+              // "Mark duplicate read chapter as read → After reading a
+              // chapter" (Kotlin MARK_DUPLICATE_CHAPTER_READ_EXISTING):
+              // unread siblings sharing this chapter number get marked read
+              // too, without a tracker push.
+              if (ref
+                  .read(markDuplicateReadChapterAsReadProvider)
+                  .contains(MarkDuplicateRead.readExisting)) {
+                final repo = ref.read(chapterRepositoryProvider);
+                for (final sibling in data.siblings) {
+                  if (sibling.id != data.chapter.id &&
+                      !sibling.read &&
+                      sibling.chapterNumber >= 0 &&
+                      sibling.chapterNumber == data.chapter.chapterNumber) {
+                    unawaited(repo.setRead(sibling.id, true));
+                  }
+                }
+              }
               // Mirrors Mihon `updateChapterProgressOnComplete` →
               // `updateTrackChapterRead`, gated by "Update progress after
               // reading" (`autoUpdateTrack`).
