@@ -120,6 +120,11 @@ final libraryUpdateDeviceRestrictionProvider = stringSetPref(
 final autoUpdateMetadataProvider =
     boolPref('auto_update_metadata', false);
 
+/// "Clear chapter cache on app launch" (Data and storage). Mihon
+/// `autoClearChapterCache`, key `auto_clear_chapter_cache`, default false.
+final autoClearChapterCacheProvider =
+    boolPref('auto_clear_chapter_cache', false);
+
 /// Category newly-favourited manga land in (Settings → Library →
 /// "Default category"). Mihon `LibraryPreferences.defaultCategory`, key
 /// `default_category`: -1 = "Always ask" (category sheet on favourite),

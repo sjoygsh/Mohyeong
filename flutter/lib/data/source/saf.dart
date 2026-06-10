@@ -81,4 +81,16 @@ class Saf {
   /// revoke it from Android system settings, so the Storage step re-checks.
   static Future<bool> hasPermission(String uri) async =>
       await _channel.invokeMethod<bool>('hasPermission', {'uri': uri}) ?? false;
+
+  /// `(available, total)` bytes of the volume holding the app's data dir —
+  /// backs the "Storage usage" bar (Mihon's StorageInfo).
+  static Future<(int, int)?> storageStats() async {
+    final raw =
+        await _channel.invokeMethod<Map<dynamic, dynamic>>('storageStats');
+    if (raw == null) return null;
+    final available = raw['available'] as int?;
+    final total = raw['total'] as int?;
+    if (available == null || total == null || total <= 0) return null;
+    return (available, total);
+  }
 }

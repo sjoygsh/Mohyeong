@@ -134,6 +134,23 @@ class MainActivity : FlutterFragmentActivity() {
                         result.success(displayName(uriString))
                     }
 
+                    // Available/total bytes of the volume holding the app's
+                    // data dir (StatFs — backs the Storage usage bar, like
+                    // Mihon's StorageInfo composable).
+                    "storageStats" -> {
+                        try {
+                            val stat = android.os.StatFs(filesDir.absolutePath)
+                            result.success(
+                                mapOf(
+                                    "available" to stat.availableBytes,
+                                    "total" to stat.totalBytes,
+                                )
+                            )
+                        } catch (e: Exception) {
+                            result.error("STAT_FAILED", e.message, null)
+                        }
+                    }
+
                     // Whether a persisted permission for this tree URI still
                     // exists (the user could have revoked it in system settings).
                     "hasPermission" -> {

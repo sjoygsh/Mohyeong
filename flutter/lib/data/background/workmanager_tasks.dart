@@ -1,5 +1,6 @@
 import 'package:workmanager/workmanager.dart';
 
+import '../backup/backup_scheduler.dart';
 import '../library/library_update_scheduler.dart';
 import '../sync/sync_scheduler.dart';
 
@@ -23,6 +24,8 @@ void backgroundCallbackDispatcher() {
       case syncTaskName:
       case syncOneOffTaskName:
         return runSyncTask();
+      case backupTaskName:
+        return runBackupTask();
       default:
         // Unknown task — succeed so workmanager doesn't retry it forever.
         return true;

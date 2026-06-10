@@ -13,6 +13,7 @@ import 'package:mohyeong/data/security/security_preferences.dart';
 import 'package:mohyeong/data/source/extension_repository.dart';
 import 'package:mohyeong/data/source/installed_extension.dart';
 import 'package:mohyeong/data/sync/sync_preferences.dart';
+import 'package:mohyeong/data/backup/backup_scheduler.dart';
 import 'package:mohyeong/data/sync/sync_scheduler.dart';
 import 'package:mohyeong/data/updates/updates_repository.dart';
 import 'package:mohyeong/domain/category/model/category.dart';
@@ -82,6 +83,16 @@ class _FakeSyncScheduler implements SyncScheduler {
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// Test-only backup scheduler — same workmanager-avoidance as the fakes
+/// above.
+class _FakeBackupScheduler implements BackupScheduler {
+  @override
+  Future<void> reschedule(int intervalHours) async {}
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _FakeLibraryRepository implements LibraryRepository {
   @override
   Stream<List<LibraryItem>> watchAll() => Stream.value(const <LibraryItem>[]);
@@ -140,6 +151,7 @@ void main() {
           libraryUpdateSchedulerProvider
               .overrideWithValue(_FakeLibraryUpdateScheduler()),
           syncSchedulerProvider.overrideWithValue(_FakeSyncScheduler()),
+          backupSchedulerProvider.overrideWithValue(_FakeBackupScheduler()),
         ],
         child: const MohyeongApp(),
       ),

@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'data/backup/backup_preferences.dart';
+import 'data/backup/backup_scheduler.dart';
 import 'data/cover/cover_cache.dart';
 import 'data/library/library_update_preference.dart';
 import 'data/library/library_update_scheduler.dart';
@@ -14,6 +18,7 @@ import 'data/source/extension_repository.dart';
 import 'data/source/incognito_preferences.dart';
 import 'data/source/installed_extension.dart';
 import 'data/source/local_source_preferences.dart';
+import 'data/storage/app_cache.dart';
 import 'data/sync/sync_preferences.dart';
 import 'data/sync/sync_scheduler.dart';
 import 'data/track/tracker_registry.dart';
@@ -30,6 +35,12 @@ Future<void> main() async {
   // Global incognito mode is per-session: clear it on every cold start, as
   // Mihon does in MainActivity. Per-extension incognito persists.
   await prefs.setBool(incognitoModeKey, false);
+  // Mihon's autoClearChapterCache: wipe the chapter/image cache on launch
+  // when the Data-and-storage switch is on. Fire-and-forget — boot shouldn't
+  // wait on filesystem walking.
+  if (prefs.getBool('auto_clear_chapter_cache') ?? false) {
+    unawaited(AppCache.clear());
+  }
   final localPrefs = LocalSourcePreferences(prefs);
   final repo = ExtensionRepository(storage, http, localPrefs);
   final coverCache = await CoverCache.create();
@@ -68,6 +79,11 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
       // Schedule cross-device sync if enabled, and optionally trigger a
       // one-off sync on app start. Mirrors Mihon's App.onCreate.
       _setupSync();
+      // Re-register the periodic auto-backup from the saved interval
+      // (Mihon calls BackupCreateJob.setupTask the same way).
+      ref
+          .read(backupSchedulerProvider)
+          .reschedule(ref.read(backupIntervalProvider));
       // Register launcher shortcuts; selecting one jumps to that home tab
       // (also handles the cold-start shortcut that launched the app).
       ShortcutService.instance.init(

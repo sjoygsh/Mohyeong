@@ -18,7 +18,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/backup/backup_codec.dart';
 import '../../data/backup/backup_creator.dart';
+import '../../data/backup/backup_preferences.dart';
 import '../../data/backup/backup_restorer.dart';
+import '../../data/backup/backup_scheduler.dart';
 
 class BackupScreen extends ConsumerStatefulWidget {
   const BackupScreen({super.key});
@@ -56,6 +58,8 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
             enabled: !_busy,
             onTap: _restoreBackup,
           ),
+          const Divider(height: 1),
+          const _BackupIntervalTile(),
           if (_busy)
             const Padding(
               padding: EdgeInsets.all(24),
@@ -168,5 +172,89 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
   void _setStatus(String message) {
     if (!mounted) return;
     setState(() => _statusMessage = message);
+  }
+}
+
+/// "Automatic backup frequency" (Kotlin SettingsDataScreen's backupInterval
+/// ListPreference) plus the backup_info / last_auto_backup_info blurb.
+/// Changing the value re-registers the periodic workmanager task, like
+/// Kotlin's `BackupCreateJob.setupTask(context, it)`.
+class _BackupIntervalTile extends ConsumerWidget {
+  const _BackupIntervalTile();
+
+  // Verbatim Kotlin entries (off / update_6hour … update_weekly).
+  static const _entries = <(int, String)>[
+    (0, 'Off'),
+    (6, 'Every 6 hours'),
+    (12, 'Every 12 hours'),
+    (24, 'Daily'),
+    (48, 'Every 2 days'),
+    (168, 'Weekly'),
+  ];
+
+  String _labelFor(int hours) {
+    for (final (h, label) in _entries) {
+      if (h == hours) return label;
+    }
+    return 'Off';
+  }
+
+  String _lastBackupText(int millis) {
+    if (millis <= 0) return 'Last automatically backed up: never';
+    final d = DateTime.fromMillisecondsSinceEpoch(millis);
+    String two(int v) => v.toString().padLeft(2, '0');
+    return 'Last automatically backed up: '
+        '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final interval = ref.watch(backupIntervalProvider);
+    final lastBackup = ref.watch(lastAutoBackupProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          leading: const Icon(Icons.schedule_outlined),
+          title: const Text('Automatic backup frequency'),
+          subtitle: Text(_labelFor(interval)),
+          onTap: () async {
+            final picked = await showDialog<int>(
+              context: context,
+              builder: (ctx) => SimpleDialog(
+                title: const Text('Automatic backup frequency'),
+                children: [
+                  RadioGroup<int>(
+                    groupValue: interval,
+                    onChanged: (v) => Navigator.of(ctx).pop(v),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final (hours, label) in _entries)
+                          RadioListTile<int>(title: Text(label), value: hours),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+            if (picked == null) return;
+            await ref.read(backupIntervalProvider.notifier).set(picked);
+            await ref.read(backupSchedulerProvider).reschedule(picked);
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Text(
+            // Verbatim Mihon backup_info + last_auto_backup_info.
+            'You should keep copies of backups in other places as well. '
+            'Backups may contain sensitive data including any stored '
+            'passwords; be careful if sharing.\n\n'
+            '${_lastBackupText(lastBackup)}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      ],
+    );
   }
 }
