@@ -10,6 +10,7 @@ import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/cover/cover_cache.dart';
 import '../../data/download/download_repository.dart';
+import '../../data/library/chapter_swipe_preferences.dart';
 import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_update_preference.dart';
 import '../../data/library/library_updater.dart';
@@ -2203,7 +2204,7 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
     if (scanlator != null && scanlator.isNotEmpty) {
       subtitleParts.add(scanlator);
     }
-    return ListTile(
+    final tile = ListTile(
       tileColor: widget.isSelected
           ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
           : null,
@@ -2409,6 +2410,113 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
       },
       onLongPress: () => widget.onToggleSelected(chapter.id),
     );
+    // Swipe actions (Kotlin MangaChapterListItem's swipeable rows). The row
+    // never actually dismisses — confirmDismiss performs the action and
+    // returns false, mirroring Kotlin's swipe-to-trigger semantics.
+    final swipeStart =
+        ChapterSwipeAction.fromName(ref.watch(swipeToStartActionProvider));
+    final swipeEnd =
+        ChapterSwipeAction.fromName(ref.watch(swipeToEndActionProvider));
+    final startEnabled = swipeStart != ChapterSwipeAction.disabled;
+    final endEnabled = swipeEnd != ChapterSwipeAction.disabled;
+    if (widget.selecting || (!startEnabled && !endEnabled)) return tile;
+    return Dismissible(
+      key: ValueKey('chapter-swipe-${chapter.id}'),
+      direction: startEnabled && endEnabled
+          ? DismissDirection.horizontal
+          : startEnabled
+              ? DismissDirection.endToStart
+              : DismissDirection.startToEnd,
+      background: _swipeBackground(swipeEnd, AlignmentDirectional.centerStart),
+      secondaryBackground:
+          _swipeBackground(swipeStart, AlignmentDirectional.centerEnd),
+      confirmDismiss: (dir) async {
+        _performSwipe(
+          dir == DismissDirection.startToEnd ? swipeEnd : swipeStart,
+        );
+        return false;
+      },
+      child: tile,
+    );
+  }
+
+  /// Coloured strip + action icon revealed behind a swiping row. Icon choice
+  /// matches Kotlin `getSwipeAction` (done/remove-done, bookmark-add/remove,
+  /// download-state-dependent download/cancel/delete).
+  Widget _swipeBackground(
+    ChapterSwipeAction action,
+    AlignmentDirectional alignment,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final IconData icon;
+    switch (action) {
+      case ChapterSwipeAction.toggleRead:
+        icon = widget.chapter.read ? Icons.remove_done : Icons.done;
+      case ChapterSwipeAction.toggleBookmark:
+        icon = widget.chapter.bookmark
+            ? Icons.bookmark_remove_outlined
+            : Icons.bookmark_add_outlined;
+      case ChapterSwipeAction.download:
+        icon = switch (_downloadState) {
+          DownloadState.completed => Icons.delete_outlined,
+          DownloadState.queued ||
+          DownloadState.downloading =>
+            Icons.file_download_off_outlined,
+          _ => Icons.download_outlined,
+        };
+      case ChapterSwipeAction.disabled:
+        return const SizedBox.shrink();
+    }
+    return Container(
+      color: scheme.primaryContainer,
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Icon(icon, color: scheme.onPrimaryContainer),
+    );
+  }
+
+  void _performSwipe(ChapterSwipeAction action) {
+    final chapter = widget.chapter;
+    switch (action) {
+      case ChapterSwipeAction.toggleRead:
+        unawaited(
+          ref
+              .read(setReadStatusProvider)
+              .setRead(read: !chapter.read, chapters: [chapter]),
+        );
+        if (!chapter.read) {
+          unawaited(
+            trackOnMarkRead(
+              ref,
+              context,
+              mangaId: chapter.mangaId,
+              chapterNumber: chapter.chapterNumber,
+              volumeNumber: chapter.volumeNumber,
+            ),
+          );
+        }
+      case ChapterSwipeAction.toggleBookmark:
+        unawaited(
+          widget.chapterRepo.setBookmark(chapter.id, !chapter.bookmark),
+        );
+      case ChapterSwipeAction.download:
+        switch (_downloadState) {
+          case DownloadState.completed:
+            unawaited(
+              widget.downloadRepo.deleteDownload(
+                widget.manga.source,
+                widget.manga.id,
+                chapter.id,
+              ),
+            );
+          case DownloadState.queued || DownloadState.downloading:
+            widget.downloadRepo.cancel(chapter.id);
+          default:
+            unawaited(widget.downloadRepo.enqueue(widget.manga, chapter));
+        }
+      case ChapterSwipeAction.disabled:
+        break;
+    }
   }
 
   String _formatChapterNumber(double n) {

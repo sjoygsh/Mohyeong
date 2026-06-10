@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/library/chapter_swipe_preferences.dart';
 import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_update_preference.dart';
+import '../../data/preferences/typed_preferences.dart';
 import '../../domain/category/model/category.dart';
 import '../categories/categories_screen.dart';
 import 'category_filter_tile.dart';
@@ -22,9 +24,8 @@ import 'pref_tiles.dart';
 /// Intentional differences from Kotlin's screen:
 ///   * Per-category "categorized display settings" aren't implemented, so
 ///     that Kotlin item is omitted rather than shipped as a dead switch.
-///   * The chapter-swipe actions, mark-duplicate and keep-downloaded-removed
-///     items are omitted for the same reason — their subsystems don't
-///     exist yet.
+///   * The mark-duplicate and keep-downloaded-removed items are omitted for
+///     the same reason — their subsystems don't exist yet.
 ///   * The Display/Badges section is a Mohyeong addition: the Flutter build
 ///     has no separate library display bottom-sheet, so these live here.
 class LibrarySettingsScreen extends ConsumerWidget {
@@ -123,6 +124,15 @@ class LibrarySettingsScreen extends ConsumerWidget {
             value: ref.watch(groupChaptersByVolumeProvider),
             onChanged:
                 ref.read(groupChaptersByVolumeProvider.notifier).setEnabled,
+          ),
+          // Verbatim Mihon strings pref_chapter_swipe_start / _end.
+          _SwipeActionTile(
+            title: 'Chapter on swipe to left',
+            provider: swipeToStartActionProvider,
+          ),
+          _SwipeActionTile(
+            title: 'Chapter on swipe to right',
+            provider: swipeToEndActionProvider,
           ),
 
           // ── Display (Mohyeong-specific) ─────────────────────────────
@@ -380,6 +390,59 @@ class _DefaultCategoryTile extends ConsumerWidget {
         );
         if (picked != null) {
           await ref.read(defaultCategoryProvider.notifier).set(picked);
+        }
+      },
+    );
+  }
+}
+
+/// Picker for one chapter-swipe direction (Kotlin SettingsLibraryScreen's
+/// swipe ListPreferences): Disabled / Bookmark / Mark as read / Download.
+class _SwipeActionTile extends ConsumerWidget {
+  const _SwipeActionTile({required this.title, required this.provider});
+
+  final String title;
+  final NotifierProvider<StringPrefNotifier, String> provider;
+
+  // Kotlin entry order.
+  static const _order = [
+    ChapterSwipeAction.disabled,
+    ChapterSwipeAction.toggleBookmark,
+    ChapterSwipeAction.toggleRead,
+    ChapterSwipeAction.download,
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = ChapterSwipeAction.fromName(ref.watch(provider));
+    return ListTile(
+      title: Text(title),
+      subtitle: Text(current.label),
+      onTap: () async {
+        final picked = await showDialog<ChapterSwipeAction>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+            title: Text(title),
+            children: [
+              RadioGroup<ChapterSwipeAction>(
+                groupValue: current,
+                onChanged: (v) => Navigator.of(ctx).pop(v),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final a in _order)
+                      RadioListTile<ChapterSwipeAction>(
+                        title: Text(a.label),
+                        value: a,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+        if (picked != null) {
+          await ref.read(provider.notifier).set(picked.storageName);
         }
       },
     );
