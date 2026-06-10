@@ -2,20 +2,26 @@ package app.mohyeong
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.Settings
 import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 // FlutterFragmentActivity (rather than FlutterActivity) is required by the
 // local_auth plugin so the biometric prompt can attach to a FragmentManager.
@@ -25,6 +31,7 @@ class MainActivity : FlutterFragmentActivity() {
     private val safChannel = "app.mohyeong/saf"
     private val permissionsChannel = "app.mohyeong/permissions"
     private val volumeKeysChannel = "app.mohyeong/volume_keys"
+    private val imageActionsChannel = "app.mohyeong/image_actions"
 
     // When true, the reader is consuming hardware volume keys for page
     // navigation; we forward each press to Dart and suppress the system
@@ -204,6 +211,98 @@ class MainActivity : FlutterFragmentActivity() {
                             result.success(null)
                         } catch (e: Exception) {
                             result.error("INTENT_FAILED", e.message, null)
+                        }
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
+
+        // Reader page-image actions (Mihon ReaderPageActionsDialog backends):
+        // share via ACTION_SEND chooser, copy the image itself to the
+        // clipboard (ClipData.newUri, like ReaderActivity.onCopyImageResult),
+        // and save into Pictures/<app label> through MediaStore (the modern
+        // equivalent of Mihon's ImageSaver Location.Pictures, no storage
+        // permission needed on API 29+). The staged file lives in cacheDir,
+        // exposed through the manifest FileProvider.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, imageActionsChannel)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "share" -> {
+                        val path = call.argument<String>("path")
+                        val message = call.argument<String>("message")
+                        if (path == null) {
+                            result.error("BAD_ARGS", "path is required", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val uri = FileProvider.getUriForFile(
+                                this,
+                                "$packageName.fileprovider",
+                                File(path),
+                            )
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "image/*"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                if (message != null) putExtra(Intent.EXTRA_TEXT, message)
+                                clipData = ClipData.newRawUri(null, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            startActivity(Intent.createChooser(intent, null))
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("SHARE_FAILED", e.message, null)
+                        }
+                    }
+
+                    "copyToClipboard" -> {
+                        val path = call.argument<String>("path")
+                        if (path == null) {
+                            result.error("BAD_ARGS", "path is required", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val uri = FileProvider.getUriForFile(
+                                this,
+                                "$packageName.fileprovider",
+                                File(path),
+                            )
+                            val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newUri(contentResolver, "", uri))
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("COPY_FAILED", e.message, null)
+                        }
+                    }
+
+                    "saveToPictures" -> {
+                        val path = call.argument<String>("path")
+                        val displayName = call.argument<String>("displayName")
+                        val mime = call.argument<String>("mime") ?: "image/png"
+                        if (path == null || displayName == null) {
+                            result.error("BAD_ARGS", "path and displayName are required", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val appLabel = applicationInfo.loadLabel(packageManager).toString()
+                            val values = ContentValues().apply {
+                                put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+                                put(MediaStore.Images.Media.MIME_TYPE, mime)
+                                put(
+                                    MediaStore.Images.Media.RELATIVE_PATH,
+                                    "${android.os.Environment.DIRECTORY_PICTURES}/$appLabel",
+                                )
+                            }
+                            val uri = contentResolver.insert(
+                                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                values,
+                            ) ?: throw IllegalStateException("MediaStore insert returned null")
+                            contentResolver.openOutputStream(uri)?.use { out ->
+                                File(path).inputStream().use { it.copyTo(out) }
+                            } ?: throw IllegalStateException("openOutputStream returned null")
+                            result.success(uri.toString())
+                        } catch (e: Exception) {
+                            result.error("SAVE_FAILED", e.message, null)
                         }
                     }
 

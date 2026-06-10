@@ -13,6 +13,7 @@ import '../../data/download/download_repository.dart';
 import '../../data/history/history_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/reader/reader_behavior_preferences.dart';
+import '../../data/reader/reader_image_actions.dart';
 import '../../data/reader/reader_preferences.dart';
 import '../../data/reader/reader_volume_keys.dart';
 import '../../data/source/extension_repository.dart';
@@ -651,45 +652,133 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     _pageRefs = refs;
   }
 
-  /// Capture the current page's bitmap and store it as [data.manga]'s custom
-  /// cover (Mihon's reader "Set as cover"). Gated on the manga being in the
-  /// library — a cover for a non-library entry would be orphaned, so we ask
-  /// the user to add it first, matching Mihon. The page's [ImageProvider] is
-  /// rebuilt through [SourceImage.providerFor] (same backend the viewer used)
-  /// and re-encoded to PNG, then `cover_last_modified` is bumped so every
-  /// cover surface repaints.
-  Future<void> _setCurrentPageAsCover(BuildContext sheetContext) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final manga = widget.data.manga;
-    if (!manga.favorite) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Add this title to your library first.')),
-      );
-      return;
-    }
+  /// Resolve the current page to PNG bytes through the same provider the
+  /// viewer used ([SourceImage.providerFor], so network / file / archive /
+  /// SAF all work). Kotlin hands the original stream around; re-encoding the
+  /// decoded frame is the uniform equivalent here.
+  Future<Uint8List> _currentPageBytes() async {
     final refs = _pageRefs;
     if (refs == null || _currentPage < 0 || _currentPage >= refs.length) {
+      throw StateError("This page isn't ready yet.");
+    }
+    final ref0 = refs[_currentPage];
+    final provider = SourceImage.providerFor(ref0.url, headers: ref0.headers);
+    final bytes = await encodeImageProviderToPng(provider);
+    if (bytes == null || bytes.isEmpty) {
+      throw StateError('image encode produced no bytes');
+    }
+    return bytes;
+  }
+
+  /// Mihon `generateFilename`: "title - chapter name - pageNumber",
+  /// filename-sanitised.
+  String _pageFilename() {
+    final base = ReaderImageActions.buildValidFilename(
+      '${widget.data.manga.title} - ${widget.data.chapter.name}',
+    );
+    return '$base - ${_currentPage + 1}';
+  }
+
+  /// Capture the current page's bitmap and store it as [data.manga]'s custom
+  /// cover (Mihon's reader "Set as cover"). Gated on the manga being local or
+  /// in the library — a cover for a non-library entry would be orphaned
+  /// (Kotlin's AddToLibraryFirst result). `cover_last_modified` is bumped so
+  /// every cover surface repaints.
+  Future<void> _setCurrentPageAsCover() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final manga = widget.data.manga;
+    if (!manga.favorite && manga.source != 0) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('This page isn\'t ready yet.')),
+        const SnackBar(
+          content: Text('Please add the entry to your library before doing this'),
+        ),
       );
       return;
     }
-    final ref0 = refs[_currentPage];
     try {
-      final provider =
-          SourceImage.providerFor(ref0.url, headers: ref0.headers);
-      final bytes = await encodeImageProviderToPng(provider);
-      if (bytes == null || bytes.isEmpty) {
-        throw StateError('cover encode produced no bytes');
-      }
+      final bytes = await _currentPageBytes();
       await ref.read(coverCacheProvider).setCustomCover(manga.id, bytes);
       await ref.read(mangaRepositoryProvider).bumpCoverLastModified(manga.id);
       messenger.showSnackBar(
-        const SnackBar(content: Text('Cover updated.')),
+        const SnackBar(content: Text('Cover updated')),
       );
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Couldn\'t set cover: $e')),
+      );
+    }
+  }
+
+  /// Kotlin `SetCoverDialog`: confirm before overwriting the cover.
+  Future<void> _confirmSetAsCover() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: const Text('Use this image as cover art?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) await _setCurrentPageAsCover();
+  }
+
+  Future<void> _shareCurrentPage() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await _currentPageBytes();
+      // Mihon `share_page_info`: "%1$s: %2$s, page %3$d".
+      await ReaderImageActions.share(
+        bytes,
+        filename: '${_pageFilename()}.png',
+        message: '${widget.data.manga.title}: ${widget.data.chapter.name}, '
+            'page ${_currentPage + 1}',
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Couldn\'t share page: $e')),
+      );
+    }
+  }
+
+  Future<void> _copyCurrentPage() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await _currentPageBytes();
+      // No success toast — Kotlin relies on the Android 13+ system clip
+      // preview, and so do we.
+      await ReaderImageActions.copyToClipboard(
+        bytes,
+        filename: '${_pageFilename()}.png',
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Couldn\'t copy page: $e')),
+      );
+    }
+  }
+
+  Future<void> _saveCurrentPage() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await _currentPageBytes();
+      await ReaderImageActions.saveToPictures(
+        bytes,
+        displayName: _pageFilename(),
+      );
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Picture saved')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Couldn\'t save page: $e')),
       );
     }
   }
@@ -1006,37 +1095,51 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   /// set-as-cover / share / save; those page-bitmap actions aren't wired
   /// into this viewer yet, so the sheet currently exposes the chapter-level
   /// actions available here (parent can extend with page export later).
+  /// Long-press page-actions sheet — Kotlin `ReaderPageActionsDialog`: a row
+  /// of four equal-width action buttons (Set as cover / Copy to clipboard /
+  /// Share / Save).
   void _showPageActions(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.bookmark_border),
-              title: Text(
-                widget.data.chapter.bookmark
-                    ? 'Remove bookmark'
-                    : 'Bookmark chapter',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+          child: Row(
+            children: [
+              _PageActionButton(
+                icon: Icons.photo_outlined,
+                label: 'Set as cover',
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _confirmSetAsCover();
+                },
               ),
-              onTap: () async {
-                Navigator.of(ctx).pop();
-                await ref.read(chapterRepositoryProvider).setBookmark(
-                      widget.data.chapter.id,
-                      !widget.data.chapter.bookmark,
-                    );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.image_outlined),
-              title: const Text('Set as cover'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _setCurrentPageAsCover(ctx);
-              },
-            ),
-          ],
+              _PageActionButton(
+                icon: Icons.content_copy_outlined,
+                label: 'Copy to clipboard',
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _copyCurrentPage();
+                },
+              ),
+              _PageActionButton(
+                icon: Icons.share_outlined,
+                label: 'Share',
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _shareCurrentPage();
+                },
+              ),
+              _PageActionButton(
+                icon: Icons.save_outlined,
+                label: 'Save',
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _saveCurrentPage();
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1571,6 +1674,48 @@ class _PageIndicator extends StatelessWidget {
         '${current + 1} / $total',
         textAlign: TextAlign.center,
         style: TextStyle(color: color, fontSize: 12),
+      ),
+    );
+  }
+}
+
+/// One equal-width entry in the page-actions sheet — port of Kotlin's
+/// `ActionButton` (icon stacked over a small centred label).
+class _PageActionButton extends StatelessWidget {
+  const _PageActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: scheme.primary),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

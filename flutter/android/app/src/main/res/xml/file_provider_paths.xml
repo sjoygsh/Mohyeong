@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reader page images staged for Share / Copy-to-clipboard live under
+     cacheDir/shared_image (only the last shared image is kept, mirroring
+     Mihon's cacheImageDir). -->
+<paths>
+    <cache-path name="cache" path="." />
+</paths>
