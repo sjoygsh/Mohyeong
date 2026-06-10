@@ -527,13 +527,18 @@ class _ChaptersSection extends ConsumerWidget {
           return _buildBody(context, excluded, null, downloadedFilter,
               downloadRepo, groupByVolume, hideMissing);
         }
-        return FutureBuilder<Set<int>>(
-          future: downloadRepo.listDownloadedChapterIds(manga.source, manga.id),
-          builder: (context, downloadedSnap) {
+        // Cached: the chapter list rebuilds on every selection tap and
+        // download event; re-issuing the filesystem walk per rebuild made
+        // the screen lag whenever the downloaded filter was engaged.
+        return _DownloadedIdsLoader(
+          downloadRepo: downloadRepo,
+          sourceId: manga.source,
+          mangaId: manga.id,
+          builder: (context, ids) {
             return _buildBody(
               context,
               excluded,
-              downloadedSnap.data ?? const <int>{},
+              ids ?? const <int>{},
               downloadedFilter,
               downloadRepo,
               groupByVolume,
@@ -1195,6 +1200,70 @@ Future<void> _openInBrowser(
       SnackBar(content: Text('Could not open $uri')),
     );
   }
+}
+
+/// Loads the downloaded-chapter id set once per manga identity instead of on
+/// every rebuild (the previous inline FutureBuilder re-walked the downloads
+/// tree per frame while the downloaded filter was engaged).
+class _DownloadedIdsLoader extends StatefulWidget {
+  const _DownloadedIdsLoader({
+    required this.downloadRepo,
+    required this.sourceId,
+    required this.mangaId,
+    required this.builder,
+  });
+
+  final DownloadRepository downloadRepo;
+  final int sourceId;
+  final int mangaId;
+  final Widget Function(BuildContext context, Set<int>? ids) builder;
+
+  @override
+  State<_DownloadedIdsLoader> createState() => _DownloadedIdsLoaderState();
+}
+
+class _DownloadedIdsLoaderState extends State<_DownloadedIdsLoader> {
+  Set<int>? _ids;
+  StreamSubscription<DownloadEvent>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _probe();
+    // Keep the set fresh as downloads complete / get deleted while the
+    // screen is open, without polling per rebuild.
+    _sub = widget.downloadRepo.events.listen((e) {
+      if (e.state == DownloadState.completed ||
+          e.state == DownloadState.deleted) {
+        _probe();
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _DownloadedIdsLoader old) {
+    super.didUpdateWidget(old);
+    if (old.mangaId != widget.mangaId || old.sourceId != widget.sourceId) {
+      _probe();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _probe() async {
+    final ids = await widget.downloadRepo.listDownloadedChapterIds(
+      widget.sourceId,
+      widget.mangaId,
+    );
+    if (mounted) setState(() => _ids = ids);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _ids);
 }
 
 Future<void> _toggleFavorite(

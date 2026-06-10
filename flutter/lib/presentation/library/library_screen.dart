@@ -139,6 +139,10 @@ class LibraryScreen extends ConsumerStatefulWidget {
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _query = '';
   LibraryFilters _filters = const LibraryFilters();
+  // Memoised downloaded/tracked filter sets (see build) — resolved once per
+  // axis combination rather than on every rebuild.
+  Future<_AsyncFilterSets>? _asyncSets;
+  (bool, bool)? _asyncSetsKey;
   bool _searching = false;
   bool _updating = false;
   int _selectedCategoryId = Category.uncategorizedId;
@@ -473,6 +477,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text('Refresh failed: $e')));
     } finally {
+      // New chapters may have been auto-downloaded — let the memoised
+      // downloaded/tracked filter sets re-resolve on the next build.
+      _asyncSets = null;
       if (mounted) setState(() => _updating = false);
     }
   }
@@ -608,11 +615,20 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               if (needsDownloaded || needsTracked) {
                 final downloadRepo = ref.watch(downloadRepositoryProvider);
                 final trackRepo = ref.watch(trackRepositoryProvider);
-                return FutureBuilder<_AsyncFilterSets>(
-                  future: _resolveAsyncFilterSets(
+                // Memoised: re-resolving on every rebuild walked the whole
+                // downloads tree per frame while a downloaded/tracked
+                // filter was active. Re-resolved only when the needed axes
+                // change or after a library refresh invalidates it.
+                final setsKey = (needsDownloaded, needsTracked);
+                if (_asyncSets == null || _asyncSetsKey != setsKey) {
+                  _asyncSetsKey = setsKey;
+                  _asyncSets = _resolveAsyncFilterSets(
                     downloadRepo: needsDownloaded ? downloadRepo : null,
                     trackRepo: needsTracked ? trackRepo : null,
-                  ),
+                  );
+                }
+                return FutureBuilder<_AsyncFilterSets>(
+                  future: _asyncSets,
                   builder: (context, snap) {
                     if (!snap.hasData) {
                       return const Center(child: CircularProgressIndicator());
@@ -1157,19 +1173,11 @@ class _MangaListTile extends ConsumerWidget {
                 child: _UnreadBadge(count: item.unreadCount),
               ),
             if (showDownloadBadge)
-              FutureBuilder<int>(
-                future: downloadRepo.countDownloadedForManga(
-                  manga.source,
-                  manga.id,
-                ),
-                builder: (context, snap) {
-                  final n = snap.data ?? 0;
-                  if (n <= 0) return const SizedBox.shrink();
-                  return Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: _DownloadedBadge(count: n),
-                  );
-                },
+              _DownloadCountBadge(
+                downloadRepo: downloadRepo,
+                sourceId: manga.source,
+                mangaId: manga.id,
+                padding: const EdgeInsets.only(left: 4),
               ),
             if (showContinueReading && !selecting && item.unreadCount > 0)
               Padding(
@@ -1187,6 +1195,63 @@ class _MangaListTile extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Cached downloaded-chapter-count badge. The filesystem probe runs once per
+/// manga identity (initState / identity change) instead of on every card
+/// rebuild — the previous inline FutureBuilder re-walked the downloads tree
+/// for every visible card on each grid rebuild, which made library
+/// scrolling and selection visibly janky.
+class _DownloadCountBadge extends StatefulWidget {
+  const _DownloadCountBadge({
+    required this.downloadRepo,
+    required this.sourceId,
+    required this.mangaId,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final DownloadRepository downloadRepo;
+  final int sourceId;
+  final int mangaId;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  State<_DownloadCountBadge> createState() => _DownloadCountBadgeState();
+}
+
+class _DownloadCountBadgeState extends State<_DownloadCountBadge> {
+  int _count = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _probe();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DownloadCountBadge old) {
+    super.didUpdateWidget(old);
+    if (old.mangaId != widget.mangaId || old.sourceId != widget.sourceId) {
+      _probe();
+    }
+  }
+
+  Future<void> _probe() async {
+    final n = await widget.downloadRepo.countDownloadedForManga(
+      widget.sourceId,
+      widget.mangaId,
+    );
+    if (mounted && n != _count) setState(() => _count = n);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_count <= 0) return const SizedBox.shrink();
+    return Padding(
+      padding: widget.padding,
+      child: _DownloadedBadge(count: _count),
     );
   }
 }
@@ -1287,23 +1352,14 @@ class _MangaCard extends ConsumerWidget {
                       ),
                     ),
                   // Top-end badge: count of fully-downloaded chapters.
-                  // Counted via filesystem probe; the future is
-                  // re-issued whenever the card rebuilds (so adding a
-                  // download then navigating away & back picks it up).
                   if (showDownloadBadge)
                     Positioned(
                       top: 4,
                       right: 4,
-                      child: FutureBuilder<int>(
-                        future: downloadRepo.countDownloadedForManga(
-                          manga.source,
-                          manga.id,
-                        ),
-                        builder: (context, snap) {
-                          final n = snap.data ?? 0;
-                          if (n <= 0) return const SizedBox.shrink();
-                          return _DownloadedBadge(count: n);
-                        },
+                      child: _DownloadCountBadge(
+                        downloadRepo: downloadRepo,
+                        sourceId: manga.source,
+                        mangaId: manga.id,
                       ),
                     ),
                   if (showCoverOverlayTitle)
