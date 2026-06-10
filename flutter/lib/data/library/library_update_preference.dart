@@ -120,6 +120,13 @@ final libraryUpdateDeviceRestrictionProvider = stringSetPref(
 final autoUpdateMetadataProvider =
     boolPref('auto_update_metadata', false);
 
+/// Category newly-favourited manga land in (Settings → Library →
+/// "Default category"). Mihon `LibraryPreferences.defaultCategory`, key
+/// `default_category`: -1 = "Always ask" (category sheet on favourite),
+/// 0 = the system Default category (no explicit membership), otherwise a
+/// user category id.
+final defaultCategoryProvider = intPref('default_category', -1);
+
 /// "Show unread count on Updates icon" (Settings → Library). Gates the
 /// bottom-nav Updates badge. Mihon `newShowUpdatesCount`,
 /// key `library_show_updates_count`, default true.

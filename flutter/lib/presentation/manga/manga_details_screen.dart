@@ -11,6 +11,7 @@ import '../../data/chapter/chapter_repository.dart';
 import '../../data/cover/cover_cache.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/library/library_display_prefs.dart';
+import '../../data/library/library_update_preference.dart';
 import '../../data/library/library_updater.dart';
 import '../../data/manga/excluded_scanlators_repository.dart';
 import '../../data/manga/manga_repository.dart';
@@ -1239,14 +1240,50 @@ Future<void> _toggleFavorite(
       );
       if (go != true) return;
     }
-  }
-  await mangaRepo.setFavorite(manga.id, !manga.favorite);
-  // When removing from library, also clear category memberships so the
-  // manga doesn't reappear in a category-filtered view if it's added back.
-  if (manga.favorite) {
+    // Default-category routing (Kotlin MangaScreenModel.toggleFavorite):
+    // a configured category gets the manga directly; "Default" (0) or no
+    // categories favourites without membership; "Always ask" (-1, the
+    // default) opens the category sheet and only favourites on confirm.
     final categoryRepo = ref.read(categoryRepositoryProvider);
-    await categoryRepo.setCategoriesForManga(manga.id, const <int>{});
+    final all = await categoryRepo.getAll();
+    final userCategories =
+        all.where((c) => !c.isSystemCategory).toList(growable: false);
+    final defaultCategoryId = ref.read(defaultCategoryProvider);
+    Category? defaultCategory;
+    for (final c in userCategories) {
+      if (c.id == defaultCategoryId) {
+        defaultCategory = c;
+        break;
+      }
+    }
+    if (defaultCategory != null) {
+      await mangaRepo.setFavorite(manga.id, true);
+      await categoryRepo.setCategoriesForManga(manga.id, {defaultCategory.id});
+    } else if (defaultCategoryId == 0 || userCategories.isEmpty) {
+      await mangaRepo.setFavorite(manga.id, true);
+      await categoryRepo.setCategoriesForManga(manga.id, const <int>{});
+    } else {
+      if (!context.mounted) return;
+      final selection = await showModalBottomSheet<Set<int>>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (ctx) => _CategorySelector(
+          categories: userCategories,
+          initiallySelected: const <int>{},
+        ),
+      );
+      if (selection == null) return;
+      await mangaRepo.setFavorite(manga.id, true);
+      await categoryRepo.setCategoriesForManga(manga.id, selection);
+    }
+    return;
   }
+  // Remove from library; also clear category memberships so the manga
+  // doesn't reappear in a category-filtered view if it's added back.
+  await mangaRepo.setFavorite(manga.id, false);
+  final categoryRepo = ref.read(categoryRepositoryProvider);
+  await categoryRepo.setCategoriesForManga(manga.id, const <int>{});
 }
 
 Future<void> _editCategories(

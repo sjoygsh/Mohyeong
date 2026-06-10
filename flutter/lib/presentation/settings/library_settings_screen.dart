@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_update_preference.dart';
+import '../../domain/category/model/category.dart';
 import '../categories/categories_screen.dart';
 import 'category_filter_tile.dart';
 import 'pref_tiles.dart';
@@ -19,13 +20,11 @@ import 'pref_tiles.dart';
 /// smart-update + hide-missing + group-by-volume hook their respective paths.
 ///
 /// Intentional differences from Kotlin's screen:
-///   * "Edit categories" only navigates (default-category assignment on
-///     favouriting and per-category "categorized display settings" aren't
-///     implemented yet, so those two Kotlin items are omitted rather than
-///     shipped as dead switches).
-///   * The "Show updates count badge", chapter-swipe actions, mark-duplicate
-///     and keep-downloaded-removed items are omitted for the same reason —
-///     their subsystems don't exist yet.
+///   * Per-category "categorized display settings" aren't implemented, so
+///     that Kotlin item is omitted rather than shipped as a dead switch.
+///   * The chapter-swipe actions, mark-duplicate and keep-downloaded-removed
+///     items are omitted for the same reason — their subsystems don't
+///     exist yet.
 ///   * The Display/Badges section is a Mohyeong addition: the Flutter build
 ///     has no separate library display bottom-sheet, so these live here.
 class LibrarySettingsScreen extends ConsumerWidget {
@@ -62,6 +61,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
               ),
             ),
           ),
+          const _DefaultCategoryTile(),
 
           // ── Global update ───────────────────────────────────────────
           const PrefSectionHeader('Global update'),
@@ -318,6 +318,70 @@ class _IntervalPickerDialog extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// "Default category" picker (Kotlin SettingsLibraryScreen's ListPreference
+/// over `defaultCategory`): "Always ask" (-1), "Default" (0 — the implicit
+/// uncategorized bucket), or any user category by id.
+class _DefaultCategoryTile extends ConsumerWidget {
+  const _DefaultCategoryTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final categories =
+        ref.watch(userCategoriesProvider).valueOrNull ?? const <Category>[];
+    final current = ref.watch(defaultCategoryProvider);
+    String label;
+    if (current == -1) {
+      label = 'Always ask';
+    } else if (current == 0) {
+      label = 'Default';
+    } else {
+      label = 'Always ask';
+      for (final c in categories) {
+        if (c.id == current) {
+          label = c.name;
+          break;
+        }
+      }
+    }
+    return ListTile(
+      title: const Text('Default category'),
+      subtitle: Text(label),
+      onTap: () async {
+        final picked = await showDialog<int>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+            title: const Text('Default category'),
+            children: [
+              RadioGroup<int>(
+                groupValue: current,
+                onChanged: (v) => Navigator.of(ctx).pop(v),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const RadioListTile<int>(
+                      title: Text('Always ask'),
+                      value: -1,
+                    ),
+                    const RadioListTile<int>(
+                      title: Text('Default'),
+                      value: 0,
+                    ),
+                    for (final c in categories)
+                      RadioListTile<int>(title: Text(c.name), value: c.id),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+        if (picked != null) {
+          await ref.read(defaultCategoryProvider.notifier).set(picked);
+        }
+      },
     );
   }
 }
