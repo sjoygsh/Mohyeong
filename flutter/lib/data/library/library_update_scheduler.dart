@@ -75,6 +75,15 @@ Future<bool> runLibraryUpdateTask() async {
         mangaCount: result.mangaWithNewChapters,
         chapterCount: result.newChapters,
       );
+      // Bump the Updates-tab badge count (Mihon LibraryUpdateJob:
+      // `newUpdatesCount.getAndSet { it + newChapters.size }`). Written
+      // straight to SharedPreferences — this isolate has no Riverpod; the
+      // UI provider picks the value up on next launch.
+      if (result.newChapters > 0) {
+        const key = '__APP_STATE_library_unseen_updates_count';
+        await prefs.reload();
+        await prefs.setInt(key, (prefs.getInt(key) ?? 0) + result.newChapters);
+      }
       await notifications.showLibraryErrors(result.failures.length);
       // Auto-downloads (if enabled) were enqueued during the sweep; wait
       // for them to finish before tearing down the DB/HTTP client this

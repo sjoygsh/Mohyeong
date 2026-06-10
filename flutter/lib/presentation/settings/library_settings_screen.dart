@@ -95,6 +95,11 @@ class LibrarySettingsScreen extends ConsumerWidget {
             provider: autoUpdateMetadataProvider,
           ),
           const _SmartUpdateSection(),
+          // Verbatim Mihon string pref_library_update_show_tab_badge.
+          PrefSwitch(
+            title: 'Show unread count on Updates icon',
+            provider: newShowUpdatesCountProvider,
+          ),
 
           // ── Behavior ────────────────────────────────────────────────
           const PrefSectionHeader('Behavior'),

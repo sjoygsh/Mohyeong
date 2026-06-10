@@ -10,6 +10,7 @@ import '../../data/cover/cover_cache.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_repository.dart';
+import '../../data/library/library_update_preference.dart';
 import '../../data/library/library_updater.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/notification/notification_service.dart';
@@ -454,6 +455,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         chapterCount: result.newChapters,
       );
       await notifications.showLibraryErrors(result.failures.length);
+      // Bump the Updates-tab badge (Mihon increments newUpdatesCount on
+      // every library update, manual or scheduled).
+      if (result.newChapters > 0) {
+        final notifier = ref.read(newUpdatesCountProvider.notifier);
+        await notifier
+            .set(ref.read(newUpdatesCountProvider) + result.newChapters);
+      }
       if (!mounted) return;
       final msg = result.newChapters == 0
           ? 'No new chapters found.'

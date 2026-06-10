@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/base/base_preferences.dart';
+import '../../data/library/library_update_preference.dart';
 import '../../data/source/incognito_preferences.dart';
 import '../library/library_screen.dart';
 import '../updates/updates_screen.dart';
@@ -113,6 +114,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final incognito = ref.watch(incognitoModeProvider);
     final downloadedOnly = ref.watch(downloadedOnlyProvider);
     final index = ref.watch(homeTabIndexProvider);
+    // Updates-tab badge: unseen new-chapter count, gated by the
+    // "Show unread count on Updates icon" pref (Kotlin HomeScreen's
+    // BadgedBox over UpdatesTab). Cleared whenever the tab is opened.
+    final updatesBadge = ref.watch(newShowUpdatesCountProvider)
+        ? ref.watch(newUpdatesCountProvider)
+        : 0;
+    ref.listen<int>(homeTabIndexProvider, (_, next) {
+      if (next == 1 && ref.read(newUpdatesCountProvider) != 0) {
+        ref.read(newUpdatesCountProvider.notifier).set(0);
+      }
+    });
     // Mirrors Kotlin HomeScreen's BackHandler: when not on the Library tab,
     // the back button returns to it rather than leaving the app.
     return PopScope(
@@ -174,10 +186,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               }
             },
             destinations: [
-              for (final tab in HomeScreen._tabs)
+              for (final (i, tab) in HomeScreen._tabs.indexed)
                 NavigationDestination(
-                  icon: Icon(tab.icon),
-                  selectedIcon: Icon(tab.selectedIcon),
+                  // Updates (tab 1) carries the unseen-new-chapters badge.
+                  icon: i == 1
+                      ? Badge(
+                          isLabelVisible: updatesBadge > 0,
+                          label: Text('$updatesBadge'),
+                          child: Icon(tab.icon),
+                        )
+                      : Icon(tab.icon),
+                  selectedIcon: i == 1
+                      ? Badge(
+                          isLabelVisible: updatesBadge > 0,
+                          label: Text('$updatesBadge'),
+                          child: Icon(tab.selectedIcon),
+                        )
+                      : Icon(tab.selectedIcon),
                   label: tab.label,
                 ),
             ],
@@ -188,13 +213,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-/// Persistent strip shown while global incognito mode is active. Mirrors the
-/// Kotlin `IncognitoModeBanner` (Banners.kt): a thin, full-width strip in the
-/// `primary` colour with centred `onPrimary` text reading "Incognito mode"
-/// (`MR.strings.pref_incognito_mode`), `labelMedium`, 4dp padding.
-///
-/// Tapping it turns incognito off — an invisible convenience over Kotlin's
-/// non-interactive banner; the appearance is unchanged.
 /// Persistent strip shown while "Downloaded only" mode is active. Mirrors
 /// Kotlin `DownloadedOnlyModeBanner`: `tertiary` strip with centred
 /// `onTertiary` "Downloaded only" text. Tapping turns the mode off (same
@@ -227,6 +245,13 @@ class _DownloadedOnlyBanner extends ConsumerWidget {
   }
 }
 
+/// Persistent strip shown while global incognito mode is active. Mirrors the
+/// Kotlin `IncognitoModeBanner` (Banners.kt): a thin, full-width strip in the
+/// `primary` colour with centred `onPrimary` text reading "Incognito mode"
+/// (`MR.strings.pref_incognito_mode`), `labelMedium`, 4dp padding.
+///
+/// Tapping it turns incognito off — an invisible convenience over Kotlin's
+/// non-interactive banner; the appearance is unchanged.
 class _IncognitoBanner extends ConsumerWidget {
   const _IncognitoBanner();
 

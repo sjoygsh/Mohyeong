@@ -120,6 +120,19 @@ final libraryUpdateDeviceRestrictionProvider = stringSetPref(
 final autoUpdateMetadataProvider =
     boolPref('auto_update_metadata', false);
 
+/// "Show unread count on Updates icon" (Settings → Library). Gates the
+/// bottom-nav Updates badge. Mihon `newShowUpdatesCount`,
+/// key `library_show_updates_count`, default true.
+final newShowUpdatesCountProvider =
+    boolPref('library_show_updates_count', true);
+
+/// Running count of chapters found by library updates that the user hasn't
+/// looked at yet — the number on the Updates nav badge. Incremented by the
+/// updater per new chapter, reset to 0 when the Updates tab is opened.
+/// Mihon `newUpdatesCount`, app-state key (excluded from backups).
+final newUpdatesCountProvider =
+    intPref('__APP_STATE_library_unseen_updates_count', 0);
+
 /// Categories to include in the global library update (empty = all).
 final libraryUpdateCategoriesProvider =
     stringSetPref('library_update_categories', const {});
