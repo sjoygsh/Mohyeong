@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/base/base_preferences.dart';
 import '../../data/source/incognito_preferences.dart';
 import '../library/library_screen.dart';
 import '../updates/updates_screen.dart';
@@ -110,6 +111,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final incognito = ref.watch(incognitoModeProvider);
+    final downloadedOnly = ref.watch(downloadedOnlyProvider);
     final index = ref.watch(homeTabIndexProvider);
     // Mirrors Kotlin HomeScreen's BackHandler: when not on the Library tab,
     // the back button returns to it rather than leaving the app.
@@ -120,8 +122,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       },
       child: Scaffold(
         body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (incognito) const _IncognitoBanner(),
+            // Kotlin AppStateBanners: downloaded-only sits above incognito;
+            // only the topmost banner absorbs the status-bar inset.
+            if (downloadedOnly) const _DownloadedOnlyBanner(),
+            if (incognito)
+              downloadedOnly
+                  ? MediaQuery.removePadding(
+                      context: context,
+                      removeTop: true,
+                      child: const _IncognitoBanner(),
+                    )
+                  : const _IncognitoBanner(),
             Expanded(
               child: NotificationListener<ScrollNotification>(
                 onNotification: _onScroll,
@@ -182,6 +195,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 ///
 /// Tapping it turns incognito off — an invisible convenience over Kotlin's
 /// non-interactive banner; the appearance is unchanged.
+/// Persistent strip shown while "Downloaded only" mode is active. Mirrors
+/// Kotlin `DownloadedOnlyModeBanner`: `tertiary` strip with centred
+/// `onTertiary` "Downloaded only" text. Tapping turns the mode off (same
+/// convenience as the incognito banner below).
+class _DownloadedOnlyBanner extends ConsumerWidget {
+  const _DownloadedOnlyBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.tertiary,
+      child: InkWell(
+        onTap: () => ref.read(downloadedOnlyProvider.notifier).set(false),
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Text(
+              'Downloaded only',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onTertiary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _IncognitoBanner extends ConsumerWidget {
   const _IncognitoBanner();
 

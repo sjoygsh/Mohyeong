@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/base/base_preferences.dart';
 import '../../data/source/incognito_preferences.dart';
 import '../about/about_screen.dart';
 import '../categories/categories_screen.dart';
@@ -38,6 +39,14 @@ class MoreScreen extends ConsumerWidget {
       body: ListView(
         children: [
           const _LogoHeader(),
+          // Verbatim Mihon strings label_downloaded_only / _summary.
+          SwitchListTile(
+            secondary: const Icon(Icons.cloud_off_outlined),
+            title: const Text('Downloaded only'),
+            subtitle: const Text('Filters all entries in your library'),
+            value: ref.watch(downloadedOnlyProvider),
+            onChanged: ref.read(downloadedOnlyProvider.notifier).set,
+          ),
           // Verbatim Mihon strings pref_incognito_mode / _summary.
           SwitchListTile(
             secondary: const Icon(Icons.no_encryption_gmailerrorred_outlined),

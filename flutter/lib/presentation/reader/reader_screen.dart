@@ -7,6 +7,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../data/base/base_preferences.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/cover/cover_cache.dart';
 import '../../data/download/download_preferences.dart';
@@ -184,6 +185,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _chapterId,
       globalIncognito: ref.read(incognitoModeProvider),
       incognitoExtensions: ref.read(incognitoExtensionsProvider),
+      downloadedOnly: ref.read(downloadedOnlyProvider),
     );
     // Stamp a history entry as soon as the chapter resolves, mirroring
     // Mihon's "open == read" behaviour — unless the source is incognito, in
@@ -386,10 +388,22 @@ Future<_ReaderData?> _loadReaderData(
   int chapterId, {
   required bool globalIncognito,
   required Set<String> incognitoExtensions,
+  required bool downloadedOnly,
 }) async {
   final manga = await mangaRepo.getById(mangaId);
   if (manga == null) return null;
-  final siblings = await chapterRepo.getByMangaId(mangaId);
+  var siblings = await chapterRepo.getByMangaId(mangaId);
+  // "Downloaded only" mode: the reader's chapter list (prev/next navigation)
+  // keeps only downloaded chapters, mirroring Kotlin's
+  // `chaptersForReader.filterDownloaded(manga)`. Local manga are exempt and
+  // the open chapter itself always stays in the list.
+  if (downloadedOnly && manga.source != 0) {
+    final downloadedIds =
+        await downloadRepo.listDownloadedChapterIds(manga.source, manga.id);
+    siblings = siblings
+        .where((c) => c.id == chapterId || downloadedIds.contains(c.id))
+        .toList(growable: false);
+  }
   Chapter? target;
   for (final c in siblings) {
     if (c.id == chapterId) {

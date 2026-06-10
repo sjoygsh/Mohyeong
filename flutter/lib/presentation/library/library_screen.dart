@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/base/base_preferences.dart';
 import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/cover/cover_cache.dart';
@@ -82,7 +83,12 @@ class LibraryFilters {
         item.manga.source,
         item.manga.id,
       );
-      if (!applyTriState(downloaded, () => keys.contains(key))) return false;
+      // Local manga count as downloaded (Kotlin: `manga.isLocal() ||
+      // downloadCount > 0`).
+      if (!applyTriState(
+          downloaded, () => item.manga.source == 0 || keys.contains(key))) {
+        return false;
+      }
     }
     if (tracked != TriState.disabled) {
       final ids = trackedMangaIds ?? const <int>{};
@@ -469,6 +475,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final categoryRepo = ref.watch(categoryRepositoryProvider);
     final displayMode = ref.watch(libraryDisplayModeProvider);
     final sortPref = ref.watch(librarySortProvider);
+    // "Downloaded only" mode forces the downloaded filter on (Kotlin
+    // LibraryScreenModel: globalFilterDownloaded → ENABLED_IS) while leaving
+    // the user's own filter selection untouched underneath.
+    final effectiveFilters = ref.watch(downloadedOnlyProvider)
+        ? _filters.copyWith(downloaded: TriState.enabledIs)
+        : _filters;
 
     // Library is tab 0. Mirrors Kotlin `LibraryTab.onReselect`: tapping the
     // already-active Library destination opens the settings sheet.
@@ -582,8 +594,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               // sets. Resolve them in parallel only when at least one is
               // enabled — most users never enable either.
               final needsDownloaded =
-                  _filters.downloaded != TriState.disabled;
-              final needsTracked = _filters.tracked != TriState.disabled;
+                  effectiveFilters.downloaded != TriState.disabled;
+              final needsTracked =
+                  effectiveFilters.tracked != TriState.disabled;
               if (needsDownloaded || needsTracked) {
                 final downloadRepo = ref.watch(downloadRepositoryProvider);
                 final trackRepo = ref.watch(trackRepositoryProvider);
@@ -602,7 +615,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       categories: categories,
                       query: _query,
                       sort: sortPref,
-                      filters: _filters,
+                      filters: effectiveFilters,
                       downloadedKeys: sets.downloadedKeys,
                       trackedMangaIds: sets.trackedMangaIds,
                       displayMode: displayMode,
@@ -623,7 +636,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 categories: categories,
                 query: _query,
                 sort: sortPref,
-                filters: _filters,
+                filters: effectiveFilters,
                 downloadedKeys: null,
                 trackedMangaIds: null,
                 displayMode: displayMode,
@@ -1812,13 +1825,18 @@ class _LibrarySettingsSheetState extends ConsumerState<_LibrarySettingsSheet> {
   Widget _buildFilterTab() {
     // Kotlin FilterPage order: Downloaded, Unread, Started, Bookmarked,
     // Completed, (interval custom — debug only, omitted), Tracked.
+    // While "Downloaded only" mode is on, the Downloaded row is pinned to
+    // enabled and locked (Kotlin LibrarySettingsDialog: enabled = false).
+    final downloadedOnly = ref.watch(downloadedOnlyProvider);
     return ListView(
       children: [
         _TriStateRow(
           label: 'Downloaded',
-          state: _draft.downloaded,
-          onTap: () =>
-              _set(_draft.copyWith(downloaded: _cycle(_draft.downloaded))),
+          state: downloadedOnly ? TriState.enabledIs : _draft.downloaded,
+          onTap: downloadedOnly
+              ? null
+              : () =>
+                  _set(_draft.copyWith(downloaded: _cycle(_draft.downloaded))),
         ),
         _TriStateRow(
           label: 'Unread',
@@ -1863,7 +1881,10 @@ class _TriStateRow extends StatelessWidget {
 
   final String label;
   final TriState state;
-  final VoidCallback onTap;
+
+  /// Null renders the row disabled (greyed, non-interactive) — used while
+  /// "Downloaded only" mode pins the Downloaded axis.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1878,6 +1899,7 @@ class _TriStateRow extends StatelessWidget {
         icon = Icons.disabled_by_default;
     }
     return ListTile(
+      enabled: onTap != null,
       leading: Icon(
         icon,
         color: state == TriState.disabled ? null : theme.colorScheme.primary,

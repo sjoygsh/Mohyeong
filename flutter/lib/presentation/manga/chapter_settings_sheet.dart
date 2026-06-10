@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/base/base_preferences.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
@@ -80,7 +81,7 @@ class _ChapterSettingsSheetState extends ConsumerState<ChapterSettingsSheet>
   }
 }
 
-class _FilterTab extends StatelessWidget {
+class _FilterTab extends ConsumerWidget {
   const _FilterTab({required this.flags, required this.onChange});
 
   final int flags;
@@ -106,17 +107,22 @@ class _FilterTab extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // "Downloaded only" mode pins the Downloaded axis (Kotlin
+    // ChapterSettingsDialog: onClick null while downloadedOnly).
+    final downloadedOnly = ref.watch(downloadedOnlyProvider);
     final unread = _readTri(
       Manga.chapterUnreadMask,
       Manga.chapterShowUnread,
       Manga.chapterShowRead,
     );
-    final downloaded = _readTri(
-      Manga.chapterDownloadedMask,
-      Manga.chapterShowDownloaded,
-      Manga.chapterShowNotDownloaded,
-    );
+    final downloaded = downloadedOnly
+        ? TriState.enabledIs
+        : _readTri(
+            Manga.chapterDownloadedMask,
+            Manga.chapterShowDownloaded,
+            Manga.chapterShowNotDownloaded,
+          );
     final bookmarked = _readTri(
       Manga.chapterBookmarkedMask,
       Manga.chapterShowBookmarked,
@@ -138,12 +144,14 @@ class _FilterTab extends StatelessWidget {
         _TriStateRow(
           label: 'Downloaded',
           value: downloaded,
-          onChanged: (next) => onChange(_writeTri(
-            Manga.chapterDownloadedMask,
-            Manga.chapterShowDownloaded,
-            Manga.chapterShowNotDownloaded,
-            next,
-          )),
+          onChanged: downloadedOnly
+              ? null
+              : (next) => onChange(_writeTri(
+                    Manga.chapterDownloadedMask,
+                    Manga.chapterShowDownloaded,
+                    Manga.chapterShowNotDownloaded,
+                    next,
+                  )),
         ),
         _TriStateRow(
           label: 'Bookmarked',
@@ -169,7 +177,10 @@ class _TriStateRow extends StatelessWidget {
 
   final String label;
   final TriState value;
-  final ValueChanged<TriState> onChanged;
+
+  /// Null renders the row disabled — used while "Downloaded only" mode
+  /// pins the Downloaded axis.
+  final ValueChanged<TriState>? onChanged;
 
   IconData _icon() {
     switch (value) {
@@ -196,9 +207,10 @@ class _TriStateRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      enabled: onChanged != null,
       leading: Icon(_icon()),
       title: Text(label),
-      onTap: () => onChanged(_next()),
+      onTap: onChanged == null ? null : () => onChanged!(_next()),
     );
   }
 }

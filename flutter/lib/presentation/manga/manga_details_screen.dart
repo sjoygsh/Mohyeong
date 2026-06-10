@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/base/base_preferences.dart';
 import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/cover/cover_cache.dart';
@@ -509,15 +510,20 @@ class _ChaptersSection extends ConsumerWidget {
     final downloadRepo = ref.watch(downloadRepositoryProvider);
     final groupByVolume = ref.watch(groupChaptersByVolumeProvider);
     final hideMissing = ref.watch(hideMissingChaptersProvider);
+    // "Downloaded only" mode pins the per-manga downloaded filter on
+    // (Kotlin's Manga.downloadedFilter getter returns ENABLED_IS then).
+    final downloadedFilter = ref.watch(downloadedOnlyProvider)
+        ? TriState.enabledIs
+        : manga.downloadedFilter;
     return StreamBuilder<Set<String>>(
       stream: excludedRepo.watchByMangaId(manga.id),
       builder: (context, excludedSnap) {
         final excluded = excludedSnap.data ?? const <String>{};
-        // Only probe the filesystem when the user has actually engaged
-        // the downloaded filter axis. Common path stays sync.
-        if (manga.downloadedFilter == TriState.disabled) {
-          return _buildBody(
-            context, excluded, null, downloadRepo, groupByVolume, hideMissing);
+        // Only probe the filesystem when the downloaded filter axis is
+        // actually engaged. Common path stays sync.
+        if (downloadedFilter == TriState.disabled) {
+          return _buildBody(context, excluded, null, downloadedFilter,
+              downloadRepo, groupByVolume, hideMissing);
         }
         return FutureBuilder<Set<int>>(
           future: downloadRepo.listDownloadedChapterIds(manga.source, manga.id),
@@ -526,6 +532,7 @@ class _ChaptersSection extends ConsumerWidget {
               context,
               excluded,
               downloadedSnap.data ?? const <int>{},
+              downloadedFilter,
               downloadRepo,
               groupByVolume,
               hideMissing,
@@ -540,6 +547,7 @@ class _ChaptersSection extends ConsumerWidget {
     BuildContext context,
     Set<String> excluded,
     Set<int>? downloadedIds,
+    TriState downloadedFilter,
     DownloadRepository downloadRepo,
     bool groupByVolume,
     bool hideMissing,
@@ -554,11 +562,13 @@ class _ChaptersSection extends ConsumerWidget {
       final unreadOk = applyTriState(manga.unreadFilter, () => !c.read);
       final bookmarkedOk =
           applyTriState(manga.bookmarkedFilter, () => c.bookmark);
+      // Local-source chapters count as downloaded (Kotlin applies
+      // `|| manga.isLocal()` to the downloaded predicate).
       final downloadedOk = downloadedIds == null
           ? true
           : applyTriState(
-              manga.downloadedFilter,
-              () => downloadedIds.contains(c.id),
+              downloadedFilter,
+              () => downloadedIds.contains(c.id) || manga.source == 0,
             );
       return unreadOk && bookmarkedOk && downloadedOk;
     }).toList(growable: false);
