@@ -234,6 +234,23 @@ enum ReaderOrientation {
   final int flagValue;
   final String label;
 
+  /// Width/position of the orientation bitfield within `mangas.viewer`
+  /// (bits 3..5 — Mihon `ReaderOrientation.MASK = 0x38`).
+  static const int mask = 0x38;
+
+  /// The per-manga orientation override stored in `viewerFlags`, or
+  /// `null` when the manga inherits the global default (bits == 0,
+  /// Mihon's `DEFAULT`).
+  static ReaderOrientation? fromMangaFlags(int? viewerFlags) {
+    if (viewerFlags == null) return null;
+    final bits = viewerFlags & mask;
+    if (bits == 0) return null;
+    for (final v in values) {
+      if (v.flagValue == bits) return v;
+    }
+    return null;
+  }
+
   /// The device orientations to permit while reading. An empty list
   /// means "no constraint" (let the sensor decide) — matches Android's
   /// `SCREEN_ORIENTATION_UNSPECIFIED` for [free].
@@ -711,3 +728,13 @@ ReadingMode resolveReadingMode(int? viewerFlags, ReadingMode globalDefault) {
   if (perManga == ReadingMode.defaultMode) return globalDefault;
   return perManga;
 }
+
+/// Resolves the effective reader orientation for a given per-manga
+/// `viewerFlags` (bits 3..5). Returns the per-manga override when set;
+/// falls back to the user's global default otherwise — mirrors Mihon's
+/// `ReaderOrientation.fromPreference` + `defaultOrientationType` chain.
+ReaderOrientation resolveReaderOrientation(
+  int? viewerFlags,
+  ReaderOrientation globalDefault,
+) =>
+    ReaderOrientation.fromMangaFlags(viewerFlags) ?? globalDefault;

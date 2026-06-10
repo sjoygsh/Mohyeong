@@ -27,6 +27,7 @@ import '../../domain/reader/model/reading_mode.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_chapter.dart';
 import '../common/source_image.dart';
+import 'reader_settings_sheet.dart';
 
 /// Reader screen — fetches the chapter's page list from the manga's source
 /// and displays them in either a continuous webtoon scroll or a paged
@@ -68,6 +69,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// While true the reader persists nothing — no history, no progress, no
   /// tracker pushes — mirroring Mihon's `ReaderViewModel.incognitoMode`.
   bool _incognito = false;
+
+  /// The orientation lock currently pushed to the platform, so the
+  /// effective (per-manga override or global) orientation is re-applied
+  /// only when it actually changes.
+  ReaderOrientation? _appliedOrientation;
 
   @override
   void initState() {
@@ -130,9 +136,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   /// Pin the screen orientation per the reader's orientation pref. An
-  /// empty list (Free) lets the device sensor decide.
+  /// empty list (Free) lets the device sensor decide. Called with the
+  /// global default before the manga resolves; once it does, the
+  /// effective (per-manga override or global) value is applied from
+  /// `build` whenever it changes.
   void _applyOrientation() {
-    final orientation = ref.read(readerOrientationProvider);
+    _setOrientation(ref.read(readerOrientationProvider));
+  }
+
+  void _setOrientation(ReaderOrientation orientation) {
+    if (orientation == _appliedOrientation) return;
+    _appliedOrientation = orientation;
     SystemChrome.setPreferredOrientations(orientation.orientations);
   }
 
@@ -229,6 +243,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final globalMode = ref.watch(readerPreferencesProvider);
     final background = ref.watch(readerBackgroundProvider);
     final brightness = Theme.of(context).brightness;
+    // Apply display prefs live while the reader is open, so toggling them
+    // from the in-reader settings sheet takes effect immediately (Kotlin
+    // observes these flows in ReaderActivity).
+    ref.listen(readerFullscreenProvider, (_, next) {
+      SystemChrome.setEnabledSystemUIMode(
+        next ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+      );
+    });
+    ref.listen(readerKeepScreenOnProvider, (_, _) => _applyKeepScreenOn());
+    ref.listen(readerCustomBrightnessProvider, (_, next) {
+      if (next) {
+        _applyBrightness();
+      } else {
+        ScreenBrightness().resetApplicationScreenBrightness();
+      }
+    });
+    ref.listen(readerBrightnessValueProvider, (_, _) => _applyBrightness());
     return Scaffold(
       backgroundColor: background.resolveColor(brightness),
       body: FutureBuilder<_ReaderData?>(
@@ -250,9 +281,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           }
           final effectiveMode =
               resolveReadingMode(data.manga.viewerFlags, globalMode);
+          // Per-manga orientation override (bits 3..5 of `viewer`),
+          // falling back to the global default — applied to the platform
+          // whenever the effective value changes (incl. pref changes from
+          // the in-reader sheet, which rebuild via the watch).
+          final effectiveOrientation = resolveReaderOrientation(
+            data.manga.viewerFlags,
+            ref.watch(readerOrientationProvider),
+          );
+          _setOrientation(effectiveOrientation);
           return _ReaderBody(
             data: data,
             mode: effectiveMode,
+            orientation: effectiveOrientation,
             background: background,
             onJumpToChapter: _jumpToChapter,
             onChangeMode: (mode) async {
@@ -262,6 +303,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               final preserved =
                   data.manga.viewerFlags & ~ReadingMode.mask;
               final newFlags = preserved | mode.flagValue;
+              await ref
+                  .read(mangaRepositoryProvider)
+                  .setViewerFlags(data.manga.id, newFlags);
+              _reload();
+            },
+            onChangeOrientation: (orientation) async {
+              // Per-manga orientation override in bits 3..5 of `viewer`;
+              // null clears back to "use global default" (bits = 0).
+              final preserved =
+                  data.manga.viewerFlags & ~ReaderOrientation.mask;
+              final newFlags = preserved | (orientation?.flagValue ?? 0);
               await ref
                   .read(mangaRepositoryProvider)
                   .setViewerFlags(data.manga.id, newFlags);
@@ -277,35 +329,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 ref
                     .read(chapterRepositoryProvider)
                     .setLastPageRead(data.chapter.id, page),
-              );
-            },
-            onMarkRead: () async {
-              // Explicit user action (no Mihon reader analogue): honour the
-              // local mark, but skip the tracker push while incognito —
-              // tracking is universally disabled in incognito (Mihon
-              // `updateTrackChapterRead` early-returns). Routed through
-              // SetReadStatus so `remove_after_marked_as_read` applies, as it
-              // would when marking read from the chapter list.
-              await ref
-                  .read(setReadStatusProvider)
-                  .setRead(read: true, chapters: [data.chapter]);
-              if (!_incognito && ref.read(autoUpdateTrackProvider)) {
-                // Fire-and-forget tracker push, gated by "Update progress after
-                // reading" (Mihon `autoUpdateTrack`). Failures are absorbed
-                // inside TrackUpdater; the snackbar below confirms the local
-                // write. `volumeNumber` lets "track by volume" report the
-                // volume instead of the chapter when recognised.
-                unawaited(
-                  ref.read(trackUpdaterProvider).setLastChapterRead(
-                        mangaId: data.chapter.mangaId,
-                        chapterNumber: data.chapter.chapterNumber,
-                        volumeNumber: data.chapter.volumeNumber,
-                      ),
-                );
-              }
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Marked as read.')),
               );
             },
             onReachedEnd: () {
@@ -458,21 +481,26 @@ class _ReaderBody extends ConsumerStatefulWidget {
   const _ReaderBody({
     required this.data,
     required this.mode,
+    required this.orientation,
     required this.background,
     required this.onJumpToChapter,
     required this.onChangeMode,
+    required this.onChangeOrientation,
     required this.onPageChanged,
-    required this.onMarkRead,
     required this.onReachedEnd,
   });
 
   final _ReaderData data;
   final ReadingMode mode;
+
+  /// Effective orientation (per-manga override or global default) —
+  /// drives the bottom action bar's rotation icon.
+  final ReaderOrientation orientation;
   final ReaderBackground background;
   final ValueChanged<int> onJumpToChapter;
   final ValueChanged<ReadingMode> onChangeMode;
+  final ValueChanged<ReaderOrientation?> onChangeOrientation;
   final ValueChanged<int> onPageChanged;
-  final VoidCallback onMarkRead;
   final VoidCallback onReachedEnd;
 
   @override
@@ -524,11 +552,14 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   Color? _flashColor;
   Timer? _flashTimer;
   int _pagesSinceFlash = 0;
-  // Transient reading-mode label flashed over the page when a chapter opens
-  // or the reading mode changes, gated by `pref_show_reading_mode` (Mihon's
-  // toast on viewer set). `_readingModeTimer` clears it after a short delay.
-  bool _showReadingModeLabel = false;
-  Timer? _readingModeTimer;
+  // Transient label flashed centre-screen (Mihon's reader toasts): the
+  // reading-mode name on chapter open / mode change (gated by
+  // `pref_show_reading_mode`), plus crop-border / orientation toggles.
+  // `_overlayText` keeps the last label so it stays painted while the
+  // overlay fades out.
+  bool _overlayVisible = false;
+  String _overlayText = '';
+  Timer? _overlayTimer;
 
   @override
   void initState() {
@@ -549,10 +580,19 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   /// change — when `pref_show_reading_mode` is on.
   void _flashReadingMode() {
     if (!ref.read(readerShowReadingModeProvider)) return;
-    setState(() => _showReadingModeLabel = true);
-    _readingModeTimer?.cancel();
-    _readingModeTimer = Timer(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _showReadingModeLabel = false);
+    _flashLabel(widget.mode.label);
+  }
+
+  /// Flash an arbitrary label centre-screen for ~2s (Mihon's
+  /// `menuToggleToast`, used for crop-border and orientation toggles).
+  void _flashLabel(String label) {
+    setState(() {
+      _overlayText = label;
+      _overlayVisible = true;
+    });
+    _overlayTimer?.cancel();
+    _overlayTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _overlayVisible = false);
     });
   }
 
@@ -579,7 +619,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   void dispose() {
     _autoHideTimer?.cancel();
     _flashTimer?.cancel();
-    _readingModeTimer?.cancel();
+    _overlayTimer?.cancel();
     ReaderVolumeKeys.setListener(null);
     if (_volumeKeysApplied) ReaderVolumeKeys.setEnabled(false);
     super.dispose();
@@ -797,6 +837,103 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     });
   }
 
+  /// Chrome bar colour — Kotlin's `surfaceColorAtElevation(3.dp)` with
+  /// 0.9 (dark) / 0.95 (light) alpha, shared by the top bar, the chapter
+  /// navigator's buttons/pill and the bottom action bar.
+  Color _barColor(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return ElevationOverlay.applySurfaceTint(
+      scheme.surface,
+      scheme.surfaceTint,
+      3,
+    ).withValues(alpha: theme.brightness == Brightness.dark ? 0.9 : 0.95);
+  }
+
+  /// Bottom-bar crop toggle. Kotlin toasts "On"/"Off" via
+  /// `menuToggleToast`; we flash the same label centre-screen.
+  void _toggleCropBorders() {
+    final next = !ref.read(readerCropBordersProvider);
+    ref.read(readerCropBordersProvider.notifier).set(next);
+    _flashLabel(next ? 'On' : 'Off');
+  }
+
+  /// Bottom-bar reading-mode picker (Kotlin `ReadingModeSelectDialog`).
+  /// Writes a per-series override; "Revert to default" clears it. When
+  /// `pref_show_reading_mode` is on the mode change itself re-flashes the
+  /// label via [didUpdateWidget], so the explicit flash only covers the
+  /// pref-off case (Kotlin toasts there too).
+  void _showReadingModeSelect() {
+    final raw = ReadingMode.fromFlag(widget.data.manga.viewerFlags);
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => ModeSelectionSheet<ReadingMode>(
+        title: 'Reading mode',
+        options: [
+          for (final m in ReadingMode.values)
+            if (m != ReadingMode.defaultMode)
+              ModeOption(m, m.label, readingModeIcon(m)),
+        ],
+        initial: raw == ReadingMode.defaultMode ? widget.mode : raw,
+        onUseDefault: raw == ReadingMode.defaultMode
+            ? null
+            : () {
+                widget.onChangeMode(ReadingMode.defaultMode);
+                if (!ref.read(readerShowReadingModeProvider)) {
+                  _flashLabel('Default');
+                }
+              },
+        onApply: (m) {
+          widget.onChangeMode(m);
+          if (!ref.read(readerShowReadingModeProvider)) {
+            _flashLabel(m.label);
+          }
+        },
+      ),
+    );
+  }
+
+  /// Bottom-bar orientation picker (Kotlin `OrientationSelectDialog`).
+  /// Kotlin always toasts the new orientation's name.
+  void _showOrientationSelect() {
+    final raw = ReaderOrientation.fromMangaFlags(widget.data.manga.viewerFlags);
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => ModeSelectionSheet<ReaderOrientation>(
+        title: 'Rotation',
+        options: [
+          for (final o in ReaderOrientation.values)
+            ModeOption(o, o.label, readerOrientationIcon(o)),
+        ],
+        initial: raw ?? widget.orientation,
+        onUseDefault: raw == null
+            ? null
+            : () {
+                widget.onChangeOrientation(null);
+                _flashLabel('Default');
+              },
+        onApply: (o) {
+          widget.onChangeOrientation(o);
+          _flashLabel(o.label);
+        },
+      ),
+    );
+  }
+
+  /// Bottom-bar gear button → the three-tab settings sheet (Kotlin
+  /// `ReaderSettingsDialog`).
+  void _showSettingsSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => ReaderSettingsSheet(
+        viewerFlags: widget.data.manga.viewerFlags,
+        onChangeMode: widget.onChangeMode,
+        onChangeOrientation: widget.onChangeOrientation,
+      ),
+    );
+  }
+
   /// The active tap-zone navigation preset. Mihon keys these separately
   /// for the paged (pager) and continuous (webtoon) viewers; we follow
   /// the same split so each viewer honours its own preset.
@@ -1011,8 +1148,9 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
         skipRead: skipRead, skipDupe: skipDupe, skipFiltered: skipFiltered);
     final next = _adjacentChapter(data, forward: true,
         skipRead: skipRead, skipDupe: skipDupe, skipFiltered: skipFiltered);
-    final showSlider = widget.mode.isPaged && _totalPages > 1;
     final showPageNumber = ref.watch(readerShowPageNumberProvider);
+    final cropEnabled = ref.watch(readerCropBordersProvider);
+    final barColor = _barColor(context);
     final grayscale = ref.watch(readerGrayscaleProvider);
     final invert = ref.watch(readerInvertedColorsProvider);
     // Paged image scale type (Mihon `pref_image_scale_type_key`). The
@@ -1055,7 +1193,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       mode: widget.mode,
       fit: fit,
       sidePaddingFraction: sidePaddingPct / 100,
-      cropBorders: ref.watch(readerCropBordersProvider),
+      cropBorders: cropEnabled,
       // Rotate-to-fit applies to the paged viewer only (Mihon parity); the
       // continuous webtoon viewer keeps its own (unimplemented) variant.
       rotateToFit: widget.mode.isPaged &&
@@ -1126,19 +1264,34 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 150),
                 opacity: _chromeVisible ? 1 : 0,
-                child: Container(
-                  color: const Color(0xCC000000),
+                child: Material(
+                  color: barColor,
                   child: _ReaderHeader(
                     manga: data.manga,
                     chapter: data.chapter,
-                    mode: widget.mode,
-                    onChangeMode: widget.onChangeMode,
                   ),
                 ),
               ),
             ),
           ),
-          // Bottom chrome: page indicator + optional slider + nav row.
+          // Always-visible page indicator (Mihon's PageIndicatorText sits
+          // behind the menu, drawn in the reader-background contrast color).
+          if (showPageNumber)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: IgnorePointer(
+                child: _PageIndicator(
+                  current: _currentPage,
+                  total: _totalPages,
+                  color: widget.background
+                      .resolveOnColor(Theme.of(context).brightness),
+                ),
+              ),
+            ),
+          // Bottom chrome: chapter navigator + bottom action bar
+          // (Mihon ReaderAppBars bottom Column, spacedBy 8).
           Positioned(
             left: 0,
             right: 0,
@@ -1149,35 +1302,64 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 150),
                 opacity: _chromeVisible ? 1 : 0,
-                child: Container(
-                  color: const Color(0xCC000000),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (showSlider)
-                        _PageSlider(
-                          current: _currentPage,
-                          total: _totalPages,
-                          reversed: widget.mode == ReadingMode.rightToLeft,
-                          onChanged: _seekTo,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _ChapterNavigator(
+                      isRtl: widget.mode == ReadingMode.rightToLeft,
+                      onPreviousChapter: prev == null
+                          ? null
+                          : () => widget.onJumpToChapter(prev.id),
+                      onNextChapter: next == null
+                          ? null
+                          : () => widget.onJumpToChapter(next.id),
+                      currentPage: _currentPage,
+                      totalPages: _totalPages,
+                      showSlider: widget.mode.isPaged,
+                      onPageIndexChange: _seekTo,
+                      barColor: barColor,
+                    ),
+                    const SizedBox(height: 8),
+                    Material(
+                      color: barColor,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            IconButton(
+                              tooltip: 'Reading mode',
+                              icon: Icon(readingModeIcon(widget.mode)),
+                              onPressed: _showReadingModeSelect,
+                            ),
+                            IconButton(
+                              tooltip: 'Rotation',
+                              icon: Icon(
+                                readerOrientationIcon(widget.orientation),
+                              ),
+                              onPressed: _showOrientationSelect,
+                            ),
+                            IconButton(
+                              tooltip: 'Crop borders',
+                              icon: Icon(
+                                Icons.crop,
+                                color: cropEnabled
+                                    ? Theme.of(context).colorScheme.primary
+                                    : null,
+                              ),
+                              onPressed: _toggleCropBorders,
+                            ),
+                            IconButton(
+                              tooltip: 'Settings',
+                              icon: const Icon(Icons.settings_outlined),
+                              onPressed: _showSettingsSheet,
+                            ),
+                          ],
                         ),
-                      if (showPageNumber)
-                        _PageIndicator(
-                          current: _currentPage,
-                          total: _totalPages,
-                        ),
-                      _ReaderControls(
-                        onPrev: prev == null
-                            ? null
-                            : () => widget.onJumpToChapter(prev.id),
-                        onNext: next == null
-                            ? null
-                            : () => widget.onJumpToChapter(next.id),
-                        onMarkRead: widget.onMarkRead,
-                        alreadyRead: data.chapter.read,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1189,7 +1371,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
             child: IgnorePointer(
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 200),
-                opacity: _showReadingModeLabel ? 1 : 0,
+                opacity: _overlayVisible ? 1 : 0,
                 child: Center(
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -1201,7 +1383,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      widget.mode.label,
+                      _overlayText,
                       style: const TextStyle(color: Colors.white, fontSize: 16),
                     ),
                   ),
@@ -1370,10 +1552,15 @@ class _ViewportSeekRequest {
 }
 
 class _PageIndicator extends StatelessWidget {
-  const _PageIndicator({required this.current, required this.total});
+  const _PageIndicator({
+    required this.current,
+    required this.total,
+    required this.color,
+  });
 
   final int current;
   final int total;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -1382,48 +1569,121 @@ class _PageIndicator extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Text(
         '${current + 1} / $total',
-        style: const TextStyle(color: Colors.white70, fontSize: 12),
+        textAlign: TextAlign.center,
+        style: TextStyle(color: color, fontSize: 12),
       ),
     );
   }
 }
 
-class _PageSlider extends StatelessWidget {
-  const _PageSlider({
-    required this.current,
-    required this.total,
-    required this.reversed,
-    required this.onChanged,
+/// Mirror of Mihon's `ChapterNavigator`: prev/next chapter FilledIconButtons
+/// flanking a rounded pill with the page slider. The row is always laid out
+/// LTR; for an R2L pager the pill's content direction flips and the left
+/// button becomes "next chapter" — matching the Kotlin composable.
+class _ChapterNavigator extends StatelessWidget {
+  const _ChapterNavigator({
+    required this.isRtl,
+    required this.onPreviousChapter,
+    required this.onNextChapter,
+    required this.currentPage,
+    required this.totalPages,
+    required this.showSlider,
+    required this.onPageIndexChange,
+    required this.barColor,
   });
 
-  final int current;
-  final int total;
-  final bool reversed;
-  final ValueChanged<int> onChanged;
+  final bool isRtl;
+  final VoidCallback? onPreviousChapter;
+  final VoidCallback? onNextChapter;
+  final int currentPage;
+  final int totalPages;
+  final bool showSlider;
+  final ValueChanged<int> onPageIndexChange;
+  final Color barColor;
 
   @override
   Widget build(BuildContext context) {
-    if (total <= 1) return const SizedBox.shrink();
-    // For RTL we still want the leftmost slider position to mean "earliest"
-    // page from the reader's POV. Slider's value space stays 0..total-1; we
-    // just flip the mapping. Mihon does the same.
-    final value = reversed
-        ? (total - 1 - current).clamp(0, total - 1).toDouble()
-        : current.clamp(0, total - 1).toDouble();
+    final scheme = Theme.of(context).colorScheme;
+    final buttonStyle = IconButton.styleFrom(
+      backgroundColor: barColor,
+      disabledBackgroundColor: barColor,
+      foregroundColor: scheme.onSurface,
+      disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.38),
+    );
+    // Match Kotlin: left button skips backward in reading order, so on an
+    // R2L pager it is the *next* chapter.
+    final onLeft = isRtl ? onNextChapter : onPreviousChapter;
+    final onRight = isRtl ? onPreviousChapter : onNextChapter;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Slider(
-        min: 0,
-        max: (total - 1).toDouble(),
-        divisions: total - 1,
-        value: value,
-        label: '${current + 1}',
-        onChanged: (v) {
-          final raw = v.round();
-          final target =
-              reversed ? (total - 1 - raw).clamp(0, total - 1) : raw;
-          onChanged(target);
-        },
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          IconButton.filled(
+            style: buttonStyle,
+            tooltip: isRtl ? 'Next chapter' : 'Previous chapter',
+            icon: const Icon(Icons.skip_previous_outlined),
+            onPressed: onLeft,
+          ),
+          Expanded(
+            child: showSlider && totalPages > 1
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: barColor,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Directionality(
+                        textDirection:
+                            isRtl ? TextDirection.rtl : TextDirection.ltr,
+                        child: Row(
+                          children: [
+                            // Transparent total reserves width so the label
+                            // doesn't jiggle as the page count grows.
+                            Stack(
+                              alignment: AlignmentDirectional.centerEnd,
+                              children: [
+                                Text(
+                                  '$totalPages',
+                                  style: const TextStyle(
+                                    color: Colors.transparent,
+                                  ),
+                                ),
+                                Text('${currentPage + 1}'),
+                              ],
+                            ),
+                            Expanded(
+                              child: Slider(
+                                min: 1,
+                                max: totalPages.toDouble(),
+                                divisions: totalPages - 1,
+                                value: (currentPage + 1)
+                                    .clamp(1, totalPages)
+                                    .toDouble(),
+                                onChanged: (v) {
+                                  final target = v.round() - 1;
+                                  if (target != currentPage) {
+                                    onPageIndexChange(target);
+                                  }
+                                },
+                              ),
+                            ),
+                            Text('$totalPages'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          IconButton.filled(
+            style: buttonStyle,
+            tooltip: isRtl ? 'Previous chapter' : 'Next chapter',
+            icon: const Icon(Icons.skip_next_outlined),
+            onPressed: onRight,
+          ),
+        ],
       ),
     );
   }
@@ -1767,6 +2027,30 @@ class _PagesViewState extends State<_PagesView> {
   @override
   void didUpdateWidget(covariant _PagesView old) {
     super.didUpdateWidget(old);
+    // Reading mode switched between paged and continuous on a live viewer
+    // (Kotlin recreates the whole viewer here): swap in the matching
+    // controller, resuming at the last page we reported.
+    if (widget.mode.isPaged != old.mode.isPaged) {
+      _pageController?.dispose();
+      _scrollController?.dispose();
+      _pageController = null;
+      _scrollController = null;
+      final resume =
+          _lastReported.clamp(0, (widget.count - 1).clamp(0, widget.count));
+      if (widget.mode.isPaged) {
+        _pageController = PageController(initialPage: resume);
+      } else {
+        _scrollController = ScrollController();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _scrollController == null) return;
+          if (!_scrollController!.hasClients) return;
+          final pos = _scrollController!.position;
+          final ratio = widget.count == 0 ? 0 : resume / widget.count;
+          _scrollController!.jumpTo(pos.maxScrollExtent * ratio);
+        });
+      }
+      return;
+    }
     // Slider drove a seek: jump the underlying PageController. Continuous
     // mode has no random-access seek surface — slider only shows in paged
     // mode anyway so this branch is a no-op there.
@@ -2010,14 +2294,10 @@ class _ReaderHeader extends ConsumerStatefulWidget {
   const _ReaderHeader({
     required this.manga,
     required this.chapter,
-    required this.mode,
-    required this.onChangeMode,
   });
 
   final Manga manga;
   final Chapter chapter;
-  final ReadingMode mode;
-  final ValueChanged<ReadingMode> onChangeMode;
 
   @override
   ConsumerState<_ReaderHeader> createState() => _ReaderHeaderState();
@@ -2046,43 +2326,15 @@ class _ReaderHeaderState extends ConsumerState<_ReaderHeader> {
         .setBookmark(widget.chapter.id, next);
   }
 
-  Future<void> _pickMode(BuildContext context) async {
-    final picked = await showDialog<ReadingMode>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Reading mode'),
-        children: [
-          RadioGroup<ReadingMode>(
-            groupValue: widget.mode,
-            onChanged: (v) => Navigator.of(ctx).pop(v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final m in ReadingMode.values)
-                  if (m != ReadingMode.defaultMode)
-                    RadioListTile<ReadingMode>(
-                      title: Text(m.label),
-                      value: m,
-                    ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    if (picked != null && picked != widget.mode) {
-      widget.onChangeMode(picked);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.close, color: Colors.white),
+            icon: const Icon(Icons.close),
             onPressed: () => Navigator.of(context).maybePop(),
           ),
           const SizedBox(width: 8),
@@ -2094,7 +2346,7 @@ class _ReaderHeaderState extends ConsumerState<_ReaderHeader> {
                   widget.manga.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: scheme.onSurface),
                 ),
                 Text(
                   widget.chapter.name.isEmpty
@@ -2102,7 +2354,8 @@ class _ReaderHeaderState extends ConsumerState<_ReaderHeader> {
                       : widget.chapter.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  style:
+                      TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
                 ),
               ],
             ),
@@ -2111,55 +2364,9 @@ class _ReaderHeaderState extends ConsumerState<_ReaderHeader> {
           IconButton(
             icon: Icon(
               _bookmarked ? Icons.bookmark : Icons.bookmark_border,
-              color: Colors.white,
             ),
             tooltip: _bookmarked ? 'Remove bookmark' : 'Bookmark',
             onPressed: _toggleBookmark,
-          ),
-          IconButton(
-            icon: const Icon(Icons.tune, color: Colors.white),
-            tooltip: 'Reading mode (${widget.mode.label})',
-            onPressed: () => _pickMode(context),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReaderControls extends StatelessWidget {
-  const _ReaderControls({
-    required this.onPrev,
-    required this.onNext,
-    required this.onMarkRead,
-    required this.alreadyRead,
-  });
-
-  final VoidCallback? onPrev;
-  final VoidCallback? onNext;
-  final VoidCallback onMarkRead;
-  final bool alreadyRead;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.skip_previous, color: Colors.white),
-            tooltip: 'Previous chapter',
-            onPressed: onPrev,
-          ),
-          TextButton(
-            onPressed: alreadyRead ? null : onMarkRead,
-            child: Text(alreadyRead ? 'Read' : 'Mark as read'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.skip_next, color: Colors.white),
-            tooltip: 'Next chapter',
-            onPressed: onNext,
           ),
         ],
       ),
