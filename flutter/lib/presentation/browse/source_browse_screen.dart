@@ -84,6 +84,29 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen> {
             appBar: AppBar(
               title: Text(source.name),
               actions: [
+                // Kotlin BrowseSourceToolbar's "Display mode" selector.
+                Consumer(
+                  builder: (context, ref, _) {
+                    final current = SourceDisplayMode.fromName(
+                      ref.watch(sourceDisplayModeProvider),
+                    );
+                    return PopupMenuButton<SourceDisplayMode>(
+                      tooltip: 'Display mode',
+                      icon: const Icon(Icons.view_module_outlined),
+                      onSelected: (mode) => ref
+                          .read(sourceDisplayModeProvider.notifier)
+                          .set(mode.storageName),
+                      itemBuilder: (_) => [
+                        for (final mode in SourceDisplayMode.values)
+                          CheckedPopupMenuItem(
+                            value: mode,
+                            checked: mode == current,
+                            child: Text(mode.label),
+                          ),
+                      ],
+                    );
+                  },
+                ),
                 if (source.baseUrl.isNotEmpty)
                   IconButton(
                     icon: const Icon(Icons.shield_outlined),
@@ -343,6 +366,10 @@ class _MangaGrid extends ConsumerWidget {
     if (items.isEmpty) {
       return const Center(child: Text('No results found'));
     }
+    // Kotlin sourceDisplayMode: compact grid (title over cover),
+    // comfortable grid (title under cover), or list rows.
+    final mode =
+        SourceDisplayMode.fromName(ref.watch(sourceDisplayModeProvider));
     return NotificationListener<ScrollNotification>(
       onNotification: (n) {
         if (n.metrics.pixels >= n.metrics.maxScrollExtent - 200 &&
@@ -352,31 +379,62 @@ class _MangaGrid extends ConsumerWidget {
         }
         return false;
       },
-      child: GridView.builder(
-        padding: const EdgeInsets.all(8),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          childAspectRatio: 0.65,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-        ),
-        itemCount: items.length + (hasMore ? 1 : 0),
-        itemBuilder: (_, i) {
-          if (i >= items.length) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          return _MangaCard(manga: items[i], sourceId: sourceId);
-        },
-      ),
+      child: mode == SourceDisplayMode.list
+          ? ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              itemCount: items.length + (hasMore ? 1 : 0),
+              itemBuilder: (_, i) {
+                if (i >= items.length) {
+                  return const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                return _MangaCard(
+                  manga: items[i],
+                  sourceId: sourceId,
+                  style: mode,
+                );
+              },
+            )
+          : GridView.builder(
+              padding: const EdgeInsets.all(8),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                // Comfortable cells are taller to fit the caption row.
+                childAspectRatio:
+                    mode == SourceDisplayMode.comfortableGrid ? 0.52 : 0.65,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: items.length + (hasMore ? 1 : 0),
+              itemBuilder: (_, i) {
+                if (i >= items.length) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return _MangaCard(
+                  manga: items[i],
+                  sourceId: sourceId,
+                  style: mode,
+                );
+              },
+            ),
     );
   }
 }
 
 class _MangaCard extends ConsumerWidget {
-  const _MangaCard({required this.manga, required this.sourceId});
+  const _MangaCard({
+    required this.manga,
+    required this.sourceId,
+    this.style = SourceDisplayMode.compactGrid,
+  });
 
   final SourceManga manga;
   final String sourceId;
+
+  /// Which of the three Kotlin display modes to render as.
+  final SourceDisplayMode style;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -388,66 +446,112 @@ class _MangaCard extends ConsumerWidget {
             .valueOrNull ??
         const <String>{};
     final inLibrary = favoritedUrls.contains(manga.url);
-    return ClipRRect(
+
+    // Mirrors Mihon: covers already in the library are dimmed.
+    final coverImage = Opacity(
+      opacity: inLibrary ? 0.34 : 1,
+      child: (url == null || url.isEmpty)
+          ? Container(color: placeholder)
+          : SourceImage(
+              url: url,
+              fit: BoxFit.cover,
+              placeholder: (_) => Container(color: placeholder),
+              errorWidget: (_, _) => Container(color: placeholder),
+            ),
+    );
+
+    // Tap routes via `insertFromSource` (resolves an existing row when
+    // (url, source) already matches, inserts a non-favourite row otherwise)
+    // into the manga details screen — same flow Mihon uses to open a source
+    // manga before it's added to the library. Long-press toggles library
+    // membership in place (Mihon's long-press add/remove).
+    void onTap() => _openManga(context, ref);
+    void onLongPress() =>
+        _toggleFavorite(context, ref, sourceIdInt, inLibrary);
+
+    if (style == SourceDisplayMode.list) {
+      return ListTile(
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: SizedBox(width: 40, height: 56, child: coverImage),
+        ),
+        title: Text(
+          manga.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: inLibrary ? const _InLibraryChip() : null,
+        onTap: onTap,
+        onLongPress: onLongPress,
+      );
+    }
+
+    final coverStack = ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Mirrors Mihon: covers already in the library are dimmed.
-          Opacity(
-            opacity: inLibrary ? 0.34 : 1,
-            child: (url == null || url.isEmpty)
-                ? Container(color: placeholder)
-                : SourceImage(
-                    url: url,
-                    fit: BoxFit.cover,
-                    placeholder: (_) => Container(color: placeholder),
-                    errorWidget: (_, _) => Container(color: placeholder),
-                  ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.75),
-                ],
+          coverImage,
+          // Compact grid draws the title over the cover bottom; the
+          // comfortable grid keeps the cover clean and captions below.
+          if (style == SourceDisplayMode.compactGrid) ...[
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.75),
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
           if (inLibrary) const _InLibraryBadge(),
-          Positioned(
-            left: 6,
-            right: 6,
-            bottom: 6,
-            child: Text(
-              manga.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
+          if (style == SourceDisplayMode.compactGrid)
+            Positioned(
+              left: 6,
+              right: 6,
+              bottom: 6,
+              child: Text(
+                manga.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
             ),
-          ),
-          // Tap routes via `insertFromSource` (resolves an existing row
-          // when (url, source) already matches, inserts a non-favourite
-          // row otherwise) into the manga details screen — same flow
-          // Mihon uses to open a source manga before it's added to the
-          // library. Long-press toggles library membership in place
-          // (Mihon's long-press add/remove).
           Positioned.fill(
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: () => _openManga(context, ref),
-                onLongPress: () =>
-                    _toggleFavorite(context, ref, sourceIdInt, inLibrary),
+                onTap: onTap,
+                onLongPress: onLongPress,
               ),
             ),
           ),
         ],
       ),
     );
+
+    if (style == SourceDisplayMode.comfortableGrid) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: coverStack),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              manga.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      );
+    }
+    return coverStack;
   }
 
   Future<void> _openManga(BuildContext context, WidgetRef ref) async {
@@ -518,6 +622,28 @@ class _MangaCard extends ConsumerWidget {
 
 /// Small "in library" indicator overlaid on a source cover's top-left,
 /// mirroring Mihon's MangaCover in-library badge.
+/// Trailing "In library" marker for list-mode rows (the grid corner badge
+/// doesn't fit a ListTile).
+class _InLibraryChip extends StatelessWidget {
+  const _InLibraryChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.secondary,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        'In library',
+        style: TextStyle(fontSize: 11, color: scheme.onSecondary),
+      ),
+    );
+  }
+}
+
 class _InLibraryBadge extends StatelessWidget {
   const _InLibraryBadge();
 
