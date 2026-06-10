@@ -48,7 +48,7 @@ import 'saf.dart';
 /// unzipped on demand (see [local_archive.dart]); pages inside them are
 /// served as `archive://` URLs that [SourceImage] decodes. RAR/CBR/7z/EPUB
 /// are not supported (no pure-Dart decoder).
-class LocalSource implements MangaSource {
+class LocalSource extends MangaSource {
   LocalSource(this._prefs);
 
   static const String sourceId = '0';

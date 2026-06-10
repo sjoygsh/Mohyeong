@@ -38,6 +38,26 @@ abstract class MangaSource {
   Future<List<SourceChapter>> fetchChapterList(SourceManga manga);
   Future<List<SourcePage>> fetchPageList(SourceChapter chapter);
 
+  /// Absolute URL of the chapter's web page, for the reader's "Open in
+  /// WebView" / "Open in browser" / "Share" actions. Mirrors Kotlin
+  /// `HttpSource.getChapterUrl`: the default joins [baseUrl] with the
+  /// relative `chapter.url`; sources whose internal chapter URLs aren't
+  /// web paths (e.g. bare API ids) override it. Returns null when no web
+  /// URL can be produced.
+  Future<String?> getChapterUrl(SourceChapter chapter) async {
+    var full = chapter.url;
+    if (!full.startsWith('http')) {
+      if (baseUrl.isEmpty) return null;
+      full = '${baseUrl.replaceAll(RegExp(r'/+$'), '')}'
+          '/${full.replaceAll(RegExp(r'^/+'), '')}';
+    }
+    final uri = Uri.tryParse(full);
+    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
+      return null;
+    }
+    return full;
+  }
+
   /// Disposes any underlying resources (JS engines, HTTP clients). Called
   /// when the user uninstalls the extension or the source repo is rebuilt.
   Future<void> dispose() async {}

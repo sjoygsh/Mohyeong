@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_brightness/screen_brightness.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/chapter/chapter_repository.dart';
@@ -28,6 +29,7 @@ import '../../domain/reader/model/reading_mode.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_chapter.dart';
 import '../common/source_image.dart';
+import '../common/webview_screen.dart';
 import 'reader_settings_sheet.dart';
 
 /// Reader screen — fetches the chapter's page list from the manga's source
@@ -400,14 +402,17 @@ Future<_ReaderData?> _loadReaderData(
   final localPages =
       await downloadRepo.localPagePaths(manga.source, manga.id, chapterId);
 
+  // Resolve the source even when the chapter is downloaded — the viewport
+  // won't need it for pages, but the top bar's WebView / browser / share
+  // overflow still wants the chapter URL (Kotlin gates those purely on the
+  // source being an HttpSource). Failure is only fatal when the pages must
+  // actually be fetched from the source.
   MangaSource? source;
   Object? sourceError;
-  if (localPages == null) {
-    try {
-      source = await extRepo.getSource(manga.source.toString());
-    } catch (e) {
-      sourceError = e;
-    }
+  try {
+    source = await extRepo.getSource(manga.source.toString());
+  } catch (e) {
+    if (localPages == null) sourceError = e;
   }
 
   // Resolve incognito once for the whole session (1:1 with Mihon's
@@ -561,6 +566,9 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   bool _overlayVisible = false;
   String _overlayText = '';
   Timer? _overlayTimer;
+  // Web URL of the open chapter, resolved async through the source
+  // (Kotlin's `assistUrl`). Gates the top-bar overflow actions.
+  String? _chapterUrl;
 
   @override
   void initState() {
@@ -574,6 +582,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       }
     });
     ReaderVolumeKeys.setListener(_onVolumeKey);
+    _resolveChapterUrl();
   }
 
   /// Briefly show the active reading-mode label over the page. Mihon flashes
@@ -610,6 +619,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       _totalPages = 0;
       _pageRefs = null;
       _flashReadingMode();
+      _resolveChapterUrl();
     } else if (widget.mode != old.mode) {
       // Reading mode switched on the same chapter — re-flash the label.
       _flashReadingMode();
@@ -668,6 +678,30 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       throw StateError('image encode produced no bytes');
     }
     return bytes;
+  }
+
+  /// Resolve the chapter's web URL through the source (Kotlin resolves
+  /// `assistUrl` the same way, async, whenever new chapters are set). Null
+  /// hides the top-bar WebView/browser/share overflow — local source,
+  /// uninstalled extension, or no producible web URL.
+  Future<void> _resolveChapterUrl() async {
+    final source = widget.data.source;
+    String? url;
+    if (source != null) {
+      try {
+        url = await source.getChapterUrl(
+          SourceChapter(
+            url: widget.data.chapter.url,
+            name: widget.data.chapter.name,
+          ),
+        );
+      } catch (_) {
+        url = null;
+      }
+    }
+    if (mounted && url != _chapterUrl) {
+      setState(() => _chapterUrl = url);
+    }
   }
 
   /// Mihon `generateFilename`: "title - chapter name - pageNumber",
@@ -1372,6 +1406,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                   child: _ReaderHeader(
                     manga: data.manga,
                     chapter: data.chapter,
+                    chapterUrl: _chapterUrl,
                   ),
                 ),
               ),
@@ -2439,10 +2474,15 @@ class _ReaderHeader extends ConsumerStatefulWidget {
   const _ReaderHeader({
     required this.manga,
     required this.chapter,
+    this.chapterUrl,
   });
 
   final Manga manga;
   final Chapter chapter;
+
+  /// Absolute chapter URL; non-null enables the WebView / browser / share
+  /// overflow (Kotlin `ReaderTopBar`'s `takeIf { isHttpSource }` gating).
+  final String? chapterUrl;
 
   @override
   ConsumerState<_ReaderHeader> createState() => _ReaderHeaderState();
@@ -2513,6 +2553,43 @@ class _ReaderHeaderState extends ConsumerState<_ReaderHeader> {
             tooltip: _bookmarked ? 'Remove bookmark' : 'Bookmark',
             onPressed: _toggleBookmark,
           ),
+          // Kotlin ReaderTopBar overflow: WebView / browser / share, only
+          // when the source yields an http(s) chapter URL.
+          if (widget.chapterUrl != null)
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                final url = widget.chapterUrl!;
+                switch (value) {
+                  case 'webview':
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => WebViewScreen(
+                          url: url,
+                          title: widget.manga.title,
+                        ),
+                      ),
+                    );
+                  case 'browser':
+                    launchUrl(
+                      Uri.parse(url),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  case 'share':
+                    ReaderImageActions.shareText(url);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'webview',
+                  child: Text('Open in WebView'),
+                ),
+                PopupMenuItem(
+                  value: 'browser',
+                  child: Text('Open in browser'),
+                ),
+                PopupMenuItem(value: 'share', child: Text('Share')),
+              ],
+            ),
         ],
       ),
     );

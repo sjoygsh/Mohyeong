@@ -8,7 +8,7 @@ import 'js_runtime.dart';
 /// [MangaSource] implementation backed by a JS extension running inside a
 /// [JsRuntime]. The extension must register `__extension` with a manifest +
 /// the popular/latest/search/details/chapters/pages methods.
-class JsSource implements MangaSource {
+class JsSource extends MangaSource {
   JsSource._({required this.manifest, required this.runtime});
 
   /// Constructs a [JsSource] by loading the JS source string into a fresh
@@ -102,6 +102,22 @@ class JsSource implements MangaSource {
     return (result as List<dynamic>)
         .map((e) => SourcePage.fromJson(e as Map<String, dynamic>))
         .toList(growable: false);
+  }
+
+  @override
+  Future<String?> getChapterUrl(SourceChapter chapter) async {
+    // Optional contract method (Kotlin sources override
+    // `HttpSource.getChapterUrl` the same way); fall back to the
+    // baseUrl-join default when the extension doesn't define it.
+    if (runtime.hasMethod('chapterUrl')) {
+      final result = await runtime.invoke('chapterUrl', [
+        {'url': chapter.url},
+      ]);
+      final url = result as String?;
+      if (url != null && url.isNotEmpty) return url;
+      return null;
+    }
+    return super.getChapterUrl(chapter);
   }
 
   @override

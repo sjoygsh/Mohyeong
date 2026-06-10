@@ -255,6 +255,24 @@ class MainActivity : FlutterFragmentActivity() {
                         }
                     }
 
+                    "shareText" -> {
+                        val text = call.argument<String>("text")
+                        if (text == null) {
+                            result.error("BAD_ARGS", "text is required", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, text)
+                            }
+                            startActivity(Intent.createChooser(intent, null))
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("SHARE_FAILED", e.message, null)
+                        }
+                    }
+
                     "copyToClipboard" -> {
                         val path = call.argument<String>("path")
                         if (path == null) {

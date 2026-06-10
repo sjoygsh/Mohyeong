@@ -101,6 +101,15 @@ class JsRuntime {
     return jsonDecode(str) as Map<String, dynamic>;
   }
 
+  /// Whether the extension defines [method] — used for optional contract
+  /// methods (e.g. `chapterUrl`) where absence falls back to a Dart default.
+  bool hasMethod(String method) {
+    final result = _runtime.evaluate(
+      'String(__extension && typeof __extension.$method === "function")',
+    );
+    return !result.isError && result.stringResult == 'true';
+  }
+
   /// Invokes a method on `__extension` and returns the parsed JSON result.
   /// Arguments are serialised via JSON.stringify, so they must be JSON-safe.
   Future<dynamic> invoke(String method, List<dynamic> args) async {

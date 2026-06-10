@@ -47,6 +47,12 @@ class ReaderImageActions {
     });
   }
 
+  /// Plain-text share sheet (Kotlin `String.toShareIntent(type =
+  /// "text/plain")`) — used for chapter / page URLs.
+  static Future<void> shareText(String text) async {
+    await _channel.invokeMethod<void>('shareText', {'text': text});
+  }
+
   /// Put the image itself on the clipboard (`ClipData.newUri`, matching
   /// `ReaderActivity.onCopyImageResult`). Android 13+ shows its own clip
   /// preview, so no toast is needed.
