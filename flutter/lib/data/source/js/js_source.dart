@@ -66,9 +66,29 @@ class JsSource extends MangaSource {
   }
 
   @override
-  Future<MangasPage> fetchSearch(String query, int page) async {
-    final result = await runtime.invoke('search', [query, page]);
+  Future<MangasPage> fetchSearch(
+    String query,
+    int page, {
+    Map<String, String>? filters,
+  }) async {
+    // The filters map rides along as an optional third argument —
+    // extensions that declare `search(query, page)` simply ignore it.
+    final result = await runtime.invoke('search', [
+      query,
+      page,
+      if (filters != null && filters.isNotEmpty) filters,
+    ]);
     return MangasPage.fromJson(result as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<SourceFilterDef>> getFilters() async {
+    // Optional contract method, like `chapterUrl`.
+    if (!runtime.hasMethod('filters')) return const [];
+    final result = await runtime.invoke('filters', const []);
+    return (result as List<dynamic>)
+        .map((e) => SourceFilterDef.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
   }
 
   @override

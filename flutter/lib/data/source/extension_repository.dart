@@ -123,6 +123,36 @@ class ExtensionRepository {
     return installFromString(code, installUrl: url);
   }
 
+  /// Checks every URL-installed extension's origin for a newer
+  /// `version_code` (Kotlin's ExtensionUpdateJob equivalent for the JS
+  /// model — there's no repo index, so the origin .js itself is the source
+  /// of truth). Returns the ids with an update available; probe failures
+  /// (offline, dead URL) are skipped so one bad origin doesn't poison the
+  /// whole check.
+  Future<Set<String>> checkForUpdates() async {
+    final installed = await _storage.listInstalled();
+    final updatable = <String>{};
+    for (final e in installed) {
+      final url = e.installUrl;
+      if (url == null || url.isEmpty) continue;
+      try {
+        final response = await _http.dio.get<String>(
+          url,
+          options: Options(responseType: ResponseType.plain),
+        );
+        final code = response.data;
+        if (code == null || code.isEmpty) continue;
+        final probe = await JsSource.load(code, dio: _http.dio);
+        final remoteVersion = probe.versionCode;
+        await probe.dispose();
+        if (remoteVersion > e.versionCode) updatable.add(e.id);
+      } catch (_) {
+        // Unreachable origin — not an update.
+      }
+    }
+    return updatable;
+  }
+
   /// Re-runs the URL install for an extension that was previously
   /// installed from a URL. Throws when the extension has no remembered
   /// origin (it was installed from a local file).

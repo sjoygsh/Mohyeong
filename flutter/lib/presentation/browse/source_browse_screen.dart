@@ -231,6 +231,13 @@ class _SearchListingState extends State<_SearchListing>
   bool _loading = false;
   Object? _error;
 
+  // Source-declared search filters (optional JS `filters()` contract —
+  // Kotlin's getFilterList) and the user's current picks. Selections only
+  // hold NON-default values so an untouched sheet sends nothing.
+  List<SourceFilterDef> _filterDefs = const [];
+  final Map<String, String> _selections = {};
+  bool _searchedOnce = false;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -242,11 +249,15 @@ class _SearchListingState extends State<_SearchListing>
       _controller.text = initial;
       _search(initial);
     }
+    widget.source.getFilters().then((defs) {
+      if (mounted && defs.isNotEmpty) setState(() => _filterDefs = defs);
+    }).catchError((_) {});
   }
 
   Future<void> _search(String query) async {
     setState(() {
       _query = query;
+      _searchedOnce = true;
       _items.clear();
       _page = 1;
       _hasNext = true;
@@ -256,10 +267,18 @@ class _SearchListingState extends State<_SearchListing>
   }
 
   Future<void> _loadMore() async {
-    if (_loading || !_hasNext || _query.isEmpty) return;
+    // Filter-only browsing is allowed (empty query + active filters),
+    // matching Kotlin's filter-driven search.
+    if (_loading || !_hasNext || (_query.isEmpty && _selections.isEmpty)) {
+      return;
+    }
     setState(() => _loading = true);
     try {
-      final page = await widget.source.fetchSearch(_query, _page);
+      final page = await widget.source.fetchSearch(
+        _query,
+        _page,
+        filters: _selections.isEmpty ? null : Map.of(_selections),
+      );
       if (!mounted) return;
       setState(() {
         _items.addAll(page.mangas);
@@ -276,6 +295,25 @@ class _SearchListingState extends State<_SearchListing>
     }
   }
 
+  /// Kotlin's source filter sheet: one control per declared filter, with
+  /// Reset / Filter actions. Applying re-runs the search with the picks.
+  void _openFilterSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => _SourceFilterSheet(
+        defs: _filterDefs,
+        initial: Map.of(_selections),
+        onApply: (picks) {
+          _selections
+            ..clear()
+            ..addAll(picks);
+          _search(_controller.text.trim());
+        },
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -289,21 +327,44 @@ class _SearchListingState extends State<_SearchListing>
       children: [
         Padding(
           padding: const EdgeInsets.all(8),
-          child: TextField(
-            controller: _controller,
-            textInputAction: TextInputAction.search,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Search this source',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onSubmitted: (q) => _search(q.trim()),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  textInputAction: TextInputAction.search,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Search this source',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onSubmitted: (q) => _search(q.trim()),
+                ),
+              ),
+              if (_filterDefs.isNotEmpty)
+                IconButton(
+                  icon: Icon(
+                    Icons.filter_list,
+                    color: _selections.isNotEmpty
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
+                  tooltip: 'Filter',
+                  onPressed: _openFilterSheet,
+                ),
+            ],
           ),
         ),
-        if (_query.isEmpty)
-          const Expanded(
-            child: Center(child: Text('Enter a query to search.')),
+        if (!_searchedOnce)
+          Expanded(
+            child: Center(
+              child: Text(
+                _filterDefs.isEmpty
+                    ? 'Enter a query to search.'
+                    : 'Enter a query or apply filters to search.',
+              ),
+            ),
           )
         else
           Expanded(
@@ -317,6 +378,108 @@ class _SearchListingState extends State<_SearchListing>
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Bottom sheet rendering a source's declared search filters: `select`
+/// filters as choice-chip rows, `checkbox` filters as switches. Only
+/// non-default picks are reported, so Reset genuinely clears the search.
+class _SourceFilterSheet extends StatefulWidget {
+  const _SourceFilterSheet({
+    required this.defs,
+    required this.initial,
+    required this.onApply,
+  });
+
+  final List<SourceFilterDef> defs;
+  final Map<String, String> initial;
+  final ValueChanged<Map<String, String>> onApply;
+
+  @override
+  State<_SourceFilterSheet> createState() => _SourceFilterSheetState();
+}
+
+class _SourceFilterSheetState extends State<_SourceFilterSheet> {
+  late final Map<String, String> _draft = Map.of(widget.initial);
+
+  String _effective(SourceFilterDef def) =>
+      _draft[def.key] ?? def.defaultValue ?? '';
+
+  void _set(SourceFilterDef def, String value) {
+    setState(() {
+      if (value == (def.defaultValue ?? '')) {
+        _draft.remove(def.key);
+      } else {
+        _draft[def.key] = value;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final def in widget.defs) ...[
+              if (def.type == 'checkbox')
+                SwitchListTile(
+                  title: Text(def.title),
+                  value: _effective(def) == 'true',
+                  onChanged: (v) => _set(def, v ? 'true' : ''),
+                )
+              else ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Text(
+                    def.title,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      for (final (i, opt) in def.options.indexed) ...[
+                        if (i > 0) const SizedBox(width: 8),
+                        ChoiceChip(
+                          selected: _effective(def) == opt.value,
+                          label: Text(opt.label),
+                          onSelected: (_) => _set(def, opt.value),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+              child: Row(
+                children: [
+                  OutlinedButton(
+                    onPressed: () => setState(_draft.clear),
+                    child: const Text('Reset'),
+                  ),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      widget.onApply(_draft);
+                    },
+                    child: const Text('Filter'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

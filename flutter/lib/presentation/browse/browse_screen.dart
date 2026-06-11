@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/source/extension_repository.dart';
+import '../../data/source/extension_updates.dart';
 import '../../data/source/incognito_preferences.dart';
 import '../../data/source/installed_extension.dart';
 import '../../data/source/local_source.dart';
@@ -274,12 +275,29 @@ Future<void> _pickLocalRoot(BuildContext context, WidgetRef ref) async {
   );
 }
 
-class _ExtensionsTab extends ConsumerWidget {
+class _ExtensionsTab extends ConsumerStatefulWidget {
   const _ExtensionsTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ExtensionsTab> createState() => _ExtensionsTabState();
+}
+
+class _ExtensionsTabState extends ConsumerState<_ExtensionsTab> {
+  @override
+  void initState() {
+    super.initState();
+    // Probe origins for newer version_codes once per session — the JS
+    // model's stand-in for Kotlin's periodic ExtensionUpdateJob. Drives
+    // the Browse nav badge + the per-row "Update available" affordance.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) runExtensionUpdateCheck(ref);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final repo = ref.watch(extensionRepositoryProvider);
+    final updatable = ref.watch(extensionUpdatesProvider);
     return Scaffold(
       body: StreamBuilder<List<InstalledExtension>>(
         stream: repo.watchInstalled(),
@@ -306,10 +324,18 @@ class _ExtensionsTab extends ConsumerWidget {
             itemBuilder: (_, i) {
               final e = extensions[i];
               final canUpdate = e.installUrl != null;
+              final hasUpdate = updatable.contains(e.id);
               final incognito = incognitoExtensions.contains(e.id);
               return ListTile(
                 title: Text(e.name),
-                subtitle: Text('${e.lang.toUpperCase()} • v${e.versionCode}'),
+                subtitle: Text(
+                  '${e.lang.toUpperCase()} • v${e.versionCode}'
+                  '${hasUpdate ? ' • Update available' : ''}',
+                  style: hasUpdate
+                      ? TextStyle(
+                          color: Theme.of(context).colorScheme.primary)
+                      : null,
+                ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -339,14 +365,27 @@ class _ExtensionsTab extends ConsumerWidget {
                     ),
                     if (canUpdate)
                       IconButton(
-                        icon: const Icon(Icons.refresh),
-                        tooltip: 'Update from origin URL',
-                        onPressed: () => _runUpdate(context, repo, e),
+                        icon: Icon(
+                          Icons.refresh,
+                          color: hasUpdate
+                              ? Theme.of(context).colorScheme.primary
+                              : null,
+                        ),
+                        tooltip: hasUpdate
+                            ? 'Update available'
+                            : 'Update from origin URL',
+                        onPressed: () async {
+                          await _runUpdate(context, repo, e);
+                          clearExtensionUpdate(ref, e.id);
+                        },
                       ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline),
                       tooltip: 'Uninstall',
-                      onPressed: () => _confirmUninstall(context, repo, e),
+                      onPressed: () async {
+                        await _confirmUninstall(context, repo, e);
+                        clearExtensionUpdate(ref, e.id);
+                      },
                     ),
                   ],
                 ),

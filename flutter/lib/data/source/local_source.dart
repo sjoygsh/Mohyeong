@@ -114,7 +114,11 @@ class LocalSource extends MangaSource {
   }
 
   @override
-  Future<MangasPage> fetchSearch(String query, int page) async {
+  Future<MangasPage> fetchSearch(
+    String query,
+    int page, {
+    Map<String, String>? filters,
+  }) async {
     if (page > 1) return const MangasPage(mangas: [], hasNextPage: false);
     final all = await _listAllManga();
     final q = query.toLowerCase();

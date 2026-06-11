@@ -30,7 +30,20 @@ abstract class MangaSource {
 
   Future<MangasPage> fetchPopular(int page);
   Future<MangasPage> fetchLatest(int page);
-  Future<MangasPage> fetchSearch(String query, int page);
+
+  /// [filters] carries the user's picks from [getFilters] as a key → value
+  /// map; null/empty means an unfiltered search. Sources that don't define
+  /// filters simply never receive the argument.
+  Future<MangasPage> fetchSearch(
+    String query,
+    int page, {
+    Map<String, String>? filters,
+  });
+
+  /// The search filters this source exposes, for the browse screen's
+  /// filter sheet — Kotlin's `getFilterList()`. JS extensions provide them
+  /// through an optional `filters()` method; the default is "none".
+  Future<List<SourceFilterDef>> getFilters() async => const [];
 
   /// Fills in the optional fields on a [SourceManga] returned by listings.
   Future<SourceManga> fetchMangaDetails(SourceManga manga);
@@ -61,4 +74,49 @@ abstract class MangaSource {
   /// Disposes any underlying resources (JS engines, HTTP clients). Called
   /// when the user uninstalls the extension or the source repo is rebuilt.
   Future<void> dispose() async {}
+}
+
+/// One user-facing search filter exposed by a source (the optional JS
+/// `filters()` contract — the analog of a Kotlin source's `FilterList`).
+/// v1 supports two shapes:
+///  * `select`   — exactly one of [options]; [defaultValue] preselected.
+///  * `checkbox` — boolean toggle; selected sends the value `'true'`.
+class SourceFilterDef {
+  const SourceFilterDef({
+    required this.key,
+    required this.title,
+    required this.type,
+    this.options = const [],
+    this.defaultValue,
+  });
+
+  final String key;
+  final String title;
+  final String type;
+  final List<SourceFilterOption> options;
+  final String? defaultValue;
+
+  factory SourceFilterDef.fromJson(Map<String, dynamic> json) =>
+      SourceFilterDef(
+        key: json['key'] as String,
+        title: json['title'] as String,
+        type: json['type'] as String? ?? 'select',
+        options: (json['options'] as List<dynamic>? ?? const [])
+            .map((e) => SourceFilterOption.fromJson(e as Map<String, dynamic>))
+            .toList(growable: false),
+        defaultValue: json['default'] as String?,
+      );
+}
+
+class SourceFilterOption {
+  const SourceFilterOption({required this.value, required this.label});
+
+  final String value;
+  final String label;
+
+  factory SourceFilterOption.fromJson(Map<String, dynamic> json) =>
+      SourceFilterOption(
+        value: json['value'] as String,
+        label: json['label'] as String,
+      );
 }

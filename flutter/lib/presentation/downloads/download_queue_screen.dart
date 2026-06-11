@@ -213,47 +213,91 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     List<ActiveDownload> items,
   ) {
     // Snapshot orders running, then errored, then queued. Pin the running
-    // and errored rows in a fixed header so only the queued rows — which
-    // are the only reorderable ones — live in the draggable list.
+    // and errored rows at the top; the queued remainder renders grouped by
+    // manga (Kotlin's DownloadHeaderItem: an expandable series header with
+    // its chapters beneath and series-level move-to-top / cancel actions —
+    // replaces the old flat drag-to-reorder list; ordering is still
+    // available via the Sort menu + "Move series to top").
     final pinned = items.where((i) => i.current || i.errored)
         .toList(growable: false);
     final queued = items
         .where((i) => !i.current && !i.errored)
         .toList(growable: false);
-    return ReorderableListView.builder(
-      buildDefaultDragHandles: false,
-      header: pinned.isEmpty
-          ? null
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final item in pinned) _buildTile(item, draggable: false),
-                const Divider(height: 1),
-              ],
-            ),
-      itemCount: queued.length,
-      itemBuilder: (context, i) {
-        final item = queued[i];
-        return _buildTile(
-          item,
-          draggable: true,
-          dragIndex: i,
-          key: ValueKey<int>(item.chapter.id),
-        );
-      },
-      onReorderItem: (oldIdx, newIdx) {
-        // onReorderItem already adjusts newIdx to the index after the
-        // dragged tile is removed — we can drop the shift the older
-        // onReorder callback needed.
-        repo.reorderQueue(queued[oldIdx].chapter.id, newIdx);
-      },
+
+    // Bucket queued rows by manga in order of first appearance, preserving
+    // each chapter's queue order within its group.
+    final groupOrder = <int>[];
+    final groups = <int, List<ActiveDownload>>{};
+    for (final item in queued) {
+      final id = item.manga.id;
+      (groups[id] ??= (() {
+        groupOrder.add(id);
+        return <ActiveDownload>[];
+      })())
+          .add(item);
+    }
+
+    return ListView(
+      children: [
+        for (final item in pinned) _buildTile(item),
+        if (pinned.isNotEmpty && groupOrder.isNotEmpty)
+          const Divider(height: 1),
+        for (final mangaId in groupOrder)
+          _buildGroup(repo, groups[mangaId]!),
+      ],
+    );
+  }
+
+  /// One manga's queued chapters under an expandable series header.
+  Widget _buildGroup(DownloadRepository repo, List<ActiveDownload> group) {
+    final manga = group.first.manga;
+    final n = group.length;
+    return ExpansionTile(
+      key: PageStorageKey<int>(manga.id),
+      initiallyExpanded: true,
+      shape: const Border(),
+      title: Text(
+        manga.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text('$n chapter${n == 1 ? '' : 's'}'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PopupMenuButton<String>(
+            onSelected: (action) {
+              switch (action) {
+                case 'top':
+                  // Walk the group's chapters into the front of the queue,
+                  // preserving their relative order (Kotlin "Move series
+                  // to top").
+                  for (final (i, item) in group.indexed) {
+                    repo.reorderQueue(item.chapter.id, i);
+                  }
+                case 'cancel':
+                  for (final item in group) {
+                    repo.cancel(item.chapter.id);
+                  }
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'top', child: Text('Move series to top')),
+              PopupMenuItem(value: 'cancel', child: Text('Cancel all')),
+            ],
+          ),
+          const Icon(Icons.expand_more),
+        ],
+      ),
+      children: [
+        for (final item in group) _buildTile(item, inGroup: true),
+      ],
     );
   }
 
   Widget _buildTile(
     ActiveDownload item, {
-    required bool draggable,
-    int? dragIndex,
+    bool inGroup = false,
     Key? key,
   }) {
     final progress = _progress[item.chapter.id];
@@ -264,8 +308,15 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
             ? (item.downloadedPages, item.totalPages)
             : null);
     final repo = ref.read(downloadRepositoryProvider);
+    final chapterLabel = item.chapter.name.isEmpty
+        ? 'Chapter ${item.chapter.chapterNumber}'
+        : item.chapter.name;
     return ListTile(
       key: key,
+      // Grouped rows sit under their series header — indent and lead with
+      // the chapter, not the manga title.
+      contentPadding:
+          inGroup ? const EdgeInsetsDirectional.only(start: 32, end: 16) : null,
       leading: item.errored
           ? Icon(
               Icons.error_outline,
@@ -275,20 +326,19 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
               ? const Icon(Icons.downloading)
               : const Icon(Icons.hourglass_empty),
       title: Text(
-        item.manga.title,
+        inGroup ? chapterLabel : item.manga.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            item.chapter.name.isEmpty
-                ? 'Chapter ${item.chapter.chapterNumber}'
-                : item.chapter.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          if (!inGroup)
+            Text(
+              chapterLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           if (item.current && progress != null) ...[
             const SizedBox(height: 4),
             LinearProgressIndicator(value: progress),
@@ -327,14 +377,6 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
             tooltip: 'Cancel',
             onPressed: () => repo.cancel(item.chapter.id),
           ),
-          if (draggable && dragIndex != null)
-            ReorderableDragStartListener(
-              index: dragIndex,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Icon(Icons.drag_handle),
-              ),
-            ),
         ],
       ),
     );
