@@ -970,7 +970,10 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       setState(() => _currentPage = page);
       _maybeFlash();
     }
-    widget.onPageChanged(page);
+    // The transition page reports index == _totalPages; progress persists
+    // the last REAL page (Kotlin doesn't store transitions either).
+    final lastReal = _totalPages > 0 ? _totalPages - 1 : 0;
+    widget.onPageChanged(page.clamp(0, lastReal));
     _precacheAhead(page);
     _maybeDownloadAhead(page);
     // Reaching the final page marks the chapter read (Mihon parity). Guarded
@@ -1066,10 +1069,14 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   }
 
   /// Bottom-bar crop toggle. Kotlin toasts "On"/"Off" via
-  /// `menuToggleToast`; we flash the same label centre-screen.
+  /// `menuToggleToast`; we flash the same label centre-screen. Toggles the
+  /// active viewer's own pref (pager vs webtoon, like Kotlin).
   void _toggleCropBorders() {
-    final next = !ref.read(readerCropBordersProvider);
-    ref.read(readerCropBordersProvider.notifier).set(next);
+    final provider = widget.mode.isPaged
+        ? readerCropBordersProvider
+        : readerCropBordersWebtoonProvider;
+    final next = !ref.read(provider);
+    ref.read(provider.notifier).set(next);
     _flashLabel(next ? 'On' : 'Off');
   }
 
@@ -1284,10 +1291,19 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   }
 
   /// Turn one page in [forward] direction, or jump to the adjacent
-  /// chapter when stepping past either end of the current chapter.
+  /// chapter when stepping past either end of the current chapter. With
+  /// the chapter-transition page enabled, the index one past the last
+  /// page is the transition itself; stepping forward from there does
+  /// the chapter jump.
   void _navigatePage({required bool forward}) {
     final target = forward ? _currentPage + 1 : _currentPage - 1;
-    if (target >= 0 && target < _totalPages) {
+    final maxIndex = _totalPages -
+        1 +
+        (widget.mode.isPaged &&
+                ref.read(readerAlwaysShowTransitionProvider)
+            ? 1
+            : 0);
+    if (target >= 0 && target <= maxIndex) {
       // Animate the page turn when transitions are enabled (Mihon's
       // `pref_enable_transitions`); otherwise jump instantly.
       _seekTo(target, animate: ref.read(readerPageTransitionsProvider));
@@ -1378,8 +1394,32 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     final next = _adjacentChapter(data, forward: true,
         skipRead: skipRead, skipDupe: skipDupe, skipFiltered: skipFiltered);
     final showPageNumber = ref.watch(readerShowPageNumberProvider);
-    final cropEnabled = ref.watch(readerCropBordersProvider);
+    // Crop borders is a per-viewer pref (Kotlin: `crop_borders` for the
+    // pager, `crop_borders_webtoon` for the continuous viewer).
+    final cropEnabled = widget.mode.isPaged
+        ? ref.watch(readerCropBordersProvider)
+        : ref.watch(readerCropBordersWebtoonProvider);
     final barColor = _barColor(context);
+    // Chapter transition page (Kotlin ChapterTransition, gated by
+    // `always_show_chapter_transition`): an info page after the last page —
+    // "Finished" + what's next — that swiping/tapping forward from triggers
+    // the chapter jump.
+    final transitionPage = ref.watch(readerAlwaysShowTransitionProvider)
+        ? _ChapterTransitionPage(
+            finishedTitle: data.chapter.name.isEmpty
+                ? 'Chapter ${data.chapter.chapterNumber}'
+                : data.chapter.name,
+            nextTitle: next == null
+                ? null
+                : (next.name.isEmpty
+                    ? 'Chapter ${next.chapterNumber}'
+                    : next.name),
+            textColor: widget.background
+                .resolveOnColor(Theme.of(context).brightness),
+            onNextChapter:
+                next == null ? null : () => widget.onJumpToChapter(next.id),
+          )
+        : null;
     final grayscale = ref.watch(readerGrayscaleProvider);
     final invert = ref.watch(readerInvertedColorsProvider);
     // Paged image scale type (Mihon `pref_image_scale_type_key`). The
@@ -1438,6 +1478,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
         scrollTick: _scrollTick,
         scrollForward: _scrollForward,
       ),
+      transition: transitionPage,
     );
     // Page-art colour adjustments. Applied to the page viewport only (not
     // the chrome) by wrapping before the gesture/Stack layers. Greyscale,
@@ -1513,7 +1554,8 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
               bottom: 0,
               child: IgnorePointer(
                 child: _PageIndicator(
-                  current: _currentPage,
+                  // Clamped: the transition page isn't a numbered page.
+                  current: _currentPage.clamp(0, _totalPages > 0 ? _totalPages - 1 : 0),
                   total: _totalPages,
                   color: widget.background
                       .resolveOnColor(Theme.of(context).brightness),
@@ -1544,7 +1586,8 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                       onNextChapter: next == null
                           ? null
                           : () => widget.onJumpToChapter(next.id),
-                      currentPage: _currentPage,
+                      currentPage:
+                          _currentPage.clamp(0, _totalPages > 0 ? _totalPages - 1 : 0),
                       totalPages: _totalPages,
                       showSlider: widget.mode.isPaged,
                       onPageIndexChange: _seekTo,
@@ -1977,6 +2020,7 @@ class _ReaderViewport extends StatelessWidget {
     required this.onTotalChanged,
     required this.onPagesResolved,
     required this.seekRequest,
+    this.transition,
   });
 
   final _ReaderData data;
@@ -1990,6 +2034,9 @@ class _ReaderViewport extends StatelessWidget {
   final ValueChanged<int> onTotalChanged;
   final ValueChanged<List<_PageRef>> onPagesResolved;
   final _ViewportSeekRequest seekRequest;
+
+  /// Trailing chapter-transition page, threaded through to [_PagesView].
+  final Widget? transition;
 
   @override
   Widget build(BuildContext context) {
@@ -2008,6 +2055,7 @@ class _ReaderViewport extends StatelessWidget {
         onPageChanged: onPageChanged,
         onPagesResolved: onPagesResolved,
         seekRequest: seekRequest,
+        transition: transition,
       );
     }
     if (data.source == null) {
@@ -2030,6 +2078,7 @@ class _ReaderViewport extends StatelessWidget {
       onTotalChanged: onTotalChanged,
       onPagesResolved: onPagesResolved,
       seekRequest: seekRequest,
+      transition: transition,
     );
   }
 }
@@ -2048,6 +2097,7 @@ class _PageList extends StatefulWidget {
     required this.onTotalChanged,
     required this.onPagesResolved,
     required this.seekRequest,
+    this.transition,
   });
 
   final MangaSource source;
@@ -2062,6 +2112,7 @@ class _PageList extends StatefulWidget {
   final ValueChanged<int> onTotalChanged;
   final ValueChanged<List<_PageRef>> onPagesResolved;
   final _ViewportSeekRequest seekRequest;
+  final Widget? transition;
 
   @override
   State<_PageList> createState() => _PageListState();
@@ -2141,6 +2192,8 @@ class _PageListState extends State<_PageList> {
           initialPage: widget.chapter.lastPageRead,
           onPageChanged: widget.onPageChanged,
           seekRequest: widget.seekRequest,
+          transition: widget.transition,
+          pageUrlOf: (i) => pages[i].imageUrl ?? pages[i].url,
           itemBuilder: (_, i) {
             final page = pages[i];
             final imageUrl = page.imageUrl ?? page.url;
@@ -2187,6 +2240,7 @@ class _LocalPageList extends StatelessWidget {
     required this.onPageChanged,
     required this.onPagesResolved,
     required this.seekRequest,
+    this.transition,
   });
 
   final List<String> paths;
@@ -2200,6 +2254,7 @@ class _LocalPageList extends StatelessWidget {
   final ValueChanged<int> onPageChanged;
   final ValueChanged<List<_PageRef>> onPagesResolved;
   final _ViewportSeekRequest seekRequest;
+  final Widget? transition;
 
   @override
   Widget build(BuildContext context) {
@@ -2220,6 +2275,8 @@ class _LocalPageList extends StatelessWidget {
       initialPage: initialPage,
       onPageChanged: onPageChanged,
       seekRequest: seekRequest,
+      transition: transition,
+      pageUrlOf: (i) => paths[i],
       itemBuilder: (_, i) => SourceImage(
         url: paths[i],
         fit: fit,
@@ -2254,6 +2311,8 @@ class _PagesView extends StatefulWidget {
     required this.onPageChanged,
     required this.seekRequest,
     required this.itemBuilder,
+    this.transition,
+    this.pageUrlOf,
   });
 
   final int count;
@@ -2264,14 +2323,104 @@ class _PagesView extends StatefulWidget {
   final _ViewportSeekRequest seekRequest;
   final IndexedWidgetBuilder itemBuilder;
 
+  /// Chapter-transition page (Kotlin `ChapterTransition`): when non-null,
+  /// one extra trailing item past the last page — index [count] — renders
+  /// it in both viewers. Reported page indices include it, so navigating
+  /// forward from it falls through to the next chapter.
+  final Widget? transition;
+
+  /// Image locator per page index — feeds the shared aspect-ratio cache
+  /// used for webtoon fixed-extent placeholders and the paged viewer's
+  /// zoom-start/landscape-zoom initial transform.
+  final String? Function(int index)? pageUrlOf;
+
+  /// Total item count including the trailing transition page.
+  int get itemCount => count + (transition != null ? 1 : 0);
+
   @override
   State<_PagesView> createState() => _PagesViewState();
+}
+
+/// Decoded width/height ratio per page locator, shared across viewers.
+/// Populated as pages decode; lets webtoon items reserve their real extent
+/// on revisit (no layout shift), powers offset↔index math for progress and
+/// resume, and tells the paged viewer whether a page is a wide spread.
+final Map<String, double> _pageAspectCache = {};
+
+/// Resolve [url]'s decoded aspect into [_pageAspectCache], then [onReady].
+/// Piggybacks on the image cache — by the time this runs for a visible page
+/// the decode is shared with the displayed image.
+void _resolvePageAspect(
+  String url,
+  Map<String, String>? headers,
+  void Function(double aspect) onReady,
+) {
+  final cached = _pageAspectCache[url];
+  if (cached != null) {
+    onReady(cached);
+    return;
+  }
+  final stream = SourceImage.providerFor(url, headers: headers)
+      .resolve(ImageConfiguration.empty);
+  late final ImageStreamListener listener;
+  listener = ImageStreamListener(
+    (info, _) {
+      final aspect = info.image.width / info.image.height;
+      _pageAspectCache[url] = aspect;
+      info.image.dispose();
+      stream.removeListener(listener);
+      onReady(aspect);
+    },
+    onError: (_, _) => stream.removeListener(listener),
+  );
+  stream.addListener(listener);
 }
 
 class _PagesViewState extends State<_PagesView> {
   PageController? _pageController;
   ScrollController? _scrollController;
   int _lastReported = -1;
+
+  /// Estimated layout height of page [i] in the continuous list: the real
+  /// extent once its aspect is known (cache hit), a generic placeholder
+  /// height before first decode. Powers offset↔index mapping so progress
+  /// and resume track actual pages instead of a scroll-ratio guess.
+  double _estimatedHeight(int i, double contentWidth) {
+    final url = widget.pageUrlOf?.call(i);
+    final aspect = url == null ? null : _pageAspectCache[url];
+    return aspect == null ? 400.0 : contentWidth / aspect;
+  }
+
+  double _webtoonContentWidth() {
+    final size = MediaQuery.sizeOf(context);
+    return size.width * (1 - 2 * widget.sidePaddingFraction);
+  }
+
+  double _offsetForIndex(int index) {
+    final w = _webtoonContentWidth();
+    var offset = 0.0;
+    for (var i = 0; i < index && i < widget.count; i++) {
+      offset += _estimatedHeight(i, w);
+    }
+    return offset;
+  }
+
+  int _indexForOffset(double pixels) {
+    final w = _webtoonContentWidth();
+    var cumulative = 0.0;
+    for (var i = 0; i < widget.count; i++) {
+      cumulative += _estimatedHeight(i, w);
+      if (pixels < cumulative) return i;
+    }
+    return widget.count - 1;
+  }
+
+  void _jumpToWebtoonIndex(int index) {
+    final controller = _scrollController;
+    if (controller == null || !controller.hasClients) return;
+    final pos = controller.position;
+    controller.jumpTo(_offsetForIndex(index).clamp(0.0, pos.maxScrollExtent));
+  }
 
   @override
   void initState() {
@@ -2284,13 +2433,8 @@ class _PagesViewState extends State<_PagesView> {
       _scrollController = ScrollController();
       // Defer jump until after layout so the viewport has a size.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _scrollController == null) return;
-        // We don't know each page's height in advance; the best we can do
-        // for webtoon resume is jump proportionally. Users still get the
-        // chapter open at roughly the right spot.
-        final pos = _scrollController!.position;
-        final ratio = widget.count == 0 ? 0 : clamped / widget.count;
-        _scrollController!.jumpTo(pos.maxScrollExtent * ratio);
+        if (!mounted) return;
+        _jumpToWebtoonIndex(clamped);
       });
     }
     _lastReported = clamped;
@@ -2314,22 +2458,20 @@ class _PagesViewState extends State<_PagesView> {
       } else {
         _scrollController = ScrollController();
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || _scrollController == null) return;
-          if (!_scrollController!.hasClients) return;
-          final pos = _scrollController!.position;
-          final ratio = widget.count == 0 ? 0 : resume / widget.count;
-          _scrollController!.jumpTo(pos.maxScrollExtent * ratio);
+          if (!mounted) return;
+          _jumpToWebtoonIndex(resume);
         });
       }
       return;
     }
     // Slider drove a seek: jump the underlying PageController. Continuous
     // mode has no random-access seek surface — slider only shows in paged
-    // mode anyway so this branch is a no-op there.
+    // mode anyway so this branch is a no-op there. The clamp allows the
+    // trailing transition page as a target.
     if (widget.seekRequest.requestId != old.seekRequest.requestId &&
         _pageController != null) {
-      final target =
-          widget.seekRequest.target.clamp(0, (widget.count - 1).clamp(0, widget.count));
+      final target = widget.seekRequest.target
+          .clamp(0, (widget.itemCount - 1).clamp(0, widget.itemCount));
       if (widget.seekRequest.animate && _pageController!.hasClients) {
         _pageController!.animateToPage(
           target,
@@ -2381,19 +2523,18 @@ class _PagesViewState extends State<_PagesView> {
               _scrollController != null &&
               widget.count > 0) {
             final pos = _scrollController!.position;
-            final max = pos.maxScrollExtent;
-            if (max > 0) {
-              final ratio = pos.pixels / max;
-              final approx =
-                  (ratio * widget.count).floor().clamp(0, widget.count - 1);
-              _report(approx);
-            }
+            // Index of the page crossing the viewport's vertical centre,
+            // from the prefix sums of (estimated) item extents — tracks
+            // real pages instead of the old scroll-ratio guess.
+            _report(_indexForOffset(
+              pos.pixels + pos.viewportDimension / 2,
+            ));
           }
           return false;
         },
         child: ListView.builder(
           controller: _scrollController,
-          itemCount: widget.count,
+          itemCount: widget.itemCount,
           // Read-ahead: build/decode pages well before they scroll on
           // screen (Mihon preloads 4 pages ahead; the Flutter default
           // ~250px meant every page boundary fetched on arrival and
@@ -2408,7 +2549,15 @@ class _PagesViewState extends State<_PagesView> {
                   horizontal: MediaQuery.sizeOf(context).width *
                       widget.sidePaddingFraction,
                 ),
-          itemBuilder: widget.itemBuilder,
+          itemBuilder: (ctx, i) {
+            if (i >= widget.count) return widget.transition!;
+            // Reserve the page's real extent once its aspect is known so
+            // later decodes don't shift content under the reader.
+            return _WebtoonPageSlot(
+              url: widget.pageUrlOf?.call(i),
+              child: widget.itemBuilder(ctx, i),
+            );
+          },
         ),
       );
     }
@@ -2417,7 +2566,7 @@ class _PagesViewState extends State<_PagesView> {
       scrollDirection:
           widget.mode.isHorizontal ? Axis.horizontal : Axis.vertical,
       reverse: widget.mode == ReadingMode.rightToLeft,
-      itemCount: widget.count,
+      itemCount: widget.itemCount,
       onPageChanged: _report,
       // Mount the adjacent page(s) one viewport ahead so their network
       // images start fetching/decoding before the user swipes to them,
@@ -2426,10 +2575,145 @@ class _PagesViewState extends State<_PagesView> {
       // idiomatic Flutter ±1 neighbour preload — deeper preloading would
       // need a custom cacheExtent tuned on-device.
       allowImplicitScrolling: true,
-      itemBuilder: (ctx, i) => _ZoomablePage(
-        child: Center(child: widget.itemBuilder(ctx, i)),
+      itemBuilder: (ctx, i) {
+        if (i >= widget.count) return widget.transition!;
+        return _ZoomablePage(
+          url: widget.pageUrlOf?.call(i),
+          mode: widget.mode,
+          child: Center(child: widget.itemBuilder(ctx, i)),
+        );
+      },
+    );
+  }
+}
+
+/// Kotlin `ChapterTransition`: the info page between chapters — "Finished:
+/// `current`" plus "Next: `next`" (or "There's no next chapter"). In paged
+/// mode it occupies the slot after the last page; in continuous mode it's
+/// the trailing list block. Tapping it jumps straight to the next chapter.
+class _ChapterTransitionPage extends StatelessWidget {
+  const _ChapterTransitionPage({
+    required this.finishedTitle,
+    required this.nextTitle,
+    required this.textColor,
+    required this.onNextChapter,
+  });
+
+  final String finishedTitle;
+
+  /// Null = no next chapter.
+  final String? nextTitle;
+  final Color textColor;
+  final VoidCallback? onNextChapter;
+
+  @override
+  Widget build(BuildContext context) {
+    final dim = textColor.withValues(alpha: 0.7);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onNextChapter,
+      child: SizedBox(
+        // A full viewport block in the webtoon list; the PageView slot is
+        // already viewport-sized.
+        height: MediaQuery.sizeOf(context).height,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Verbatim Mihon strings transition_finished /
+                // transition_next / transition_no_next.
+                Text('Finished:', style: TextStyle(color: dim, fontSize: 14)),
+                const SizedBox(height: 4),
+                Text(
+                  finishedTitle,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                if (nextTitle != null) ...[
+                  Text('Next:', style: TextStyle(color: dim, fontSize: 14)),
+                  const SizedBox(height: 4),
+                  Text(
+                    nextTitle!,
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ] else
+                  Text(
+                    "There's no next chapter",
+                    style: TextStyle(color: dim, fontSize: 16),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
+  }
+}
+
+/// Continuous-mode page slot: sizes itself with the page's decoded aspect
+/// ratio (shared [_pageAspectCache]) so revisited pages occupy their final
+/// extent before the bitmap arrives — kills the load-time layout shifts
+/// that made long-strip scrolling jumpy. Falls back to intrinsic sizing
+/// until the first decode. NOTE: extents assume the uncropped image; with
+/// webtoon crop-borders on they may run slightly tall, which only pads the
+/// scroll estimate.
+class _WebtoonPageSlot extends StatefulWidget {
+  const _WebtoonPageSlot({required this.url, required this.child});
+
+  final String? url;
+  final Widget child;
+
+  @override
+  State<_WebtoonPageSlot> createState() => _WebtoonPageSlotState();
+}
+
+class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
+  double? _aspect;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WebtoonPageSlot old) {
+    super.didUpdateWidget(old);
+    if (widget.url != old.url) {
+      _aspect = widget.url == null ? null : _pageAspectCache[widget.url!];
+      _resolve();
+    }
+  }
+
+  void _resolve() {
+    final url = widget.url;
+    if (url == null) return;
+    final cached = _pageAspectCache[url];
+    if (cached != null) {
+      _aspect = cached;
+      return;
+    }
+    _resolvePageAspect(url, null, (aspect) {
+      if (mounted && _aspect != aspect) setState(() => _aspect = aspect);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final aspect = _aspect;
+    if (aspect == null) return widget.child;
+    return AspectRatio(aspectRatio: aspect, child: widget.child);
   }
 }
 
@@ -2437,10 +2721,18 @@ class _PagesViewState extends State<_PagesView> {
 /// to zoom. The zoom-in/out transition duration comes from
 /// [readerDoubleTapAnimSpeedProvider]; a value of 0 applies the transform
 /// instantly. Double-tapping while zoomed resets back to fit.
+///
+/// Wide (double-spread) pages additionally honour Mihon's "Zoom landscape
+/// image" + "Zoom start position" prefs: when the decoded image is wider
+/// than the viewport (and the scale type is fit-screen), the page starts
+/// zoomed so its height fills the screen, positioned at the configured
+/// edge (Automatic = the reading direction's leading edge).
 class _ZoomablePage extends ConsumerStatefulWidget {
-  const _ZoomablePage({required this.child});
+  const _ZoomablePage({required this.child, this.url, required this.mode});
 
   final Widget child;
+  final String? url;
+  final ReadingMode mode;
 
   @override
   ConsumerState<_ZoomablePage> createState() => _ZoomablePageState();
@@ -2454,6 +2746,57 @@ class _ZoomablePageState extends ConsumerState<_ZoomablePage>
   late final AnimationController _animController =
       AnimationController(vsync: this);
   Animation<Matrix4>? _animation;
+  bool _initialZoomApplied = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final url = widget.url;
+    if (url == null) return;
+    if (!ref.read(readerLandscapeZoomProvider)) return;
+    if (ref.read(readerImageScaleTypeProvider) !=
+        ReaderImageScaleType.fitScreen) {
+      return;
+    }
+    _resolvePageAspect(url, null, (aspect) {
+      if (!mounted || _initialZoomApplied) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _maybeApplyInitialZoom(aspect);
+      });
+    });
+  }
+
+  /// Start wide pages zoomed to height-fill at the zoom-start edge. The
+  /// child is laid out viewport-sized with the image contained (full width,
+  /// vertically centred), so the matrix scales about the origin and shifts
+  /// the chosen edge plus the centring band into view.
+  void _maybeApplyInitialZoom(double imageAspect) {
+    if (_initialZoomApplied) return;
+    final size = context.size;
+    if (size == null || size.width <= 0 || size.height <= 0) return;
+    final viewportAspect = size.width / size.height;
+    if (imageAspect <= viewportAspect) return; // not a wide page
+    final scale = size.height * imageAspect / size.width;
+
+    var start = ref.read(readerZoomStartProvider);
+    if (start == ReaderZoomStart.automatic) {
+      start = widget.mode == ReadingMode.rightToLeft
+          ? ReaderZoomStart.right
+          : ReaderZoomStart.left;
+    }
+    final overflowX = size.width * (scale - 1);
+    final tx = switch (start) {
+      ReaderZoomStart.right => -overflowX,
+      ReaderZoomStart.center => -overflowX / 2,
+      _ => 0.0, // left (and automatic→left)
+    };
+    // The contained image sits vertically centred: align its top edge.
+    final ty = -scale * (size.height - size.width / imageAspect) / 2;
+    _initialZoomApplied = true;
+    _controller.value = Matrix4.identity()
+      ..translateByDouble(tx, ty, 0, 1)
+      ..scaleByDouble(scale, scale, scale, 1);
+  }
 
   @override
   void dispose() {
@@ -2516,7 +2859,9 @@ class _ZoomablePageState extends ConsumerState<_ZoomablePage>
       child: InteractiveViewer(
         transformationController: _controller,
         minScale: 1,
-        maxScale: 4,
+        // High enough that the landscape-zoom height-fill scale of a very
+        // wide spread stays inside gesture bounds.
+        maxScale: 8,
         child: widget.child,
       ),
     );

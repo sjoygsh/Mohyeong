@@ -102,6 +102,12 @@ final readerWebtoonSidePaddingProvider =
 /// margins before the image is painted.
 final readerCropBordersProvider = boolPref('crop_borders', false);
 
+/// Webtoon/continuous-mode crop borders — Kotlin keeps a SEPARATE pref per
+/// viewer (`cropBordersWebtoon`, key `crop_borders_webtoon`).
+final readerCropBordersWebtoonProvider =
+    boolPref('crop_borders_webtoon', false);
+
+
 /// Auto-zoom wide (landscape) pages to fill the viewport on display.
 /// Default `true` to match Mihon's `landscape_zoom` (the auto-zoom
 /// behaviour itself is not yet applied in the paged viewer — the

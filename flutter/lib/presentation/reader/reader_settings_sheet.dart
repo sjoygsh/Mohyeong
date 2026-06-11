@@ -364,6 +364,22 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             ),
         ],
       ),
+      _ChipRow(
+        title: 'Zoom start position',
+        children: [
+          for (final z in ReaderZoomStart.values)
+            FilterChip(
+              selected: z == ref.watch(readerZoomStartProvider),
+              label: Text(z.label),
+              onSelected: (_) =>
+                  ref.read(readerZoomStartProvider.notifier).set(z),
+            ),
+        ],
+      ),
+      _PrefCheckbox(
+        label: 'Automatically zoom into wide images',
+        provider: readerLandscapeZoomProvider,
+      ),
       _PrefCheckbox(
         label: 'Crop borders',
         provider: readerCropBordersProvider,
@@ -402,6 +418,10 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           label: 'Invert tap zones',
           provider: readerTapNavigateInvertProvider,
         ),
+      _PrefCheckbox(
+        label: 'Crop borders',
+        provider: readerCropBordersWebtoonProvider,
+      ),
       _SheetSlider(
         label: 'Side padding',
         value: sidePadding.clamp(0, 25),
@@ -456,6 +476,10 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         _PrefCheckbox(
           label: 'Animate page transitions',
           provider: readerPageTransitionsProvider,
+        ),
+        _PrefCheckbox(
+          label: 'Always show chapter transition',
+          provider: readerAlwaysShowTransitionProvider,
         ),
         _PrefCheckbox(
           label: 'Flash on page change',

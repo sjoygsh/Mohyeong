@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/source/extension_repository.dart';
 import '../../data/source/extension_updates.dart';
@@ -42,6 +43,30 @@ class BrowseScreen extends ConsumerWidget {
         appBar: AppBar(
           title: const Text('Browse'),
           actions: [
+            // Kotlin MigrateSourceTab's HelpOutline action — only while the
+            // Migrate tab is active (per-tab toolbar actions, like Kotlin's
+            // TabContent.actions).
+            Builder(
+              builder: (innerContext) {
+                final tabs = DefaultTabController.of(innerContext);
+                return AnimatedBuilder(
+                  animation: tabs,
+                  builder: (_, _) => tabs.index == 2
+                      ? IconButton(
+                          icon: const Icon(Icons.help_outline),
+                          tooltip: 'Migration help',
+                          onPressed: () => launchUrl(
+                            Uri.parse(
+                              'https://sjoygsh.github.io/Mohyeong/help.html'
+                              '#source-migration',
+                            ),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                );
+              },
+            ),
             Builder(
               builder: (innerContext) => IconButton(
                 icon: const Icon(Icons.search),

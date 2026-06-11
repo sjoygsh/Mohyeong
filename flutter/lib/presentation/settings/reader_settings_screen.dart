@@ -46,6 +46,7 @@ class ReaderSettingsScreen extends ConsumerWidget {
     final navModeWebtoon = ref.watch(readerNavModeWebtoonProvider);
     final scaleType = ref.watch(readerImageScaleTypeProvider);
     final rotateToFit = ref.watch(readerDualPageRotateProvider);
+    final zoomStart = ref.watch(readerZoomStartProvider);
     final sidePadding = ref.watch(readerWebtoonSidePaddingProvider);
     final volumeKeys = ref.watch(readerVolumeKeysProvider);
     final colorFilterEnabled = ref.watch(readerColorFilterEnabledProvider);
@@ -221,6 +222,12 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Skip duplicate chapters',
             provider: readerSkipDupeProvider,
           ),
+          // Kotlin pref_always_show_chapter_transition — now backed by the
+          // real transition page between chapters.
+          PrefSwitch(
+            title: 'Always show chapter transition',
+            provider: readerAlwaysShowTransitionProvider,
+          ),
           const PrefSectionHeader('Paged'),
           ListTile(
             title: const Text('Tap zones'),
@@ -260,6 +267,45 @@ class ReaderSettingsScreen extends ConsumerWidget {
               }
             },
           ),
+          // Kotlin pref_zoom_start — now honoured by the paged viewer's
+          // initial transform for wide pages.
+          ListTile(
+            title: const Text('Zoom start position'),
+            subtitle: Text(zoomStart.label),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final picked = await showDialog<ReaderZoomStart>(
+                context: context,
+                builder: (ctx) => SimpleDialog(
+                  title: const Text('Zoom start position'),
+                  children: [
+                    RadioGroup<ReaderZoomStart>(
+                      groupValue: zoomStart,
+                      onChanged: (picked) => Navigator.of(ctx).pop(picked),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (final v in ReaderZoomStart.values)
+                            RadioListTile<ReaderZoomStart>(
+                              title: Text(v.label),
+                              value: v,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+              if (picked != null) {
+                await ref.read(readerZoomStartProvider.notifier).set(picked);
+              }
+            },
+          ),
+          // Kotlin pref_landscape_zoom.
+          PrefSwitch(
+            title: 'Automatically zoom into wide images',
+            provider: readerLandscapeZoomProvider,
+          ),
           PrefSwitch(
             title: 'Crop borders',
             provider: readerCropBordersProvider,
@@ -297,6 +343,12 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Invert tap zones',
             provider: readerTapNavigateInvertProvider,
             enabled: navModeWebtoon != ReaderNavMode.disabled,
+          ),
+          // Per-viewer pref (Kotlin crop_borders_webtoon) — independent of
+          // the Paged group's crop.
+          PrefSwitch(
+            title: 'Crop borders',
+            provider: readerCropBordersWebtoonProvider,
           ),
           _ValueSlider(
             title: 'Side padding',
