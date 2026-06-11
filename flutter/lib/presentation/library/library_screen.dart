@@ -139,6 +139,22 @@ class LibraryScreen extends ConsumerStatefulWidget {
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _query = '';
   LibraryFilters _filters = const LibraryFilters();
+
+  // Created ONCE per consumer — previously each rebuild called watchAll()
+  // inline (new stream → StreamBuilder resubscribe per setState, i.e. per
+  // search keystroke / selection tap), and the title re-issued a fresh
+  // categories query per rebuild. The title gets its own stream objects
+  // (not shared — drift query streams replay on listen but are
+  // single-subscription; drift dedups identical active queries internally
+  // so the DB work isn't doubled).
+  late final Stream<List<LibraryItem>> _libraryStream =
+      ref.read(libraryRepositoryProvider).watchAll();
+  late final Stream<List<Category>> _categoryStream =
+      ref.read(categoryRepositoryProvider).watchAll();
+  late final Stream<List<LibraryItem>> _titleLibraryStream =
+      ref.read(libraryRepositoryProvider).watchAll();
+  late final Stream<List<Category>> _titleCategoryStream =
+      ref.read(categoryRepositoryProvider).watchAll();
   // Memoised downloaded/tracked filter sets (see build) — resolved once per
   // axis combination rather than on every rebuild.
   Future<_AsyncFilterSets>? _asyncSets;
@@ -488,8 +504,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final libraryRepo = ref.watch(libraryRepositoryProvider);
-    final categoryRepo = ref.watch(categoryRepositoryProvider);
     final displayMode = ref.watch(libraryDisplayModeProvider);
     final sortPref = ref.watch(librarySortProvider);
     // "Downloaded only" mode forces the downloaded filter on (Kotlin
@@ -522,7 +536,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 ),
                 style: Theme.of(context).textTheme.titleLarge,
               )
-            : _LibraryTitle(selectedCategoryId: _selectedCategoryId),
+            : _LibraryTitle(
+                selectedCategoryId: _selectedCategoryId,
+                libraryStream: _titleLibraryStream,
+                categoryStream: _titleCategoryStream,
+              ),
         actions: [
           // Mirrors Mihon's LibraryToolbar: a single Filter icon (active-
           // tinted when any filter is set) opens the tabbed Filter/Sort/
@@ -591,7 +609,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ],
       ),
       body: StreamBuilder<List<LibraryItem>>(
-        stream: libraryRepo.watchAll(),
+        stream: _libraryStream,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return _ErrorView(error: snapshot.error!);
@@ -604,7 +622,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             return const _EmptyLibrary();
           }
           return StreamBuilder<List<Category>>(
-            stream: categoryRepo.watchAll(),
+            stream: _categoryStream,
             builder: (context, catSnap) {
               final categories = catSnap.data ?? const <Category>[];
               // Both the Downloaded and Tracked axes need async-resolved
@@ -1099,7 +1117,6 @@ class _MangaListTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final manga = item.manga;
     final scheme = Theme.of(context).colorScheme;
-    final downloadRepo = ref.watch(downloadRepositoryProvider);
     final showUnreadBadge = ref.watch(displayUnreadBadgeProvider);
     final showDownloadBadge = ref.watch(displayDownloadBadgeProvider);
     final showLocalBadge = ref.watch(displayLocalBadgeProvider);
@@ -1179,7 +1196,6 @@ class _MangaListTile extends ConsumerWidget {
               ),
             if (showDownloadBadge)
               _DownloadCountBadge(
-                downloadRepo: downloadRepo,
                 sourceId: manga.source,
                 mangaId: manga.id,
                 padding: const EdgeInsets.only(left: 4),
@@ -1204,59 +1220,45 @@ class _MangaListTile extends ConsumerWidget {
   }
 }
 
-/// Cached downloaded-chapter-count badge. The filesystem probe runs once per
-/// manga identity (initState / identity change) instead of on every card
-/// rebuild — the previous inline FutureBuilder re-walked the downloads tree
-/// for every visible card on each grid rebuild, which made library
-/// scrolling and selection visibly janky.
-class _DownloadCountBadge extends StatefulWidget {
+/// Downloaded counts for EVERY manga from ONE downloads-tree walk, shared by
+/// all badges and refreshed when a download completes or is deleted. The
+/// previous per-badge probe re-walked a directory each time a card scrolled
+/// into view (grid builders destroy/recreate item state on recycle).
+final _downloadedCountsProvider =
+    FutureProvider.autoDispose<Map<int, int>>((ref) async {
+  final repo = ref.watch(downloadRepositoryProvider);
+  final sub = repo.events.listen((e) {
+    if (e.state == DownloadState.completed ||
+        e.state == DownloadState.deleted) {
+      ref.invalidateSelf();
+    }
+  });
+  ref.onDispose(sub.cancel);
+  return repo.downloadedCountsByManga();
+});
+
+/// Downloaded-chapter-count badge — pure lookup into the shared counts map,
+/// no per-card I/O.
+class _DownloadCountBadge extends ConsumerWidget {
   const _DownloadCountBadge({
-    required this.downloadRepo,
     required this.sourceId,
     required this.mangaId,
     this.padding = EdgeInsets.zero,
   });
 
-  final DownloadRepository downloadRepo;
   final int sourceId;
   final int mangaId;
   final EdgeInsetsGeometry padding;
 
   @override
-  State<_DownloadCountBadge> createState() => _DownloadCountBadgeState();
-}
-
-class _DownloadCountBadgeState extends State<_DownloadCountBadge> {
-  int _count = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _probe();
-  }
-
-  @override
-  void didUpdateWidget(covariant _DownloadCountBadge old) {
-    super.didUpdateWidget(old);
-    if (old.mangaId != widget.mangaId || old.sourceId != widget.sourceId) {
-      _probe();
-    }
-  }
-
-  Future<void> _probe() async {
-    final n = await widget.downloadRepo.countDownloadedForManga(
-      widget.sourceId,
-      widget.mangaId,
-    );
-    if (mounted && n != _count) setState(() => _count = n);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_count <= 0) return const SizedBox.shrink();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final counts = ref.watch(_downloadedCountsProvider).valueOrNull;
+    final count =
+        counts?[DownloadRepository.encodeMangaKey(sourceId, mangaId)] ?? 0;
+    if (count <= 0) return const SizedBox.shrink();
     return Padding(
-      padding: widget.padding,
-      child: _DownloadedBadge(count: _count),
+      padding: padding,
+      child: _DownloadedBadge(count: count),
     );
   }
 }
@@ -1291,7 +1293,6 @@ class _MangaCard extends ConsumerWidget {
         displayMode == LibraryDisplayMode.compactGrid;
     final showTitleBelow =
         displayMode == LibraryDisplayMode.comfortableGrid;
-    final downloadRepo = ref.watch(downloadRepositoryProvider);
     final scheme = Theme.of(context).colorScheme;
     final showUnreadBadge = ref.watch(displayUnreadBadgeProvider);
     final showDownloadBadge = ref.watch(displayDownloadBadgeProvider);
@@ -1362,7 +1363,6 @@ class _MangaCard extends ConsumerWidget {
                       top: 4,
                       right: 4,
                       child: _DownloadCountBadge(
-                        downloadRepo: downloadRepo,
                         sourceId: manga.source,
                         mangaId: manga.id,
                       ),
@@ -1757,9 +1757,19 @@ class _ErrorView extends StatelessWidget {
 /// — the whole-library count with tabs on, or the per-category count with
 /// tabs off.
 class _LibraryTitle extends ConsumerWidget {
-  const _LibraryTitle({required this.selectedCategoryId});
+  const _LibraryTitle({
+    required this.selectedCategoryId,
+    required this.libraryStream,
+    required this.categoryStream,
+  });
 
   final int selectedCategoryId;
+
+  /// The screen's shared streams — the title must NOT open its own
+  /// `watchAll()` (a second live library query) or re-issue a categories
+  /// fetch per rebuild, as it used to.
+  final Stream<List<LibraryItem>> libraryStream;
+  final Stream<List<Category>> categoryStream;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1768,7 +1778,7 @@ class _LibraryTitle extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return StreamBuilder<List<LibraryItem>>(
-      stream: ref.watch(libraryRepositoryProvider).watchAll(),
+      stream: libraryStream,
       builder: (context, snap) {
         final items = snap.data ?? const <LibraryItem>[];
 
@@ -1783,8 +1793,8 @@ class _LibraryTitle extends ConsumerWidget {
         final count = showCount
             ? items.where((it) => it.inCategory(selectedCategoryId)).length
             : null;
-        return FutureBuilder<List<Category>>(
-          future: ref.watch(categoryRepositoryProvider).getAll(),
+        return StreamBuilder<List<Category>>(
+          stream: categoryStream,
           builder: (context, catSnap) {
             final categories = catSnap.data ?? const <Category>[];
             final match =
@@ -2328,7 +2338,13 @@ class _MostReadCarouselState extends State<_MostReadCarousel> {
   void _scheduleAdvance() {
     Future.delayed(_autoAdvance, () async {
       if (!mounted) return;
-      if (!_userTouching && _controller.hasClients) {
+      // Don't animate while the Library tab isn't visible — the home shell
+      // keeps all tabs alive in an IndexedStack, so without this gate the
+      // carousel kept scheduling frames + scroll physics forever while the
+      // user sat on Updates/History/Browse, preventing frame-idle.
+      final visible = TickerMode.valuesOf(context).enabled &&
+          (ModalRoute.of(context)?.isCurrent ?? true);
+      if (visible && !_userTouching && _controller.hasClients) {
         await _controller.animateToPage(
           _currentPage + 1,
           duration: const Duration(milliseconds: 450),

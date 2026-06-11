@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_brightness/screen_brightness.dart';
@@ -2340,6 +2341,11 @@ class _PagesViewState extends State<_PagesView> {
         child: ListView.builder(
           controller: _scrollController,
           itemCount: widget.count,
+          // Read-ahead: build/decode pages well before they scroll on
+          // screen (Mihon preloads 4 pages ahead; the Flutter default
+          // ~250px meant every page boundary fetched on arrival and
+          // stuttered).
+          scrollCacheExtent: const ScrollCacheExtent.viewport(3),
           // Webtoon side padding: inset each page horizontally by a
           // fraction of the viewport width so strips don't run edge-to-
           // edge on wide screens. 0 = no inset (the default).

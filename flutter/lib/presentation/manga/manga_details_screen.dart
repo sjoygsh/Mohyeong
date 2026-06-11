@@ -461,14 +461,15 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                       SliverToBoxAdapter(child: _NoChapters()),
                     ]
                   else
-                    SliverToBoxAdapter(
-                      child: _ChaptersSection(
-                        manga: manga,
-                        chapters: chapters,
-                        chapterRepo: chapterRepo,
-                        selectedIds: _selectedChapterIds,
-                        onToggleSelected: _toggleChapterSelected,
-                      ),
+                    // A real sliver (not shrinkWrap-in-a-box) so chapter
+                    // tiles build lazily — long manga used to mount every
+                    // row eagerly.
+                    _ChaptersSection(
+                      manga: manga,
+                      chapters: chapters,
+                      chapterRepo: chapterRepo,
+                      selectedIds: _selectedChapterIds,
+                      onToggleSelected: _toggleChapterSelected,
                     ),
                 ],
               ),
@@ -491,7 +492,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
 /// tri-state unread/bookmarked filters, then sort by the configured key
 /// in the configured direction. Chapter display mode (name vs number)
 /// is applied at the tile level.
-class _ChaptersSection extends ConsumerWidget {
+class _ChaptersSection extends ConsumerStatefulWidget {
   const _ChaptersSection({
     required this.manga,
     required this.chapters,
@@ -507,7 +508,87 @@ class _ChaptersSection extends ConsumerWidget {
   final ValueChanged<int> onToggleSelected;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ChaptersSection> createState() => _ChaptersSectionState();
+}
+
+class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
+  /// Downloaded chapter ids, resolved ONCE per manga with a single
+  /// downloads-tree walk (previously every tile ran its own filesystem
+  /// stat in initState). Null while loading.
+  Set<int>? _downloadedIds;
+
+  /// Live download events for this manga's chapters, keyed by chapter id —
+  /// ONE stream subscription for the whole section (previously every tile
+  /// subscribed to the global broadcast and filtered, so each per-page
+  /// progress event woke N listeners).
+  final Map<int, DownloadEvent> _live = {};
+  Set<int> _chapterIds = const {};
+  StreamSubscription<DownloadEvent>? _sub;
+
+  Manga get manga => widget.manga;
+  List<Chapter> get chapters => widget.chapters;
+  ChapterRepository get chapterRepo => widget.chapterRepo;
+  Set<int> get selectedIds => widget.selectedIds;
+  ValueChanged<int> get onToggleSelected => widget.onToggleSelected;
+
+  @override
+  void initState() {
+    super.initState();
+    _chapterIds = {for (final c in chapters) c.id};
+    _loadDownloadedIds();
+    _sub = ref.read(downloadRepositoryProvider).events.listen(_onEvent);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChaptersSection old) {
+    super.didUpdateWidget(old);
+    _chapterIds = {for (final c in chapters) c.id};
+    if (manga.id != old.manga.id) {
+      _downloadedIds = null;
+      _live.clear();
+      _loadDownloadedIds();
+    }
+  }
+
+  Future<void> _loadDownloadedIds() async {
+    final ids = await ref
+        .read(downloadRepositoryProvider)
+        .listDownloadedChapterIds(manga.source, manga.id);
+    if (mounted) setState(() => _downloadedIds = ids);
+  }
+
+  void _onEvent(DownloadEvent e) {
+    if (!_chapterIds.contains(e.chapterId) || !mounted) return;
+    setState(() {
+      if (e.state == DownloadState.completed) {
+        _live.remove(e.chapterId);
+        (_downloadedIds ??= <int>{}).add(e.chapterId);
+      } else if (e.state == DownloadState.deleted) {
+        _live.remove(e.chapterId);
+        _downloadedIds?.remove(e.chapterId);
+      } else {
+        _live[e.chapterId] = e;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  /// Effective download indicator state for one chapter: a live in-flight
+  /// event wins, else the resolved downloaded set decides.
+  (DownloadState, double?) _tileDownloadState(Chapter c) {
+    final live = _live[c.id];
+    if (live != null) return (live.state, live.progress);
+    final done = _downloadedIds?.contains(c.id) ?? false;
+    return (done ? DownloadState.completed : DownloadState.deleted, null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final excludedRepo = ref.watch(excludedScanlatorsRepositoryProvider);
     final downloadRepo = ref.watch(downloadRepositoryProvider);
     final groupByVolume = ref.watch(groupChaptersByVolumeProvider);
@@ -521,30 +602,16 @@ class _ChaptersSection extends ConsumerWidget {
       stream: excludedRepo.watchByMangaId(manga.id),
       builder: (context, excludedSnap) {
         final excluded = excludedSnap.data ?? const <String>{};
-        // Only probe the filesystem when the downloaded filter axis is
-        // actually engaged. Common path stays sync.
-        if (downloadedFilter == TriState.disabled) {
-          return _buildBody(context, excluded, null, downloadedFilter,
-              downloadRepo, groupByVolume, hideMissing);
-        }
-        // Cached: the chapter list rebuilds on every selection tap and
-        // download event; re-issuing the filesystem walk per rebuild made
-        // the screen lag whenever the downloaded filter was engaged.
-        return _DownloadedIdsLoader(
-          downloadRepo: downloadRepo,
-          sourceId: manga.source,
-          mangaId: manga.id,
-          builder: (context, ids) {
-            return _buildBody(
-              context,
-              excluded,
-              ids ?? const <int>{},
-              downloadedFilter,
-              downloadRepo,
-              groupByVolume,
-              hideMissing,
-            );
-          },
+        return _buildBody(
+          context,
+          excluded,
+          downloadedFilter == TriState.disabled
+              ? null
+              : (_downloadedIds ?? const <int>{}),
+          downloadedFilter,
+          downloadRepo,
+          groupByVolume,
+          hideMissing,
         );
       },
     );
@@ -627,10 +694,10 @@ class _ChaptersSection extends ConsumerWidget {
       rendered = sorted;
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _ChapterListHeader(
+    return SliverMainAxisGroup(
+      slivers: [
+        SliverToBoxAdapter(
+          child: _ChapterListHeader(
           visibleCount: sorted.length,
           totalCount: chapters.length,
           mangaForSheet: manga,
@@ -662,18 +729,19 @@ class _ChaptersSection extends ConsumerWidget {
               unawaited(downloadRepo.enqueue(manga, c));
             }
           },
+          ),
         ),
         if (sorted.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(
-              child: Text('No chapters match the current filter.'),
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(
+                child: Text('No chapters match the current filter.'),
+              ),
             ),
           )
         else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
+          SliverList.builder(
             itemCount: rendered.length,
             itemBuilder: (_, i) {
               final item = rendered[i];
@@ -684,6 +752,7 @@ class _ChaptersSection extends ConsumerWidget {
                 return _MissingCountRow(count: item.count);
               }
               final chapter = item as Chapter;
+              final (downloadState, progress) = _tileDownloadState(chapter);
               return _ChapterTile(
                 manga: manga,
                 chapter: chapter,
@@ -692,6 +761,8 @@ class _ChaptersSection extends ConsumerWidget {
                 isSelected: selectedIds.contains(chapter.id),
                 selecting: selectedIds.isNotEmpty,
                 onToggleSelected: onToggleSelected,
+                downloadState: downloadState,
+                downloadProgress: progress,
                 // Pass the full (unfiltered, unsorted) chapter list so the
                 // "Mark previous as read" affordance acts over every chapter
                 // earlier in reading order, not just the ones the current
@@ -1474,6 +1545,14 @@ class _CategorySelectorState extends State<_CategorySelector> {
 /// status / source name. Tablet-width handling is punted — Mihon's
 /// `MangaAndSourceTitlesLarge` centers the cover above the metadata at
 /// ≥720dp, but the phone-first small variant is what we render here.
+/// Source row lookup, cached per source id so header rebuilds (every
+/// selection tap / stream emission) don't re-issue the DB query the way the
+/// old inline-future FutureBuilder did.
+final _sourceByIdProvider =
+    FutureProvider.autoDispose.family<Source?, int>((ref, id) {
+  return ref.watch(sourceRepositoryProvider).findById(id);
+});
+
 class _MangaInfoBox extends ConsumerWidget {
   const _MangaInfoBox({required this.manga});
 
@@ -1481,7 +1560,6 @@ class _MangaInfoBox extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sourceRepo = ref.watch(sourceRepositoryProvider);
     return Stack(
       children: [
         // Blurred backdrop. Mihon uses the cover image with a 4dp blur
@@ -1536,12 +1614,11 @@ class _MangaInfoBox extends ConsumerWidget {
                       ),
                     ],
                     const SizedBox(height: 6),
-                    FutureBuilder<Source?>(
-                      future: sourceRepo.findById(manga.source),
-                      builder: (context, snap) {
-                        final src = snap.data;
-                        return _StatusRow(status: manga.status, source: src);
-                      },
+                    _StatusRow(
+                      status: manga.status,
+                      source: ref
+                          .watch(_sourceByIdProvider(manga.source))
+                          .valueOrNull,
                     ),
                   ],
                 ),
@@ -2203,6 +2280,8 @@ class _ChapterTile extends ConsumerStatefulWidget {
     required this.selecting,
     required this.onToggleSelected,
     required this.allChapters,
+    required this.downloadState,
+    required this.downloadProgress,
   });
 
   final Manga manga;
@@ -2214,46 +2293,18 @@ class _ChapterTile extends ConsumerStatefulWidget {
   final ValueChanged<int> onToggleSelected;
   final List<Chapter> allChapters;
 
+  /// Download indicator state, resolved by the section (one downloads walk
+  /// + one event subscription for the whole list) — tiles do no I/O.
+  final DownloadState downloadState;
+  final double? downloadProgress;
+
   @override
   ConsumerState<_ChapterTile> createState() => _ChapterTileState();
 }
 
 class _ChapterTileState extends ConsumerState<_ChapterTile> {
-  late DownloadState _downloadState = DownloadState.deleted;
-  double? _progress;
-  StreamSubscription<DownloadEvent>? _sub;
-
-  @override
-  void initState() {
-    super.initState();
-    _refreshDownloaded();
-    _sub = widget.downloadRepo.events.listen((e) {
-      if (e.chapterId != widget.chapter.id) return;
-      if (!mounted) return;
-      setState(() {
-        _downloadState = e.state;
-        _progress = e.progress;
-      });
-    });
-  }
-
-  Future<void> _refreshDownloaded() async {
-    final done = await widget.downloadRepo.isDownloaded(
-      widget.manga.source,
-      widget.manga.id,
-      widget.chapter.id,
-    );
-    if (!mounted) return;
-    setState(() {
-      _downloadState = done ? DownloadState.completed : DownloadState.deleted;
-    });
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
-  }
+  DownloadState get _downloadState => widget.downloadState;
+  double? get _progress => widget.downloadProgress;
 
   @override
   Widget build(BuildContext context) {

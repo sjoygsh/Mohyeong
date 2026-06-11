@@ -15,6 +15,7 @@ library;
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -108,15 +109,15 @@ Future<Uint8List?> _readArchiveBytes(String locator) async {
   return file.readAsBytes();
 }
 
-/// Decodes [locator] (or returns the cached map) into entry-name → bytes for
-/// every image entry, skipping directories and non-image files.
-Future<Map<String, Uint8List>> _loadArchive(String locator) async {
-  final cached = _cache.get(locator);
-  if (cached != null) return cached;
+/// In-flight decodes, so two pages of the same archive requested together
+/// share one isolate run instead of decompressing the file twice.
+final Map<String, Future<Map<String, Uint8List>>> _inFlight = {};
 
-  final bytes = await _readArchiveBytes(locator);
-  if (bytes == null) return const {};
-
+/// ZIP decode + image-entry decompression. Top-level so [Isolate.run] can
+/// invoke it — running this on the UI isolate froze scrolling for the
+/// duration of a whole-chapter unzip (a multi-hundred-ms stall on a
+/// multi-MB CBZ).
+Map<String, Uint8List> _decodeArchiveEntries(Uint8List bytes) {
   final archive = ZipDecoder().decodeBytes(bytes);
   final entries = <String, Uint8List>{};
   for (final file in archive) {
@@ -128,8 +129,32 @@ Future<Map<String, Uint8List>> _loadArchive(String locator) async {
       entries[file.name] = Uint8List.fromList(content);
     }
   }
-  _cache.put(locator, entries);
   return entries;
+}
+
+/// Decodes [locator] (or returns the cached map) into entry-name → bytes for
+/// every image entry, skipping directories and non-image files. The
+/// decompression itself runs in a background isolate.
+Future<Map<String, Uint8List>> _loadArchive(String locator) async {
+  final cached = _cache.get(locator);
+  if (cached != null) return cached;
+
+  final pending = _inFlight[locator];
+  if (pending != null) return pending;
+
+  final future = () async {
+    final bytes = await _readArchiveBytes(locator);
+    if (bytes == null) return const <String, Uint8List>{};
+    final entries = await Isolate.run(() => _decodeArchiveEntries(bytes));
+    _cache.put(locator, entries);
+    return entries;
+  }();
+  _inFlight[locator] = future;
+  try {
+    return await future;
+  } finally {
+    _inFlight.remove(locator);
+  }
 }
 
 /// The image entry names inside an archive chapter, unsorted (the caller

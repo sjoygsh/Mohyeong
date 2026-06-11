@@ -196,6 +196,34 @@ class DownloadRepository {
     return out;
   }
 
+  /// Downloaded-chapter counts for EVERY manga, from one walk of the
+  /// downloads tree (key = [encodeMangaKey]). Feeds the library's
+  /// downloaded badges — the per-card `countDownloadedForManga` probe
+  /// re-walked a directory every time a card scrolled into view.
+  Future<Map<int, int>> downloadedCountsByManga() async {
+    final root = await _root();
+    if (!await root.exists()) return const <int, int>{};
+    final out = <int, int>{};
+    await for (final sourceDir in root.list()) {
+      if (sourceDir is! Directory) continue;
+      final sourceId = int.tryParse(p.basename(sourceDir.path));
+      if (sourceId == null) continue;
+      await for (final mangaDir in sourceDir.list()) {
+        if (mangaDir is! Directory) continue;
+        final mangaId = int.tryParse(p.basename(mangaDir.path));
+        if (mangaId == null) continue;
+        var count = 0;
+        await for (final chapterDir in mangaDir.list()) {
+          if (chapterDir is! Directory) continue;
+          final marker = File(p.join(chapterDir.path, '.done'));
+          if (await marker.exists()) count++;
+        }
+        if (count > 0) out[encodeMangaKey(sourceId, mangaId)] = count;
+      }
+    }
+    return out;
+  }
+
   /// Convenience encoding shared with [listMangaWithAnyDownload]. Pure
   /// helper — exposed so callers can probe the returned set without
   /// duplicating the bit shuffle.
