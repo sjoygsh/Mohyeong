@@ -408,6 +408,7 @@ class _MigrateSourceMangaListScreenState
                               ),
                             )
                           : SourceImage(
+                              cacheWidth: 240,
                               url: m.thumbnailUrl!,
                               errorWidget: (_, _) => Container(
                                 color: Theme.of(context)

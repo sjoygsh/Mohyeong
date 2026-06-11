@@ -477,6 +477,7 @@ class _MangaCard extends ConsumerWidget {
       child: (url == null || url.isEmpty)
           ? Container(color: placeholder)
           : SourceImage(
+              cacheWidth: 480,
               url: url,
               fit: BoxFit.cover,
               placeholder: (_) => Container(color: placeholder),

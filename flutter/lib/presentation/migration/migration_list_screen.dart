@@ -391,6 +391,7 @@ class _ItemTile extends StatelessWidget {
                   child: const Icon(Icons.menu_book, size: 20),
                 )
               : SourceImage(
+                  cacheWidth: 360,
                   url: item.manga.thumbnailUrl!,
                   errorWidget: (_, _) => Container(
                     color:

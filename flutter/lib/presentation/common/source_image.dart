@@ -33,10 +33,19 @@ class SourceImage extends StatelessWidget {
     this.cropBorders = false,
     this.rotateToFit = false,
     this.rotateInvert = false,
+    this.cacheWidth,
   });
 
   final String url;
   final BoxFit fit;
+
+  /// Decode-target width in PHYSICAL pixels. Covers and thumbnails should
+  /// set this (≈ rendered logical width × devicePixelRatio) so a 1000px
+  /// cover isn't decoded and cached at full resolution for a 130dp grid
+  /// cell — full-res decodes across a scrolling grid thrash the image
+  /// cache and are a major jank source. Leave null for reader pages, which
+  /// legitimately need full resolution for zoom.
+  final int? cacheWidth;
   final Map<String, String>? headers;
   final WidgetBuilder? placeholder;
   final Widget Function(BuildContext, Object error)? errorWidget;
@@ -127,7 +136,9 @@ class SourceImage extends StatelessWidget {
     }
     if (_isArchive) {
       return Image(
-        image: _ArchiveImageProvider(url),
+        image: cacheWidth == null
+            ? _ArchiveImageProvider(url)
+            : ResizeImage(_ArchiveImageProvider(url), width: cacheWidth),
         fit: fit,
         frameBuilder: placeholder == null
             ? null
@@ -141,7 +152,9 @@ class SourceImage extends StatelessWidget {
     }
     if (_isContent) {
       return Image(
-        image: _SafImageProvider(url),
+        image: cacheWidth == null
+            ? _SafImageProvider(url)
+            : ResizeImage(_SafImageProvider(url), width: cacheWidth),
         fit: fit,
         frameBuilder: placeholder == null
             ? null
@@ -157,6 +170,7 @@ class SourceImage extends StatelessWidget {
       return Image.file(
         File(_localPath),
         fit: fit,
+        cacheWidth: cacheWidth,
         errorBuilder: (ctx, error, _) =>
             errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
       );
@@ -165,6 +179,7 @@ class SourceImage extends StatelessWidget {
       imageUrl: url,
       fit: fit,
       httpHeaders: headers,
+      memCacheWidth: cacheWidth,
       placeholder: placeholder == null
           ? null
           : (ctx, _) => placeholder!(ctx),

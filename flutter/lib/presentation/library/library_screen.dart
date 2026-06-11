@@ -290,8 +290,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       final manga = await mangaRepo.getById(id);
       if (manga == null) continue;
       final chapters = await chapterRepo.getByMangaId(id);
+      // Reading order = descending sourceOrder (0 == newest): "Next N
+      // chapters" downloads the N OLDEST unread, not the N latest.
       final unread = chapters.where((c) => !c.read).toList()
-        ..sort((a, b) => a.sourceOrder.compareTo(b.sourceOrder));
+        ..sort((a, b) => b.sourceOrder.compareTo(a.sourceOrder));
       final take = count == null ? unread : unread.take(count).toList();
       for (final c in take) {
         await downloadRepo.enqueue(manga, c);
@@ -729,8 +731,11 @@ Future<void> _resumeNextUnread(
   final chapters = await ref.read(chapterRepositoryProvider).getByMangaId(
         mangaId,
       );
+  // sourceOrder 0 == NEWEST, so reading order is descending sourceOrder —
+  // resume must open the OLDEST unread chapter (matches the details
+  // screen's _pickNextUnread), not the latest release.
   final unread = chapters.where((c) => !c.read).toList()
-    ..sort((a, b) => a.sourceOrder.compareTo(b.sourceOrder));
+    ..sort((a, b) => b.sourceOrder.compareTo(a.sourceOrder));
   if (unread.isEmpty) {
     messenger.showSnackBar(
       const SnackBar(content: Text('No unread chapters left.')),
@@ -1666,6 +1671,7 @@ class _Cover extends ConsumerWidget {
       );
     }
     return SourceImage(
+      cacheWidth: 480,
       url: url,
       fit: BoxFit.cover,
       placeholder: (_) => Container(color: placeholderColor),
@@ -2431,6 +2437,7 @@ class _MostReadBannerCard extends ConsumerWidget {
             children: [
               if (coverUrl != null && coverUrl.isNotEmpty)
                 SourceImage(
+                  cacheWidth: 1080,
                   url: coverUrl,
                   fit: BoxFit.cover,
                   errorWidget: (_, _) => ColoredBox(

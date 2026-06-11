@@ -392,6 +392,7 @@ class _ResultCard extends ConsumerWidget {
             child: (url == null || url.isEmpty)
                 ? Container(color: placeholder)
                 : SourceImage(
+                    cacheWidth: 360,
                     url: url,
                     fit: BoxFit.cover,
                     placeholder: (_) => Container(color: placeholder),

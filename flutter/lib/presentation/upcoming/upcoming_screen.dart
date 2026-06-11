@@ -371,6 +371,7 @@ class _UpcomingTile extends ConsumerWidget {
           child: url == null || url.isEmpty
               ? fallback
               : SourceImage(
+                  cacheWidth: 240,
                   url: url,
                   fit: BoxFit.cover,
                   placeholder: (_) => fallback,

@@ -118,6 +118,7 @@ class _LinkedRow extends StatelessWidget {
           child: linked.thumbnailUrl == null || linked.thumbnailUrl!.isEmpty
               ? Container(color: placeholderColor)
               : SourceImage(
+                  cacheWidth: 240,
                   url: linked.thumbnailUrl!,
                   fit: BoxFit.cover,
                   placeholder: (_) => Container(color: placeholderColor),

@@ -592,6 +592,7 @@ class _Thumb extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(4),
         child: SourceImage(
+          cacheWidth: 180,
           url: url!,
           fit: BoxFit.cover,
           placeholder: (_) => fallback,

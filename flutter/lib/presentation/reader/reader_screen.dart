@@ -422,6 +422,12 @@ Future<_ReaderData?> _loadReaderData(
         .where((c) => c.id == chapterId || downloadedIds.contains(c.id))
         .toList(growable: false);
   }
+  // getByMangaId returns newest-first (sourceOrder 0 == newest). The reader
+  // navigates in READING order — Kotlin sorts with getChapterSort(manga,
+  // sortDescending = false) before indexing — so flip to oldest-first.
+  // Without this, prev/next chapter (and the boundary fall-through from
+  // page turns / volume keys) walk backwards.
+  siblings = siblings.reversed.toList(growable: false);
   Chapter? target;
   for (final c in siblings) {
     if (c.id == chapterId) {

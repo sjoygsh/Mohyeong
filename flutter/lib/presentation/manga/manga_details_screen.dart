@@ -1580,6 +1580,7 @@ class _Backdrop extends ConsumerWidget {
           child: Opacity(
             opacity: 0.25,
             child: SourceImage(
+              cacheWidth: 480,
               url: url,
               fit: BoxFit.cover,
               placeholder: (_) => Container(color: bg),
@@ -1616,6 +1617,7 @@ class _CoverImage extends ConsumerWidget {
       return Container(color: placeholder);
     }
     return SourceImage(
+      cacheWidth: 480,
       url: resolved,
       fit: BoxFit.cover,
       placeholder: (_) => Container(color: placeholder),
