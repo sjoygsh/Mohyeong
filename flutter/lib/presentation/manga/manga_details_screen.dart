@@ -1652,16 +1652,21 @@ class _Backdrop extends ConsumerWidget {
         // blurs every layer painted behind it — including the chapter list as
         // it scrolls up under this header, which washed the list out.
         // [ImageFiltered] only filters its own child, so the bleed is gone.
-        ImageFiltered(
-          imageFilter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-          child: Opacity(
-            opacity: 0.25,
-            child: SourceImage(
-              cacheWidth: 480,
-              url: url,
-              fit: BoxFit.cover,
-              placeholder: (_) => Container(color: bg),
-              errorWidget: (_, _) => Container(color: bg),
+        // RepaintBoundary so the blur rasterizes once into a cached layer —
+        // without it the 6px gaussian re-ran every frame of the route push
+        // animation (and any repaint above it), janking the screen open.
+        RepaintBoundary(
+          child: ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+            child: Opacity(
+              opacity: 0.25,
+              child: SourceImage(
+                cacheWidth: 480,
+                url: url,
+                fit: BoxFit.cover,
+                placeholder: (_) => Container(color: bg),
+                errorWidget: (_, _) => Container(color: bg),
+              ),
             ),
           ),
         ),

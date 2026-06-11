@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:collection';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -42,9 +44,27 @@ class CropBordersImageProvider
     );
   }
 
+  /// Content-rect memo, keyed by the inner provider (value equality for
+  /// file/network backends). Without it, an ImageCache eviction re-ran the
+  /// whole border scan on re-display. Null value = "scanned, nothing to
+  /// trim". Small LRU — rects are tiny, the cap just bounds growth.
+  static final LinkedHashMap<ImageProvider, ui.Rect?> _rectCache =
+      LinkedHashMap<ImageProvider, ui.Rect?>();
+  static const int _rectCacheCap = 256;
+
   Future<ImageInfo> _resolveAndCrop(CropBordersImageProvider key) async {
     final original = await _resolveInner(key.inner);
-    final rect = await _findContentRect(original);
+    final ui.Rect? rect;
+    if (_rectCache.containsKey(key.inner)) {
+      rect = _rectCache.remove(key.inner);
+      _rectCache[key.inner] = rect; // refresh LRU position
+    } else {
+      rect = await _findContentRect(original);
+      _rectCache[key.inner] = rect;
+      while (_rectCache.length > _rectCacheCap) {
+        _rectCache.remove(_rectCache.keys.first);
+      }
+    }
     if (rect == null) {
       return ImageInfo(image: original);
     }
@@ -72,14 +92,45 @@ class CropBordersImageProvider
     return completer.future;
   }
 
-  /// Returns the non-border content rectangle in image pixels, or `null` when
-  /// nothing should be trimmed (no uniform margin, or a degenerate result).
+  /// Returns the non-border content rectangle in FULL-RES image pixels, or
+  /// `null` when nothing should be trimmed (no uniform margin, or a
+  /// degenerate result).
+  ///
+  /// The scan runs on a ≤256px downsample: border detection doesn't need
+  /// full resolution, and the full-res `toByteData` readback (~8 MB for a
+  /// typical page) plus the pixel loops used to land on the UI isolate at
+  /// exactly the moment the user swiped to the page.
   static Future<ui.Rect?> _findContentRect(ui.Image image) async {
-    final w = image.width;
-    final h = image.height;
-    if (w < 8 || h < 8) return null;
+    final fullW = image.width;
+    final fullH = image.height;
+    if (fullW < 8 || fullH < 8) return null;
 
-    final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    const maxDim = 256;
+    final downscale =
+        (maxDim / math.max(fullW, fullH)).clamp(0.0, 1.0).toDouble();
+    ui.Image sample = image;
+    var owned = false;
+    if (downscale < 1.0) {
+      final sw = math.max(8, (fullW * downscale).round());
+      final sh = math.max(8, (fullH * downscale).round());
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+      canvas.drawImageRect(
+        image,
+        ui.Rect.fromLTWH(0, 0, fullW.toDouble(), fullH.toDouble()),
+        ui.Rect.fromLTWH(0, 0, sw.toDouble(), sh.toDouble()),
+        ui.Paint()..filterQuality = ui.FilterQuality.low,
+      );
+      final picture = recorder.endRecording();
+      sample = await picture.toImage(sw, sh);
+      picture.dispose();
+      owned = true;
+    }
+
+    final w = sample.width;
+    final h = sample.height;
+    final data = await sample.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (owned) sample.dispose();
     if (data == null) return null;
     final px = data.buffer.asUint8List();
 
@@ -154,11 +205,15 @@ class CropBordersImageProvider
     if (right - left < w ~/ 8 || bottom - top < h ~/ 8) {
       return null;
     }
+    // Scale the sample-space rect back to full-res pixels, biased outward
+    // (floor/ceil) so the crop never eats into content at the edges.
+    final invX = fullW / w;
+    final invY = fullH / h;
     return ui.Rect.fromLTRB(
-      left.toDouble(),
-      top.toDouble(),
-      (right + 1).toDouble(),
-      (bottom + 1).toDouble(),
+      (left * invX).floorToDouble().clamp(0, fullW.toDouble()),
+      (top * invY).floorToDouble().clamp(0, fullH.toDouble()),
+      ((right + 1) * invX).ceilToDouble().clamp(0, fullW.toDouble()),
+      ((bottom + 1) * invY).ceilToDouble().clamp(0, fullH.toDouble()),
     );
   }
 

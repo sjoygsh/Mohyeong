@@ -31,6 +31,7 @@ import '../../domain/manga/model/tri_state.dart';
 import '../../domain/reader/model/reading_mode.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_chapter.dart';
+import '../common/crop_borders_image.dart';
 import '../common/source_image.dart';
 import '../common/webview_screen.dart';
 import 'reader_settings_sheet.dart';
@@ -70,6 +71,36 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// time spent reading on top via the `upsertHistory` ON CONFLICT clause.
   int? _historyChapterId;
   DateTime? _sessionStartedAt;
+
+  // Debounced reading-progress persistence. Writing `last_page_read` on
+  // EVERY swipe invalidated drift query streams per page turn, which
+  // rebuilt the details screen sitting under the reader plus the
+  // library/updates/history tabs kept alive in the home IndexedStack —
+  // a rebuild storm that made paging visibly stutter. Progress is still
+  // persisted, just coalesced; flushed on chapter change and dispose.
+  Timer? _progressTimer;
+  int? _pendingProgressChapterId;
+  int _pendingProgressPage = 0;
+
+  void _queueProgress(int chapterId, int page) {
+    _pendingProgressChapterId = chapterId;
+    _pendingProgressPage = page;
+    _progressTimer?.cancel();
+    _progressTimer = Timer(const Duration(milliseconds: 600), _flushProgress);
+  }
+
+  void _flushProgress() {
+    _progressTimer?.cancel();
+    _progressTimer = null;
+    final chapterId = _pendingProgressChapterId;
+    if (chapterId == null) return;
+    _pendingProgressChapterId = null;
+    unawaited(
+      ref
+          .read(chapterRepositoryProvider)
+          .setLastPageRead(chapterId, _pendingProgressPage),
+    );
+  }
 
   /// Resolved once per session from the manga's source (see [_loadReaderData]).
   /// While true the reader persists nothing — no history, no progress, no
@@ -128,7 +159,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   void dispose() {
     // Bank the final read-time slice for the chapter on screen before tearing
-    // the reader down.
+    // the reader down, and persist any coalesced page progress.
+    _flushProgress();
     _flushReadTime();
     WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -174,6 +206,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _reload() {
+    // Persist pending progress before the loaded chapter switches out from
+    // under the debounce.
+    _flushProgress();
     final chapterRepo = ref.read(chapterRepositoryProvider);
     final mangaRepo = ref.read(mangaRepositoryProvider);
     final extRepo = ref.read(extensionRepositoryProvider);
@@ -330,13 +365,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               // Skip persisting progress in incognito (Mihon
               // `updateChapterProgress` is gated on `!incognitoMode`).
               if (_incognito) return;
-              // Fire-and-forget: avoid blocking the pager. Errors here are
-              // not user-facing — they only impact sync resume.
-              unawaited(
-                ref
-                    .read(chapterRepositoryProvider)
-                    .setLastPageRead(data.chapter.id, page),
-              );
+              _queueProgress(data.chapter.id, page);
             },
             onReachedEnd: () {
               // Auto-mark on reaching the last page. Silent (no snackbar) and
@@ -699,6 +728,10 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   /// setState — this doesn't affect what's currently painted.
   void _onPagesResolved(List<_PageRef> refs) {
     _pageRefs = refs;
+    // Warm the pages after the resume point once layout settles.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _precacheAhead(_currentPage);
+    });
   }
 
   /// Resolve the current page to PNG bytes through the same provider the
@@ -913,12 +946,32 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     }
   }
 
+  /// Pre-decode the next two pages so the swipe lands on an already-decoded
+  /// frame (Mihon's HttpPageLoader preloads ahead; PageView's implicit ±1
+  /// only *builds* the neighbour — the decode itself still happened at
+  /// swipe time, which is exactly when it stutters). The provider chain
+  /// matches the displayed one (crop included) so the cache key is shared.
+  void _precacheAhead(int page) {
+    if (!widget.mode.isPaged || !mounted) return;
+    final refs = _pageRefs;
+    if (refs == null) return;
+    final crop = ref.read(readerCropBordersProvider);
+    for (var i = page + 1; i <= page + 2 && i < refs.length; i++) {
+      final r = refs[i];
+      ImageProvider provider =
+          SourceImage.providerFor(r.url, headers: r.headers);
+      if (crop) provider = CropBordersImageProvider(provider);
+      unawaited(precacheImage(provider, context));
+    }
+  }
+
   void _onPageChanged(int page) {
     if (page != _currentPage) {
       setState(() => _currentPage = page);
       _maybeFlash();
     }
     widget.onPageChanged(page);
+    _precacheAhead(page);
     _maybeDownloadAhead(page);
     // Reaching the final page marks the chapter read (Mihon parity). Guarded
     // so paging back and forth past the end doesn't re-fire the tracker push.
