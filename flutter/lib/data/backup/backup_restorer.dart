@@ -7,6 +7,8 @@
 /// aren't mentioned in the backup are left alone.
 library;
 
+import 'dart:convert';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -103,6 +105,7 @@ class BackupRestorer {
     }
 
     final prefCount = await _restorePreferences(backup.backupPreferences);
+    await _restoreSourcePreferences(backup.backupSourcePreferences);
     final linkCount = await _restoreLinks(backup.backupMangaLinks);
 
     return BackupRestoreResult(
@@ -158,6 +161,31 @@ class BackupRestorer {
       if (ok) count += 1;
     }
     return count;
+  }
+
+  /// Writes each backed-up per-source settings map back to its
+  /// `source_prefs_<sourceKey>` JSON blob. The live runtimes pick the
+  /// values up on next load (sources aren't usually running mid-restore).
+  /// Kotlin-made backups key these by APK package name, which won't match
+  /// a JS extension slug — those entries are restored verbatim and simply
+  /// never read, which is the same best-effort Kotlin applies in reverse.
+  Future<void> _restoreSourcePreferences(
+    List<BackupSourcePreferences> sourcePrefs,
+  ) async {
+    if (sourcePrefs.isEmpty) return;
+    final store = await SharedPreferences.getInstance();
+    for (final sp in sourcePrefs) {
+      final map = <String, String>{
+        for (final p in sp.prefs)
+          if (p.value is StringPreferenceValue)
+            p.key: (p.value as StringPreferenceValue).value,
+      };
+      if (map.isEmpty) continue;
+      await store.setString(
+        'source_prefs_${sp.sourceKey}',
+        jsonEncode(map),
+      );
+    }
   }
 
   /// Restore categories, returning a list of local IDs in the same order

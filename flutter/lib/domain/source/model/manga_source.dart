@@ -45,6 +45,12 @@ abstract class MangaSource {
   /// through an optional `filters()` method; the default is "none".
   Future<List<SourceFilterDef>> getFilters() async => const [];
 
+  /// User-configurable per-source settings (Kotlin `ConfigurableSource`'s
+  /// preference screen). Same def shape as [getFilters]; JS extensions
+  /// provide them through an optional `preferences()` method and read the
+  /// stored picks back via the injected `__sourcePrefs` global.
+  Future<List<SourceFilterDef>> getPreferences() async => const [];
+
   /// Fills in the optional fields on a [SourceManga] returned by listings.
   Future<SourceManga> fetchMangaDetails(SourceManga manga);
 

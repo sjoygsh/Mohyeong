@@ -101,6 +101,14 @@ class JsRuntime {
     return jsonDecode(str) as Map<String, dynamic>;
   }
 
+  /// Pushes the user's per-source settings into the runtime as the
+  /// `__sourcePrefs` global (values are all strings). Called after load and
+  /// whenever the user changes a setting, so extensions see updates without
+  /// a reload.
+  void setSourcePrefs(Map<String, String> prefs) {
+    _runtime.evaluate('__sourcePrefs = ${jsonEncode(prefs)};');
+  }
+
   /// Whether the extension defines [method] — used for optional contract
   /// methods (e.g. `chapterUrl`) where absence falls back to a Dart default.
   bool hasMethod(String method) {
@@ -154,6 +162,10 @@ class JsRuntimeException implements Exception {
 /// expected shape.
 const String _preamble = r'''
 var __extension = null;
+// Per-source user settings (optional `preferences()` contract): the host
+// injects the stored picks here before/after method calls; extensions read
+// e.g. `__sourcePrefs.data_saver === 'true'`.
+var __sourcePrefs = {};
 var http = {
   get: function(url, opts) {
     var payload = JSON.stringify(Object.assign({method:'GET', url:url}, opts||{}));

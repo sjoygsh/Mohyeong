@@ -125,6 +125,21 @@ class JsSource extends MangaSource {
   }
 
   @override
+  Future<List<SourceFilterDef>> getPreferences() async {
+    // Optional contract method, like `chapterUrl`/`filters`. The same def
+    // shape as filters: {key, title, type, options, default}.
+    if (!runtime.hasMethod('preferences')) return const [];
+    final result = await runtime.invoke('preferences', const []);
+    return (result as List<dynamic>)
+        .map((e) => SourceFilterDef.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  /// Injects the user's stored settings into the live runtime.
+  void setSourcePrefs(Map<String, String> prefs) =>
+      runtime.setSourcePrefs(prefs);
+
+  @override
   Future<String?> getChapterUrl(SourceChapter chapter) async {
     // Optional contract method (Kotlin sources override
     // `HttpSource.getChapterUrl` the same way); fall back to the

@@ -16,6 +16,7 @@ import '../home/home_screen.dart';
 import 'global_search_screen.dart';
 import 'migrate_source_screen.dart';
 import 'source_browse_screen.dart';
+import 'source_preferences_screen.dart';
 import 'sources_filter_screen.dart';
 
 /// Browse hosts three sub-tabs: Sources (installed sources you can browse),
@@ -606,7 +607,7 @@ Future<void> _runInstall(
 /// Single row in the Sources list. Trailing pin icon flips
 /// `pinned_catalogues` membership; pinned rows render above the rest
 /// under a "Pinned" header.
-class _SourceTile extends StatelessWidget {
+class _SourceTile extends ConsumerStatefulWidget {
   const _SourceTile({
     required this.extension,
     required this.pinned,
@@ -618,20 +619,70 @@ class _SourceTile extends StatelessWidget {
   final SourcePreferences? sourcePrefs;
 
   @override
+  ConsumerState<_SourceTile> createState() => _SourceTileState();
+}
+
+class _SourceTileState extends ConsumerState<_SourceTile> {
+  /// Whether this extension declares the optional `preferences()` contract
+  /// — gates the per-source settings gear (Kotlin only shows the gear for
+  /// ConfigurableSource implementations too).
+  bool _hasPrefs = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _probePrefs();
+  }
+
+  Future<void> _probePrefs() async {
+    try {
+      final source = await ref
+          .read(extensionRepositoryProvider)
+          .getSource(widget.extension.id);
+      final defs = await source.getPreferences();
+      if (mounted && defs.isNotEmpty) setState(() => _hasPrefs = true);
+    } catch (_) {
+      // Broken extension — no gear.
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final extension = widget.extension;
+    final pinned = widget.pinned;
+    final sourcePrefs = widget.sourcePrefs;
     return ListTile(
       title: Text(extension.name),
       subtitle: Text(extension.lang.toUpperCase()),
-      trailing: sourcePrefs == null
-          ? null
-          : IconButton(
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_hasPrefs)
+            IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'Source settings',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => SourcePreferencesScreen(
+                      sourceId: extension.id,
+                      sourceName: extension.name,
+                    ),
+                  ),
+                );
+              },
+            ),
+          if (sourcePrefs != null)
+            IconButton(
               icon: Icon(
                 pinned ? Icons.push_pin : Icons.push_pin_outlined,
                 color: pinned ? Theme.of(context).colorScheme.primary : null,
               ),
               tooltip: pinned ? 'Unpin' : 'Pin to top',
-              onPressed: () => sourcePrefs!.toggleSourcePin(extension.id),
+              onPressed: () => sourcePrefs.toggleSourcePin(extension.id),
             ),
+        ],
+      ),
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute<void>(

@@ -10,6 +10,8 @@
 /// non-interactive export.
 library;
 
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -212,7 +214,7 @@ class BackupCreator {
       backupCategories: backupCategories,
       backupSources: backupSources,
       backupPreferences: await _collectAppPreferences(),
-      backupSourcePreferences: const [],
+      backupSourcePreferences: await _collectSourcePreferences(),
       backupExtensionRepo: backupRepos,
       backupMangaLinks: backupLinks,
     );
@@ -232,10 +234,46 @@ class BackupCreator {
     final keys = prefs.getKeys();
     final out = <BackupPreference>[];
     for (final key in keys) {
+      // Per-source extension settings ride in backupSourcePreferences
+      // (Kotlin parity) — keep them out of the app-level dump so they
+      // aren't stored twice.
+      if (key.startsWith('source_prefs_')) continue;
       final raw = prefs.get(key);
       final value = _wrapPreferenceValue(raw);
       if (value == null) continue;
       out.add(BackupPreference(key: key, value: value));
+    }
+    return out;
+  }
+
+  /// Per-source extension settings (the JSON maps stored under
+  /// `source_prefs_<slug>`) as Kotlin-shaped BackupSourcePreferences:
+  /// sourceKey = the extension slug, prefs = string entries. Cross-app
+  /// compatibility with Kotlin builds is best-effort only — Kotlin keys its
+  /// stores by APK package name, which doesn't exist in the JS model.
+  Future<List<BackupSourcePreferences>> _collectSourcePreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final out = <BackupSourcePreferences>[];
+    for (final key in prefs.getKeys()) {
+      if (!key.startsWith('source_prefs_')) continue;
+      final raw = prefs.getString(key);
+      if (raw == null || raw.isEmpty) continue;
+      Map<String, dynamic> decoded;
+      try {
+        decoded = jsonDecode(raw) as Map<String, dynamic>;
+      } catch (_) {
+        continue;
+      }
+      out.add(BackupSourcePreferences(
+        sourceKey: key.substring('source_prefs_'.length),
+        prefs: [
+          for (final e in decoded.entries)
+            BackupPreference(
+              key: e.key,
+              value: StringPreferenceValue(e.value.toString()),
+            ),
+        ],
+      ));
     }
     return out;
   }

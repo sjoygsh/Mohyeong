@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/source/model/manga_source.dart';
 import '../network/app_http_client.dart';
@@ -63,8 +65,44 @@ class ExtensionRepository {
     }
     final source = await _storage.readSource(slug);
     final js = await JsSource.load(source, dio: _http.dio);
+    // Inject the user's per-source settings (optional `preferences()`
+    // contract) so the extension sees its stored `__sourcePrefs` from the
+    // first call.
+    final stored = await getSourcePrefs(slug);
+    if (stored.isNotEmpty) js.setSourcePrefs(stored);
     _loaded[slug] = js;
     return js;
+  }
+
+  /// SharedPreferences key for [slug]'s per-source settings — a JSON map of
+  /// only the user's NON-default picks. Mirrors Kotlin's per-source
+  /// preference stores (ConfigurableSource); carried in backups as
+  /// `backupSourcePreferences` keyed by this slug.
+  static String sourcePrefsKey(String slug) => 'source_prefs_$slug';
+
+  Future<Map<String, String>> getSourcePrefs(String slug) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(sourcePrefsKey(slug));
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      return (jsonDecode(raw) as Map<String, dynamic>)
+          .map((k, v) => MapEntry(k, v.toString()));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Persists [values] and re-injects them into the live runtime (when the
+  /// source is loaded) so changes apply without an app restart.
+  Future<void> setSourcePrefs(String slug, Map<String, String> values) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (values.isEmpty) {
+      await prefs.remove(sourcePrefsKey(slug));
+    } else {
+      await prefs.setString(sourcePrefsKey(slug), jsonEncode(values));
+    }
+    final loaded = _loaded[slug];
+    if (loaded is JsSource) loaded.setSourcePrefs(values);
   }
 
   /// Maps an incoming source id to the on-disk extension slug. A slug that
