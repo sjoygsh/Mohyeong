@@ -622,27 +622,35 @@ class _SourceTile extends ConsumerStatefulWidget {
   ConsumerState<_SourceTile> createState() => _SourceTileState();
 }
 
+/// Session cache: extension id → declares `preferences()`. Probing boots
+/// the extension's JS runtime, so each id is probed at most once per run
+/// instead of once per tile build (the Sources tab rebuilds often).
+final Map<String, bool> _prefsCapabilityCache = {};
+
 class _SourceTileState extends ConsumerState<_SourceTile> {
   /// Whether this extension declares the optional `preferences()` contract
   /// — gates the per-source settings gear (Kotlin only shows the gear for
   /// ConfigurableSource implementations too).
-  bool _hasPrefs = false;
+  late bool _hasPrefs = _prefsCapabilityCache[widget.extension.id] ?? false;
 
   @override
   void initState() {
     super.initState();
-    _probePrefs();
+    if (!_prefsCapabilityCache.containsKey(widget.extension.id)) {
+      _probePrefs();
+    }
   }
 
   Future<void> _probePrefs() async {
+    final id = widget.extension.id;
     try {
-      final source = await ref
-          .read(extensionRepositoryProvider)
-          .getSource(widget.extension.id);
+      final source =
+          await ref.read(extensionRepositoryProvider).getSource(id);
       final defs = await source.getPreferences();
+      _prefsCapabilityCache[id] = defs.isNotEmpty;
       if (mounted && defs.isNotEmpty) setState(() => _hasPrefs = true);
     } catch (_) {
-      // Broken extension — no gear.
+      // Broken extension — no gear; don't cache so a fixed install retries.
     }
   }
 

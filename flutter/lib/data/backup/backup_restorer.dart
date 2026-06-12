@@ -13,6 +13,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../manga/excluded_scanlators_repository.dart';
 import '../../domain/manga/model/update_strategy.dart';
 import '../../domain/track/model/track.dart';
 import '../category/category_repository.dart';
@@ -56,13 +57,15 @@ class BackupRestorer {
     required HistoryRepository historyRepository,
     required TrackRepository trackRepository,
     required SourceRepository sourceRepository,
+    required ExcludedScanlatorsRepository excludedScanlatorsRepository,
   })  : _db = database,
         _manga = mangaRepository,
         _chapters = chapterRepository,
         _categories = categoryRepository,
         _history = historyRepository,
         _tracks = trackRepository,
-        _sources = sourceRepository;
+        _sources = sourceRepository,
+        _excludedScanlators = excludedScanlatorsRepository;
 
   final db.AppDatabase _db;
   final MangaRepository _manga;
@@ -71,6 +74,7 @@ class BackupRestorer {
   final HistoryRepository _history;
   final TrackRepository _tracks;
   final SourceRepository _sources;
+  final ExcludedScanlatorsRepository _excludedScanlators;
 
   Future<BackupRestoreResult> restore(Backup backup) async {
     var mangaCount = 0;
@@ -137,8 +141,8 @@ class BackupRestorer {
 
   /// Replays each [BackupPreference] back into [SharedPreferences].
   /// Existing values are overwritten — backups are treated as the
-  /// source of truth for app-level settings. Per-source preferences are
-  /// intentionally not restored: they live in the JS extensions that
+  /// source of truth for app-level settings. Per-source extension settings ARE
+  /// restored (see _restoreSourcePreferences): they live in the JS extensions that
   /// haven't shipped yet.
   Future<int> _restorePreferences(List<BackupPreference> prefs) async {
     if (prefs.isEmpty) return 0;
@@ -338,6 +342,15 @@ class BackupRestorer {
     if (categoryIds.isNotEmpty) {
       await _categories.setCategoriesForManga(mangaId, categoryIds);
     }
+
+    // Excluded scanlators — previously ignored on import (consensus-review
+    // data-loss finding): the codec parses them, write them back.
+    if (bm.excludedScanlators.isNotEmpty) {
+      await _excludedScanlators.setForManga(
+        mangaId,
+        bm.excludedScanlators.toSet(),
+      );
+    }
   }
 }
 
@@ -350,5 +363,7 @@ final backupRestorerProvider = Provider<BackupRestorer>((ref) {
     historyRepository: ref.watch(historyRepositoryProvider),
     trackRepository: ref.watch(trackRepositoryProvider),
     sourceRepository: ref.watch(sourceRepositoryProvider),
+    excludedScanlatorsRepository:
+        ref.watch(excludedScanlatorsRepositoryProvider),
   );
 });

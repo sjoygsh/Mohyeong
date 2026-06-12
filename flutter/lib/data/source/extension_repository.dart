@@ -180,15 +180,30 @@ class ExtensionRepository {
         );
         final code = response.data;
         if (code == null || code.isEmpty) continue;
-        final probe = await JsSource.load(code, dio: _http.dio);
-        final remoteVersion = probe.versionCode;
-        await probe.dispose();
+        // Cheap path: read version_code straight out of the manifest text
+        // instead of booting a whole QuickJS runtime per extension on the
+        // UI thread just to ask one number. Falls back to a runtime probe
+        // for exotic formatting.
+        var remoteVersion = _parseVersionCode(code);
+        if (remoteVersion == null) {
+          final probe = await JsSource.load(code, dio: _http.dio);
+          remoteVersion = probe.versionCode;
+          await probe.dispose();
+        }
         if (remoteVersion > e.versionCode) updatable.add(e.id);
       } catch (_) {
         // Unreachable origin — not an update.
       }
     }
     return updatable;
+  }
+
+  /// Textual `version_code: N` scrape from an extension's manifest —
+  /// enough for the update check without evaluating the JS.
+  static int? _parseVersionCode(String code) {
+    final m =
+        RegExp('version_code[\'"]?\\s*:\\s*(\\d+)').firstMatch(code);
+    return m == null ? null : int.tryParse(m.group(1)!);
   }
 
   /// Re-runs the URL install for an extension that was previously

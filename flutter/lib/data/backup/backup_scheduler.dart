@@ -1,3 +1,4 @@
+import '../manga/excluded_scanlators_repository.dart';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
@@ -58,6 +59,7 @@ Future<bool> runBackupTask() async {
         historyRepository: HistoryRepository(db),
         trackRepository: TrackRepository(db),
         sourceRepository: SourceRepository(db),
+        excludedScanlatorsRepository: ExcludedScanlatorsRepository(db),
       );
       final bytes = encodeBackup(await creator.create());
 

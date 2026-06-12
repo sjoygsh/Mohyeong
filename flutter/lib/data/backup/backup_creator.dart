@@ -4,10 +4,10 @@
 /// Mirrors `eu.kanade.tachiyomi.data.backup.create.BackupCreator` in the
 /// Kotlin app: we capture every favorited manga, its chapters/history/
 /// tracking/category memberships, the small `sources` table, configured
-/// extension repos, and every app-wide SharedPreferences entry. Per-source
-/// preferences are still skipped — they require the JS extensions to be
-/// loaded to round-trip their values, which we can't do during a
-/// non-interactive export.
+/// extension repos, every app-wide SharedPreferences entry, per-manga
+/// excluded scanlators, and per-source extension settings
+/// (backupSourcePreferences, from the `source_prefs_<slug>` JSON maps —
+/// no JS runtime needed since the host owns the store).
 library;
 
 import 'dart:convert';
@@ -15,6 +15,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../manga/excluded_scanlators_repository.dart';
 import '../category/category_repository.dart';
 import '../chapter/chapter_repository.dart';
 import '../database/app_database.dart' as db;
@@ -34,13 +35,15 @@ class BackupCreator {
     required HistoryRepository historyRepository,
     required TrackRepository trackRepository,
     required SourceRepository sourceRepository,
+    required ExcludedScanlatorsRepository excludedScanlatorsRepository,
   })  : _db = database,
         _manga = mangaRepository,
         _chapters = chapterRepository,
         _categories = categoryRepository,
         _history = historyRepository,
         _tracks = trackRepository,
-        _sources = sourceRepository;
+        _sources = sourceRepository,
+        _excludedScanlators = excludedScanlatorsRepository;
 
   final db.AppDatabase _db;
   final MangaRepository _manga;
@@ -49,6 +52,7 @@ class BackupCreator {
   final HistoryRepository _history;
   final TrackRepository _tracks;
   final SourceRepository _sources;
+  final ExcludedScanlatorsRepository _excludedScanlators;
 
   /// Snapshots the library into a [Backup]. Streams nothing — the caller
   /// is expected to wrap this in a progress indicator if needed; Mihon's
@@ -121,7 +125,9 @@ class BackupCreator {
             BackupHistory(
               url: chapterUrlById[h.chapterId]!,
               lastRead: h.readAt?.millisecondsSinceEpoch ?? 0,
-              readDuration: h.readDuration,
+              // Milliseconds, same unit as Kotlin BackupHistory.readDuration
+      // (verified against MangaBackupCreator).
+      readDuration: h.readDuration,
             ),
       ];
 
@@ -167,7 +173,10 @@ class BackupCreator {
         updateStrategy: m.updateStrategy.dbValue,
         lastModifiedAt: m.lastModifiedAt,
         favoriteModifiedAt: m.favoriteModifiedAt,
-        excludedScanlators: const [],
+        // Was hardcoded empty — per-manga scanlator exclusions silently
+        // vanished on every export (consensus-review data-loss finding).
+        excludedScanlators:
+            (await _excludedScanlators.getByMangaId(m.id)).toList(),
         version: m.version,
         notes: m.notes,
         initialized: m.initialized,
@@ -304,5 +313,7 @@ final backupCreatorProvider = Provider<BackupCreator>((ref) {
     historyRepository: ref.watch(historyRepositoryProvider),
     trackRepository: ref.watch(trackRepositoryProvider),
     sourceRepository: ref.watch(sourceRepositoryProvider),
+    excludedScanlatorsRepository:
+        ref.watch(excludedScanlatorsRepositoryProvider),
   );
 });

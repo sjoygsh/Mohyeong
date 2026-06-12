@@ -28,10 +28,16 @@ Future<void> runExtensionUpdateCheck(WidgetRef ref,
     {bool force = false}) async {
   if (!force && ref.read(_checkedThisSessionProvider)) return;
   ref.read(_checkedThisSessionProvider.notifier).state = true;
-  final updatable =
-      await ref.read(extensionRepositoryProvider).checkForUpdates();
-  ref.read(extensionUpdatesProvider.notifier).state = updatable;
-  await ref.read(extUpdatesCountProvider.notifier).set(updatable.length);
+  // Capture everything BEFORE the (long, network-bound) await: the caller
+  // is a tab widget that may be disposed mid-check, and a WidgetRef must
+  // not be touched after its element unmounts. The provider/notifier
+  // objects themselves are root-scoped and stay valid.
+  final repo = ref.read(extensionRepositoryProvider);
+  final updatesNotifier = ref.read(extensionUpdatesProvider.notifier);
+  final countNotifier = ref.read(extUpdatesCountProvider.notifier);
+  final updatable = await repo.checkForUpdates();
+  updatesNotifier.state = updatable;
+  await countNotifier.set(updatable.length);
 }
 
 /// Drop [extensionId] from the updatable set (after a successful update or

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import '../manga/excluded_scanlators_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
@@ -43,6 +44,7 @@ Future<bool> runSyncTask() async {
       final history = HistoryRepository(db);
       final tracks = TrackRepository(db);
       final sources = SourceRepository(db);
+      final excludedScanlators = ExcludedScanlatorsRepository(db);
       final creator = BackupCreator(
         database: db,
         mangaRepository: mangas,
@@ -51,6 +53,7 @@ Future<bool> runSyncTask() async {
         historyRepository: history,
         trackRepository: tracks,
         sourceRepository: sources,
+        excludedScanlatorsRepository: excludedScanlators,
       );
       final restorer = BackupRestorer(
         database: db,
@@ -60,6 +63,7 @@ Future<bool> runSyncTask() async {
         historyRepository: history,
         trackRepository: tracks,
         sourceRepository: sources,
+        excludedScanlatorsRepository: excludedScanlators,
       );
       final manager = SyncManager(
         preferences: syncPrefs,
