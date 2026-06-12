@@ -19,4 +19,16 @@ class SecureScreen {
       // Platform has no FLAG_SECURE concept; ignore.
     }
   }
+
+  /// Reader "Show content in cutout area" (Mihon `cutout_short`): when on,
+  /// the window draws beneath the display notch (`SHORT_EDGES`) while the
+  /// reader is fullscreen; restored to DEFAULT on reader exit. Rides the
+  /// same window-attributes channel as FLAG_SECURE.
+  static Future<void> setCutoutShortEdges(bool shortEdges) async {
+    try {
+      await _channel.invokeMethod<void>('setCutoutShortEdges', shortEdges);
+    } on MissingPluginException {
+      // No cutout concept on this platform; ignore.
+    }
+  }
 }

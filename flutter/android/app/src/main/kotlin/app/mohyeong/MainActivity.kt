@@ -65,6 +65,28 @@ class MainActivity : FlutterFragmentActivity() {
                             result.success(null)
                         }
                     }
+
+                    // Reader "Show content in cutout area" (Mihon
+                    // `cutout_short` / drawUnderCutout): SHORT_EDGES lets the
+                    // fullscreen reader draw beneath the display notch instead
+                    // of letterboxing it. API 28+ only; a no-op before that.
+                    "setCutoutShortEdges" -> {
+                        val shortEdges = call.arguments as? Boolean ?: false
+                        runOnUiThread {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                                window.attributes = window.attributes.apply {
+                                    layoutInDisplayCutoutMode = if (shortEdges) {
+                                        WindowManager.LayoutParams
+                                            .LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                                    } else {
+                                        WindowManager.LayoutParams
+                                            .LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                                    }
+                                }
+                            }
+                            result.success(null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }

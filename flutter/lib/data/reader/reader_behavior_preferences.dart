@@ -107,6 +107,41 @@ final readerCropBordersProvider = boolPref('crop_borders', false);
 final readerCropBordersWebtoonProvider =
     boolPref('crop_borders_webtoon', false);
 
+/// "Show content in cutout area" (Mihon `drawUnderCutout`, key
+/// `cutout_short`, default true): while the reader is fullscreen the
+/// window draws beneath the display notch (`SHORT_EDGES`) instead of
+/// letterboxing it.
+final readerCutoutShortProvider = boolPref('cutout_short', true);
+
+/// "Pan wide images" (Mihon `navigateToPan`, key `navigate_pan`, default
+/// true): while zoomed into a page, tap-navigation first pans one viewport
+/// step in the tapped direction and only turns the page from the edge.
+final readerNavigateToPanProvider = boolPref('navigate_pan', true);
+
+/// Webtoon "Double tap to zoom" (Mihon key
+/// `pref_enable_double_tap_zoom_webtoon`, default true). Gates the webtoon
+/// zoom layer's double-tap recognizer (which costs a single-tap delay).
+final readerWebtoonDoubleTapZoomProvider =
+    boolPref('pref_enable_double_tap_zoom_webtoon', true);
+
+/// Webtoon "Disable zoom out" (Mihon `webtoonDisableZoomOut`, key
+/// `webtoon_disable_zoom_out`, default false): clamps the webtoon zoom
+/// layer's minimum scale to 1 so the strip can't be pinched smaller than
+/// the screen.
+final readerWebtoonDisableZoomOutProvider =
+    boolPref('webtoon_disable_zoom_out', false);
+
+/// Paged "Split wide pages" (Mihon `dualPageSplitPaged`, key
+/// `pref_dual_page_split`, default false): a landscape spread renders as
+/// two screen-filling display pages.
+final readerDualPageSplitProvider = boolPref('pref_dual_page_split', false);
+
+/// "Invert split page placement" (Mihon `dualPageInvertPaged`, key
+/// `pref_dual_page_invert`): swaps which half of a split spread is shown
+/// first.
+final readerDualPageInvertProvider =
+    boolPref('pref_dual_page_invert', false);
+
 
 /// Auto-zoom wide (landscape) pages to fill the viewport on display.
 /// Default `true` to match Mihon's `landscape_zoom` (the auto-zoom

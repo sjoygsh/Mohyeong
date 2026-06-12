@@ -47,6 +47,7 @@ class ReaderSettingsScreen extends ConsumerWidget {
     final scaleType = ref.watch(readerImageScaleTypeProvider);
     final rotateToFit = ref.watch(readerDualPageRotateProvider);
     final zoomStart = ref.watch(readerZoomStartProvider);
+    final dualPageSplit = ref.watch(readerDualPageSplitProvider);
     final sidePadding = ref.watch(readerWebtoonSidePaddingProvider);
     final volumeKeys = ref.watch(readerVolumeKeysProvider);
     final colorFilterEnabled = ref.watch(readerColorFilterEnabledProvider);
@@ -136,6 +137,12 @@ class ReaderSettingsScreen extends ConsumerWidget {
           PrefSwitch(
             title: 'Fullscreen',
             provider: readerFullscreenProvider,
+          ),
+          // Kotlin pref_cutout_short (drawUnderCutout) — only meaningful
+          // while fullscreen on a notched device.
+          PrefSwitch(
+            title: 'Show content in cutout area',
+            provider: readerCutoutShortProvider,
           ),
           PrefSwitch(
             title: 'Keep screen on',
@@ -306,6 +313,21 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Automatically zoom into wide images',
             provider: readerLandscapeZoomProvider,
           ),
+          // Kotlin pref_navigate_pan.
+          PrefSwitch(
+            title: 'Pan wide images',
+            provider: readerNavigateToPanProvider,
+          ),
+          // Kotlin pref_dual_page_split / pref_dual_page_invert.
+          PrefSwitch(
+            title: 'Split wide pages',
+            provider: readerDualPageSplitProvider,
+          ),
+          PrefSwitch(
+            title: 'Invert split page placement',
+            provider: readerDualPageInvertProvider,
+            enabled: dualPageSplit,
+          ),
           PrefSwitch(
             title: 'Crop borders',
             provider: readerCropBordersProvider,
@@ -349,6 +371,15 @@ class ReaderSettingsScreen extends ConsumerWidget {
           PrefSwitch(
             title: 'Crop borders',
             provider: readerCropBordersWebtoonProvider,
+          ),
+          // Kotlin pref_double_tap_zoom (webtoon) + Disable zoom out.
+          PrefSwitch(
+            title: 'Double tap to zoom',
+            provider: readerWebtoonDoubleTapZoomProvider,
+          ),
+          PrefSwitch(
+            title: 'Disable zoom out',
+            provider: readerWebtoonDisableZoomOutProvider,
           ),
           _ValueSlider(
             title: 'Side padding',

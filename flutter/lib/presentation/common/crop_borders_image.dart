@@ -239,3 +239,56 @@ class CropBordersImageProvider
   @override
   int get hashCode => inner.hashCode;
 }
+
+
+/// [ImageProvider] decorator that renders ONE half of a wide page — the
+/// dual-page split (Mihon `dualPageSplitPaged` / InsertPage). The half is a
+/// real decoded image, so BoxFit, zoom and the image cache all treat it as
+/// an ordinary page; each half caches independently (== / hashCode include
+/// the side).
+class HalfPageImageProvider extends ImageProvider<HalfPageImageProvider> {
+  const HalfPageImageProvider(this.inner, {required this.leftHalf});
+
+  final ImageProvider inner;
+  final bool leftHalf;
+
+  @override
+  Future<HalfPageImageProvider> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<HalfPageImageProvider>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    HalfPageImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
+    return OneFrameImageStreamCompleter(
+      _resolveHalf(key),
+      informationCollector: () => <DiagnosticsNode>[
+        DiagnosticsProperty<ImageProvider>('half of', key.inner),
+      ],
+    );
+  }
+
+  Future<ImageInfo> _resolveHalf(HalfPageImageProvider key) async {
+    final original =
+        await CropBordersImageProvider._resolveInner(key.inner);
+    final w = original.width;
+    final h = original.height;
+    final half = w ~/ 2;
+    final rect = key.leftHalf
+        ? ui.Rect.fromLTWH(0, 0, half.toDouble(), h.toDouble())
+        : ui.Rect.fromLTWH(
+            half.toDouble(), 0, (w - half).toDouble(), h.toDouble());
+    final cropped = await CropBordersImageProvider._crop(original, rect);
+    return ImageInfo(image: cropped);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is HalfPageImageProvider &&
+      other.inner == inner &&
+      other.leftHalf == leftHalf;
+
+  @override
+  int get hashCode => Object.hash(inner, leftHalf);
+}

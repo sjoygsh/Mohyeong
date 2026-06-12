@@ -20,6 +20,7 @@ import '../../data/reader/reader_behavior_preferences.dart';
 import '../../data/reader/reader_image_actions.dart';
 import '../../data/reader/reader_preferences.dart';
 import '../../data/reader/reader_volume_keys.dart';
+import '../../data/security/secure_screen.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/incognito_preferences.dart';
 import '../../data/track/track_preferences.dart';
@@ -122,6 +123,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (ref.read(readerFullscreenProvider)) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     }
+    _applyCutout();
     _applyKeepScreenOn();
     _applyBrightness();
     _applyOrientation();
@@ -164,6 +166,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _flushReadTime();
     WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // Give the notch letterbox back to the rest of the app.
+    SecureScreen.setCutoutShortEdges(false);
     // Release the wakelock + restore system brightness so the reader's
     // settings don't leak into the rest of the app. Lift any orientation
     // lock so the rest of the app rotates freely again.
@@ -178,6 +182,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// global default before the manga resolves; once it does, the
   /// effective (per-manga override or global) value is applied from
   /// `build` whenever it changes.
+  /// Mihon draws under the notch only while the reader is fullscreen and
+  /// `cutout_short` is on (drawUnderCutout); everywhere else the window
+  /// letterboxes the cutout.
+  void _applyCutout() {
+    SecureScreen.setCutoutShortEdges(
+      ref.read(readerFullscreenProvider) &&
+          ref.read(readerCutoutShortProvider),
+    );
+  }
+
   void _applyOrientation() {
     _setOrientation(ref.read(readerOrientationProvider));
   }
@@ -292,7 +306,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       SystemChrome.setEnabledSystemUIMode(
         next ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
       );
+      _applyCutout();
     });
+    ref.listen(readerCutoutShortProvider, (_, _) => _applyCutout());
     ref.listen(readerKeepScreenOnProvider, (_, _) => _applyKeepScreenOn());
     ref.listen(readerCustomBrightnessProvider, (_, next) {
       if (next) {
@@ -634,6 +650,9 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   bool _overlayVisible = false;
   String _overlayText = '';
   Timer? _overlayTimer;
+  // Live zoom handles per source page (Mihon navigateToPan): tap-nav asks
+  // the current page to pan before turning.
+  final _ZoomRegistry _zoomRegistry = _ZoomRegistry();
   // Web URL of the open chapter, resolved async through the source
   // (Kotlin's `assistUrl`). Gates the top-bar overflow actions.
   String? _chapterUrl;
@@ -1296,6 +1315,12 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   /// page is the transition itself; stepping forward from there does
   /// the chapter jump.
   void _navigatePage({required bool forward}) {
+    // Mihon navigateToPan: a zoomed page consumes navigation steps as pans
+    // until its edge is reached.
+    if (widget.mode.isPaged && ref.read(readerNavigateToPanProvider)) {
+      final handle = _zoomRegistry[_currentPage];
+      if (handle != null && handle.panTowards(forward: forward)) return;
+    }
     final target = forward ? _currentPage + 1 : _currentPage - 1;
     final maxIndex = _totalPages -
         1 +
@@ -1479,6 +1504,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
         scrollForward: _scrollForward,
       ),
       transition: transitionPage,
+      zoomRegistry: _zoomRegistry,
     );
     // Page-art colour adjustments. Applied to the page viewport only (not
     // the chrome) by wrapping before the gesture/Stack layers. Greyscale,
@@ -2021,6 +2047,7 @@ class _ReaderViewport extends StatelessWidget {
     required this.onPagesResolved,
     required this.seekRequest,
     this.transition,
+    this.zoomRegistry,
   });
 
   final _ReaderData data;
@@ -2037,6 +2064,7 @@ class _ReaderViewport extends StatelessWidget {
 
   /// Trailing chapter-transition page, threaded through to [_PagesView].
   final Widget? transition;
+  final _ZoomRegistry? zoomRegistry;
 
   @override
   Widget build(BuildContext context) {
@@ -2056,6 +2084,7 @@ class _ReaderViewport extends StatelessWidget {
         onPagesResolved: onPagesResolved,
         seekRequest: seekRequest,
         transition: transition,
+        zoomRegistry: zoomRegistry,
       );
     }
     if (data.source == null) {
@@ -2079,6 +2108,7 @@ class _ReaderViewport extends StatelessWidget {
       onPagesResolved: onPagesResolved,
       seekRequest: seekRequest,
       transition: transition,
+      zoomRegistry: zoomRegistry,
     );
   }
 }
@@ -2098,6 +2128,7 @@ class _PageList extends StatefulWidget {
     required this.onPagesResolved,
     required this.seekRequest,
     this.transition,
+    this.zoomRegistry,
   });
 
   final MangaSource source;
@@ -2113,6 +2144,7 @@ class _PageList extends StatefulWidget {
   final ValueChanged<List<_PageRef>> onPagesResolved;
   final _ViewportSeekRequest seekRequest;
   final Widget? transition;
+  final _ZoomRegistry? zoomRegistry;
 
   @override
   State<_PageList> createState() => _PageListState();
@@ -2194,6 +2226,8 @@ class _PageListState extends State<_PageList> {
           seekRequest: widget.seekRequest,
           transition: widget.transition,
           pageUrlOf: (i) => pages[i].imageUrl ?? pages[i].url,
+          pageHeadersOf: (i) => pages[i].headers,
+          zoomRegistry: widget.zoomRegistry,
           itemBuilder: (_, i) {
             final page = pages[i];
             final imageUrl = page.imageUrl ?? page.url;
@@ -2241,6 +2275,7 @@ class _LocalPageList extends StatelessWidget {
     required this.onPagesResolved,
     required this.seekRequest,
     this.transition,
+    this.zoomRegistry,
   });
 
   final List<String> paths;
@@ -2255,6 +2290,7 @@ class _LocalPageList extends StatelessWidget {
   final ValueChanged<List<_PageRef>> onPagesResolved;
   final _ViewportSeekRequest seekRequest;
   final Widget? transition;
+  final _ZoomRegistry? zoomRegistry;
 
   @override
   Widget build(BuildContext context) {
@@ -2277,6 +2313,7 @@ class _LocalPageList extends StatelessWidget {
       seekRequest: seekRequest,
       transition: transition,
       pageUrlOf: (i) => paths[i],
+      zoomRegistry: zoomRegistry,
       itemBuilder: (_, i) => SourceImage(
         url: paths[i],
         fit: fit,
@@ -2302,7 +2339,7 @@ class _LocalPageList extends StatelessWidget {
 /// Both paths report the current page index via [onPageChanged] (1-based
 /// pages are presented to users elsewhere, but storage uses 0-based to
 /// match Mihon's `last_page_read`).
-class _PagesView extends StatefulWidget {
+class _PagesView extends ConsumerStatefulWidget {
   const _PagesView({
     required this.count,
     required this.mode,
@@ -2313,6 +2350,8 @@ class _PagesView extends StatefulWidget {
     required this.itemBuilder,
     this.transition,
     this.pageUrlOf,
+    this.pageHeadersOf,
+    this.zoomRegistry,
   });
 
   final int count;
@@ -2334,11 +2373,36 @@ class _PagesView extends StatefulWidget {
   /// zoom-start/landscape-zoom initial transform.
   final String? Function(int index)? pageUrlOf;
 
+  /// Per-page HTTP headers, needed when the dual-page splitter builds the
+  /// half-page images itself (bypassing [itemBuilder]).
+  final Map<String, String>? Function(int index)? pageHeadersOf;
+
+  /// Zoom handles keyed by SOURCE page index, owned by the reader body so
+  /// tap-navigation can pan a zoomed page before turning it (Mihon
+  /// navigateToPan).
+  final _ZoomRegistry? zoomRegistry;
+
   /// Total item count including the trailing transition page.
   int get itemCount => count + (transition != null ? 1 : 0);
 
   @override
-  State<_PagesView> createState() => _PagesViewState();
+  ConsumerState<_PagesView> createState() => _PagesViewState();
+}
+
+/// Mutable map of live [_ZoomablePageState]s keyed by source page index —
+/// the bridge that lets [_ReaderBodyState._navigatePage] ask the current
+/// page to pan before falling through to a page turn.
+class _ZoomRegistry {
+  final Map<int, _ZoomablePageState> _handles = {};
+
+  void register(int index, _ZoomablePageState state) =>
+      _handles[index] = state;
+
+  void unregister(int index, _ZoomablePageState state) {
+    if (_handles[index] == state) _handles.remove(index);
+  }
+
+  _ZoomablePageState? operator [](int index) => _handles[index];
 }
 
 /// Decoded width/height ratio per page locator, shared across viewers.
@@ -2376,10 +2440,80 @@ void _resolvePageAspect(
   stream.addListener(listener);
 }
 
-class _PagesViewState extends State<_PagesView> {
+class _PagesViewState extends ConsumerState<_PagesView> {
   PageController? _pageController;
   ScrollController? _scrollController;
+
+  /// Last reported SOURCE page index (display indices are internal).
   int _lastReported = -1;
+
+  /// One display slot per rendered page. `half` is 0 for a whole page,
+  /// 1/2 for the first/second half of a split wide page (Mihon
+  /// dualPageSplitPaged: a landscape spread renders as two display pages).
+  /// Recomputed each build from the aspect cache; null when splitting is
+  /// off (1:1 mapping, zero overhead).
+  List<({int src, int half})>? _slots;
+  String _slotsSignature = '';
+
+  /// Webtoon zoom layer (Mihon WebtoonViewer pinch/double-tap zoom).
+  final TransformationController _webtoonZoom = TransformationController();
+  TapDownDetails? _webtoonDoubleTapDown;
+
+  int get _displayCount => _slots?.length ?? widget.count;
+
+  int _displayToSource(int display) {
+    final slots = _slots;
+    if (slots == null) return display;
+    if (display >= slots.length) return widget.count; // transition slot
+    return slots[display].src;
+  }
+
+  int _sourceToDisplay(int source) {
+    final slots = _slots;
+    if (slots == null) return source;
+    if (source >= widget.count) return slots.length; // transition slot
+    for (var d = 0; d < slots.length; d++) {
+      if (slots[d].src == source) return d;
+    }
+    return source.clamp(0, slots.length - 1);
+  }
+
+  /// Rebuild the display-slot list for the current split pref + aspect
+  /// knowledge. Returns true when the mapping changed (caller re-anchors
+  /// the PageController so the visible page doesn't shift).
+  bool _rebuildSlots({required bool splitWide}) {
+    if (!splitWide || !widget.mode.isPaged) {
+      final changed = _slots != null;
+      _slots = null;
+      _slotsSignature = '';
+      return changed;
+    }
+    final slots = <({int src, int half})>[];
+    final sig = StringBuffer();
+    for (var i = 0; i < widget.count; i++) {
+      final url = widget.pageUrlOf?.call(i);
+      final aspect = url == null ? null : _pageAspectCache[url];
+      if (aspect != null && aspect > 1) {
+        slots.add((src: i, half: 1));
+        slots.add((src: i, half: 2));
+        sig.write('$i,');
+      } else {
+        slots.add((src: i, half: 0));
+        // A page with unknown aspect may later split — probe it so the
+        // mapping settles as decodes land.
+        if (aspect == null && url != null) {
+          _resolvePageAspect(url, widget.pageHeadersOf?.call(i), (a) {
+            if (mounted && a > 1) setState(() {});
+          });
+        }
+      }
+    }
+    final signature = sig.toString();
+    final changed = _slots == null || signature != _slotsSignature;
+    _slots = slots;
+    _slotsSignature = signature;
+    return changed;
+  }
 
   /// Estimated layout height of page [i] in the continuous list: the real
   /// extent once its aspect is known (cache hit), a generic placeholder
@@ -2428,7 +2562,9 @@ class _PagesViewState extends State<_PagesView> {
     final clamped =
         widget.initialPage.clamp(0, (widget.count - 1).clamp(0, widget.count));
     if (widget.mode.isPaged) {
-      _pageController = PageController(initialPage: clamped);
+      _rebuildSlots(splitWide: ref.read(readerDualPageSplitProvider));
+      _pageController =
+          PageController(initialPage: _sourceToDisplay(clamped));
     } else {
       _scrollController = ScrollController();
       // Defer jump until after layout so the viewport has a size.
@@ -2454,7 +2590,9 @@ class _PagesViewState extends State<_PagesView> {
       final resume =
           _lastReported.clamp(0, (widget.count - 1).clamp(0, widget.count));
       if (widget.mode.isPaged) {
-        _pageController = PageController(initialPage: resume);
+        _rebuildSlots(splitWide: ref.read(readerDualPageSplitProvider));
+        _pageController =
+            PageController(initialPage: _sourceToDisplay(resume));
       } else {
         _scrollController = ScrollController();
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2470,8 +2608,8 @@ class _PagesViewState extends State<_PagesView> {
     // trailing transition page as a target.
     if (widget.seekRequest.requestId != old.seekRequest.requestId &&
         _pageController != null) {
-      final target = widget.seekRequest.target
-          .clamp(0, (widget.itemCount - 1).clamp(0, widget.itemCount));
+      final target = _sourceToDisplay(widget.seekRequest.target
+          .clamp(0, (widget.itemCount - 1).clamp(0, widget.itemCount)));
       if (widget.seekRequest.animate && _pageController!.hasClients) {
         _pageController!.animateToPage(
           target,
@@ -2503,9 +2641,12 @@ class _PagesViewState extends State<_PagesView> {
   void dispose() {
     _pageController?.dispose();
     _scrollController?.dispose();
+    _webtoonZoom.dispose();
     super.dispose();
   }
 
+  /// [page] is a SOURCE index (webtoon) — paged callers convert display
+  /// indices first.
   void _report(int page) {
     if (page == _lastReported) return;
     _lastReported = page;
@@ -2517,7 +2658,9 @@ class _PagesViewState extends State<_PagesView> {
     if (!widget.mode.isPaged) {
       // Continuous (webtoon / continuous vertical). Both render the same
       // way in v1.0 — vertical scrolling list of fit-width images.
-      return NotificationListener<ScrollNotification>(
+      final doubleTapZoom = ref.watch(readerWebtoonDoubleTapZoomProvider);
+      final disableZoomOut = ref.watch(readerWebtoonDisableZoomOutProvider);
+      Widget strip = NotificationListener<ScrollNotification>(
         onNotification: (notif) {
           if (notif is ScrollEndNotification &&
               _scrollController != null &&
@@ -2560,14 +2703,67 @@ class _PagesViewState extends State<_PagesView> {
           },
         ),
       );
+      // Webtoon zoom layer (Mihon WebtoonViewer): pinch zoom over the whole
+      // strip; vertical drags keep scrolling the list (it wins the gesture
+      // arena for them), horizontal pans move the zoomed strip. Double-tap
+      // toggles 2x about the tap point — gated by its pref since the
+      // double-tap recognizer delays single taps (chrome/nav), exactly the
+      // trade Kotlin's pref exists for. "Disable zoom out" pins minScale.
+      strip = InteractiveViewer(
+        transformationController: _webtoonZoom,
+        minScale: disableZoomOut ? 1 : 0.5,
+        maxScale: 3,
+        child: strip,
+      );
+      if (doubleTapZoom) {
+        strip = GestureDetector(
+          onDoubleTapDown: (d) => _webtoonDoubleTapDown = d,
+          onDoubleTap: () {
+            final d = _webtoonDoubleTapDown;
+            if (d == null) return;
+            if (_webtoonZoom.value.getMaxScaleOnAxis() > 1.01) {
+              _webtoonZoom.value = Matrix4.identity();
+              return;
+            }
+            const zoom = 2.0;
+            final position = d.localPosition;
+            _webtoonZoom.value = Matrix4.identity()
+              ..translateByDouble(
+                -position.dx * (zoom - 1),
+                -position.dy * (zoom - 1),
+                0,
+                1,
+              )
+              ..scaleByDouble(zoom, zoom, zoom, 1);
+          },
+          child: strip,
+        );
+      }
+      return strip;
     }
+    final splitWide = ref.watch(readerDualPageSplitProvider);
+    final invertSplit = ref.watch(readerDualPageInvertProvider);
+    final mappingChanged = _rebuildSlots(splitWide: splitWide);
+    if (mappingChanged && _pageController != null) {
+      // The slot list shifted under the controller (a page just turned out
+      // to be wide, or the pref flipped): re-anchor on the page the reader
+      // was showing so nothing visibly jumps.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _pageController == null) return;
+        if (!_pageController!.hasClients) return;
+        _pageController!.jumpToPage(
+          _sourceToDisplay(_lastReported.clamp(0, widget.count)),
+        );
+      });
+    }
+    final displayTransitionIndex = _displayCount;
     return PageView.builder(
       controller: _pageController,
       scrollDirection:
           widget.mode.isHorizontal ? Axis.horizontal : Axis.vertical,
       reverse: widget.mode == ReadingMode.rightToLeft,
-      itemCount: widget.itemCount,
-      onPageChanged: _report,
+      itemCount: _displayCount + (widget.transition != null ? 1 : 0),
+      onPageChanged: (d) => _report(_displayToSource(d)),
       // Mount the adjacent page(s) one viewport ahead so their network
       // images start fetching/decoding before the user swipes to them,
       // instead of fetching on-demand at swipe time (the source of the
@@ -2575,11 +2771,45 @@ class _PagesViewState extends State<_PagesView> {
       // idiomatic Flutter ±1 neighbour preload — deeper preloading would
       // need a custom cacheExtent tuned on-device.
       allowImplicitScrolling: true,
-      itemBuilder: (ctx, i) {
-        if (i >= widget.count) return widget.transition!;
+      itemBuilder: (ctx, d) {
+        if (d >= displayTransitionIndex) return widget.transition!;
+        final slot = _slots?[d] ?? (src: d, half: 0);
+        final i = slot.src;
+        if (slot.half != 0) {
+          // Half of a split wide page (Mihon InsertPage). Reading order:
+          // an L2R spread reads left half first, an R2L spread right half
+          // first; invert swaps. Built directly from the backend provider
+          // (crop/rotate decorators don't apply to halves — Kotlin splits
+          // the raw bitmap too).
+          final url = widget.pageUrlOf?.call(i);
+          final firstIsLeft =
+              (widget.mode != ReadingMode.rightToLeft) ^ invertSplit;
+          final isFirst = slot.half == 1;
+          final leftHalf = isFirst == firstIsLeft;
+          return _ZoomablePage(
+            url: url,
+            mode: widget.mode,
+            child: Center(
+              child: url == null
+                  ? widget.itemBuilder(ctx, i)
+                  : Image(
+                      image: HalfPageImageProvider(
+                        SourceImage.providerFor(
+                          url,
+                          headers: widget.pageHeadersOf?.call(i),
+                        ),
+                        leftHalf: leftHalf,
+                      ),
+                      fit: BoxFit.contain,
+                    ),
+            ),
+          );
+        }
         return _ZoomablePage(
           url: widget.pageUrlOf?.call(i),
           mode: widget.mode,
+          index: i,
+          registry: widget.zoomRegistry,
           child: Center(child: widget.itemBuilder(ctx, i)),
         );
       },
@@ -2728,11 +2958,22 @@ class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
 /// zoomed so its height fills the screen, positioned at the configured
 /// edge (Automatic = the reading direction's leading edge).
 class _ZoomablePage extends ConsumerStatefulWidget {
-  const _ZoomablePage({required this.child, this.url, required this.mode});
+  const _ZoomablePage({
+    required this.child,
+    this.url,
+    required this.mode,
+    this.index,
+    this.registry,
+  });
 
   final Widget child;
   final String? url;
   final ReadingMode mode;
+
+  /// Source page index + the reader body's registry — registered so
+  /// tap-navigation can ask this page to pan while zoomed (navigateToPan).
+  final int? index;
+  final _ZoomRegistry? registry;
 
   @override
   ConsumerState<_ZoomablePage> createState() => _ZoomablePageState();
@@ -2751,6 +2992,9 @@ class _ZoomablePageState extends ConsumerState<_ZoomablePage>
   @override
   void initState() {
     super.initState();
+    if (widget.index != null) {
+      widget.registry?.register(widget.index!, this);
+    }
     final url = widget.url;
     if (url == null) return;
     if (!ref.read(readerLandscapeZoomProvider)) return;
@@ -2799,10 +3043,58 @@ class _ZoomablePageState extends ConsumerState<_ZoomablePage>
   }
 
   @override
+  void didUpdateWidget(covariant _ZoomablePage old) {
+    super.didUpdateWidget(old);
+    if (old.index != widget.index || old.registry != widget.registry) {
+      if (old.index != null) old.registry?.unregister(old.index!, this);
+      if (widget.index != null) widget.registry?.register(widget.index!, this);
+    }
+  }
+
+  @override
   void dispose() {
+    if (widget.index != null) {
+      widget.registry?.unregister(widget.index!, this);
+    }
     _animController.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  /// Mihon navigateToPan: while zoomed, a navigation step first pans one
+  /// viewport step toward the reading direction; only from the edge does
+  /// the caller turn the page. Returns false when not zoomed or already at
+  /// the relevant edge.
+  bool panTowards({required bool forward}) {
+    final m = _controller.value;
+    final scale = m.getMaxScaleOnAxis();
+    if (scale <= 1.01) return false;
+    final size = context.size;
+    if (size == null) return false;
+    final horizontal = widget.mode.isHorizontal;
+    final extent = horizontal ? size.width : size.height;
+    final maxOffset = extent * (scale - 1);
+    if (maxOffset <= 1) return false;
+    final t = m.getTranslation();
+    final current = horizontal ? -t.x : -t.y; // 0..maxOffset from start edge
+    // Forward in reading order pans toward increasing offset, except an
+    // R2L pager where the content start is the right edge.
+    final positive =
+        !(horizontal && widget.mode == ReadingMode.rightToLeft);
+    if (forward == positive ? current >= maxOffset - 1 : current <= 1) {
+      return false;
+    }
+    final step = extent * 0.75;
+    final next = (forward == positive ? current + step : current - step)
+        .clamp(0.0, maxOffset);
+    final target = m.clone();
+    if (horizontal) {
+      target.setTranslationRaw(-next, t.y, t.z);
+    } else {
+      target.setTranslationRaw(t.x, -next, t.z);
+    }
+    _applyMatrix(target);
+    return true;
   }
 
   void _applyMatrix(Matrix4 target) {

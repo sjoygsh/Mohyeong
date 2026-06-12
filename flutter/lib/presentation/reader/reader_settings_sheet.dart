@@ -8,11 +8,9 @@
 ///     `ReadingModePage` / `GeneralSettingsPage` / `ColorFilterPage`).
 ///
 /// Honest-wiring rule: only prefs the Flutter viewer actually consumes are
-/// exposed. Deliberately omitted vs Kotlin (features not implemented yet):
-/// zoom start, landscape zoom, navigate-to-pan, dual-page split/invert,
-/// webtoon double-tap zoom / disable zoom-out, webtoon-specific crop &
-/// rotate variants, always-show-chapter-transition, display cutout.
-/// Kotlin's 4-way tap-invert modes are a single horizontal-invert bool here
+/// exposed. Remaining deliberate omissions vs Kotlin: the webtoon-specific
+/// dual-page split/invert + rotate variants (paged-only here), and Kotlin's
+/// 4-way tap-invert modes, which are a single horizontal-invert bool here
 /// (what `navRegionAt` consumes), so it renders as a checkbox.
 library;
 
@@ -381,6 +379,19 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         provider: readerLandscapeZoomProvider,
       ),
       _PrefCheckbox(
+        label: 'Pan wide images',
+        provider: readerNavigateToPanProvider,
+      ),
+      _PrefCheckbox(
+        label: 'Split wide pages',
+        provider: readerDualPageSplitProvider,
+      ),
+      if (ref.watch(readerDualPageSplitProvider))
+        _PrefCheckbox(
+          label: 'Invert split page placement',
+          provider: readerDualPageInvertProvider,
+        ),
+      _PrefCheckbox(
         label: 'Crop borders',
         provider: readerCropBordersProvider,
       ),
@@ -421,6 +432,14 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
       _PrefCheckbox(
         label: 'Crop borders',
         provider: readerCropBordersWebtoonProvider,
+      ),
+      _PrefCheckbox(
+        label: 'Double tap to zoom',
+        provider: readerWebtoonDoubleTapZoomProvider,
+      ),
+      _PrefCheckbox(
+        label: 'Disable zoom out',
+        provider: readerWebtoonDisableZoomOutProvider,
       ),
       _SheetSlider(
         label: 'Side padding',
@@ -464,6 +483,11 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         _PrefCheckbox(
           label: 'Fullscreen',
           provider: readerFullscreenProvider,
+        ),
+        // Kotlin pref_cutout_short — applied while fullscreen.
+        _PrefCheckbox(
+          label: 'Show content in cutout area',
+          provider: readerCutoutShortProvider,
         ),
         _PrefCheckbox(
           label: 'Keep screen on',
