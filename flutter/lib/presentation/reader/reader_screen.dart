@@ -669,6 +669,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       }
     });
     ReaderVolumeKeys.setListener(_onVolumeKey);
+    _zoomRegistry.onReachedLastSlot = _onReachedLastSlot;
     _resolveChapterUrl();
   }
 
@@ -995,14 +996,15 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     widget.onPageChanged(page.clamp(0, lastReal));
     _precacheAhead(page);
     _maybeDownloadAhead(page);
-    // Reaching the final page marks the chapter read (Mihon parity). Guarded
-    // so paging back and forth past the end doesn't re-fire the tracker
-    // push, and gated on the LAST display slot so the first half of a
-    // split final spread doesn't mark early.
-    if (!_autoMarkedRead &&
-        _totalPages > 0 &&
-        page >= _totalPages - 1 &&
-        (_zoomRegistry.isAtLastDisplaySlot?.call() ?? true)) {
+  }
+
+  /// Reaching the last REAL display slot marks the chapter read (Mihon
+  /// parity) — fired from the display layer (see [_ZoomRegistry.
+  /// onReachedLastSlot]) rather than the deduped source-page callback, so
+  /// the second half of a split final spread still triggers it. Guarded so
+  /// paging back and forth past the end doesn't re-fire the tracker push.
+  void _onReachedLastSlot() {
+    if (!_autoMarkedRead && _totalPages > 0) {
       _autoMarkedRead = true;
       widget.onReachedEnd();
     }
@@ -2410,10 +2412,13 @@ class _ZoomRegistry {
   /// caller falls through to the chapter jump.
   bool Function({required bool forward, required bool animate})? stepPage;
 
-  /// Set by the live [_PagesViewState]: whether the pager is on the last
-  /// REAL display slot — gates end-of-chapter auto-mark so the first half
-  /// of a split final spread doesn't mark the chapter read early.
-  bool Function()? isAtLastDisplaySlot;
+  /// Fired by the live [_PagesViewState] when the viewer lands on the last
+  /// REAL display slot (the last page, or the second half of a split final
+  /// spread — NOT the trailing transition page). Drives end-of-chapter
+  /// auto-mark: the source-page `onPageChanged` dedups, so the deduped
+  /// second half never re-reports and a gate polled there would never see
+  /// the true state. A push from the display layer can't be deduped away.
+  VoidCallback? onReachedLastSlot;
 
   void register(int index, _ZoomablePageState state) =>
       _handles[index] = state;
@@ -2612,7 +2617,6 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     }
     _lastReported = clamped;
     widget.zoomRegistry?.stepPage = _stepDisplayPage;
-    widget.zoomRegistry?.isAtLastDisplaySlot = _isAtLastDisplaySlot;
   }
 
   /// Step the pager one DISPLAY slot (visits both halves of split spreads
@@ -2638,11 +2642,9 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     return true;
   }
 
-  bool _isAtLastDisplaySlot() {
-    final controller = _pageController;
-    if (controller == null || !controller.hasClients) return true;
-    return (controller.page?.round() ?? 0) >= _displayCount - 1;
-  }
+  /// True when display slot [d] is the last REAL page (excludes the
+  /// trailing transition slot at index [_displayCount]).
+  bool _isLastRealSlot(int d) => d == _displayCount - 1;
 
   @override
   void didUpdateWidget(covariant _PagesView old) {
@@ -2711,11 +2713,8 @@ class _PagesViewState extends ConsumerState<_PagesView> {
   @override
   void dispose() {
     final registry = widget.zoomRegistry;
-    if (registry != null) {
-      if (registry.stepPage == _stepDisplayPage) registry.stepPage = null;
-      if (registry.isAtLastDisplaySlot == _isAtLastDisplaySlot) {
-        registry.isAtLastDisplaySlot = null;
-      }
+    if (registry != null && registry.stepPage == _stepDisplayPage) {
+      registry.stepPage = null;
     }
     _pageController?.dispose();
     _scrollController?.dispose();
@@ -2747,9 +2746,13 @@ class _PagesViewState extends ConsumerState<_PagesView> {
             // Index of the page crossing the viewport's vertical centre,
             // from the prefix sums of (estimated) item extents — tracks
             // real pages instead of the old scroll-ratio guess.
-            _report(_indexForOffset(
+            final idx = _indexForOffset(
               pos.pixels + pos.viewportDimension / 2,
-            ));
+            );
+            _report(idx);
+            if (idx >= widget.count - 1) {
+              widget.zoomRegistry?.onReachedLastSlot?.call();
+            }
           }
           return false;
         },
@@ -2856,6 +2859,9 @@ class _PagesViewState extends ConsumerState<_PagesView> {
         _currentSlot =
             (d < (_slots?.length ?? 0)) ? _slots![d] : (src: d, half: 0);
         _report(_displayToSource(d));
+        if (_isLastRealSlot(d)) {
+          widget.zoomRegistry?.onReachedLastSlot?.call();
+        }
       },
       // Mount the adjacent page(s) one viewport ahead so their network
       // images start fetching/decoding before the user swipes to them,

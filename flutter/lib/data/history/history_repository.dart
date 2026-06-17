@@ -57,6 +57,29 @@ class HistoryRepository {
     );
   }
 
+  /// Idempotent history write for the BACKUP RESTORE / SYNC path: the
+  /// regular [upsert] ADDS time_read on conflict, so re-applying a backup
+  /// (and the file-storage sync's pull-restore-then-push cycle does so
+  /// every pass) inflated read-time totals without bound. This takes the
+  /// MAX of existing vs incoming instead — net `max(local, backup)`,
+  /// matching Kotlin's restorer (`max(item.readDuration, db.time_read)`).
+  /// Raw SQL keeps it out of the generated additive query.
+  Future<void> upsertAbsolute({
+    required int chapterId,
+    required int? readAtMs,
+    required int timeReadMs,
+  }) async {
+    await _db.customStatement(
+      'INSERT INTO history(chapter_id, last_read, time_read) '
+      'VALUES (?1, ?2, ?3) '
+      'ON CONFLICT(chapter_id) DO UPDATE SET '
+      'last_read = max(last_read, ?2), '
+      'time_read = max(time_read, ?3) '
+      'WHERE chapter_id = ?1',
+      [chapterId, readAtMs ?? 0, timeReadMs],
+    );
+  }
+
   Future<void> resetByMangaId(int mangaId) async {
     await _db.resetHistoryByMangaId(mangaId);
   }

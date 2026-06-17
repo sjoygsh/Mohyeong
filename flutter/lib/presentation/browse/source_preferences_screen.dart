@@ -139,7 +139,10 @@ class _SourcePreferencesScreenState
                         'checkbox' => SwitchListTile(
                             title: Text(def.title),
                             value: _effective(def) == 'true',
-                            onChanged: (v) => _set(def, v ? 'true' : ''),
+                            // Persist the literal boolean string both ways so
+                            // an extension testing `=== 'false'` sees it; _set
+                            // still drops the key when it equals the default.
+                            onChanged: (v) => _set(def, v ? 'true' : 'false'),
                           ),
                         'text' => ListTile(
                             title: Text(def.title),

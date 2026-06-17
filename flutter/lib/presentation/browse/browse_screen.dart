@@ -154,7 +154,12 @@ class _SourcesTab extends ConsumerWidget {
                         ? allExtensions
                         : allExtensions
                             .where((e) =>
-                                enabledLangs.contains(e.lang.toLowerCase()) &&
+                                // Mihon treats `all`-language sources as
+                                // always visible regardless of the language
+                                // filter.
+                                (e.lang.toLowerCase() == 'all' ||
+                                        enabledLangs
+                                            .contains(e.lang.toLowerCase())) &&
                                 !disabledIds.contains(e.id))
                             .toList(growable: false);
                     return _buildList(
@@ -622,21 +627,16 @@ class _SourceTile extends ConsumerStatefulWidget {
   ConsumerState<_SourceTile> createState() => _SourceTileState();
 }
 
-/// Session cache: extension id → declares `preferences()`. Probing boots
-/// the extension's JS runtime, so each id is probed at most once per run
-/// instead of once per tile build (the Sources tab rebuilds often).
-final Map<String, bool> _prefsCapabilityCache = {};
-
 class _SourceTileState extends ConsumerState<_SourceTile> {
   /// Whether this extension declares the optional `preferences()` contract
   /// — gates the per-source settings gear (Kotlin only shows the gear for
   /// ConfigurableSource implementations too).
-  late bool _hasPrefs = _prefsCapabilityCache[widget.extension.id] ?? false;
+  late bool _hasPrefs = sourcePrefsCapabilityCache[widget.extension.id] ?? false;
 
   @override
   void initState() {
     super.initState();
-    if (!_prefsCapabilityCache.containsKey(widget.extension.id)) {
+    if (!sourcePrefsCapabilityCache.containsKey(widget.extension.id)) {
       _probePrefs();
     }
   }
@@ -647,7 +647,7 @@ class _SourceTileState extends ConsumerState<_SourceTile> {
       final source =
           await ref.read(extensionRepositoryProvider).getSource(id);
       final defs = await source.getPreferences();
-      _prefsCapabilityCache[id] = defs.isNotEmpty;
+      sourcePrefsCapabilityCache[id] = defs.isNotEmpty;
       if (mounted && defs.isNotEmpty) setState(() => _hasPrefs = true);
     } catch (_) {
       // Broken extension — no gear; don't cache so a fixed install retries.

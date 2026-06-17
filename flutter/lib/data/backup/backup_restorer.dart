@@ -306,11 +306,11 @@ class BackupRestorer {
     for (final h in bm.history) {
       final chapterId = chapterIdByUrl[h.url];
       if (chapterId == null) continue;
-      await _history.upsert(
+      // Absolute (max) write, not additive — re-applying a backup or the
+      // sync restore-then-push cycle must not keep accumulating read time.
+      await _history.upsertAbsolute(
         chapterId: chapterId,
-        readAt: h.lastRead == 0
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(h.lastRead),
+        readAtMs: h.lastRead == 0 ? null : h.lastRead,
         timeReadMs: h.readDuration,
       );
     }

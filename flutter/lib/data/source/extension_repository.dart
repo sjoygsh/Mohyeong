@@ -14,6 +14,14 @@ import 'local_source.dart';
 import 'local_source_preferences.dart';
 import 'source_id.dart';
 
+/// Session cache: extension id → declares the optional `preferences()`
+/// contract (gates the per-source settings gear). Probing boots the
+/// extension's JS runtime, so each id is probed at most once per run.
+/// Lives here (not in the UI) so install/uninstall can evict the stale
+/// entry — a reinstalled version that gains or drops `preferences()` would
+/// otherwise keep its old gear visibility until app restart.
+final Map<String, bool> sourcePrefsCapabilityCache = {};
+
 /// In-memory cache of loaded [MangaSource] instances plus the install /
 /// uninstall surface used by the browse / extensions UI.
 ///
@@ -238,6 +246,7 @@ class ExtensionRepository {
     // code.
     final old = _loaded.remove(installed.id);
     await old?.dispose();
+    sourcePrefsCapabilityCache.remove(installed.id);
     await _emitChanges();
     return installed;
   }
@@ -245,6 +254,7 @@ class ExtensionRepository {
   Future<void> uninstall(String id) async {
     final loaded = _loaded.remove(id);
     await loaded?.dispose();
+    sourcePrefsCapabilityCache.remove(id);
     await _storage.uninstall(id);
     await _emitChanges();
   }

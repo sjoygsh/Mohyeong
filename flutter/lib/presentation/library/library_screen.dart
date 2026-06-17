@@ -68,7 +68,7 @@ class LibraryFilters {
   /// disabled; the predicate short-circuits in that case.
   bool matches(
     LibraryItem item, {
-    Set<int>? downloadedKeys,
+    Set<String>? downloadedKeys,
     Set<int>? trackedMangaIds,
   }) {
     if (!applyTriState(unread, () => item.unreadCount > 0)) return false;
@@ -79,7 +79,7 @@ class LibraryFilters {
       return false;
     }
     if (downloaded != TriState.disabled) {
-      final keys = downloadedKeys ?? const <int>{};
+      final keys = downloadedKeys ?? const <String>{};
       final key = DownloadRepository.encodeMangaKey(
         item.manga.source,
         item.manga.id,
@@ -712,7 +712,7 @@ enum _LibraryMenuAction { updateLibrary, updateCategory, openRandom }
 /// null if its corresponding axis was disabled at resolve time.
 class _AsyncFilterSets {
   const _AsyncFilterSets({this.downloadedKeys, this.trackedMangaIds});
-  final Set<int>? downloadedKeys;
+  final Set<String>? downloadedKeys;
   final Set<int>? trackedMangaIds;
 }
 
@@ -794,7 +794,7 @@ class _LibraryBody extends ConsumerWidget {
   final String query;
   final LibrarySortPref sort;
   final LibraryFilters filters;
-  final Set<int>? downloadedKeys;
+  final Set<String>? downloadedKeys;
   final Set<int>? trackedMangaIds;
   final LibraryDisplayMode displayMode;
   final int selectedCategoryId;
@@ -1225,7 +1225,7 @@ class _MangaListTile extends ConsumerWidget {
 /// previous per-badge probe re-walked a directory each time a card scrolled
 /// into view (grid builders destroy/recreate item state on recycle).
 final _downloadedCountsProvider =
-    FutureProvider.autoDispose<Map<int, int>>((ref) async {
+    FutureProvider.autoDispose<Map<String, int>>((ref) async {
   final repo = ref.watch(downloadRepositoryProvider);
   final sub = repo.events.listen((e) {
     if (e.state == DownloadState.completed ||

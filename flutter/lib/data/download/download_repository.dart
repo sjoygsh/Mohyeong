@@ -165,12 +165,11 @@ class DownloadRepository {
   /// Set of `(sourceId, mangaId)` pairs that have at least one fully
   /// downloaded chapter. Walks the downloads root once so the library
   /// filter sheet can apply a Downloaded axis without an N-call probe.
-  /// Returns the pair as a `int` key encoded as `source << 32 | manga`
-  /// (both are 32-bit-fitting in our schema, manga.id auto-increments).
-  Future<Set<int>> listMangaWithAnyDownload() async {
+  /// Returns each pair as a `"source/manga"` string key ([encodeMangaKey]).
+  Future<Set<String>> listMangaWithAnyDownload() async {
     final root = await _root();
-    if (!await root.exists()) return const <int>{};
-    final out = <int>{};
+    if (!await root.exists()) return const <String>{};
+    final out = <String>{};
     await for (final sourceDir in root.list()) {
       if (sourceDir is! Directory) continue;
       final sourceId = int.tryParse(p.basename(sourceDir.path));
@@ -190,7 +189,7 @@ class DownloadRepository {
             break;
           }
         }
-        if (hasOne) out.add((sourceId << 32) | mangaId);
+        if (hasOne) out.add(encodeMangaKey(sourceId, mangaId));
       }
     }
     return out;
@@ -200,10 +199,10 @@ class DownloadRepository {
   /// downloads tree (key = [encodeMangaKey]). Feeds the library's
   /// downloaded badges — the per-card `countDownloadedForManga` probe
   /// re-walked a directory every time a card scrolled into view.
-  Future<Map<int, int>> downloadedCountsByManga() async {
+  Future<Map<String, int>> downloadedCountsByManga() async {
     final root = await _root();
-    if (!await root.exists()) return const <int, int>{};
-    final out = <int, int>{};
+    if (!await root.exists()) return const <String, int>{};
+    final out = <String, int>{};
     await for (final sourceDir in root.list()) {
       if (sourceDir is! Directory) continue;
       final sourceId = int.tryParse(p.basename(sourceDir.path));
@@ -224,11 +223,13 @@ class DownloadRepository {
     return out;
   }
 
-  /// Convenience encoding shared with [listMangaWithAnyDownload]. Pure
-  /// helper — exposed so callers can probe the returned set without
-  /// duplicating the bit shuffle.
-  static int encodeMangaKey(int sourceId, int mangaId) =>
-      (sourceId << 32) | mangaId;
+  /// Composite `(sourceId, mangaId)` key shared with
+  /// [listMangaWithAnyDownload] / [downloadedCountsByManga]. A string
+  /// rather than the old `source << 32 | manga` packing, which overflowed
+  /// 64 bits for the large hashed source ids JS extensions use and could
+  /// collide two distinct pairs onto one key.
+  static String encodeMangaKey(int sourceId, int mangaId) =>
+      '$sourceId/$mangaId';
 
   /// Set of chapter ids that are fully downloaded for [mangaId]. Cheaper
   /// than calling [isDownloaded] per chapter when filtering a chapter

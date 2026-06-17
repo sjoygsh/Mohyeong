@@ -45,11 +45,13 @@ Future<bool> runLibraryUpdateTask() async {
     // Spins up a fresh AppDatabase against the same on-disk file the UI
     // process uses (drift_flutter resolves it via path_provider).
     final db = AppDatabase();
+    // Declared outside the try so the finally can close its connectivity
+    // subscription.
+    final downloads = DownloadRepository(extensions, http);
     try {
       final mangas = MangaRepository(db);
       final chapters = ChapterRepository(db);
       final categories = CategoryRepository(db);
-      final downloads = DownloadRepository(extensions, http);
       final updater = LibraryUpdater(
         mangas,
         chapters,
@@ -90,6 +92,9 @@ Future<bool> runLibraryUpdateTask() async {
       // isolate built, otherwise in-flight page fetches would abort.
       await downloads.awaitIdle();
     } finally {
+      // DownloadRepository registers a connectivity subscription in its
+      // ctor — close it so the isolate doesn't leak the listener.
+      await downloads.close();
       await extensions.close();
       await db.close();
     }
