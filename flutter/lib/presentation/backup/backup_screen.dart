@@ -105,11 +105,21 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         return;
       }
 
-      // On platforms where saveFile only returned the destination path
-      // (not actually wrote bytes), fall back to writing it ourselves.
-      final file = File(savedPath);
-      if (!await file.exists() || await file.length() != bytes.length) {
-        await file.writeAsBytes(bytes, flush: true);
+      // On Android the SAF dialog returns a document URI / pseudo-path
+      // (e.g. `/document/primary:foo.tachibk` when saving to the storage
+      // root, or a `content://`/`.../tree/...` form) and file_picker has
+      // ALREADY written the bytes we passed via the content resolver.
+      // Treating that as a real filesystem path and re-opening it threw
+      // PathNotFoundException — only fall back to a manual write for a
+      // genuine path (desktop, where saveFile doesn't persist bytes).
+      final isSafUri = savedPath.startsWith('content://') ||
+          savedPath.contains('/document/') ||
+          savedPath.contains('/tree/');
+      if (!isSafUri) {
+        final file = File(savedPath);
+        if (!await file.exists() || await file.length() != bytes.length) {
+          await file.writeAsBytes(bytes, flush: true);
+        }
       }
 
       _setStatus(
