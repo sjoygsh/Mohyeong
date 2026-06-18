@@ -34,6 +34,16 @@ class _CloudflareSolverScreenState
   Timer? _poll;
   bool _solved = false;
 
+  /// The cf_clearance value present when this screen opened (null after we
+  /// clear it). We only accept a clearance whose value DIFFERS from this, so a
+  /// stale cookie the WebView still has on disk isn't mistaken for a solve
+  /// (mirrors Mihon's `nowCookie != preCookie`).
+  String? _oldClearance;
+
+  /// Give up auto-detecting after this long so the user isn't stuck on a
+  /// challenge that needs no solve (already cleared) or won't auto-pass.
+  static const _timeout = Duration(seconds: 30);
+
   @override
   void initState() {
     super.initState();
@@ -44,14 +54,29 @@ class _CloudflareSolverScreenState
       ..setUserAgent(defaultUserAgent)
       ..setNavigationDelegate(NavigationDelegate(
         onPageFinished: (_) => _maybeHarvestCookies(),
-      ))
-      ..loadRequest(Uri.parse(widget.url));
+      ));
+    // Clear any existing cf_clearance FIRST, then load — otherwise the WebView
+    // reuses a clearance Chrome still accepts, Cloudflare never re-challenges,
+    // and no fresh cookie is minted for the HTTP client (mirrors Mihon's
+    // CloudflareInterceptor pre-solve removal). Capture the old value after the
+    // clear so the post-solve value is guaranteed to differ.
+    removeWebViewCookie(widget.url, 'cf_clearance').whenComplete(() async {
+      _oldClearance = await webViewClearanceValue(widget.url);
+      if (mounted) _controller.loadRequest(Uri.parse(widget.url));
+    });
     // Poll in addition to onPageFinished: Cloudflare may set cf_clearance
     // mid-page without a navigation event.
     _poll = Timer.periodic(
       const Duration(seconds: 2),
       (_) => _maybeHarvestCookies(),
     );
+    // Safety valve: stop waiting after [_timeout]. On Android the shared cookie
+    // store means whatever clearance exists is already live for Dio, so we
+    // dismiss as "done" and let the source retry; the user can re-open if it
+    // still 403s (e.g. an interactive Turnstile they didn't complete in time).
+    Timer(_timeout, () {
+      if (!_solved && mounted) Navigator.of(context).pop(true);
+    });
   }
 
   /// True while the WebView is still showing a Cloudflare interstitial
@@ -77,34 +102,38 @@ class _CloudflareSolverScreenState
 
   Future<void> _maybeHarvestCookies() async {
     if (_solved) return;
-    final http = ref.read(appHttpClientProvider);
 
-    // Don't harvest while the challenge is still on screen — the cookie store
+    // Don't act while the challenge is still on screen — the cookie store
     // still holds the previous (expired) cf_clearance at that point.
     if (await _isChallengePage()) return;
 
-    // Preferred path: read the native WebView cookie store, which includes
-    // the HttpOnly cf_clearance cookie. `document.cookie` cannot see it, so
-    // the old JS-only harvest never actually captured the clearance.
-    final nativeCleared = await webViewHasClearance(widget.url);
-    if (nativeCleared == true) {
-      if (await syncWebViewCookies(http, widget.url)) {
-        if (!mounted) return;
-        setState(() => _solved = true);
-        Navigator.of(context).pop(true);
-        return;
-      }
+    // Android: Dio's cookie jar IS the WebView's live cookie store, so once a
+    // FRESH cf_clearance (value differs from when we opened) appears there's
+    // nothing to copy — just confirm and dismiss. Requiring a value change
+    // avoids popping on the stale cookie the browser still had on disk.
+    final value = await webViewClearanceValue(widget.url);
+    if (value != null) {
+      if (value == _oldClearance) return; // same stale clearance, keep waiting
+      if (!mounted) return;
+      setState(() => _solved = true);
+      Navigator.of(context).pop(true);
+      return;
     }
-    if (nativeCleared != null) return; // native channel handled it; not solved yet
+    // value == null here means either "no clearance yet" (Android, keep
+    // waiting) or "native channel unavailable" (iOS) — fall through to the JS
+    // harvest, which is a no-op on Android (document.cookie can't see it).
+    final hasNative = await webViewHasClearance(widget.url);
+    if (hasNative != null) return; // Android: channel works, just not solved yet
 
-    // Fallback (iOS / channel unavailable): JS harvest of visible cookies.
+    // Fallback (iOS / channel unavailable): JS harvest of visible cookies
+    // into the persistent jar.
     final raw = await _controller
         .runJavaScriptReturningResult('document.cookie') as String;
     final cookieString = raw.replaceAll(RegExp(r'^"|"$'), '');
     if (!cookieString.contains('cf_clearance')) return;
     final uri = Uri.parse(widget.url);
     final cookies = _parseCookies(cookieString);
-    await http.cookies.saveFromResponse(uri, cookies);
+    await ref.read(appHttpClientProvider).cookies.saveFromResponse(uri, cookies);
     if (!mounted) return;
     setState(() => _solved = true);
     Navigator.of(context).pop(true);

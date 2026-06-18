@@ -8,18 +8,21 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'network_preferences.dart';
+import 'webview_cookie_sync.dart';
 
 /// Singleton HTTP client + cookie jar shared by every extension runtime,
 /// the download manager, and any other host-side fetcher.
 ///
-/// Cookies are persisted to disk so Cloudflare `cf_clearance` cookies (solved
-/// once via the webview) survive across app launches and apply to every
-/// subsequent extension request automatically.
+/// On Android the jar is backed by the WebView's native `CookieManager`
+/// ([WebViewCookieJar]) so Dio and the Cloudflare-solver WebView share ONE
+/// live cookie store — a freshly-solved `cf_clearance` (and the rotating
+/// `__cf_bm`) apply to the very next request without going stale. A
+/// [PersistCookieJar] backs the non-Android fallback and survives restarts.
 class AppHttpClient {
   AppHttpClient._(this.dio, this.cookies);
 
   final Dio dio;
-  final PersistCookieJar cookies;
+  final CookieJar cookies;
 
   static AppHttpClient? _instance;
 
@@ -28,9 +31,11 @@ class AppHttpClient {
     if (existing != null) return existing;
     final support = await getApplicationSupportDirectory();
     final cookieDir = p.join(support.path, 'cookies');
-    final jar = PersistCookieJar(
-      storage: FileStorage(cookieDir),
-      ignoreExpires: false,
+    final jar = WebViewCookieJar(
+      PersistCookieJar(
+        storage: FileStorage(cookieDir),
+        ignoreExpires: false,
+      ),
     );
     // TODO(doh): the `doh_provider` pref (network_preferences.dart) is stored
     // but not yet applied. To honour it, swap the plain `Dio()` for

@@ -386,6 +386,53 @@ class MainActivity : FlutterFragmentActivity() {
                             android.webkit.CookieManager.getInstance().getCookie(url),
                         )
                     }
+                    // Write a Set-Cookie-style value into the shared store so a
+                    // cookie the Dio client received (Set-Cookie on its own
+                    // responses) is visible to the WebView too. Mirrors Mihon's
+                    // AndroidCookieJar.saveFromResponse.
+                    "setCookie" -> {
+                        val url = call.argument<String>("url")
+                        val value = call.argument<String>("value")
+                        if (url == null || value == null) {
+                            result.error("BAD_ARGS", "url and value are required", null)
+                            return@setMethodCallHandler
+                        }
+                        android.webkit.CookieManager.getInstance().setCookie(url, value)
+                        result.success(null)
+                    }
+                    // Expire a named cookie for the URL. Mirrors Mihon's
+                    // AndroidCookieJar.remove(COOKIE_NAMES, 0): clearing
+                    // cf_clearance before (re)solving forces Cloudflare to
+                    // issue a brand-new challenge + fresh clearance, instead of
+                    // the WebView silently reusing a clearance that Chrome still
+                    // accepts but that has gone stale for the HTTP client.
+                    "removeCookie" -> {
+                        val url = call.argument<String>("url")
+                        val name = call.argument<String>("name")
+                        val domain = call.argument<String>("domain")
+                        if (url == null || name == null) {
+                            result.error("BAD_ARGS", "url and name are required", null)
+                            return@setMethodCallHandler
+                        }
+                        val mgr = android.webkit.CookieManager.getInstance()
+                        // Expire the host cookie AND the registrable-domain
+                        // variants — Cloudflare sets cf_clearance on the apex
+                        // (.example.com), so a host-only delete leaves it intact
+                        // and the WebView keeps reusing the stale clearance.
+                        mgr.setCookie(url, "$name=;Max-Age=0;Path=/")
+                        if (domain != null) {
+                            mgr.setCookie(url, "$name=;Max-Age=0;Path=/;Domain=$domain")
+                            mgr.setCookie(url, "$name=;Max-Age=0;Path=/;Domain=.$domain")
+                        }
+                        mgr.flush()
+                        result.success(null)
+                    }
+                    // Persist the in-memory cookie store to disk so a solved
+                    // cf_clearance survives an app kill.
+                    "flush" -> {
+                        android.webkit.CookieManager.getInstance().flush()
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }

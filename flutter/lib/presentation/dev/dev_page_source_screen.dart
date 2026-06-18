@@ -86,11 +86,11 @@ class _DevPageSourceScreenState extends ConsumerState<DevPageSourceScreen> {
   /// Reuses the Cloudflare-solver harvest so the shared Dio cookie jar gets
   /// cf_clearance for the host, making the installed extension work.
   Future<void> _harvestCookies(String url) async {
+    // On Android the Dio client already shares the WebView's live cookie store
+    // (see [WebViewCookieJar]), so nothing needs harvesting here. Only the
+    // iOS/unsupported fallback copies the JS-visible cookies into the jar.
+    if (await webViewHasClearance(url) != null) return; // native store in use
     try {
-      final http = ref.read(appHttpClientProvider);
-      // Native harvest first (captures HttpOnly cf_clearance); fall back to
-      // the JS-visible cookies when the channel isn't available (iOS).
-      if (await syncWebViewCookies(http, url)) return;
       final raw = await _controller
           .runJavaScriptReturningResult('document.cookie') as String;
       final cookieString = raw.replaceAll(RegExp(r'^"|"$'), '');
@@ -103,7 +103,10 @@ class _DevPageSourceScreenState extends ConsumerState<DevPageSourceScreen> {
         cookies.add(Cookie(t.substring(0, eq), t.substring(eq + 1)));
       }
       if (cookies.isEmpty) return;
-      await http.cookies.saveFromResponse(Uri.parse(url), cookies);
+      await ref
+          .read(appHttpClientProvider)
+          .cookies
+          .saveFromResponse(Uri.parse(url), cookies);
     } catch (_) {
       // Best-effort; cookie sync isn't fatal to dumping the DOM.
     }
