@@ -326,7 +326,10 @@ class _WorkerBootstrap {
 /// extension's synchronous work off the UI isolate.
 @pragma('vm:entry-point')
 Future<void> _jsWorkerEntry(_WorkerBootstrap boot) async {
-  final runtime = getJavascriptRuntime();
+  // xhr:false skips flutter_js's fetch/XHR extension, whose setup needs the
+  // root-isolate binary messenger (absent on a worker isolate) and otherwise
+  // throws during init. Extensions use our custom `http` bridge, not fetch.
+  final runtime = getJavascriptRuntime(xhr: false);
   runtime.enableHandlePromises();
 
   final command = ReceivePort();
