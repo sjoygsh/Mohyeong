@@ -6,6 +6,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter_js/flutter_js.dart';
 
+import '../../network/webview_http_client.dart';
+
 /// Owns a single JavaScript runtime (one per extension instance) and bridges
 /// the host APIs the JS code calls into:
 ///
@@ -59,10 +61,28 @@ class JsRuntime {
           validateStatus: (_) => true,
         ),
       );
+      final status = response.statusCode ?? 0;
+      final bodyStr = response.data?.toString() ?? '';
+
+      // Cloudflare fingerprint wall: some sites validate the request's TLS/JA3
+      // fingerprint, so Dio is served the "Just a moment" challenge even with a
+      // valid cf_clearance. Retry through the offscreen WebView, whose request
+      // carries a real Chromium fingerprint (and the shared clearance cookie).
+      if (WebViewHttpClient.instance.isAvailable &&
+          _looksLikeCloudflareChallenge(status, bodyStr)) {
+        final viaWebView = await WebViewHttpClient.instance.request(
+          url,
+          method: method,
+          headers: headers,
+          body: body,
+        );
+        if (viaWebView != null) return viaWebView;
+      }
+
       return {
         'ok': true,
-        'status': response.statusCode,
-        'body': response.data?.toString() ?? '',
+        'status': status,
+        'body': bodyStr,
         'headers': response.headers.map.map(
           (k, v) => MapEntry(k, v.join(', ')),
         ),
@@ -71,6 +91,20 @@ class JsRuntime {
     } catch (e) {
       return {'ok': false, 'error': e.toString()};
     }
+  }
+
+  /// Heuristic for a Cloudflare interstitial (the JS "Just a moment" / managed
+  /// challenge), so we know to retry through the browser engine. Mirrors the
+  /// markers Mihon's CloudflareInterceptor checks, plus the challenge-platform
+  /// script the interstitial always loads.
+  static bool _looksLikeCloudflareChallenge(int status, String body) {
+    if (status != 403 && status != 503) return false;
+    return body.contains('Just a moment') ||
+        body.contains('challenge-platform') ||
+        body.contains('challenge-error') ||
+        body.contains('cf-challenge') ||
+        body.contains('_cf_chl_opt') ||
+        body.contains('window._cf_chl');
   }
 
   /// Loads the extension source. After this returns, [readManifest] /

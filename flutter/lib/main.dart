@@ -10,6 +10,7 @@ import 'data/cover/cover_cache.dart';
 import 'data/library/library_update_preference.dart';
 import 'data/library/library_update_scheduler.dart';
 import 'data/network/app_http_client.dart';
+import 'data/network/webview_http_client.dart';
 import 'data/notification/notification_service.dart';
 import 'data/preferences/appearance_preferences.dart';
 import 'data/preferences/theme_preference.dart';
@@ -155,6 +156,21 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
       themeMode: themeMode,
       home: const AuthGate(
         child: OnboardingGate(child: HomeScreen()),
+      ),
+      // Mount the shared offscreen WebView (Cloudflare fingerprint fetch path)
+      // beneath the app. Positioned.fill keeps the real UI full-screen and
+      // covering the 1×1 host at the origin.
+      builder: (context, child) => Stack(
+        children: [
+          const Positioned(
+            left: 0,
+            top: 0,
+            width: 1,
+            height: 1,
+            child: OffscreenWebViewHost(),
+          ),
+          if (child != null) Positioned.fill(child: child),
+        ],
       ),
       debugShowCheckedModeBanner: false,
     );
