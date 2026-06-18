@@ -1,0 +1,50 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <long name="flutter.default_orientation_type" value="8" />
+    <boolean name="flutter.pref_dual_page_rotate" value="true" />
+    <long name="flutter.auto_download_while_reading" value="2" />
+    <boolean name="flutter.pref_sync_history" value="true" />
+    <string name="flutter.__APP_STATE_storage_dir">content://com.android.externalstorage.documents/tree/primary%3AMohyeong</string>
+    <long name="flutter.__APP_STATE_library_unseen_updates_count" value="0" />
+    <string name="flutter.pref_sync_host"></string>
+    <boolean name="flutter.pref_sync_on_app_start" value="false" />
+    <boolean name="flutter.pref_sync_chapters" value="true" />
+    <string name="flutter.pref_app_theme">DEFAULT</string>
+    <boolean name="flutter.__APP_STATE_onboarding_complete" value="true" />
+    <boolean name="flutter.pref_custom_brightness" value="false" />
+    <string name="flutter.pref_sync_device_id">653c4f248aa3319ea933c8e2-mohyeong</string>
+    <boolean name="flutter.reader_volume_keys" value="true" />
+    <long name="flutter.__APP_STATE_last_auto_backup_timestamp" value="1781676111542" />
+    <boolean name="flutter.group_chapters_by_volume" value="true" />
+    <string name="flutter.pref_display_mode_catalogue">COMPACT_GRID</string>
+    <boolean name="flutter.pref_tablet_ui_mode" value="true" />
+    <boolean name="flutter.display_continue_reading_button" value="true" />
+    <boolean name="flutter.pref_color_filter_key" value="false" />
+    <boolean name="flutter.download_new" value="true" />
+    <boolean name="flutter.pref_sync_categories" value="true" />
+    <boolean name="flutter.__APP_STATE_pref_downloaded_only" value="false" />
+    <string name="flutter.pref_sync_username"></string>
+    <boolean name="flutter.pref_dual_page_invert" value="true" />
+    <long name="flutter.__APP_STATE_last_app_check" value="1780659848423" />
+    <long name="flutter.pref_sync_service" value="2" />
+    <long name="flutter.pref_sync_auto_interval_hours" value="24" />
+    <boolean name="flutter.relative_time_v2" value="false" />
+    <boolean name="flutter.pref_track_by_volume" value="false" />
+    <boolean name="flutter.display_unread_badge" value="true" />
+    <long name="flutter.default_reading_mode" value="1" />
+    <string name="flutter.migration_sources">2499283573021220255</string>
+    <string name="flutter.pref_local_source_root">/data/user/0/app.mohyeong.dev/files/MohyeongTest</string>
+    <boolean name="flutter.pref_sync_auto_enabled" value="true" />
+    <boolean name="flutter.pref_auto_update_manga_sync_key" value="true" />
+    <boolean name="flutter.pref_show_navigation_overlay_new_user" value="false" />
+    <boolean name="flutter.crop_borders" value="true" />
+    <boolean name="flutter.__APP_STATE_incognito_mode" value="false" />
+    <boolean name="flutter.pref_sync_tracking" value="true" />
+    <string name="flutter.library_update_manga_restriction">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBhIGxpc3Qu![&quot;manga_fully_read&quot;,&quot;manga_ongoing&quot;,&quot;manga_outside_release_period&quot;,&quot;manga_started&quot;]</string>
+    <boolean name="flutter.display_language_badge" value="false" />
+    <boolean name="flutter.pref_dual_page_split" value="true" />
+    <boolean name="flutter.pref_app_lock" value="false" />
+    <string name="flutter.app_date_format"></string>
+    <long name="flutter.pref_sync_last_timestamp" value="0" />
+    <boolean name="flutter.always_show_chapter_transition" value="false" />
+</map>

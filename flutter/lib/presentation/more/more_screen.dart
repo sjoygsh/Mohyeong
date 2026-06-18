@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/base/base_preferences.dart';
 import '../../data/source/incognito_preferences.dart';
 import '../about/about_screen.dart';
+import '../dev/dev_page_source_screen.dart';
 import '../categories/categories_screen.dart';
 import '../downloads/download_queue_screen.dart';
 import '../home/home_screen.dart';
@@ -116,6 +117,19 @@ class MoreScreen extends ConsumerWidget {
             onTap: () => launchUrl(
               Uri.parse(_urlHelp),
               mode: LaunchMode.externalApplication,
+            ),
+          ),
+          // TEMP developer tool for authoring source extensions — remove
+          // before release. Dumps a Cloudflare-cleared, JS-rendered page's
+          // DOM to a file for off-device inspection.
+          ListTile(
+            leading: const Icon(Icons.bug_report_outlined),
+            title: const Text('Dev: page source'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const DevPageSourceScreen(),
+              ),
             ),
           ),
         ],
