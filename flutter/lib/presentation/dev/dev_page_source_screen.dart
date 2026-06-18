@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../data/network/app_http_client.dart';
 import '../../data/network/network_preferences.dart';
+import '../../data/network/webview_cookie_sync.dart';
 
 /// DEVELOPER-ONLY tool (not part of the shipping UI surface) for authoring
 /// source extensions. Loads any URL in a WebView so the developer can click
@@ -86,6 +87,10 @@ class _DevPageSourceScreenState extends ConsumerState<DevPageSourceScreen> {
   /// cf_clearance for the host, making the installed extension work.
   Future<void> _harvestCookies(String url) async {
     try {
+      final http = ref.read(appHttpClientProvider);
+      // Native harvest first (captures HttpOnly cf_clearance); fall back to
+      // the JS-visible cookies when the channel isn't available (iOS).
+      if (await syncWebViewCookies(http, url)) return;
       final raw = await _controller
           .runJavaScriptReturningResult('document.cookie') as String;
       final cookieString = raw.replaceAll(RegExp(r'^"|"$'), '');
@@ -98,10 +103,7 @@ class _DevPageSourceScreenState extends ConsumerState<DevPageSourceScreen> {
         cookies.add(Cookie(t.substring(0, eq), t.substring(eq + 1)));
       }
       if (cookies.isEmpty) return;
-      await ref
-          .read(appHttpClientProvider)
-          .cookies
-          .saveFromResponse(Uri.parse(url), cookies);
+      await http.cookies.saveFromResponse(Uri.parse(url), cookies);
     } catch (_) {
       // Best-effort; cookie sync isn't fatal to dumping the DOM.
     }

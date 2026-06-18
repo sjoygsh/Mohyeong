@@ -7,6 +7,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../data/network/app_http_client.dart';
 import '../../data/network/network_preferences.dart';
+import '../../data/network/webview_cookie_sync.dart';
 
 /// Opens [url] in a webview so the user can clear a Cloudflare interstitial.
 /// On success (the `cf_clearance` cookie shows up in the webview's cookie
@@ -53,13 +54,54 @@ class _CloudflareSolverScreenState
     );
   }
 
+  /// True while the WebView is still showing a Cloudflare interstitial
+  /// ("Just a moment…" / challenge / Turnstile). Harvesting during this state
+  /// captures a *stale* cf_clearance (the previous, now-expired one that the
+  /// browser still has on disk) and reports a false "solved", so we must wait
+  /// for the real page before harvesting. Best-effort: any error → treat as
+  /// not-a-challenge so we don't get stuck.
+  Future<bool> _isChallengePage() async {
+    try {
+      final raw = await _controller.runJavaScriptReturningResult(
+        "(function(){var t=(document.title||'').toLowerCase();"
+        "var c=document.querySelector('#challenge-running,#cf-challenge-running,"
+        "#challenge-form,.cf-turnstile,#turnstile-wrapper');"
+        "return (t.indexOf('just a moment')>=0||t.indexOf('attention required')>=0"
+        "||t.indexOf('verifying')>=0||c!=null)?'1':'0';})()",
+      );
+      return raw.toString().contains('1');
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _maybeHarvestCookies() async {
     if (_solved) return;
+    final http = ref.read(appHttpClientProvider);
+
+    // Don't harvest while the challenge is still on screen — the cookie store
+    // still holds the previous (expired) cf_clearance at that point.
+    if (await _isChallengePage()) return;
+
+    // Preferred path: read the native WebView cookie store, which includes
+    // the HttpOnly cf_clearance cookie. `document.cookie` cannot see it, so
+    // the old JS-only harvest never actually captured the clearance.
+    final nativeCleared = await webViewHasClearance(widget.url);
+    if (nativeCleared == true) {
+      if (await syncWebViewCookies(http, widget.url)) {
+        if (!mounted) return;
+        setState(() => _solved = true);
+        Navigator.of(context).pop(true);
+        return;
+      }
+    }
+    if (nativeCleared != null) return; // native channel handled it; not solved yet
+
+    // Fallback (iOS / channel unavailable): JS harvest of visible cookies.
     final raw = await _controller
         .runJavaScriptReturningResult('document.cookie') as String;
     final cookieString = raw.replaceAll(RegExp(r'^"|"$'), '');
     if (!cookieString.contains('cf_clearance')) return;
-    final http = ref.read(appHttpClientProvider);
     final uri = Uri.parse(widget.url);
     final cookies = _parseCookies(cookieString);
     await http.cookies.saveFromResponse(uri, cookies);

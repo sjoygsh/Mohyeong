@@ -32,6 +32,7 @@ class MainActivity : FlutterFragmentActivity() {
     private val permissionsChannel = "app.mohyeong/permissions"
     private val volumeKeysChannel = "app.mohyeong/volume_keys"
     private val imageActionsChannel = "app.mohyeong/image_actions"
+    private val webViewCookiesChannel = "app.mohyeong/webview_cookies"
 
     // When true, the reader is consuming hardware volume keys for page
     // navigation; we forward each press to Dart and suppress the system
@@ -363,6 +364,28 @@ class MainActivity : FlutterFragmentActivity() {
                         }
                     }
 
+                    else -> result.notImplemented()
+                }
+            }
+
+        // WebView cookie bridge. Reads the global Android WebView
+        // CookieManager, which — unlike `document.cookie` in JS — exposes
+        // HttpOnly cookies such as Cloudflare's `cf_clearance`. Lets the
+        // Cloudflare solver / dev tool harvest a cleared challenge into the
+        // shared Dio cookie jar so extension HTTP requests are authenticated.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, webViewCookiesChannel)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getCookie" -> {
+                        val url = call.argument<String>("url")
+                        if (url == null) {
+                            result.error("BAD_ARGS", "url is required", null)
+                            return@setMethodCallHandler
+                        }
+                        result.success(
+                            android.webkit.CookieManager.getInstance().getCookie(url),
+                        )
+                    }
                     else -> result.notImplemented()
                 }
             }
