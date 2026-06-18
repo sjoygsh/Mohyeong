@@ -45,6 +45,15 @@ const dohProviderLabels = <int, String>{
 const dohProviderKey = 'doh_provider';
 const verboseLoggingKey = 'verbose_logging';
 
+/// Default `User-Agent` — verbatim Mihon `NetworkPreferences.default_user_agent`
+/// default value. Cloudflare's `cf_clearance` cookie is bound to the exact
+/// User-Agent that solved the challenge, so the shared Dio client AND every
+/// challenge-solving WebView must send this identical string; otherwise the
+/// harvested clearance cookie is rejected and the source stays blocked.
+const defaultUserAgent =
+    'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
+
 /// Selected DoH provider id. Mihon key `doh_provider`, default -1 (off).
 final dohProviderProvider = intPref(dohProviderKey, dohOff);
 

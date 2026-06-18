@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../data/network/network_preferences.dart';
 import '../../data/reader/reader_image_actions.dart';
 
 /// Minimal in-app browser — the Flutter analog of Kotlin's `WebViewActivity`
@@ -29,6 +30,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      // Parity with Kotlin WebViewScreenContent (userAgentString = default UA).
+      ..setUserAgent(defaultUserAgent)
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (p) {

@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'network_preferences.dart';
+
 /// Singleton HTTP client + cookie jar shared by every extension runtime,
 /// the download manager, and any other host-side fetcher.
 ///
@@ -40,6 +42,23 @@ class AppHttpClient {
     // SNI + cert validation still key off the real hostname. Deferred until
     // after real-server parity (TLS edge cases + IPv6/proxy/TTL caching).
     final dio = Dio()..interceptors.add(CookieManager(jar));
+    // Mirrors Kotlin's UserAgentInterceptor: stamp the default browser UA on
+    // every request that doesn't already carry one. Required for Cloudflare —
+    // `cf_clearance` is minted against this exact UA in the solver WebView, so
+    // Dio must replay the same string or the cookie is rejected. Also stops
+    // sites that block Dio's default `Dio/x` agent outright.
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          final existing = options.headers['User-Agent'] ??
+              options.headers['user-agent'];
+          if (existing == null || (existing is String && existing.isEmpty)) {
+            options.headers['User-Agent'] = defaultUserAgent;
+          }
+          handler.next(options);
+        },
+      ),
+    );
     final c = AppHttpClient._(dio, jar);
     _instance = c;
     return c;

@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../data/network/app_http_client.dart';
+import '../../data/network/network_preferences.dart';
 
 /// DEVELOPER-ONLY tool (not part of the shipping UI surface) for authoring
 /// source extensions. Loads any URL in a WebView so the developer can click
@@ -39,6 +40,9 @@ class _DevPageSourceScreenState extends ConsumerState<DevPageSourceScreen> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      // Match the Dio UA so harvested cf_clearance validates for the
+      // extension's later requests (see [defaultUserAgent]).
+      ..setUserAgent(defaultUserAgent)
       ..setNavigationDelegate(NavigationDelegate(
         onNavigationRequest: (req) {
           final uri = Uri.tryParse(req.url);

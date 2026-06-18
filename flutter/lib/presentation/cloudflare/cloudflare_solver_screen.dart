@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../data/network/app_http_client.dart';
+import '../../data/network/network_preferences.dart';
 
 /// Opens [url] in a webview so the user can clear a Cloudflare interstitial.
 /// On success (the `cf_clearance` cookie shows up in the webview's cookie
@@ -37,6 +38,9 @@ class _CloudflareSolverScreenState
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      // Must match the Dio UA so the cf_clearance we harvest validates for
+      // subsequent extension requests (see [defaultUserAgent]).
+      ..setUserAgent(defaultUserAgent)
       ..setNavigationDelegate(NavigationDelegate(
         onPageFinished: (_) => _maybeHarvestCookies(),
       ))
