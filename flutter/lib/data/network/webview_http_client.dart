@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'network_preferences.dart';
+import 'webview_cookie_sync.dart' show registrableDomain;
 
 /// Routes an HTTP request through an offscreen WebView so it carries a real
 /// Chromium TLS/JA3 + header fingerprint.
@@ -43,8 +44,15 @@ class WebViewHttpClient {
   WebViewController? _controller;
   final Completer<void> _ready = Completer<void>();
 
-  /// `scheme://host` the WebView is currently parked on; we only re-navigate
-  /// (and re-pass Cloudflare) when the origin changes.
+  /// Set once we've waited for a controller that never arrived (e.g. the
+  /// headless WorkManager isolate, where no [OffscreenWebViewHost] is mounted).
+  /// Stops every subsequent request from eating the attach grace period. Reset
+  /// if a controller does later attach.
+  bool _giveUp = false;
+
+  /// `scheme://host` the WebView is currently parked on AND confirmed past
+  /// Cloudflare; we only re-navigate when the origin changes. Left null after a
+  /// failed warm-up so the next request retries it.
   String? _origin;
 
   /// One WebView ⇒ one in-flight request at a time.
@@ -53,7 +61,9 @@ class WebViewHttpClient {
   final Map<int, Completer<Map<String, dynamic>>> _pending = {};
   int _nextId = 0;
 
-  /// Whether the WebView path is usable on this platform.
+  /// Whether the WebView path is usable on this platform. Note this only gates
+  /// the platform; [request] additionally bails when no controller is attached
+  /// (e.g. background isolate) so it never stalls or pretends to work there.
   bool get isAvailable => Platform.isAndroid;
 
   /// Builds the controller the [OffscreenWebViewHost] mounts. Centralised so
@@ -80,6 +90,7 @@ class WebViewHttpClient {
         ),
       );
     _controller = c;
+    _giveUp = false; // a controller exists now; allow requests again
     if (!_ready.isCompleted) _ready.complete();
     return c;
   }
@@ -94,13 +105,8 @@ class WebViewHttpClient {
     }
   }
 
-  bool _sameSite(String host, String base) {
-    String reg(String h) {
-      final p = h.split('.');
-      return p.length <= 2 ? h : p.sublist(p.length - 2).join('.');
-    }
-    return reg(host) == reg(base);
-  }
+  bool _sameSite(String host, String base) =>
+      registrableDomain(host) == registrableDomain(base);
 
   /// Fetches [url] through the browser. Returns the same shape the Dio path
   /// produces (`ok/status/body/headers/final_url`), or null when the WebView
@@ -112,12 +118,17 @@ class WebViewHttpClient {
     Object? body,
     Duration timeout = const Duration(seconds: 40),
   }) {
-    if (!isAvailable) return Future.value(null);
+    if (!isAvailable || _giveUp) return Future.value(null);
     final completer = Completer<Map<String, dynamic>?>();
-    // Serialise: chain onto the lock so only one fetch runs at a time.
+    // Serialise: chain onto the lock so only one fetch runs at a time. An outer
+    // timeout guarantees the lock always advances even if a platform call
+    // (loadRequest/runJavaScript) hangs — otherwise one stuck navigation would
+    // wedge every subsequent request for the app's lifetime.
     _lock = _lock.then((_) async {
       try {
-        completer.complete(await _run(url, method, headers, body, timeout));
+        final res = await _run(url, method, headers, body, timeout)
+            .timeout(timeout + const Duration(seconds: 10), onTimeout: () => null);
+        completer.complete(res);
       } catch (_) {
         completer.complete(null);
       }
@@ -132,24 +143,38 @@ class WebViewHttpClient {
     Object? body,
     Duration timeout,
   ) async {
-    // Wait briefly for the offscreen host to attach its controller.
-    await _ready.future
-        .timeout(const Duration(seconds: 5), onTimeout: () {});
-    final controller = _controller;
-    if (controller == null) return null;
+    // Wait briefly for the offscreen host to attach its controller. If it never
+    // does (headless background isolate), give up so later requests bail fast
+    // instead of each stalling for the grace period.
+    if (_controller == null) {
+      await _ready.future
+          .timeout(const Duration(seconds: 6), onTimeout: () {});
+      if (_controller == null) {
+        _giveUp = true;
+        return null;
+      }
+    }
+    final controller = _controller!;
 
     final target = Uri.tryParse(url);
     if (target == null) return null;
     final origin = '${target.scheme}://${target.host}';
     if (_origin != origin) {
-      _origin = origin;
-      await _warmUp(controller, origin, timeout);
+      if (!await _warmUp(controller, origin, timeout)) return null;
+      _origin = origin; // only commit once confirmed past the interstitial
     }
 
     final id = _nextId++;
     final completer = Completer<Map<String, dynamic>>();
     _pending[id] = completer;
-    await controller.runJavaScript(_buildFetchJs(id, url, method, headers, body));
+    try {
+      await controller
+          .runJavaScript(_buildFetchJs(id, url, method, headers, body))
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      _pending.remove(id); // never executed → don't leak the completer
+      return null;
+    }
 
     final result = await completer.future.timeout(
       timeout,
@@ -159,36 +184,59 @@ class WebViewHttpClient {
       },
     );
     if (result['__timeout'] == true || result['ok'] != true) return null;
+    final status = (result['status'] as num?)?.toInt() ?? 200;
+    final bodyStr = result['body']?.toString() ?? '';
+    // The WebView may still have hit a challenge (e.g. interactive Turnstile it
+    // can't auto-pass offscreen). Don't hand a challenge page back as content —
+    // fall through to the Dio result instead.
+    if (_isChallenge(status, bodyStr)) return null;
     return {
       'ok': true,
-      'status': (result['status'] as num?)?.toInt() ?? 200,
-      'body': result['body']?.toString() ?? '',
+      'status': status,
+      'body': bodyStr,
       'headers': const <String, String>{},
       'final_url': result['url']?.toString() ?? url,
       'via': 'webview',
     };
   }
 
+  static bool _isChallenge(int status, String body) {
+    if (status != 403 && status != 503 && status != 429) return false;
+    return body.contains('Just a moment') ||
+        body.contains('challenge-platform') ||
+        body.contains('challenge-error') ||
+        body.contains('cf-challenge') ||
+        body.contains('_cf_chl_opt');
+  }
+
   /// Parks the WebView on [origin] and waits until it's past any Cloudflare
   /// interstitial (so a subsequent same-origin fetch isn't itself challenged).
-  Future<void> _warmUp(
+  /// Returns false if it never cleared within [timeout].
+  Future<bool> _warmUp(
       WebViewController c, String origin, Duration timeout) async {
-    await c.loadRequest(Uri.parse(origin));
+    try {
+      await c.loadRequest(Uri.parse(origin)).timeout(const Duration(seconds: 15));
+    } catch (_) {
+      return false;
+    }
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(milliseconds: 400));
       try {
-        final r = await c.runJavaScriptReturningResult(
-          "(function(){var t=(document.title||'').toLowerCase();"
-          "return (document.readyState==='complete'"
-          "&&t.indexOf('just a moment')<0&&t.indexOf('verifying')<0"
-          "&&t.indexOf('attention required')<0)?'1':'0';})()",
-        );
-        if (r.toString().contains('1')) return;
+        final r = await c
+            .runJavaScriptReturningResult(
+              "(function(){var t=(document.title||'').toLowerCase();"
+              "return (document.readyState==='complete'"
+              "&&t.indexOf('just a moment')<0&&t.indexOf('verifying')<0"
+              "&&t.indexOf('attention required')<0)?'1':'0';})()",
+            )
+            .timeout(const Duration(seconds: 5));
+        if (r.toString().trim().replaceAll('"', '') == '1') return true;
       } catch (_) {
         // Keep polling until the deadline.
       }
     }
+    return false;
   }
 
   String _buildFetchJs(

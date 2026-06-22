@@ -68,7 +68,11 @@ class JsRuntime {
       // fingerprint, so Dio is served the "Just a moment" challenge even with a
       // valid cf_clearance. Retry through the offscreen WebView, whose request
       // carries a real Chromium fingerprint (and the shared clearance cookie).
-      if (WebViewHttpClient.instance.isAvailable &&
+      // Only for idempotent methods — Dio already executed the request, so
+      // replaying a POST/PUT/etc. would double a side effect (login, comment…).
+      final idempotent = method == 'GET' || method == 'HEAD';
+      if (idempotent &&
+          WebViewHttpClient.instance.isAvailable &&
           _looksLikeCloudflareChallenge(status, bodyStr)) {
         final viaWebView = await WebViewHttpClient.instance.request(
           url,
@@ -98,7 +102,7 @@ class JsRuntime {
   /// markers Mihon's CloudflareInterceptor checks, plus the challenge-platform
   /// script the interstitial always loads.
   static bool _looksLikeCloudflareChallenge(int status, String body) {
-    if (status != 403 && status != 503) return false;
+    if (status != 403 && status != 503 && status != 429) return false;
     return body.contains('Just a moment') ||
         body.contains('challenge-platform') ||
         body.contains('challenge-error') ||

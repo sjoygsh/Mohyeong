@@ -433,6 +433,13 @@ class MainActivity : FlutterFragmentActivity() {
                         android.webkit.CookieManager.getInstance().flush()
                         result.success(null)
                     }
+                    // Wipe all WebView cookies (backs CookieJar.deleteAll, e.g.
+                    // a user "clear cookies" action).
+                    "clearAll" -> {
+                        val mgr = android.webkit.CookieManager.getInstance()
+                        mgr.removeAllCookies { mgr.flush() }
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }

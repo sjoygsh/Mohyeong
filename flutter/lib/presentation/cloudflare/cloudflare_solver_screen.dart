@@ -126,9 +126,11 @@ class _CloudflareSolverScreenState
     if (hasNative != null) return; // Android: channel works, just not solved yet
 
     // Fallback (iOS / channel unavailable): JS harvest of visible cookies
-    // into the persistent jar.
-    final raw = await _controller
-        .runJavaScriptReturningResult('document.cookie') as String;
+    // into the persistent jar. runJavaScriptReturningResult is platform-typed
+    // (Object), so stringify rather than hard-cast.
+    final raw = (await _controller
+            .runJavaScriptReturningResult('document.cookie'))
+        .toString();
     final cookieString = raw.replaceAll(RegExp(r'^"|"$'), '');
     if (!cookieString.contains('cf_clearance')) return;
     final uri = Uri.parse(widget.url);

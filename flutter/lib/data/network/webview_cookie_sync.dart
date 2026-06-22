@@ -17,10 +17,17 @@ import 'package:flutter/services.dart';
 ///
 /// `CookieManager` also exposes HttpOnly cookies (which `cf_clearance` is) —
 /// something `document.cookie` cannot — so no JS harvest is needed on Android.
+///
+/// The native `app.mohyeong/webview_cookies` channel is registered only on the
+/// UI [FlutterEngine]. In the WorkManager background isolate the channel isn't
+/// there, so every native call throws [MissingPluginException]; the jar
+/// transparently falls back to the persistent [CookieJar] (which is mirrored on
+/// every foreground save) so background library updates still send cookies.
 const _channel = MethodChannel('app.mohyeong/webview_cookies');
 
 /// Raw `k=v; k=v` cookie string the WebView holds for [url] (HttpOnly
-/// included), or null when the native channel is unavailable (e.g. iOS).
+/// included), or null when the native channel is unavailable (e.g. iOS, or the
+/// headless background isolate).
 Future<String?> nativeCookieString(String url) async {
   try {
     return await _channel.invokeMethod<String>('getCookie', {'url': url});
@@ -51,6 +58,38 @@ Future<void> _nativeFlush() async {
   }
 }
 
+Future<void> _nativeClearAll() async {
+  try {
+    await _channel.invokeMethod<void>('clearAll');
+  } on PlatformException {
+    // ignore
+  } on MissingPluginException {
+    // ignore
+  }
+}
+
+/// Multi-label public suffixes where the registrable domain is the last THREE
+/// labels (e.g. `site.co.uk`). Not the full Public Suffix List, but covers the
+/// ccTLDs manga sites actually use; anything else uses the last two labels.
+const _multiPartSuffixes = {
+  'co.uk', 'org.uk', 'me.uk', 'com.au', 'net.au', 'co.jp', 'com.br', 'co.kr',
+  'com.cn', 'co.in', 'com.mx', 'com.tr', 'co.za', 'com.tw', 'co.id', 'com.hk',
+  'com.sg', 'co.th', 'com.ua', 'com.ph', 'com.vn',
+};
+
+/// The registrable ("apex") domain of [host] — e.g. `www.a.example.com` →
+/// `example.com`, `a.site.co.uk` → `site.co.uk`. Used both to clear
+/// Cloudflare's apex `cf_clearance` cookie and to decide same-site navigation.
+String registrableDomain(String host) {
+  final p = host.split('.');
+  if (p.length <= 2) return host;
+  final lastTwo = p.sublist(p.length - 2).join('.');
+  if (p.length >= 3 && _multiPartSuffixes.contains(lastTwo)) {
+    return p.sublist(p.length - 3).join('.');
+  }
+  return lastTwo;
+}
+
 /// Expire [name] for [url] in the shared store. Clearing `cf_clearance` before
 /// (re)solving forces Cloudflare to mint a fresh challenge instead of the
 /// WebView silently reusing a clearance that has gone stale for the HTTP
@@ -60,10 +99,7 @@ Future<void> removeWebViewCookie(String url, String name) async {
   // explicitly — clearing only the host cookie leaves the apex one in place.
   String? apex;
   final host = Uri.tryParse(url)?.host;
-  if (host != null && host.isNotEmpty) {
-    final parts = host.split('.');
-    apex = parts.length <= 2 ? host : parts.sublist(parts.length - 2).join('.');
-  }
+  if (host != null && host.isNotEmpty) apex = registrableDomain(host);
   try {
     await _channel.invokeMethod<void>('removeCookie', {
       'url': url,
@@ -129,12 +165,16 @@ String _serialize(Cookie c) {
 }
 
 /// [CookieJar] that shares the native Android WebView cookie store on Android,
-/// and falls back to an in-memory/persistent jar elsewhere (iOS, desktop,
-/// tests). Wires into Dio via `dio_cookie_manager`'s `CookieManager`.
+/// merging it over a persistent [CookieJar] that is also kept as a mirror.
+///
+/// * Foreground (channel available): native is authoritative/live (so a solved
+///   `cf_clearance` applies immediately); the persistent jar mirrors every Dio
+///   save so the background isolate can still read those cookies.
+/// * Background isolate / iOS / desktop (channel unavailable): native calls
+///   throw and are caught, so the jar falls back to the persistent mirror.
 class WebViewCookieJar implements CookieJar {
   WebViewCookieJar(this._fallback);
 
-  /// Used on non-Android platforms where there is no shared native store.
   final CookieJar _fallback;
 
   bool get _useNative => Platform.isAndroid;
@@ -144,39 +184,44 @@ class WebViewCookieJar implements CookieJar {
 
   @override
   Future<List<Cookie>> loadForRequest(Uri uri) async {
-    if (_useNative) {
-      final raw = await nativeCookieString(uri.toString());
-      if (raw != null && raw.isNotEmpty) return _parsePairs(raw);
-      return const <Cookie>[];
+    final fallback = await _fallback.loadForRequest(uri);
+    if (!_useNative) return fallback;
+    final raw = await nativeCookieString(uri.toString());
+    if (raw == null || raw.isEmpty) {
+      return fallback; // native unavailable (background) or no cookies
     }
-    return _fallback.loadForRequest(uri);
+    final native = _parsePairs(raw);
+    if (fallback.isEmpty) return native;
+    // Merge: the live native store wins for any cookie it also holds.
+    final byName = {for (final c in fallback) c.name: c};
+    for (final c in native) {
+      byName[c.name] = c;
+    }
+    return byName.values.toList(growable: false);
   }
 
   @override
   Future<void> saveFromResponse(Uri uri, List<Cookie> cookies) async {
     if (cookies.isEmpty) return;
-    if (_useNative) {
-      final url = uri.toString();
-      for (final c in cookies) {
-        await _nativeSetCookie(url, _serialize(c));
-      }
-      await _nativeFlush();
-      return;
-    }
+    // Always mirror into the persistent jar (primary off-Android; background
+    // readability on Android).
     await _fallback.saveFromResponse(uri, cookies);
+    if (!_useNative) return;
+    final url = uri.toString();
+    for (final c in cookies) {
+      await _nativeSetCookie(url, _serialize(c));
+    }
+    await _nativeFlush();
   }
 
   @override
   Future<void> delete(Uri uri, [bool withDomainSharedCookie = false]) async {
-    // Cookie removal isn't part of any current flow; clearing happens via the
-    // app's data reset. Delegate to the fallback for parity on non-Android.
-    if (!_useNative) {
-      await _fallback.delete(uri, withDomainSharedCookie);
-    }
+    await _fallback.delete(uri, withDomainSharedCookie);
   }
 
   @override
   Future<void> deleteAll() async {
-    if (!_useNative) await _fallback.deleteAll();
+    await _fallback.deleteAll();
+    if (_useNative) await _nativeClearAll();
   }
 }
