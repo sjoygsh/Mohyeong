@@ -157,18 +157,13 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
       home: const AuthGate(
         child: OnboardingGate(child: HomeScreen()),
       ),
-      // Mount the shared offscreen WebView (Cloudflare fingerprint fetch path)
-      // beneath the app. Positioned.fill keeps the real UI full-screen and
-      // covering the 1×1 host at the origin.
+      // Mount the shared hidden WebView (Cloudflare fingerprint fetch path)
+      // full-size but BEHIND the app: a real viewport is needed for Cloudflare's
+      // challenge to run, and the opaque full-screen UI on top keeps it
+      // invisible. (A 1×1 viewport gets flagged and never solves.)
       builder: (context, child) => Stack(
         children: [
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 1,
-            height: 1,
-            child: OffscreenWebViewHost(),
-          ),
+          const Positioned.fill(child: OffscreenWebViewHost()),
           if (child != null) Positioned.fill(child: child),
         ],
       ),
