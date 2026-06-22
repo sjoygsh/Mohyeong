@@ -44,6 +44,12 @@ class WebViewHttpClient {
   WebViewController? _controller;
   final Completer<void> _ready = Completer<void>();
 
+  /// Flipped true the first time a Cloudflare-challenged request actually needs
+  /// the browser. [OffscreenWebViewHost] watches it and only then creates the
+  /// WebView — most sessions never touch a fingerprint-walled source and
+  /// shouldn't pay the cost of an always-on Chromium instance at startup.
+  final ValueNotifier<bool> activate = ValueNotifier<bool>(false);
+
   /// Set once we've waited for a controller that never arrived (e.g. the
   /// headless WorkManager isolate, where no [OffscreenWebViewHost] is mounted).
   /// Stops every subsequent request from eating the attach grace period. Reset
@@ -119,6 +125,9 @@ class WebViewHttpClient {
     Duration timeout = const Duration(seconds: 40),
   }) {
     if (!isAvailable || _giveUp) return Future.value(null);
+    // Ask the host to create the WebView now (no-op if already up / on an
+    // isolate without a host). _run then waits briefly for it to attach.
+    activate.value = true;
     final completer = Completer<Map<String, dynamic>?>();
     // Serialise: chain onto the lock so only one fetch runs at a time. An outer
     // timeout guarantees the lock always advances even if a platform call
@@ -287,9 +296,22 @@ class _OffscreenWebViewHostState extends State<OffscreenWebViewHost> {
   @override
   void initState() {
     super.initState();
-    if (WebViewHttpClient.instance.isAvailable) {
-      _controller = WebViewHttpClient.instance.buildController();
-    }
+    final client = WebViewHttpClient.instance;
+    if (!client.isAvailable) return;
+    client.activate.addListener(_onActivate);
+    if (client.activate.value) _onActivate(); // already requested before mount
+  }
+
+  void _onActivate() {
+    if (_controller != null || !mounted) return;
+    // Create the WebView lazily on first need (see [WebViewHttpClient.activate]).
+    setState(() => _controller = WebViewHttpClient.instance.buildController());
+  }
+
+  @override
+  void dispose() {
+    WebViewHttpClient.instance.activate.removeListener(_onActivate);
+    super.dispose();
   }
 
   @override

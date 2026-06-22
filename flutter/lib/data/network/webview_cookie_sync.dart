@@ -184,20 +184,15 @@ class WebViewCookieJar implements CookieJar {
 
   @override
   Future<List<Cookie>> loadForRequest(Uri uri) async {
-    final fallback = await _fallback.loadForRequest(uri);
-    if (!_useNative) return fallback;
+    if (!_useNative) return _fallback.loadForRequest(uri);
+    // Hot path: the native store is the live superset in the foreground (every
+    // Dio save mirrors into it, and the WebView writes cf_clearance there), so
+    // when it has cookies we return them without also touching the persistent
+    // mirror. Only fall back when native is unavailable (headless background
+    // isolate) or genuinely empty.
     final raw = await nativeCookieString(uri.toString());
-    if (raw == null || raw.isEmpty) {
-      return fallback; // native unavailable (background) or no cookies
-    }
-    final native = _parsePairs(raw);
-    if (fallback.isEmpty) return native;
-    // Merge: the live native store wins for any cookie it also holds.
-    final byName = {for (final c in fallback) c.name: c};
-    for (final c in native) {
-      byName[c.name] = c;
-    }
-    return byName.values.toList(growable: false);
+    if (raw != null && raw.isNotEmpty) return _parsePairs(raw);
+    return _fallback.loadForRequest(uri);
   }
 
   @override
