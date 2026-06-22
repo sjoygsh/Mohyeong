@@ -46,7 +46,15 @@ class AppHttpClient {
     // resolved IP, then `SecureSocket.secure(socket, host: originalHost)` so
     // SNI + cert validation still key off the real hostname. Deferred until
     // after real-server parity (TLS edge cases + IPv6/proxy/TTL caching).
-    final dio = Dio()..interceptors.add(CookieManager(jar));
+    // Timeouts mirror Mihon's OkHttp (30s connect/read, 2 min call) so a
+    // stalled connection — e.g. a Cloudflare-challenged endpoint that holds the
+    // socket — fails fast and lets the WebView fallback kick in, instead of
+    // hanging the extension's request (Dio has NO timeout by default).
+    final dio = Dio(BaseOptions(
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 30),
+      sendTimeout: const Duration(seconds: 30),
+    ))..interceptors.add(CookieManager(jar));
     // Mirrors Kotlin's UserAgentInterceptor: stamp the default browser UA on
     // every request that doesn't already carry one. Required for Cloudflare —
     // `cf_clearance` is minted against this exact UA in the solver WebView, so

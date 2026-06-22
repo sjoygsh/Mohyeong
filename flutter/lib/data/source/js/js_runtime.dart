@@ -102,9 +102,12 @@ class JsRuntime {
   /// markers Mihon's CloudflareInterceptor checks, plus the challenge-platform
   /// script the interstitial always loads.
   static bool _looksLikeCloudflareChallenge(int status, String body) {
+    // The interstitial's <title> is a strong signal at ANY status — Cloudflare
+    // sometimes serves the JS challenge with HTTP 200 to XHR/API requests, so
+    // a status-gated check alone would miss it and never trigger the retry.
+    if (body.contains('<title>Just a moment')) return true;
     if (status != 403 && status != 503 && status != 429) return false;
-    return body.contains('Just a moment') ||
-        body.contains('challenge-platform') ||
+    return body.contains('challenge-platform') ||
         body.contains('challenge-error') ||
         body.contains('cf-challenge') ||
         body.contains('_cf_chl_opt') ||
