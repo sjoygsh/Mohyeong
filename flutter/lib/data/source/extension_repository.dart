@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -72,7 +73,13 @@ class ExtensionRepository {
       return local;
     }
     final source = await _storage.readSource(slug);
-    final js = await JsSource.load(source, dio: _http.dio);
+    final js = await JsSource.load(
+      source,
+      dio: _http.dio,
+      // Surface extension `console.*` output to logcat in debug builds so
+      // source authors can diagnose scrapers; silent in release.
+      onLog: kDebugMode ? (level, msg) => debugPrint('[ext $slug] $msg') : null,
+    );
     // Inject the user's per-source settings (optional `preferences()`
     // contract) so the extension sees its stored `__sourcePrefs` from the
     // first call.
