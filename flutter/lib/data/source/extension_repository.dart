@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/source/model/manga_source.dart';
 import '../network/app_http_client.dart';
+import '../network/network_preferences.dart';
 import 'installed_extension.dart';
 import 'js/js_source.dart';
 import 'local_source.dart';
@@ -303,6 +304,31 @@ final installedSourceLangsProvider =
     final m = <int, String>{};
     for (final e in list) {
       m[sourceNumericId(e.id)] = e.lang;
+    }
+    yield m;
+  }
+});
+
+/// Map of `int` source id → default image-request headers (Referer = the
+/// source's base URL, plus the browser User-Agent), derived from the installed
+/// extension list. Cover/thumbnail fetches go through `cached_network_image`,
+/// which sends no source headers by default, so a CDN with hotlink protection
+/// 403s and the cover renders blank — e.g. NatoManga's 2xstorage requires
+/// `Referer: https://www.natomanga.com/`. Cover widgets look these up by
+/// `manga.source` and pass them to [SourceImage]. Sources whose CDN ignores
+/// Referer (MangaDex) work with or without them.
+final installedSourceImageHeadersProvider =
+    StreamProvider<Map<int, Map<String, String>>>((ref) async* {
+  final repo = ref.watch(extensionRepositoryProvider);
+  await for (final list in repo.watchInstalled()) {
+    final m = <int, Map<String, String>>{};
+    for (final e in list) {
+      if (e.baseUrl.isEmpty) continue;
+      final base = e.baseUrl.replaceAll(RegExp(r'/+$'), '');
+      m[sourceNumericId(e.id)] = {
+        'Referer': '$base/',
+        'User-Agent': defaultUserAgent,
+      };
     }
     yield m;
   }

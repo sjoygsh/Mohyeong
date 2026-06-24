@@ -1142,7 +1142,11 @@ class _DuplicateMangaDialog extends StatelessWidget {
                   height: 56,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
-                    child: _CoverImage(mangaId: d.id, url: d.thumbnailUrl),
+                    child: _CoverImage(
+                      mangaId: d.id,
+                      url: d.thumbnailUrl,
+                      sourceId: d.source,
+                    ),
                   ),
                 ),
                 title: Text(
@@ -1583,7 +1587,11 @@ class _MangaInfoBox extends ConsumerWidget {
                         fullscreenDialog: true,
                       ),
                     ),
-                    child: _CoverImage(mangaId: manga.id, url: manga.thumbnailUrl),
+                    child: _CoverImage(
+                      mangaId: manga.id,
+                      url: manga.thumbnailUrl,
+                      sourceId: manga.source,
+                    ),
                   ),
                 ),
               ),
@@ -1640,6 +1648,9 @@ class _Backdrop extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final url =
         ref.watch(coverCacheProvider).coverUrlFor(manga.id, manga.thumbnailUrl);
+    final headers = ref
+        .watch(installedSourceImageHeadersProvider)
+        .valueOrNull?[manga.source];
     final bg = Theme.of(context).colorScheme.surface;
     if (url == null || url.isEmpty) {
       return Container(color: bg);
@@ -1663,6 +1674,7 @@ class _Backdrop extends ConsumerWidget {
               child: SourceImage(
                 cacheWidth: 480,
                 url: url,
+                headers: headers,
                 fit: BoxFit.cover,
                 placeholder: (_) => Container(color: bg),
                 errorWidget: (_, _) => Container(color: bg),
@@ -1686,10 +1698,15 @@ class _Backdrop extends ConsumerWidget {
 }
 
 class _CoverImage extends ConsumerWidget {
-  const _CoverImage({required this.mangaId, required this.url});
+  const _CoverImage({
+    required this.mangaId,
+    required this.url,
+    required this.sourceId,
+  });
 
   final int mangaId;
   final String? url;
+  final int sourceId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1698,9 +1715,13 @@ class _CoverImage extends ConsumerWidget {
     if (resolved == null || resolved.isEmpty) {
       return Container(color: placeholder);
     }
+    final headers = ref
+        .watch(installedSourceImageHeadersProvider)
+        .valueOrNull?[sourceId];
     return SourceImage(
       cacheWidth: 480,
       url: resolved,
+      headers: headers,
       fit: BoxFit.cover,
       placeholder: (_) => Container(color: placeholder),
       errorWidget: (_, _) => Container(color: placeholder),

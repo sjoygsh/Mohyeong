@@ -628,6 +628,10 @@ class _MangaCard extends ConsumerWidget {
     final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
     final url = manga.thumbnailUrl;
     final sourceIdInt = sourceNumericId(sourceId);
+    // Source's image-request headers (Referer/UA) so hotlink-protected cover
+    // CDNs don't 403 into a blank tile.
+    final imageHeaders =
+        ref.watch(installedSourceImageHeadersProvider).valueOrNull?[sourceIdInt];
     final favoritedUrls = ref
             .watch(favoritedUrlsForSourceProvider(sourceIdInt))
             .valueOrNull ??
@@ -642,6 +646,7 @@ class _MangaCard extends ConsumerWidget {
           : SourceImage(
               cacheWidth: 480,
               url: url,
+              headers: imageHeaders,
               fit: BoxFit.cover,
               placeholder: (_) => Container(color: placeholder),
               errorWidget: (_, _) => Container(color: placeholder),

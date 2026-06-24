@@ -125,7 +125,46 @@ class ChapterRepository {
   ) async {
     if (fetched.isEmpty) return const [];
     final existing = await getByMangaId(mangaId);
-    final existingByUrl = {for (final c in existing) c.url: c};
+
+    // Dedupe the source list by URL. A misbehaving extension can return the
+    // same chapter many times (observed: a source whose API repeated pages
+    // inflated a 521-chapter manga to 4401 rows); without this each copy
+    // became a separate DB row.
+    final sourceUrls = <String>{};
+    final deduped = <SourceChapter>[];
+    for (final s in fetched) {
+      if (sourceUrls.add(s.url)) deduped.add(s);
+    }
+
+    // Canonical existing row per URL, preferring one that carries progress so
+    // collapsing any pre-existing duplicate rows never drops read state.
+    final existingByUrl = <String, Chapter>{};
+    for (final c in existing) {
+      final prior = existingByUrl[c.url];
+      if (prior == null) {
+        existingByUrl[c.url] = c;
+      } else {
+        final priorHasProgress =
+            prior.read || prior.bookmark || prior.lastPageRead > 0;
+        final cHasProgress = c.read || c.bookmark || c.lastPageRead > 0;
+        if (cHasProgress && !priorHasProgress) existingByUrl[c.url] = c;
+      }
+    }
+
+    // Delete rows that are duplicates (not the canonical row for their URL) or
+    // whose URL is no longer in the source (Kotlin syncChaptersWithSource
+    // removes chapters missing from the source). Only runs on a successful
+    // full fetch — a failed fetch throws before reaching here, so chapters
+    // aren't pruned on a transient error.
+    final keepIds = {for (final c in existingByUrl.values) c.id};
+    final toDelete = <int>[
+      for (final c in existing)
+        if (!keepIds.contains(c.id) || !sourceUrls.contains(c.url)) c.id,
+    ];
+    if (toDelete.isNotEmpty) {
+      await (_db.delete(_db.chapters)..where((t) => t.id.isIn(toDelete))).go();
+    }
+
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     // "Mark duplicate read chapter as read → After fetching new chapter"
     // (Kotlin MARK_DUPLICATE_CHAPTER_READ_NEW): a new chapter whose number
@@ -147,8 +186,8 @@ class ChapterRepository {
     // Source returns chapters in display order (typically newest first).
     // sourceOrder mirrors the index here so the existing ORDER BY
     // source_order in getChaptersByMangaId works.
-    for (var i = 0; i < fetched.length; i++) {
-      final s = fetched[i];
+    for (var i = 0; i < deduped.length; i++) {
+      final s = deduped[i];
       final prior = existingByUrl[s.url];
       if (prior == null) {
         final duplicateRead = markDuplicateAsRead &&

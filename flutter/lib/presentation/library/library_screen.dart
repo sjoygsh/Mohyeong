@@ -1670,9 +1670,13 @@ class _Cover extends ConsumerWidget {
         child: const Icon(Icons.menu_book, size: 48),
       );
     }
+    final headers = ref
+        .watch(installedSourceImageHeadersProvider)
+        .valueOrNull?[manga.source];
     return SourceImage(
       cacheWidth: 480,
       url: url,
+      headers: headers,
       fit: BoxFit.cover,
       placeholder: (_) => Container(color: placeholderColor),
       errorWidget: (_, _) => Container(
@@ -2435,6 +2439,9 @@ class _MostReadBannerCard extends ConsumerWidget {
     final coverUrl = ref
         .watch(coverCacheProvider)
         .coverUrlFor(item.manga.id, item.manga.thumbnailUrl);
+    final coverHeaders = ref
+        .watch(installedSourceImageHeadersProvider)
+        .valueOrNull?[item.manga.source];
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2455,6 +2462,7 @@ class _MostReadBannerCard extends ConsumerWidget {
                 SourceImage(
                   cacheWidth: 1080,
                   url: coverUrl,
+                  headers: coverHeaders,
                   fit: BoxFit.cover,
                   errorWidget: (_, _) => ColoredBox(
                     color: Theme.of(context)
