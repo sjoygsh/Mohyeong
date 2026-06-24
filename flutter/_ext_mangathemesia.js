@@ -133,14 +133,21 @@
         }
       }
 
+      // "Status" label followed by the value in an i/a/span (covers the
+      // .imptdt and .tsinfo variants across MangaThemesia sites).
       var status = 0;
-      var stM = /Status[\s\S]{0,80}?class="[^"]*"[^>]*>\s*([A-Za-z ]+?)\s*</i.exec(html) ||
-        /class="imptdt"[^>]*>\s*Status\s*<i>([^<]+)<\/i>/i.exec(html);
+      var stM = /Status[\s\S]{0,40}?<(?:i|a|span)[^>]*>([^<]+)</i.exec(html);
       if (stM) status = mapStatus(stM[1]);
 
+      // Author: a block whose class contains "author" (its first link/value),
+      // or an "Author" label followed by the value.
       var author = null;
-      var auM = /(?:Author|Artist)[\s\S]{0,60}?<i>([^<]+)<\/i>/i.exec(html);
-      if (auM) author = decode(auM[1].trim());
+      var auM = /class="[^"]*author[^"]*"[\s\S]{0,80}?<(?:a|i|span)[^>]*>([^<]+)<\/(?:a|i|span)>/i.exec(html) ||
+        /Author[\s\S]{0,40}?<(?:i|a|span)[^>]*>([^<]+)</i.exec(html);
+      if (auM) {
+        var au = decode(auM[1].trim());
+        if (au && au.toLowerCase() !== 'author' && au !== '-') author = au;
+      }
 
       var description = null;
       var dM = /itemprop="description"[^>]*>([\s\S]*?)<\/div>/.exec(html) ||
