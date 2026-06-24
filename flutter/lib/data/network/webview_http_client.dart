@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -56,8 +57,22 @@ class WebViewHttpClient {
   /// (Cloudflare ↔ real page) navigation.
   String? _navHost;
 
+  /// `scheme://host` the WebView is currently parked on (set after a successful
+  /// navigation). Lets cover fetches skip re-navigation when the WebView is
+  /// already on the cover's origin (e.g. right after the listing fetch).
+  String? _currentOrigin;
+
   /// One WebView ⇒ one in-flight navigation at a time.
   Future<void> _lock = Future<void>.value();
+
+  /// In-page image-fetch results, keyed by request id (the JS canvas extract
+  /// posts back over the CFImg channel since toDataURL is async).
+  final Map<int, Completer<Map<String, dynamic>>> _imgPending = {};
+  int _imgId = 0;
+
+  /// Small cache of WebView-fetched cover bytes (covers are tiny) so repeated
+  /// rebuilds / scroll recycling don't re-extract the same image.
+  final Map<String, Uint8List> _imgCache = {};
 
   /// Whether the WebView path is usable on this platform. [request]
   /// additionally bails when no controller is attached (background isolate).
@@ -69,6 +84,7 @@ class WebViewHttpClient {
     final c = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setUserAgent(defaultUserAgent)
+      ..addJavaScriptChannel('CFImg', onMessageReceived: _onImg)
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: (req) {
@@ -137,6 +153,7 @@ class WebViewHttpClient {
     _navHost = target.host;
 
     if (!await _navigate(controller, url, timeout)) return null;
+    _currentOrigin = '${target.scheme}://${target.host}';
 
     String raw;
     try {
@@ -162,6 +179,108 @@ class WebViewHttpClient {
       'final_url': url,
       'via': 'webview',
     };
+  }
+
+  void _onImg(JavaScriptMessage message) {
+    try {
+      final m = jsonDecode(message.message) as Map<String, dynamic>;
+      final id = (m['id'] as num).toInt();
+      _imgPending.remove(id)?.complete(m);
+    } catch (_) {
+      // Malformed → the request times out.
+    }
+  }
+
+  /// Fetches a cover/image's bytes through the browser, for sources whose CDN
+  /// 403s non-browser clients (cached_network_image can't pass the fingerprint
+  /// wall). Parks the WebView on the image's own origin (so the in-page <img>
+  /// is same-origin and the canvas isn't tainted, and Cloudflare is passed by
+  /// the browser fingerprint), then draws it to a canvas and reads the bytes.
+  /// Returns null when unavailable/failed so the caller shows its error box.
+  Future<Uint8List?> fetchImageBytes(
+    String url, {
+    Duration timeout = const Duration(seconds: 30),
+  }) {
+    if (!isAvailable || _giveUp) return Future.value(null);
+    final cached = _imgCache[url];
+    if (cached != null) return Future.value(cached);
+    activate.value = true;
+    final completer = Completer<Uint8List?>();
+    _lock = _lock.then((_) async {
+      try {
+        completer.complete(await _runImg(url, timeout)
+            .timeout(timeout + const Duration(seconds: 10), onTimeout: () => null));
+      } catch (_) {
+        completer.complete(null);
+      }
+    });
+    return completer.future;
+  }
+
+  Future<Uint8List?> _runImg(String url, Duration timeout) async {
+    if (_controller == null) {
+      await _ready.future.timeout(const Duration(seconds: 6), onTimeout: () {});
+      if (_controller == null) {
+        _giveUp = true;
+        return null;
+      }
+    }
+    final controller = _controller!;
+    final target = Uri.tryParse(url);
+    if (target == null) return null;
+    final origin = '${target.scheme}://${target.host}';
+    if (_currentOrigin != origin) {
+      _navHost = target.host;
+      if (!await _navigate(controller, origin, timeout)) return null;
+      _currentOrigin = origin;
+    }
+
+    final id = _imgId++;
+    final completer = Completer<Map<String, dynamic>>();
+    _imgPending[id] = completer;
+    try {
+      await controller.runJavaScript(_buildImgJs(id, url))
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      _imgPending.remove(id);
+      return null;
+    }
+    final res = await completer.future.timeout(timeout, onTimeout: () {
+      _imgPending.remove(id);
+      return const {'__timeout': true};
+    });
+    if (res['__timeout'] == true || res['ok'] != true) return null;
+    final data = res['data']?.toString() ?? '';
+    final comma = data.indexOf(',');
+    if (comma < 0) return null;
+    try {
+      final bytes = base64Decode(data.substring(comma + 1));
+      if (bytes.isNotEmpty && bytes.length <= 4 * 1024 * 1024) {
+        _imgCache[url] = bytes;
+        if (_imgCache.length > 256) _imgCache.remove(_imgCache.keys.first);
+      }
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _buildImgJs(int id, String url) {
+    return '''
+(function(){
+  var im = new Image();
+  im.onload = function(){
+    try{
+      var c = document.createElement('canvas');
+      c.width = im.naturalWidth; c.height = im.naturalHeight;
+      c.getContext('2d').drawImage(im, 0, 0);
+      CFImg.postMessage(JSON.stringify({id:$id, ok:true, data:c.toDataURL('image/jpeg',0.85)}));
+    }catch(e){ CFImg.postMessage(JSON.stringify({id:$id, ok:false, error:String(e)})); }
+  };
+  im.onerror = function(){ CFImg.postMessage(JSON.stringify({id:$id, ok:false, error:'load'})); };
+  im.src = ${jsonEncode(url)};
+})();
+''';
   }
 
   /// Navigates to [url] and waits until the WebView is past any Cloudflare

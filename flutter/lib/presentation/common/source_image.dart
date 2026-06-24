@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../data/network/webview_http_client.dart';
 import '../../data/source/local_archive.dart';
 import '../../data/source/saf.dart';
 import 'crop_borders_image.dart';
@@ -183,8 +184,18 @@ class SourceImage extends StatelessWidget {
       placeholder: placeholder == null
           ? null
           : (ctx, _) => placeholder!(ctx),
-      errorWidget: (ctx, _, error) =>
-          errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
+      // On a network failure (commonly a Cloudflare 403 on sources whose CDN
+      // fingerprint-blocks non-browser clients), fall back to fetching the
+      // image through the offscreen WebView, which carries a browser
+      // fingerprint. Cached after the first fetch; if that also fails, show
+      // the caller's error widget / default box.
+      errorWidget: (ctx, _, error) => Image(
+        image: _WebViewImageProvider(url),
+        fit: fit,
+        gaplessPlayback: true,
+        errorBuilder: (c2, e2, _) =>
+            errorWidget?.call(c2, e2) ?? const _DefaultErrorBox(),
+      ),
     );
   }
 }
@@ -275,6 +286,52 @@ class _ArchiveImageProvider extends ImageProvider<_ArchiveImageProvider> {
   @override
   bool operator ==(Object other) =>
       other is _ArchiveImageProvider && other.url == url;
+
+  @override
+  int get hashCode => url.hashCode;
+}
+
+/// [ImageProvider] that fetches a network image's bytes through the offscreen
+/// WebView ([WebViewHttpClient.fetchImageBytes]) — used as a fallback when the
+/// normal HTTP image client is fingerprint-blocked (Cloudflare 403). Keyed on
+/// the URL so Flutter's [ImageCache] de-dupes; the WebView client also caches
+/// the decoded bytes. Throws on failure so the caller's errorBuilder runs.
+class _WebViewImageProvider extends ImageProvider<_WebViewImageProvider> {
+  const _WebViewImageProvider(this.url);
+
+  final String url;
+
+  @override
+  Future<_WebViewImageProvider> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<_WebViewImageProvider>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _WebViewImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
+    return MultiFrameImageStreamCompleter(
+      codec: _loadAsync(key, decode),
+      scale: 1.0,
+      debugLabel: key.url,
+    );
+  }
+
+  Future<ui.Codec> _loadAsync(
+    _WebViewImageProvider key,
+    ImageDecoderCallback decode,
+  ) async {
+    final bytes = await WebViewHttpClient.instance.fetchImageBytes(key.url);
+    if (bytes == null || bytes.isEmpty) {
+      throw StateError('WebView image fetch failed for ${key.url}');
+    }
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    return decode(buffer);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _WebViewImageProvider && other.url == url;
 
   @override
   int get hashCode => url.hashCode;
