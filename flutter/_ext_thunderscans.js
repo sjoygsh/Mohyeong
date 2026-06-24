@@ -6,12 +6,12 @@
 
 (function () {
   // ===== CONFIG (per-site) =================================================
-  var BASE = 'https://rizzfables.com';
-  var ID = 'rizzfables';
-  var NAME = 'RizzFables';
+  var BASE = 'https://en-thunderscans.com';
+  var ID = 'thunderscans';
+  var NAME = 'ThunderScans';
   var LANG = 'en';
   // Manga browse sub-directory: rizzfables uses /series, most use /manga.
-  var DIR = 'series';
+  var DIR = 'comics';
   // =========================================================================
 
   var UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 ' +
