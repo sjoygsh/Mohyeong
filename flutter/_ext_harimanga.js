@@ -9,9 +9,9 @@
 
 (function () {
   // ===== CONFIG (per-site) =================================================
-  var BASE = 'https://manhuaplus.com';
-  var ID = 'manhuaplus';
-  var NAME = 'ManhuaPlus';
+  var BASE = 'https://harimanga.me';
+  var ID = 'harimanga';
+  var NAME = 'HariManga';
   var LANG = 'en';
   // Manga browse sub-path. Most Madara sites use /manga/; some override it
   // (e.g. allporncomic uses /porncomic/, others /comics/ or /series/).

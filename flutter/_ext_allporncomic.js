@@ -9,13 +9,13 @@
 
 (function () {
   // ===== CONFIG (per-site) =================================================
-  var BASE = 'https://manhuaplus.com';
-  var ID = 'manhuaplus';
-  var NAME = 'ManhuaPlus';
+  var BASE = 'https://allporncomic.com';
+  var ID = 'allporncomic';
+  var NAME = 'AllPornComic';
   var LANG = 'en';
   // Manga browse sub-path. Most Madara sites use /manga/; some override it
   // (e.g. allporncomic uses /porncomic/, others /comics/ or /series/).
-  var MPATH = 'manga';
+  var MPATH = 'porncomic';
   // Some Madara sites load chapters via AJAX instead of inline in the manga
   // page. manhuaplus is inline; flip to true for sites that return an empty
   // chapter list (then chapters POST to {mangaUrl}ajax/chapters/).
