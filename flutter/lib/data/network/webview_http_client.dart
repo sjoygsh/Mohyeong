@@ -305,7 +305,14 @@ class WebViewHttpClient {
                 )
                 .timeout(const Duration(seconds: 5)))
             .toString();
-        if (r.replaceAll('"', '').trim() == '1') return true;
+        if (r.replaceAll('"', '').trim() == '1') {
+          // Settle: give async content a moment to render into the DOM before
+          // we snapshot outerHTML — Madara/MangaThemesia chapter lists are
+          // often AJAX-loaded after readyState=complete, and lazy images
+          // hydrate late. Without this the snapshot misses them (0 chapters).
+          await Future<void>.delayed(const Duration(milliseconds: 1800));
+          return true;
+        }
       } catch (_) {
         // Keep polling until the deadline.
       }
