@@ -13,10 +13,13 @@
   var ID = 'manhuafast';
   var NAME = 'ManhuaFast';
   var LANG = 'en';
+  // Manga browse sub-path. Most Madara sites use /manga/; some override it
+  // (e.g. allporncomic uses /porncomic/, others /comics/ or /series/).
+  var MPATH = 'manga';
   // Some Madara sites load chapters via AJAX instead of inline in the manga
   // page. manhuaplus is inline; flip to true for sites that return an empty
   // chapter list (then chapters POST to {mangaUrl}ajax/chapters/).
-  var AJAX_CHAPTERS = false;
+  var AJAX_CHAPTERS = true;
   // =========================================================================
 
   var UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 ' +
@@ -56,6 +59,25 @@
     return BASE + '/' + url;
   }
 
+  // Cover URL picker: Madara cards stash the real image in data-src, but some
+  // sites (harimanga) put a broken RELATIVE data-src and the real absolute URL
+  // in src. Prefer an absolute http(s) candidate; skip lazy placeholders.
+  function pickCover(s) {
+    if (!s) return null;
+    var cands = [attr(s, 'data-src'), attr(s, 'data-lazy-src'),
+                 attr(s, 'src'), attr(s, 'data-backup')];
+    var fallback = null;
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      if (!c) continue;
+      c = c.replace(/^\s+|\s+$/g, '').split(/\s+/)[0];
+      if (!c || /placeholder|blank|lazy|spinner|loading|^data:image/i.test(c)) continue;
+      if (fallback == null) fallback = c;
+      if (/^https?:\/\//.test(c)) return c;
+    }
+    return fallback;
+  }
+
   function getHtml(url, opts) {
     var o = opts || {};
     o.headers = o.headers || {};
@@ -90,14 +112,16 @@
     var blocks = html.split('page-item-detail');
     for (var i = 1; i < blocks.length; i++) {
       var b = blocks[i];
-      // First /manga/ link in the block — skip the site logo/banner whose
-      // anchor points elsewhere (home, etc.).
-      var aM = /<a\s+[^>]*href="([^"]*\/manga\/[^"]+)"[^>]*>/.exec(b);
+      // First series link in the block — skip the site logo/banner whose
+      // anchor points home. Match any known Madara series sub-path (the browse
+      // path MPATH and the per-series path can differ, e.g. manhuatop browses
+      // at /manga/ but its series live at /manhua/).
+      var aM = /<a\s+[^>]*href="([^"]*\/(?:manga|manhua|manhwa|comics?|series|komik|porncomic|webtoons?|toons?)\/[^"]+)"[^>]*>/.exec(b);
       if (!aM) continue;
       var url = aM[1];
       var imgM = /<img\b[^>]*>/.exec(b);
       var imgTag = imgM ? imgM[0] : null;
-      var cover = attr(imgTag, 'data-src') || attr(imgTag, 'src');
+      var cover = pickCover(imgTag);
       // title: the post-title anchor text, else the thumb anchor's title attr.
       var title = null;
       var tM = /post-title[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/.exec(b);
@@ -118,8 +142,8 @@
   // Madara sites (manhwatop) and the query can be lost across the hop.
   function listUrl(orderby, page) {
     return page <= 1
-      ? BASE + '/manga/?m_orderby=' + orderby
-      : BASE + '/manga/page/' + page + '/?m_orderby=' + orderby;
+      ? BASE + '/' + MPATH + '/?m_orderby=' + orderby
+      : BASE + '/' + MPATH + '/page/' + page + '/?m_orderby=' + orderby;
   }
   function popular(page) {
     return getHtml(listUrl('views', page)).then(function (html) {
@@ -151,7 +175,7 @@
       if (!aM) continue;
       var imgM = /<img\b[^>]*>/.exec(b);
       var imgTag = imgM ? imgM[0] : null;
-      var cover = attr(imgTag, 'data-src') || attr(imgTag, 'src');
+      var cover = pickCover(imgTag);
       var tM = /post-title[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/.exec(b);
       var title = tM ? stripTags(tM[1]) : (attr(aM[0], 'title') || '');
       out.push({ url: abs(aM[1]), title: decode(title), thumbnail_url: cover ? abs(cover) : null });
@@ -192,7 +216,7 @@
       var title = titleM ? decode(stripTags(titleM[1])) : (manga.title || '');
 
       var picM = /class="summary_image"[\s\S]*?<img\b([^>]*)>/.exec(html);
-      var cover = picM ? (attr(picM[1], 'data-src') || attr(picM[1], 'src')) : null;
+      var cover = picM ? pickCover(picM[1]) : null;
 
       var author = linksText(section(html, 'author-content')).join(', ') || null;
       var artist = linksText(section(html, 'artist-content')).join(', ') || null;
@@ -252,9 +276,32 @@
     if (!AJAX_CHAPTERS) {
       return getHtml(abs(manga.url)).then(parseChapters);
     }
-    // AJAX variant: POST to {mangaUrl}ajax/chapters/.
-    var u = abs(manga.url).replace(/\/+$/, '') + '/ajax/chapters/';
-    return postHtml(u, '').then(parseChapters);
+    // AJAX variant (manhuafast et al.): chapters aren't inline and the classic
+    // endpoint is a POST, which the WebView proxy can't retry on a CF 403. So
+    // fetch the manga page (rides the proxy), grab the numeric post id, then GET
+    // admin-ajax.php's chapter list — a GET stays proxy-retryable. WordPress'
+    // admin-ajax reads $_REQUEST, so action/manga work as query params on GET.
+    return getHtml(abs(manga.url)).then(function (page) {
+      var inline = parseChapters(page);
+      if (inline.length > 0) return inline;
+      var idM = /id="manga-chapters-holder"[^>]*data-id="(\d+)"/.exec(page) ||
+                /<div[^>]*data-id="(\d+)"[^>]*class="[^"]*wp-manga/.exec(page) ||
+                /shortlink[^>]*\?p=(\d+)/.exec(page) ||
+                /post_id\s*[:=]\s*['"]?(\d+)/.exec(page);
+      var urls = [];
+      if (idM) urls.push(BASE + '/wp-admin/admin-ajax.php?action=manga_get_chapters&manga=' + idM[1]);
+      urls.push(abs(manga.url).replace(/\/+$/, '') + '/ajax/chapters/');
+      function tryGet(i) {
+        if (i >= urls.length) {
+          return postHtml(urls[urls.length - 1], '').then(parseChapters).catch(function () { return []; });
+        }
+        return getHtml(urls[i]).then(function (html) {
+          var ch = parseChapters(html);
+          return ch.length > 0 ? ch : tryGet(i + 1);
+        }).catch(function () { return tryGet(i + 1); });
+      }
+      return tryGet(0);
+    });
   }
 
   // --- pages ---------------------------------------------------------------

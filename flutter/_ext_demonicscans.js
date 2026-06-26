@@ -46,6 +46,12 @@
   function stripTags(s) {
     return s ? s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() : s;
   }
+  // Jsoup ownText(): text directly in the element, excluding nested children
+  // (the demonicscans <h1> title has a nested view-count span we must drop).
+  function ownText(s) {
+    if (!s) return s;
+    return stripTags(s.replace(/<(\w+)\b[^>]*>[\s\S]*?<\/\1>/g, ''));
+  }
   function abs(url) {
     if (!url) return url;
     if (url.indexOf('//') === 0) return 'https:' + url;
@@ -79,7 +85,7 @@
       var url = aM[1];
       if (seen[url]) continue; seen[url] = true;
       var hM = /<h1[^>]*>([\s\S]*?)<\/h1>/.exec(b);
-      var title = hM ? stripTags(hM[1]) : (attr(aM[0], 'title') || '');
+      var title = hM ? ownText(hM[1]) : (attr(aM[0], 'title') || '');
       var cover = firstImg(b);
       out.push({ url: abs(url), title: decode(title), thumbnail_url: cover ? abs(cover) : null });
     }
@@ -157,7 +163,7 @@
     return getHtml(abs(manga.url)).then(function (html) {
       var tM = /class="big-fat-titles"[^>]*>([\s\S]*?)<\/h1>/.exec(html) ||
         /<h1[^>]*class="[^"]*big-fat-titles[^"]*"[^>]*>([\s\S]*?)<\/h1>/.exec(html);
-      var title = tM ? stripTags(tM[1]) : (manga.title || '');
+      var title = tM ? ownText(tM[1]) : (manga.title || '');
 
       var cM = /id="manga-page"[\s\S]*?<img\b([^>]*)>/.exec(html);
       var cover = cM ? (attr(cM[1], 'data-src') || attr(cM[1], 'src')) : null;
