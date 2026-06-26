@@ -80,9 +80,12 @@ class JsRuntime {
       if (idempotent &&
           WebViewHttpClient.instance.isAvailable &&
           (forceWebView || _looksLikeCloudflareChallenge(status, bodyStr))) {
-        // Extensions can request a longer DOM-settle for slow AJAX content
-        // (e.g. Madara chapter lists injected after load) via webview_settle_ms.
+        // Extensions tune the DOM wait: webview_settle_ms is the CEILING, and
+        // webview_ready_js (a JS boolean) lets the proxy return as soon as the
+        // expected content exists (e.g. Madara chapter rows) instead of sleeping
+        // the whole ceiling.
         final settleMs = (req['webview_settle_ms'] as num?)?.toInt();
+        final readyJs = req['webview_ready_js'] as String?;
         final viaWebView = await WebViewHttpClient.instance.request(
           url,
           method: method,
@@ -91,6 +94,7 @@ class JsRuntime {
           settle: settleMs != null
               ? Duration(milliseconds: settleMs.clamp(0, 20000))
               : const Duration(milliseconds: 1800),
+          readyJs: readyJs,
         );
         if (viaWebView != null) return viaWebView;
       }

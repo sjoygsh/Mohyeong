@@ -27,11 +27,22 @@
 
   // --- tiny HTML helpers (QuickJS: no DOM) ---------------------------------
 
+  // Cache the compiled per-name regexes — attr() runs hundreds of times per
+  // listing parse and QuickJS doesn't dedupe `new RegExp`. (No /g flag, so exec
+  // is stateless and safe to reuse.)
+  var _attrRe = {};
   function attr(tag, name) {
     if (!tag) return null;
-    var m = new RegExp(name + '\\s*=\\s*"([^"]*)"').exec(tag);
+    var re = _attrRe[name];
+    if (!re) {
+      re = _attrRe[name] = [
+        new RegExp(name + '\\s*=\\s*"([^"]*)"'),
+        new RegExp(name + "\\s*=\\s*'([^']*)'"),
+      ];
+    }
+    var m = re[0].exec(tag);
     if (m) return m[1];
-    m = new RegExp(name + "\\s*=\\s*'([^']*)'").exec(tag);
+    m = re[1].exec(tag);
     return m ? m[1] : null;
   }
 
@@ -287,8 +298,11 @@
     // webview_force: once cf_clearance is warm, a plain Dio GET returns 200 with
     // the un-rendered shell (no JS = no chapters), so force the JS-running
     // browser path regardless of CF status.
-    return getHtml(abs(manga.url), { webview_force: true, webview_settle_ms: 8000 })
-      .then(parseChapters);
+    return getHtml(abs(manga.url), {
+      webview_force: true,
+      webview_settle_ms: 8000,                 // ceiling
+      webview_ready_js: "document.querySelectorAll('.wp-manga-chapter').length>0",
+    }).then(parseChapters);
   }
 
   // --- pages ---------------------------------------------------------------

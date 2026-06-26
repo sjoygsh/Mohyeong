@@ -181,6 +181,9 @@ class SourceImage extends StatelessWidget {
       fit: fit,
       httpHeaders: headers,
       memCacheWidth: cacheWidth,
+      // Also cap the on-disk cache so cold loads don't re-decode the full-res
+      // original before downscaling (covers are often 1000px+).
+      maxWidthDiskCache: cacheWidth,
       placeholder: placeholder == null
           ? null
           : (ctx, _) => placeholder!(ctx),
@@ -190,7 +193,9 @@ class SourceImage extends StatelessWidget {
       // fingerprint. Cached after the first fetch; if that also fails, show
       // the caller's error widget / default box.
       errorWidget: (ctx, _, error) => Image(
-        image: _WebViewImageProvider(url),
+        image: cacheWidth == null
+            ? _WebViewImageProvider(url)
+            : ResizeImage(_WebViewImageProvider(url), width: cacheWidth),
         fit: fit,
         gaplessPlayback: true,
         errorBuilder: (c2, e2, _) =>

@@ -27,11 +27,22 @@
 
   // --- tiny HTML helpers (QuickJS: no DOM) ---------------------------------
 
+  // Cache the compiled per-name regexes — attr() runs hundreds of times per
+  // listing parse and QuickJS doesn't dedupe `new RegExp`. (No /g flag, so exec
+  // is stateless and safe to reuse.)
+  var _attrRe = {};
   function attr(tag, name) {
     if (!tag) return null;
-    var m = new RegExp(name + '\\s*=\\s*"([^"]*)"').exec(tag);
+    var re = _attrRe[name];
+    if (!re) {
+      re = _attrRe[name] = [
+        new RegExp(name + '\\s*=\\s*"([^"]*)"'),
+        new RegExp(name + "\\s*=\\s*'([^']*)'"),
+      ];
+    }
+    var m = re[0].exec(tag);
     if (m) return m[1];
-    m = new RegExp(name + "\\s*=\\s*'([^']*)'").exec(tag);
+    m = re[1].exec(tag);
     return m ? m[1] : null;
   }
 
@@ -276,9 +287,22 @@
     if (!AJAX_CHAPTERS) {
       return getHtml(abs(manga.url)).then(parseChapters);
     }
-    // AJAX variant: POST to {mangaUrl}ajax/chapters/.
-    var u = abs(manga.url).replace(/\/+$/, '') + '/ajax/chapters/';
-    return postHtml(u, '').then(parseChapters);
+    // AJAX variant (manhuafast et al.): chapters load into #manga-chapters-holder
+    // via the site's own admin-ajax POST, which fires automatically as the page
+    // JS runs. admin-ajax/ajax-chapters GETs return empty (the action is POST +
+    // nonce), and a POST can't ride the WebView proxy. But on a CF-walled site
+    // the page fetch ALREADY goes through the proxy's real browser, so the JS
+    // runs and the chapters render inline — we just need to wait for it. Ask the
+    // proxy for a longer DOM settle, then parse the inline list. (Device-proven:
+    // 335 li.wp-manga-chapter render within a few seconds.)
+    // webview_force: once cf_clearance is warm, a plain Dio GET returns 200 with
+    // the un-rendered shell (no JS = no chapters), so force the JS-running
+    // browser path regardless of CF status.
+    return getHtml(abs(manga.url), {
+      webview_force: true,
+      webview_settle_ms: 8000,                 // ceiling
+      webview_ready_js: "document.querySelectorAll('.wp-manga-chapter').length>0",
+    }).then(parseChapters);
   }
 
   // --- pages ---------------------------------------------------------------

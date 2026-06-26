@@ -120,6 +120,7 @@ class WebViewHttpClient {
     Object? body,
     Duration timeout = const Duration(seconds: 40),
     Duration settle = const Duration(milliseconds: 1800),
+    String? readyJs,
   }) {
     if (!isAvailable || _giveUp) return Future.value(null);
     // Ask the host to create the WebView now (no-op if already up / on an
@@ -129,7 +130,7 @@ class WebViewHttpClient {
     // Serialise + outer timeout so a stuck platform call can't wedge the queue.
     _lock = _lock.then((_) async {
       try {
-        final res = await _run(url, timeout, settle)
+        final res = await _run(url, timeout, settle, readyJs)
             .timeout(timeout + const Duration(seconds: 10), onTimeout: () => null);
         completer.complete(res);
       } catch (_) {
@@ -140,7 +141,7 @@ class WebViewHttpClient {
   }
 
   Future<Map<String, dynamic>?> _run(
-      String url, Duration timeout, Duration settle) async {
+      String url, Duration timeout, Duration settle, [String? readyJs]) async {
     if (_controller == null) {
       await _ready.future.timeout(const Duration(seconds: 6), onTimeout: () {});
       if (_controller == null) {
@@ -154,7 +155,7 @@ class WebViewHttpClient {
     if (target == null) return null;
     _navHost = target.host;
 
-    if (!await _navigate(controller, url, timeout, settle)) return null;
+    if (!await _navigate(controller, url, timeout, settle, readyJs)) return null;
     _currentOrigin = '${target.scheme}://${target.host}';
 
     String raw;
@@ -273,9 +274,14 @@ class WebViewHttpClient {
   var im = new Image();
   im.onload = function(){
     try{
+      // Downscale to a grid-cover size before encoding: a full-res cover would
+      // base64 to hundreds of KB over the channel and decode full-size in Flutter.
+      var MAX = 480;
+      var w = im.naturalWidth || MAX, h = im.naturalHeight || MAX;
+      var s = Math.min(1, MAX / Math.max(w, h));
       var c = document.createElement('canvas');
-      c.width = im.naturalWidth; c.height = im.naturalHeight;
-      c.getContext('2d').drawImage(im, 0, 0);
+      c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
       CFImg.postMessage(JSON.stringify({id:$id, ok:true, data:c.toDataURL('image/jpeg',0.85)}));
     }catch(e){ CFImg.postMessage(JSON.stringify({id:$id, ok:false, error:String(e)})); }
   };
@@ -288,7 +294,7 @@ class WebViewHttpClient {
   /// Navigates to [url] and waits until the WebView is past any Cloudflare
   /// interstitial and the real page has rendered. Returns false on timeout.
   Future<bool> _navigate(WebViewController c, String url, Duration timeout,
-      [Duration settle = const Duration(milliseconds: 1800)]) async {
+      [Duration settle = const Duration(milliseconds: 1800), String? readyJs]) async {
     try {
       await c.loadRequest(Uri.parse(url)).timeout(const Duration(seconds: 15));
     } catch (_) {
@@ -296,7 +302,7 @@ class WebViewHttpClient {
     }
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await Future<void>.delayed(const Duration(milliseconds: 250));
       try {
         final r = (await c
                 .runJavaScriptReturningResult(
@@ -308,13 +314,13 @@ class WebViewHttpClient {
                 .timeout(const Duration(seconds: 5)))
             .toString();
         if (r.replaceAll('"', '').trim() == '1') {
-          // Settle: give async content a moment to render into the DOM before
-          // we snapshot outerHTML — Madara/MangaThemesia chapter lists are
-          // often AJAX-loaded after readyState=complete, and lazy images
-          // hydrate late. Without this the snapshot misses them (0 chapters).
-          // Callers that fetch a slow AJAX list (e.g. Madara admin-ajax chapter
-          // injection) pass a longer [settle] via `webview_settle_ms`.
-          await Future<void>.delayed(settle);
+          // Past Cloudflare + base document ready. Rather than sleep a flat
+          // [settle], wait only as long as content actually needs: poll a
+          // caller-supplied readiness predicate ([readyJs], e.g. chapter rows
+          // present) or fall back to DOM-size stabilisation. [settle] is the
+          // CEILING, not a fixed floor — most pages settle in a few hundred ms,
+          // so this replaces the old unconditional 1.8s / 8s waits.
+          await _awaitContent(c, settle, readyJs);
           return true;
         }
       } catch (_) {
@@ -322,6 +328,43 @@ class WebViewHttpClient {
       }
     }
     return false;
+  }
+
+  /// Waits for async/lazy content to finish populating, capped at [ceiling].
+  /// With [readyJs] (a JS boolean expression) it returns as soon as that's
+  /// true; otherwise it returns once the DOM node count stops growing (two
+  /// equal samples ~250ms apart). A short minimum lets a static page flush.
+  Future<void> _awaitContent(
+      WebViewController c, Duration ceiling, String? readyJs) async {
+    final deadline = DateTime.now().add(ceiling);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    var lastCount = -1;
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        if (readyJs != null) {
+          final r = (await c
+                  .runJavaScriptReturningResult(
+                    '(function(){try{return ($readyJs)?1:0;}catch(e){return 0;}})()',
+                  )
+                  .timeout(const Duration(seconds: 5)))
+              .toString();
+          if (r.replaceAll('"', '').trim() == '1') return;
+        } else {
+          final r = (await c
+                  .runJavaScriptReturningResult(
+                    "document.getElementsByTagName('*').length",
+                  )
+                  .timeout(const Duration(seconds: 5)))
+              .toString();
+          final n = int.tryParse(r.replaceAll('"', '').trim()) ?? -1;
+          if (n >= 0 && n == lastCount) return; // unchanged → settled
+          lastCount = n;
+        }
+      } catch (_) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
   }
 
   /// `runJavaScriptReturningResult` returns a JSON-encoded string on Android

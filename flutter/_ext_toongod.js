@@ -17,11 +17,22 @@
   var UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 ' +
     '(KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
 
+  // Cache the compiled per-name regexes — attr() runs hundreds of times per
+  // listing parse and QuickJS doesn't dedupe `new RegExp`. (No /g flag, so exec
+  // is stateless and safe to reuse.)
+  var _attrRe = {};
   function attr(tag, name) {
     if (!tag) return null;
-    var m = new RegExp(name + '\\s*=\\s*"([^"]*)"').exec(tag);
+    var re = _attrRe[name];
+    if (!re) {
+      re = _attrRe[name] = [
+        new RegExp(name + '\\s*=\\s*"([^"]*)"'),
+        new RegExp(name + "\\s*=\\s*'([^']*)'"),
+      ];
+    }
+    var m = re[0].exec(tag);
     if (m) return m[1];
-    m = new RegExp(name + "\\s*=\\s*'([^']*)'").exec(tag);
+    m = re[1].exec(tag);
     return m ? m[1] : null;
   }
   var ENTITIES = {
