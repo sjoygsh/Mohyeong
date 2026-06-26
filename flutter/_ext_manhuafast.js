@@ -276,32 +276,19 @@
     if (!AJAX_CHAPTERS) {
       return getHtml(abs(manga.url)).then(parseChapters);
     }
-    // AJAX variant (manhuafast et al.): chapters aren't inline and the classic
-    // endpoint is a POST, which the WebView proxy can't retry on a CF 403. So
-    // fetch the manga page (rides the proxy), grab the numeric post id, then GET
-    // admin-ajax.php's chapter list — a GET stays proxy-retryable. WordPress'
-    // admin-ajax reads $_REQUEST, so action/manga work as query params on GET.
-    return getHtml(abs(manga.url)).then(function (page) {
-      var inline = parseChapters(page);
-      if (inline.length > 0) return inline;
-      var idM = /id="manga-chapters-holder"[^>]*data-id="(\d+)"/.exec(page) ||
-                /<div[^>]*data-id="(\d+)"[^>]*class="[^"]*wp-manga/.exec(page) ||
-                /shortlink[^>]*\?p=(\d+)/.exec(page) ||
-                /post_id\s*[:=]\s*['"]?(\d+)/.exec(page);
-      var urls = [];
-      if (idM) urls.push(BASE + '/wp-admin/admin-ajax.php?action=manga_get_chapters&manga=' + idM[1]);
-      urls.push(abs(manga.url).replace(/\/+$/, '') + '/ajax/chapters/');
-      function tryGet(i) {
-        if (i >= urls.length) {
-          return postHtml(urls[urls.length - 1], '').then(parseChapters).catch(function () { return []; });
-        }
-        return getHtml(urls[i]).then(function (html) {
-          var ch = parseChapters(html);
-          return ch.length > 0 ? ch : tryGet(i + 1);
-        }).catch(function () { return tryGet(i + 1); });
-      }
-      return tryGet(0);
-    });
+    // AJAX variant (manhuafast et al.): chapters load into #manga-chapters-holder
+    // via the site's own admin-ajax POST, which fires automatically as the page
+    // JS runs. admin-ajax/ajax-chapters GETs return empty (the action is POST +
+    // nonce), and a POST can't ride the WebView proxy. But on a CF-walled site
+    // the page fetch ALREADY goes through the proxy's real browser, so the JS
+    // runs and the chapters render inline — we just need to wait for it. Ask the
+    // proxy for a longer DOM settle, then parse the inline list. (Device-proven:
+    // 335 li.wp-manga-chapter render within a few seconds.)
+    // webview_force: once cf_clearance is warm, a plain Dio GET returns 200 with
+    // the un-rendered shell (no JS = no chapters), so force the JS-running
+    // browser path regardless of CF status.
+    return getHtml(abs(manga.url), { webview_force: true, webview_settle_ms: 8000 })
+      .then(parseChapters);
   }
 
   // --- pages ---------------------------------------------------------------

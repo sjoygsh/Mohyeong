@@ -70,15 +70,27 @@ class JsRuntime {
       // carries a real Chromium fingerprint (and the shared clearance cookie).
       // Only for idempotent methods — Dio already executed the request, so
       // replaying a POST/PUT/etc. would double a side effect (login, comment…).
+      // Extensions can force the WebView path even on a clean 200 (webview_force)
+      // — needed when only a real browser produces the content: e.g. a Madara
+      // chapter list injected by the page's own admin-ajax JS. Once cf_clearance
+      // is warm, Dio gets a 200 with the UN-rendered shell, so the CF-challenge
+      // heuristic alone would never route it through the JS-running browser.
+      final forceWebView = req['webview_force'] == true;
       final idempotent = method == 'GET' || method == 'HEAD';
       if (idempotent &&
           WebViewHttpClient.instance.isAvailable &&
-          _looksLikeCloudflareChallenge(status, bodyStr)) {
+          (forceWebView || _looksLikeCloudflareChallenge(status, bodyStr))) {
+        // Extensions can request a longer DOM-settle for slow AJAX content
+        // (e.g. Madara chapter lists injected after load) via webview_settle_ms.
+        final settleMs = (req['webview_settle_ms'] as num?)?.toInt();
         final viaWebView = await WebViewHttpClient.instance.request(
           url,
           method: method,
           headers: headers,
           body: body,
+          settle: settleMs != null
+              ? Duration(milliseconds: settleMs.clamp(0, 20000))
+              : const Duration(milliseconds: 1800),
         );
         if (viaWebView != null) return viaWebView;
       }

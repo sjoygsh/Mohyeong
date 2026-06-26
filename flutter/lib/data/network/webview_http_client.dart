@@ -119,6 +119,7 @@ class WebViewHttpClient {
     Map<String, dynamic>? headers,
     Object? body,
     Duration timeout = const Duration(seconds: 40),
+    Duration settle = const Duration(milliseconds: 1800),
   }) {
     if (!isAvailable || _giveUp) return Future.value(null);
     // Ask the host to create the WebView now (no-op if already up / on an
@@ -128,7 +129,7 @@ class WebViewHttpClient {
     // Serialise + outer timeout so a stuck platform call can't wedge the queue.
     _lock = _lock.then((_) async {
       try {
-        final res = await _run(url, timeout)
+        final res = await _run(url, timeout, settle)
             .timeout(timeout + const Duration(seconds: 10), onTimeout: () => null);
         completer.complete(res);
       } catch (_) {
@@ -138,7 +139,8 @@ class WebViewHttpClient {
     return completer.future;
   }
 
-  Future<Map<String, dynamic>?> _run(String url, Duration timeout) async {
+  Future<Map<String, dynamic>?> _run(
+      String url, Duration timeout, Duration settle) async {
     if (_controller == null) {
       await _ready.future.timeout(const Duration(seconds: 6), onTimeout: () {});
       if (_controller == null) {
@@ -152,7 +154,7 @@ class WebViewHttpClient {
     if (target == null) return null;
     _navHost = target.host;
 
-    if (!await _navigate(controller, url, timeout)) return null;
+    if (!await _navigate(controller, url, timeout, settle)) return null;
     _currentOrigin = '${target.scheme}://${target.host}';
 
     String raw;
@@ -285,8 +287,8 @@ class WebViewHttpClient {
 
   /// Navigates to [url] and waits until the WebView is past any Cloudflare
   /// interstitial and the real page has rendered. Returns false on timeout.
-  Future<bool> _navigate(
-      WebViewController c, String url, Duration timeout) async {
+  Future<bool> _navigate(WebViewController c, String url, Duration timeout,
+      [Duration settle = const Duration(milliseconds: 1800)]) async {
     try {
       await c.loadRequest(Uri.parse(url)).timeout(const Duration(seconds: 15));
     } catch (_) {
@@ -310,7 +312,9 @@ class WebViewHttpClient {
           // we snapshot outerHTML — Madara/MangaThemesia chapter lists are
           // often AJAX-loaded after readyState=complete, and lazy images
           // hydrate late. Without this the snapshot misses them (0 chapters).
-          await Future<void>.delayed(const Duration(milliseconds: 1800));
+          // Callers that fetch a slow AJAX list (e.g. Madara admin-ajax chapter
+          // injection) pass a longer [settle] via `webview_settle_ms`.
+          await Future<void>.delayed(settle);
           return true;
         }
       } catch (_) {
