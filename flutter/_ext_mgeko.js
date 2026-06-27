@@ -48,8 +48,14 @@
     if (url.charAt(0) === '/') return BASE + url;
     return BASE + '/' + url;
   }
-  function getHtml(url) {
-    return http.get(url, { headers: { Referer: BASE + '/' } }).then(function (r) {
+  // mgeko.cc is a client-rendered SPA: a plain Dio GET returns an empty shell
+  // (only og: meta is server-rendered). So every fetch FORCES the WebView proxy
+  // to run the page JS, and passes a readiness predicate so it returns as soon
+  // as the expected content has rendered (capped by webview_settle_ms).
+  function getHtml(url, readyJs) {
+    var opts = { headers: { Referer: BASE + '/' }, webview_force: true, webview_settle_ms: 12000 };
+    if (readyJs) opts.webview_ready_js = readyJs;
+    return http.get(url, opts).then(function (r) {
       if (!r || r.ok === false) throw new Error('network error: ' + (r && r.error));
       if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status + ' for ' + url);
       return r.body || '';
@@ -91,7 +97,8 @@
     return out;
   }
   function browse(filter, page) {
-    return getHtml(BASE + '/browse-comics/?results=' + page + '&filter=' + filter).then(function (html) {
+    var ready = "document.querySelectorAll('.comic-card').length>0";
+    return getHtml(BASE + '/browse-comics/?results=' + page + '&filter=' + filter, ready).then(function (html) {
       var mangas = parseList(html);
       return { mangas: mangas, has_next_page: mangas.length > 0 };
     });
@@ -100,7 +107,7 @@
   function latest(page) { return browse('Updated', page); }
   function search(query, page) {
     var url = BASE + '/search/?search=' + encodeURIComponent(query || '');
-    return getHtml(url).then(function (html) {
+    return getHtml(url, "document.querySelectorAll('.comic-card').length>0").then(function (html) {
       // Search is a single result page; page>1 has nothing more.
       return { mangas: page > 1 ? [] : parseList(html), has_next_page: false };
     });
@@ -118,7 +125,15 @@
   function details(manga) {
     return getHtml(abs(manga.url)).then(function (html) {
       var title = meta(html, 'og:title');
-      if (title) title = title.replace(/\s*[-|–]\s*[^-|–]*(?:mgeko|manga\s*geko)[^-|–]*$/i, '').trim();
+      // og:title is decorated, e.g. "[Manga]: Manga <Title> Read" — strip it.
+      if (title) {
+        title = decode(title)
+          .replace(/^\s*\[manga\]\s*:?\s*/i, '')
+          .replace(/^\s*manga\s+/i, '')
+          .replace(/\s+read\s*$/i, '')
+          .replace(/\s*[-|–]\s*(?:mgeko|manga\s*geko).*$/i, '')
+          .trim();
+      }
       if (!title) {
         var h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/.exec(html);
         title = h1 ? stripTags(h1[1]) : (manga.title || '');
@@ -180,7 +195,7 @@
   }
   function chapters(manga) {
     var url = abs(manga.url).replace(/\/+$/, '') + '/all-chapters/';
-    return getHtml(url).then(function (html) {
+    return getHtml(url, "document.querySelectorAll('.chapter-title').length>0").then(function (html) {
       var out = [];
       var seen = {};
       var re = /<a\s+[^>]*href="((?:https?:\/\/[^"]*)?\/reader\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g, m;
