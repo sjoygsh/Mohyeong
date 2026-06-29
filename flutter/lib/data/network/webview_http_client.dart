@@ -74,6 +74,16 @@ class WebViewHttpClient {
   /// rebuilds / scroll recycling don't re-extract the same image.
   final Map<String, Uint8List> _imgCache = {};
 
+  /// Negative cache (url -> expiry epoch ms): a cover that failed isn't retried
+  /// for a while, so a broken tile recycling into view doesn't re-drive the
+  /// (serialised) WebView nav+draw every time. Success-only [_imgCache] alone
+  /// would let failures loop forever.
+  final Map<String, int> _imgFailed = {};
+
+  /// In-flight cover requests, so concurrent identical URLs (a grid + its
+  /// scroll-recycled tiles) share one fetch instead of queuing duplicates.
+  final Map<String, Future<Uint8List?>> _imgInflight = {};
+
   /// Whether the WebView path is usable on this platform. [request]
   /// additionally bails when no controller is attached (background isolate).
   bool get isAvailable => Platform.isAndroid;
@@ -207,17 +217,38 @@ class WebViewHttpClient {
     if (!isAvailable || _giveUp) return Future.value(null);
     final cached = _imgCache[url];
     if (cached != null) return Future.value(cached);
+    final failedUntil = _imgFailed[url];
+    if (failedUntil != null) {
+      if (DateTime.now().millisecondsSinceEpoch < failedUntil) {
+        return Future.value(null); // negative-cached; don't re-drive the WebView
+      }
+      _imgFailed.remove(url);
+    }
+    final inflight = _imgInflight[url];
+    if (inflight != null) return inflight; // share one fetch for duplicate URLs
     activate.value = true;
     final completer = Completer<Uint8List?>();
+    _imgInflight[url] = completer.future;
     _lock = _lock.then((_) async {
       try {
-        completer.complete(await _runImg(url, timeout)
-            .timeout(timeout + const Duration(seconds: 10), onTimeout: () => null));
+        final bytes = await _runImg(url, timeout)
+            .timeout(timeout + const Duration(seconds: 10), onTimeout: () => null);
+        if (bytes == null) _noteImgFailure(url);
+        completer.complete(bytes);
       } catch (_) {
+        _noteImgFailure(url);
         completer.complete(null);
+      } finally {
+        _imgInflight.remove(url);
       }
     });
     return completer.future;
+  }
+
+  /// Record a failed cover so it isn't re-fetched for 2 minutes (bounded).
+  void _noteImgFailure(String url) {
+    _imgFailed[url] = DateTime.now().millisecondsSinceEpoch + 120000;
+    if (_imgFailed.length > 256) _imgFailed.remove(_imgFailed.keys.first);
   }
 
   Future<Uint8List?> _runImg(String url, Duration timeout) async {

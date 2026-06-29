@@ -123,7 +123,7 @@
     return 0;
   }
   function details(manga) {
-    return getHtml(abs(manga.url)).then(function (html) {
+    return getHtml(abs(manga.url), "document.images.length>0").then(function (html) {
       var title = meta(html, 'og:title');
       // og:title is decorated, e.g. "[Manga]: Manga <Title> Read" — strip it.
       if (title) {
@@ -221,7 +221,7 @@
   // Reader images sit directly in the document on the imgsrv CDN
   // (/comic/<slug>/chapter-N/<i>.webp). No reader container element.
   function pages(chapter) {
-    return getHtml(abs(chapter.url)).then(function (html) {
+    return getHtml(abs(chapter.url), "document.images.length>2").then(function (html) {
       var out = [];
       var seen = {};
       var idx = 0;

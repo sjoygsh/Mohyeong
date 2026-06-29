@@ -42,6 +42,12 @@ class JsRuntime {
   /// Services one `http` request from either engine on the MAIN isolate, so
   /// every extension fetch shares the app's cookie jar / Cloudflare state.
   /// [args] is the JSON string (or decoded map) the JS `http` bridge sends.
+  // Short-TTL, success-only response cache for idempotent fetches. Collapses
+  // the details()+chapters() double-fetch of the SAME manga page (Madara/
+  // MangaThemesia fetch the series URL twice within ~1s of opening a manga).
+  // TTL is short so a manual "Refresh from source" still re-fetches.
+  static final Map<String, _CachedResp> _respCache = {};
+
   Future<Map<String, dynamic>> serviceHttp(dynamic args) async {
     try {
       final Map<String, dynamic> req = args is String
@@ -51,6 +57,38 @@ class JsRuntime {
       final url = req['url'] as String;
       final headers = (req['headers'] as Map?)?.cast<String, dynamic>();
       final body = req['body'];
+      final idempotent = method == 'GET' || method == 'HEAD';
+      final forceWebView = req['webview_force'] == true;
+      // webview_settle_ms is the CEILING; webview_ready_js (a JS boolean) lets
+      // the proxy return as soon as the expected content exists.
+      final settleMs = (req['webview_settle_ms'] as num?)?.toInt();
+      final readyJs = req['webview_ready_js'] as String?;
+      final settle = settleMs != null
+          ? Duration(milliseconds: settleMs.clamp(0, 20000))
+          : const Duration(milliseconds: 1800);
+      final cacheKey = '$method $url';
+      final webAvail = WebViewHttpClient.instance.isAvailable;
+
+      if (idempotent) {
+        final cached = _respCache[cacheKey];
+        if (cached != null && cached.isFresh) return cached.value;
+      }
+
+      // Forced sources (JS-SPA / content the page's own JS injects, e.g. mgeko,
+      // Madara admin-ajax chapters): skip the wasted Dio shell fetch (which on a
+      // SPA returns an empty page, and on a walled CDN can hang to timeout) and
+      // go straight to the JS-running browser. Fall back to Dio if it fails.
+      if (forceWebView && idempotent && webAvail) {
+        final via = await WebViewHttpClient.instance.request(
+          url, method: method, headers: headers, body: body,
+          settle: settle, readyJs: readyJs,
+        );
+        if (via != null) {
+          _cacheStore(cacheKey, via);
+          return via;
+        }
+      }
+
       final response = await dio.request<dynamic>(
         url,
         data: body,
@@ -64,42 +102,24 @@ class JsRuntime {
       final status = response.statusCode ?? 0;
       final bodyStr = response.data?.toString() ?? '';
 
-      // Cloudflare fingerprint wall: some sites validate the request's TLS/JA3
-      // fingerprint, so Dio is served the "Just a moment" challenge even with a
-      // valid cf_clearance. Retry through the offscreen WebView, whose request
-      // carries a real Chromium fingerprint (and the shared clearance cookie).
-      // Only for idempotent methods — Dio already executed the request, so
-      // replaying a POST/PUT/etc. would double a side effect (login, comment…).
-      // Extensions can force the WebView path even on a clean 200 (webview_force)
-      // — needed when only a real browser produces the content: e.g. a Madara
-      // chapter list injected by the page's own admin-ajax JS. Once cf_clearance
-      // is warm, Dio gets a 200 with the UN-rendered shell, so the CF-challenge
-      // heuristic alone would never route it through the JS-running browser.
-      final forceWebView = req['webview_force'] == true;
-      final idempotent = method == 'GET' || method == 'HEAD';
-      if (idempotent &&
-          WebViewHttpClient.instance.isAvailable &&
-          (forceWebView || _looksLikeCloudflareChallenge(status, bodyStr))) {
-        // Extensions tune the DOM wait: webview_settle_ms is the CEILING, and
-        // webview_ready_js (a JS boolean) lets the proxy return as soon as the
-        // expected content exists (e.g. Madara chapter rows) instead of sleeping
-        // the whole ceiling.
-        final settleMs = (req['webview_settle_ms'] as num?)?.toInt();
-        final readyJs = req['webview_ready_js'] as String?;
-        final viaWebView = await WebViewHttpClient.instance.request(
-          url,
-          method: method,
-          headers: headers,
-          body: body,
-          settle: settleMs != null
-              ? Duration(milliseconds: settleMs.clamp(0, 20000))
-              : const Duration(milliseconds: 1800),
-          readyJs: readyJs,
+      // Cloudflare fingerprint wall: Dio gets the "Just a moment" challenge even
+      // with a valid cf_clearance (TLS/JA3). Retry through the offscreen WebView
+      // (real Chromium fingerprint + shared clearance). Idempotent only — Dio
+      // already ran, so replaying a POST would double a side effect. (force was
+      // handled above; this also covers force when the WebView was unavailable.)
+      final challenge = _looksLikeCloudflareChallenge(status, bodyStr);
+      if (idempotent && webAvail && (forceWebView || challenge)) {
+        final via = await WebViewHttpClient.instance.request(
+          url, method: method, headers: headers, body: body,
+          settle: settle, readyJs: readyJs,
         );
-        if (viaWebView != null) return viaWebView;
+        if (via != null) {
+          _cacheStore(cacheKey, via);
+          return via;
+        }
       }
 
-      return {
+      final result = {
         'ok': true,
         'status': status,
         'body': bodyStr,
@@ -108,9 +128,19 @@ class JsRuntime {
         ),
         'final_url': response.realUri.toString(),
       };
+      if (idempotent && status >= 200 && status < 300 && !challenge) {
+        _cacheStore(cacheKey, result);
+      }
+      return result;
     } catch (e) {
       return {'ok': false, 'error': e.toString()};
     }
+  }
+
+  void _cacheStore(String key, Map<String, dynamic> value) {
+    _respCache[key] =
+        _CachedResp(value, DateTime.now().add(const Duration(seconds: 12)));
+    if (_respCache.length > 24) _respCache.remove(_respCache.keys.first);
   }
 
   /// Heuristic for a Cloudflare interstitial (the JS "Just a moment" / managed
@@ -381,6 +411,15 @@ class _WorkerBootstrap {
 /// Worker isolate entry point. Hosts the QuickJS runtime; bridges `http`
 /// back to the main isolate (so cookies/Cloudflare are shared) and runs the
 /// extension's synchronous work off the UI isolate.
+/// A cached idempotent HTTP response with a short freshness window (see the
+/// serviceHttp double-fetch collapse).
+class _CachedResp {
+  final Map<String, dynamic> value;
+  final DateTime expiry;
+  _CachedResp(this.value, this.expiry);
+  bool get isFresh => DateTime.now().isBefore(expiry);
+}
+
 @pragma('vm:entry-point')
 Future<void> _jsWorkerEntry(_WorkerBootstrap boot) async {
   // xhr:false skips flutter_js's fetch/XHR extension, whose setup needs the
