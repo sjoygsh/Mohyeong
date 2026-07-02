@@ -73,16 +73,14 @@ load — see note).
 **🔴 Broken by the SITE, not our code (re-test when the origin is up):**
 kunmanga (CF 522 origin-down), manhwaclan (CF 522 origin-down), manhuafast
 (CF 502 origin-down; its extension is fine — was device-proven before),
-allporncomic (CF "Performing security verification" interactive Turnstile —
-does NOT auto-solve in the offscreen WebView; listing + covers both walled).
 readallcomics (CF 521 origin-down). All confirmed via the Dev-page-source
 WebView on 2026-07-02, so it's the origins, not our fetch path.
 
-**🔴 Can't be done (parked with reason):** aquamanga (domain parked/redirect,
-like genztoons.com was — no live successor found), mangayy (CF interactive
+**🔴 Can't be done (parked with reason):** mangayy (CF interactive
 "Just a moment"), read comic online (remote-obfuscated `imageDecryptEval`),
-viz + tapas (DRM / session-gated — skip per original handoff). aryascans
+viz (DRM / session-gated — skip per original handoff). aryascans
 redirects to brainrotcomics, which IS added, so arya is covered by **brainrot**.
+(aquamanga and tapas left this bucket on 2026-07-03 — see below.)
 
 **✅ SPA cluster — DONE (2026-07-02).** All three turned out to be Astro SSR
 sites, NOT the CF-walled Next.js the handoff assumed, and none needed the
@@ -130,6 +128,39 @@ mgeko force-render recipe — plain Dio fetches work:
   extracting (20s ceiling — the occluded/backgrounded WebView is render-
   throttled, so it needs far longer than a foreground tab). This
   scroll-until-stable pattern is reusable for other lazy-load Madara sites.
+
+**🟡 2026-07-03 additions — PC-verified, device pass PENDING (the phone was
+unreachable over wireless ADB; push + verify these three on-device next):**
+- **aquareader** (`_ext_aquareader.js`, NEW) — aquamanga's live successor:
+  the site relaunched on aquareader.org (some media still 301s via
+  aquareader.net). Madara underneath but with a custom "aqua" skin, so the
+  selectors differ from stock: cards `article.aqua-archive-card`, chapter rows
+  `a.aqua-ch-item` (name/time spans), genres `a.aqua-series-genre-pill`;
+  search still uses stock `c-tabs-item` rows. No CF. PC-verified: popular 24,
+  latest 24, search 20, details full, 285 ch, 38-page chapter.
+- **tapas** (`_ext_tapas.js`, NEW) — FREE episodes only, like Mihon's source;
+  un-parked from the can't-do bucket. Listings via the open
+  `story-api.tapas.io/cosmos/api/v1/landing/{ranking,new}` JSON; search +
+  /series/<x>/info are still server-rendered; chapters via the
+  `/series/<numericId>/episodes?page=N` XHR JSON; pages = `img.content__img`
+  data-src. THE TRAP: `data-is-wait-or-pay`/`data-is-charging` do NOT track
+  anonymous readability on "Wait Until Free" series (wop=true on always-free
+  early eps, false on sign-in-gated ones) — filter rows by CLASS instead:
+  gated rows carry `body__item--opaque`/`js-have-to-sign`, readable rows
+  neither. A mobile UA 302s to m.tapas.io — same episode-row + content__img
+  markup, but its every page has a `js-have-to-sign` banner (so never use that
+  as a page-level lock signal; empty content__img ⇒ locked) and image URLs are
+  HTML-escaped in attrs (`&amp;` → decode). PC-verified: popular 20, search,
+  slug-URL chapters, WUF series 5/109 free (correct), free community series
+  all 661, pages 61 tokenised CDN imgs.
+- **allporncomic v2** (`_ext_allporncomic.js` BASE + manifest updated) — the
+  Turnstile-walled allporncomic.com moved to **allporncomics.co**. The new
+  domain WAF-blocks non-browser TLS outright ("Sorry, you have been blocked"
+  403 for curl/node with full browser headers), so PC verification is
+  impossible — first device test must go through the WebView proxy; if IT is
+  also blocked (could be geo/IP-based), re-park under 🔴 site-broken.
+Fresh one-line manifest.json files for all three are in
+`.tmp_manifests/manifest_<id>.json` (untracked), ready to push with source.js.
 
 **🔲 Not built (see the two 🔴 buckets above for why each is parked).**
 

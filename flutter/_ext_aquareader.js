@@ -1,23 +1,23 @@
-// Madara (WordPress manga theme) template extension for Mohyeong's JS runtime.
-// Covers the large Madara cluster (manhuaplus, harimanga, kunmanga, toongod,
-// manhwaclan, allporncomic, …). To clone for another Madara site, copy this
-// file and change the CONFIG block (BASE/id/name/lang) — selectors are shared.
-//
-// Reference site authored against: manhuaplus.com (inline chapter list, no
-// AJAX). Contract: register `__extension` with manifest + popular/latest/
-// search/details/chapters/pages. Host globals: http.get/http.post, console.
+// Aqua Reader / Aqua Manga (aquareader.org) extension for Mohyeong's JS
+// runtime. Madara underneath (standard /manga/ browse paths, m_orderby query,
+// c-tabs search rows, reading-content reader) but re-skinned with a custom
+// "aqua" front end, so the card, chapter-row, and details markup all differ
+// from stock Madara: cards are article.aqua-archive-card, chapter rows are
+// a.aqua-ch-item (name + relative time spans), details come from h1/og: meta/
+// aqua-series-genre-pill. aquamanga.com (the original domain) is parked; the
+// site relaunched here — some media still 301s via aquareader.net.
+// Contract: register `__extension` with manifest + popular/latest/search/
+// details/chapters/pages. Host globals: http.get/http.post, console.
 
 (function () {
   // ===== CONFIG (per-site) =================================================
-  // allporncomic.com now sits behind an interactive anti-bot gate; the site
-  // moved to allporncomics.co (note the plural + .co).
-  var BASE = 'https://allporncomics.co';
-  var ID = 'allporncomic';
-  var NAME = 'AllPornComic';
+  var BASE = 'https://aquareader.org';
+  var ID = 'aquareader';
+  var NAME = 'Aqua Reader';
   var LANG = 'en';
   // Manga browse sub-path. Most Madara sites use /manga/; some override it
   // (e.g. allporncomic uses /porncomic/, others /comics/ or /series/).
-  var MPATH = 'porncomic';
+  var MPATH = 'manga';
   // Some Madara sites load chapters via AJAX instead of inline in the manga
   // page. manhuaplus is inline; flip to true for sites that return an empty
   // chapter list (then chapters POST to {mangaUrl}ajax/chapters/).
@@ -118,29 +118,22 @@
 
   // --- listing (popular / latest / search) ---------------------------------
 
-  // Madara listing item: div.page-item-detail > .item-thumb a[href] (url) +
-  // img[data-src|src] (cover); .post-title h3/h5 a (title).
+  // aqua card: <article class="aqua-archive-card"> with a cover-link anchor,
+  // an <img> (plain src), and an aqua-archive-card__title anchor.
   function parseList(html) {
     var out = [];
-    var blocks = html.split('page-item-detail');
+    var blocks = html.split('<article class="aqua-archive-card"');
     for (var i = 1; i < blocks.length; i++) {
       var b = blocks[i];
-      // First series link in the block — skip the site logo/banner whose
-      // anchor points home. Match any known Madara series sub-path (the browse
-      // path MPATH and the per-series path can differ, e.g. manhuatop browses
-      // at /manga/ but its series live at /manhua/).
-      var aM = /<a\s+[^>]*href="([^"]*\/(?:manga|manhua|manhwa|comics?|series|komik|porncomic|webtoons?|toons?)\/[^"]+)"[^>]*>/.exec(b);
+      var aM = /<a\s+[^>]*href="([^"]*\/manga\/[^"]+)"[^>]*>/.exec(b);
       if (!aM) continue;
-      var url = aM[1];
       var imgM = /<img\b[^>]*>/.exec(b);
-      var imgTag = imgM ? imgM[0] : null;
-      var cover = pickCover(imgTag);
-      // title: the post-title anchor text, else the thumb anchor's title attr.
+      var cover = imgM ? pickCover(imgM[0]) : null;
       var title = null;
-      var tM = /post-title[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/.exec(b);
+      var tM = /aqua-archive-card__title[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/.exec(b);
       if (tM) title = stripTags(tM[1]);
       if (!title) title = attr(aM[0], 'title') || '';
-      out.push({ url: abs(url), title: decode(title), thumbnail_url: cover ? abs(cover) : null });
+      out.push({ url: abs(aM[1]), title: decode(title), thumbnail_url: cover ? abs(cover) : null });
     }
     return out;
   }
@@ -225,30 +218,36 @@
 
   function details(manga) {
     return getHtml(abs(manga.url)).then(function (html) {
-      var titleM = /<div class="post-title">[\s\S]*?<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/.exec(html);
-      var title = titleM ? decode(stripTags(titleM[1])) : (manga.title || '');
+      var h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/.exec(html);
+      var title = h1 ? decode(stripTags(h1[1])) : (manga.title || '');
 
-      var picM = /class="summary_image"[\s\S]*?<img\b([^>]*)>/.exec(html);
-      var cover = picM ? pickCover(picM[1]) : null;
-
-      var author = linksText(section(html, 'author-content')).join(', ') || null;
-      var artist = linksText(section(html, 'artist-content')).join(', ') || null;
-      var genres = linksText(section(html, 'genres-content'));
-
-      // Status: the post-content_item whose heading says "Status".
-      var status = 0;
-      var stM = /<div class="summary-heading">\s*<h5>\s*Status[\s\S]*?<div class="summary-content">([\s\S]*?)<\/div>/i.exec(html);
-      if (stM) status = mapStatus(stripTags(stM[1]));
+      var cover = null;
+      var cM = /property="og:image"[^>]*content="([^"]+)"/.exec(html) ||
+        /content="([^"]+)"[^>]*property="og:image"/.exec(html);
+      if (cM) cover = cM[1];
 
       var description = null;
-      var dM = /class="(?:summary__content|description-summary)"[^>]*>([\s\S]*?)<\/div>/.exec(html);
-      if (dM) description = decode(stripTags(dM[1].replace(/<h[0-9][\s\S]*?<\/h[0-9]>/g, '')));
+      var dM = /property="og:description"[^>]*content="([^"]*)"/.exec(html) ||
+        /name="description"[^>]*content="([^"]*)"/.exec(html);
+      if (dM) description = decode(dM[1]);
+
+      var genres = [];
+      var gm;
+      var gre = /<a[^>]*class="aqua-series-genre-pill"[^>]*>([\s\S]*?)<\/a>/g;
+      while ((gm = gre.exec(html)) !== null) {
+        var g = decode(stripTags(gm[1]));
+        if (g && genres.indexOf(g) < 0) genres.push(g);
+      }
+
+      var status = 0;
+      var stM = />\s*(OnGoing|Ongoing|Completed|Complete|Hiatus|On Hold|Dropped|Cancell?ed)\s*</.exec(html);
+      if (stM) status = mapStatus(stM[1]);
 
       return {
         url: manga.url,
         title: title,
-        author: author,
-        artist: artist,
+        author: null,
+        artist: null,
         description: description,
         genre: genres.length ? genres.join(', ') : null,
         status: status,
@@ -260,27 +259,34 @@
 
   // --- chapters ------------------------------------------------------------
 
-  // li.wp-manga-chapter > a[href] (name); .chapter-release-date i/a (date).
+  // aqua chapter row: <a href="…/chapter-N/" class="aqua-ch-item" …>
+  //   <span class="aqua-ch-item__name">Chapter N</span>
+  //   <span class="aqua-ch-item__time">15 months ago</span>
+  function parseRelativeDate(text) {
+    var m = /(\d+)\s*(second|minute|hour|day|week|month|year)/i.exec(text || '');
+    if (!m) return 0;
+    var n = parseInt(m[1], 10);
+    var ms = { second: 1e3, minute: 6e4, hour: 36e5, day: 864e5, week: 6048e5,
+      month: 2629746e3, year: 31556952e3 }[m[2].toLowerCase()] || 0;
+    return Date.now() - n * ms;
+  }
   function parseChapters(html) {
     var out = [];
     var seen = {};
-    var blocks = html.split(/<li[^>]*class="[^"]*wp-manga-chapter/);
-    for (var i = 1; i < blocks.length; i++) {
-      var b = blocks[i];
-      var aM = /<a\s+[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/.exec(b);
-      if (!aM) continue;
-      var url = aM[1];
-      if (!/^https?:|^\//.test(url) || seen[url]) continue;
+    var re = /<a\b([^>]*class="aqua-ch-item"[^>]*)>([\s\S]*?)<\/a>/g, m;
+    while ((m = re.exec(html)) !== null) {
+      var url = attr(m[1], 'href');
+      if (!url || seen[url]) continue;
       seen[url] = true;
-      var name = stripTags(aM[2]);
-      var dM = /chapter-release-date[\s\S]*?>([\s\S]*?)<\/(?:i|a|span)>/.exec(b);
-      var date = 0;
-      if (dM) {
-        var t = stripTags(dM[1]);
-        var parsed = Date.parse(t);
-        if (!isNaN(parsed)) date = parsed;
-      }
-      out.push({ url: abs(url), name: decode(name) || url, date_upload: date, chapter_number: -1 });
+      var inner = m[2];
+      var nM = /aqua-ch-item__name"[^>]*>([\s\S]*?)<\/span>/.exec(inner);
+      var name = nM ? decode(stripTags(nM[1])) : (attr(m[1], 'data-chapter-name') || url);
+      var tM = /aqua-ch-item__time"[^>]*>([\s\S]*?)<\/span>/.exec(inner);
+      var date = tM ? parseRelativeDate(stripTags(tM[1])) : 0;
+      if (!date && tM) { var p = Date.parse(stripTags(tM[1])); if (!isNaN(p)) date = p; }
+      var numM = /([0-9]+(?:\.[0-9]+)?)/.exec(name);
+      out.push({ url: abs(url), name: name, date_upload: date,
+        chapter_number: numM ? parseFloat(numM[1]) : -1 });
     }
     return out;
   }
@@ -347,7 +353,7 @@
       name: NAME,
       lang: LANG,
       base_url: BASE,
-      version_code: 2,
+      version_code: 1,
       supports_latest: true,
     },
     popular: popular,
