@@ -61,19 +61,37 @@ Templates: `_ext_madara.js` (Madara/WordPress cluster), `_ext_mangathemesia.js`
 (WPMangaStream cluster), `_ext_natomanga.js` (manganato theme). Clone = copy the
 template, change the CONFIG block (BASE/ID/NAME/LANG/MPATH/DIR/AJAX_CHAPTERS).
 
-**✅ Working, device-verified (~14):** natomanga (manganato), mangadex,
+**✅ Working, device-verified (~18):** natomanga (manganato), mangadex,
 manhuaplus, manhwatop, manhuatop, manhuafast (incl. AJAX chapters), rizzfables
 (rizz comic), thunderscans, harimanga, toongod, demonicscans (manga demon, full
 e2e), allporncomic (titles work; covers blank = cover-CF, has fallback),
-**webtoons** (full e2e), **mgeko** (full e2e via SPA force-render).
+**webtoons** (full e2e), **mgeko** (full e2e via SPA force-render),
+**hivetoons**, **vortexscans**, **asura** (all three full e2e — see the SPA
+cluster note below).
 
 **🟡 Built, NOT device-verified (3):** kunmanga, manhuaus, manhwaclan (same
 Madara template; origins were CF-521-down earlier — re-test when up).
 
-**🔲 SPA cluster — REMAINING (3):** asura (asuracomic.net), hivetoons (hive),
-vortexscans (vortex). All CF-walled Next.js (`/series/<slug>` + storage CDN).
-Use the **proven mgeko recipe** (below). I was mid-dump on hivetoons when this
-handoff was requested.
+**✅ SPA cluster — DONE (2026-07-02).** All three turned out to be Astro SSR
+sites, NOT the CF-walled Next.js the handoff assumed, and none needed the
+mgeko force-render recipe — plain Dio fetches work:
+- **hivetoons** (hivetoons.org) + **vortexscans** (vortexscans.org) are the
+  SAME "toon" platform (config clones). Listings/search via
+  `api.<host>/api/query` (orderBy=totalViews popular / updatedAt latest /
+  searchTerm=q). Details/pages scraped from the `/series/<slug>` SSR page.
+  Chapters come from the page's **Astro hydration island props** (`initialChap`
+  array) — the SSR only renders a recent window of `<a>` links, so scraping
+  those truncates long series (Vortex showed 21 of 224). `unescapeEntities` +
+  `undoAstro` (Astro wraps every value `[0,x]`/`[1,[…]]`) decode the island;
+  it carries per-chapter `isAccessible` (skip coin/time-locked), `createdAt`,
+  `number`. Covers/pages on `storage.<host>` (open hotlink; large animated GIF
+  covers just load slowly — not broken).
+- **asura** (asuracomic.net → asurascans.com). Listings/search/details via
+  `api.asurascans.com/api/series` (`sort=popular|update`, `search=`,
+  `/api/series/<slug>` detail). `public_url` carries the routing hash
+  (…-30e93729) so URLs are never guessed. Chapters scraped from the
+  `/comics/<slug>-<hash>` SSR page (full list inline; verified 93/93 vs API
+  chapter_count). Pages on `cdn.asurascans.com/asura-images/chapters/…`.
 
 **🔲 Not built:** viz manga + viz shonen-jump (licensed/DRM pages), tapas
 (tapas.io — browse/episodes 302/session-gated), 3hentai (3hentai.net — NOT CF;
@@ -145,18 +163,21 @@ webtoons was fully verified this way before the device pass.
   broad Madara series-path filter; cover canvas capped 480px; `maxWidthDiskCache`
   + `ResizeImage` on the WebView cover fallback; `attr()` regex memoised.
 
-**Round 2 — committed, BUILD-verified, DEVICE-VERIFICATION PENDING (do this
-first on the new device):**
+**Round 2 — committed + DEVICE-VERIFIED (2026-07-02):**
 - serviceHttp: `webview_force` goes WebView-FIRST (skips the wasted Dio shell),
   falls back to Dio if WebView null; 12s success-only idempotent `_respCache`
-  (`"method url"`) collapsing the details+chapters double-fetch.
+  collapsing the details+chapters double-fetch.
 - `fetchImageBytes`: negative-cache failed covers (2min) + coalesce in-flight
   identical URLs.
 - mgeko details/pages got `webview_ready_js`.
-- **VERIFY:** open several sources (a non-CF one e.g. webtoons, a CF Madara, a
-  SPA e.g. mgeko) — confirm popular/details/chapters/reader all still load and
-  feel faster; confirm a manual "Refresh from source" still re-fetches (not
-  served stale from the 12s cache).
+- Verified: webtoons / mgeko / harimanga popular+details+chapters+reader all
+  load fine; a manual "Refresh from source" on a cached 0-chapter manga
+  correctly re-fetched (78 chapters), so the 12s cache doesn't serve stale.
+- **Follow-up fix (2026-07-02):** the `_respCache` key now includes the render
+  requirements (`webview_force`/`settle`/`ready_js`), not just `"METHOD url"` —
+  an AJAX-chapters Madara `chapters()` (which force-renders) could otherwise be
+  served the un-rendered shell snapshot a plain `details()` cached for the same
+  URL and parse 0 chapters.
 
 **Deferred consensus backlog (both Opus reviewers ranked the first as #1):**
 1. **The ~50s first-grid-load on fully-walled sources** — covers go through
@@ -189,15 +210,30 @@ node --check _ext_<id>.js        # JS syntax-check every extension edit
 - **Do NOT run `dart format`** — it churns ~800 lines of
   `manga_details_screen.dart`; the repo is not format-clean.
 - Strict 1:1 parity with Mihon; honest wiring (no dead switches).
-- Commit per logical chunk; commit messages end with
-  `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`.
+- Commit per logical chunk. Trailer = whichever model is actually doing the
+  work: this session (2026-07-02) that's `Co-Authored-By: Claude Fable 5
+  <noreply@anthropic.com>`. (History: the handoff's Opus 4.6 → Opus 4.8 while
+  Fable was unavailable → Fable 5 now.)
 - The "Dev: page source" tool + the side-loaded `_ext_*.js` are dev artifacts;
   decide a shippable bundling location before release (currently uncommitted on
   device, committed in-repo as `flutter/_ext_*.js`).
 
 ## Immediate next steps (priority order)
-1. Device-verify the Round-2 perf changes (above) on the new device.
-2. Finish the **SPA cluster**: hivetoons → vortexscans → asura (proven recipe).
-3. Deferred perf #1 (the ~50s grid: skip-CNI flag + batch covers).
-4. Optional one-offs: webtoons-style API sources, 3hentai (image logic ready),
+1. ✅ DONE 2026-07-02: Round-2 perf device-verified; SPA cluster finished
+   (hivetoons/vortexscans/asura). Also re-fixed **harimanga** — its refreshed
+   theme moved chapters to a JSON API (`/api/comics/<slug>/chapters?per_page=-1`);
+   the old inline `li.wp-manga-chapter` scrape found 0. chapters() now hits that
+   API with a page-scrape fallback. (version_code bumped 1→2.)
+2. Deferred perf #1 (the ~50s grid: skip-CNI flag + batch covers) — still open;
+   see the backlog below. This is now the top remaining item.
+3. Optional one-offs: webtoons-style API sources, 3hentai (image logic ready),
    readallcomics; skip viz (DRM) / tapas (session) unless needed.
+4. Retest the 🟡 Madara trio (kunmanga/manhuaus/manhwaclan) when their origins
+   are up. Note manhuafast was CF-403/502-flaky during this session.
+
+### Dev harness note
+`flutter/.tmp_manifests/test_ext.js` (the PC test harness) is untracked scratch
+and was NOT on this Mac — it's been recreated (node global-fetch `http` stub;
+`node .tmp_manifests/test_ext.js _ext_<id>.js <method> [arg]`). Still untracked
+by convention. It only works for non-CF sources — used to author + verify
+hivetoons/vortexscans/asura/harimanga before each device pass.
