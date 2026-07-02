@@ -17,7 +17,7 @@
   var LANG = 'en';
   // Manga browse sub-path. Most Madara sites use /manga/; some override it
   // (e.g. allporncomic uses /porncomic/, others /comics/ or /series/).
-  var MPATH = 'porncomic';
+  var MPATH = 'comic';  // was 'porncomic' on the old .com
   // Some Madara sites load chapters via AJAX instead of inline in the manga
   // page. manhuaplus is inline; flip to true for sites that return an empty
   // chapter list (then chapters POST to {mangaUrl}ajax/chapters/).
@@ -95,6 +95,13 @@
     var o = opts || {};
     o.headers = o.headers || {};
     if (!o.headers.Referer) o.headers.Referer = BASE + '/';
+    // allporncomics.co WAF-403s every non-browser TLS fingerprint outright (a
+    // plain block page, not a solvable challenge — so serviceHttp's CF
+    // detection never reroutes it). Force the WebView proxy on ALL fetches.
+    if (o.webview_force == null) {
+      o.webview_force = true;
+      o.webview_settle_ms = o.webview_settle_ms || 8000;
+    }
     return http.get(url, o).then(function (r) {
       if (!r || r.ok === false) throw new Error('network error: ' + (r && r.error));
       if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status + ' for ' + url);
@@ -136,9 +143,16 @@
       var imgTag = imgM ? imgM[0] : null;
       var cover = pickCover(imgTag);
       // title: the post-title anchor text, else the thumb anchor's title attr.
+      // This site prepends a language-badge anchor (flag emoji → /comic-tag/)
+      // inside post-title, so prefer the anchor that points at a series page.
+      // If the DOM is captured before wp-emoji swaps the raw glyph for an
+      // <img>, the badge text is a bare "🇺🇸" (regional-indicator pair) that
+      // survives stripTags — strip those glyphs and fall back if empty.
       var title = null;
-      var tM = /post-title[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/.exec(b);
+      var tM = /post-title[\s\S]*?<a[^>]*href="[^"]*\/comic\/[^"]*"[^>]*>([\s\S]*?)<\/a>/.exec(b) ||
+        /post-title[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/.exec(b);
       if (tM) title = stripTags(tM[1]);
+      if (title) title = title.replace(/\uD83C[\uDDE6-\uDDFF]/g, '').replace(/^\s+|\s+$/g, '');
       if (!title) title = attr(aM[0], 'title') || '';
       out.push({ url: abs(url), title: decode(title), thumbnail_url: cover ? abs(cover) : null });
     }
@@ -151,23 +165,24 @@
       html.indexOf('/page/' + (page + 1)) !== -1 || /next page-numbers|nav-previous/i.test(html);
   }
 
-  // Page 1 uses the canonical /manga/ URL; /manga/page/1/ 301-redirects on some
-  // Madara sites (manhwatop) and the query can be lost across the hop.
-  function listUrl(orderby, page) {
+  // allporncomics.co disabled the Madara CPT archive (/comic/?m_orderby=…
+  // redirects home with no cards); browse lives on shortcode pages instead:
+  // /popular-comics and /latest, paginated at /<page>/page/N/ (verified page 2
+  // serves fresh cards). Those pages render NO pagination links, so hasNext()
+  // sees nothing — infer next-page from a full 30-card page instead.
+  function listUrl(pagePath, page) {
     return page <= 1
-      ? BASE + '/' + MPATH + '/?m_orderby=' + orderby
-      : BASE + '/' + MPATH + '/page/' + page + '/?m_orderby=' + orderby;
+      ? BASE + '/' + pagePath + '/'
+      : BASE + '/' + pagePath + '/page/' + page + '/';
   }
-  function popular(page) {
-    return getHtml(listUrl('views', page)).then(function (html) {
-      return { mangas: parseList(html), has_next_page: hasNext(html, page) };
+  function listing(pagePath, page) {
+    return getHtml(listUrl(pagePath, page)).then(function (html) {
+      var mangas = parseList(html);
+      return { mangas: mangas, has_next_page: mangas.length >= 30 };
     });
   }
-  function latest(page) {
-    return getHtml(listUrl('latest', page)).then(function (html) {
-      return { mangas: parseList(html), has_next_page: hasNext(html, page) };
-    });
-  }
+  function popular(page) { return listing('popular-comics', page); }
+  function latest(page) { return listing('latest', page); }
   function search(query, page) {
     var q = encodeURIComponent(query || '');
     var url = BASE + '/page/' + page + '/?s=' + q + '&post_type=wp-manga';
@@ -189,8 +204,12 @@
       var imgM = /<img\b[^>]*>/.exec(b);
       var imgTag = imgM ? imgM[0] : null;
       var cover = pickCover(imgTag);
-      var tM = /post-title[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/.exec(b);
-      var title = tM ? stripTags(tM[1]) : (attr(aM[0], 'title') || '');
+      // The post-title h3 holds TWO anchors on this site: a language-badge
+      // anchor (flag emoji → /comic-tag/…) first, THEN the series link. Take
+      // the anchor that points at a series page, not the first one.
+      var tM = /post-title[\s\S]*?<a[^>]*href="[^"]*\/comic\/[^"]*"[^>]*>([\s\S]*?)<\/a>/.exec(b);
+      var title = tM ? stripTags(tM[1]) : '';
+      if (!title) title = attr(aM[0], 'title') || '';
       out.push({ url: abs(aM[1]), title: decode(title), thumbnail_url: cover ? abs(cover) : null });
     }
     return out;
@@ -226,7 +245,13 @@
   function details(manga) {
     return getHtml(abs(manga.url)).then(function (html) {
       var titleM = /<div class="post-title">[\s\S]*?<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/.exec(html);
-      var title = titleM ? decode(stripTags(titleM[1])) : (manga.title || '');
+      // Drop the language-badge span (flag emoji) the site prepends to the
+      // heading, otherwise the title comes out as just "🇺🇸".
+      var title = titleM
+        ? decode(stripTags(titleM[1].replace(/<span[^>]*manga-title-badges[\s\S]*?<\/span>/g, '')))
+        : (manga.title || '');
+      if (title) title = title.replace(/\uD83C[\uDDE6-\uDDFF]/g, '').replace(/^\s+|\s+$/g, '');
+      if (!title) title = manga.title || '';
 
       var picM = /class="summary_image"[\s\S]*?<img\b([^>]*)>/.exec(html);
       var cover = picM ? pickCover(picM[1]) : null;
@@ -324,6 +349,10 @@
         if (src.indexOf('http') !== 0) continue;
         // Skip the theme logo / UI chrome; page images live on a CDN path.
         if (/\/themes\/|logo|loading|dflazy|avatar|gravatar/i.test(src)) continue;
+        // Skip analytics/tracker pixels the rendered DOM carries (the WebView
+        // proxy returns the LIVE DOM, scripts included — yandex metrika's
+        // <img src="mc.yandex.ru/watch/…"> lands inside reading-content).
+        if (/yandex|metrika|analytics|\/watch\/|counter|pixel|\/ads?[\/.]|doubleclick/i.test(src)) continue;
         if (seen[src]) continue;
         seen[src] = true;
         out.push({

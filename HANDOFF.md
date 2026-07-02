@@ -61,14 +61,16 @@ Templates: `_ext_madara.js` (Madara/WordPress cluster), `_ext_mangathemesia.js`
 (WPMangaStream cluster), `_ext_natomanga.js` (manganato theme). Clone = copy the
 template, change the CONFIG block (BASE/ID/NAME/LANG/MPATH/DIR/AJAX_CHAPTERS).
 
-**✅ Working, device-verified (~22):** natomanga (manganato), mangadex,
+**✅ Working, device-verified (~25):** natomanga (manganato), mangadex,
 manhuaplus, manhwatop, manhuatop, rizzfables (rizz comic), thunderscans,
 harimanga, toongod, demonicscans (manga demon, full e2e), **manhuaus** (Madara,
 875-ch verified), **webtoons** (full e2e), **mgeko** (full e2e via SPA
 force-render), **hivetoons**, **vortexscans**, **asura** (SPA cluster, full
 e2e), **genztoons** (rebuilt for its relaunch — see note), **3hentai** (doujin
 gallery, full e2e), **brainrot** (brainrotcomics; scroll-until-stable chapter
-load — see note).
+load — see note), **aquareader** (aquamanga relaunch, full e2e),
+**tapas** (free-eps-only, full e2e), **allporncomic** (moved to
+allporncomics.co, WebView-forced — see 2026-07-03 notes; reader re-check 🟡).
 
 **🔴 Broken by the SITE, not our code (re-test when the origin is up):**
 kunmanga (CF 522 origin-down), manhwaclan (CF 522 origin-down), manhuafast
@@ -129,38 +131,60 @@ mgeko force-render recipe — plain Dio fetches work:
   throttled, so it needs far longer than a foreground tab). This
   scroll-until-stable pattern is reusable for other lazy-load Madara sites.
 
-**🟡 2026-07-03 additions — PC-verified, device pass PENDING (the phone was
-unreachable over wireless ADB; push + verify these three on-device next):**
+**✅ 2026-07-03 additions — device-verified (see one 🟡 note at the end):**
 - **aquareader** (`_ext_aquareader.js`, NEW) — aquamanga's live successor:
   the site relaunched on aquareader.org (some media still 301s via
   aquareader.net). Madara underneath but with a custom "aqua" skin, so the
   selectors differ from stock: cards `article.aqua-archive-card`, chapter rows
   `a.aqua-ch-item` (name/time spans), genres `a.aqua-series-genre-pill`;
-  search still uses stock `c-tabs-item` rows. No CF. PC-verified: popular 24,
-  latest 24, search 20, details full, 285 ch, 38-page chapter.
+  search still uses stock `c-tabs-item` rows. No CF. Device-verified e2e:
+  popular grid + covers, details (genres/status/desc), 319-ch list with dates,
+  reader 14 pages.
 - **tapas** (`_ext_tapas.js`, NEW) — FREE episodes only, like Mihon's source;
   un-parked from the can't-do bucket. Listings via the open
   `story-api.tapas.io/cosmos/api/v1/landing/{ranking,new}` JSON; search +
   /series/<x>/info are still server-rendered; chapters via the
   `/series/<numericId>/episodes?page=N` XHR JSON; pages = `img.content__img`
-  data-src. THE TRAP: `data-is-wait-or-pay`/`data-is-charging` do NOT track
-  anonymous readability on "Wait Until Free" series (wop=true on always-free
-  early eps, false on sign-in-gated ones) — filter rows by CLASS instead:
-  gated rows carry `body__item--opaque`/`js-have-to-sign`, readable rows
-  neither. A mobile UA 302s to m.tapas.io — same episode-row + content__img
-  markup, but its every page has a `js-have-to-sign` banner (so never use that
-  as a page-level lock signal; empty content__img ⇒ locked) and image URLs are
-  HTML-escaped in attrs (`&amp;` → decode). PC-verified: popular 20, search,
-  slug-URL chapters, WUF series 5/109 free (correct), free community series
-  all 661, pages 61 tokenised CDN imgs.
-- **allporncomic v2** (`_ext_allporncomic.js` BASE + manifest updated) — the
-  Turnstile-walled allporncomic.com moved to **allporncomics.co**. The new
-  domain WAF-blocks non-browser TLS outright ("Sorry, you have been blocked"
-  403 for curl/node with full browser headers), so PC verification is
-  impossible — first device test must go through the WebView proxy; if IT is
-  also blocked (could be geo/IP-based), re-park under 🔴 site-broken.
-Fresh one-line manifest.json files for all three are in
-`.tmp_manifests/manifest_<id>.json` (untracked), ready to push with source.js.
+  data-src. TRAPS (each cost a debug round):
+  (1) `data-is-wait-or-pay`/`data-is-charging` do NOT track anonymous
+  readability on "Wait Until Free" series (wop=true on always-free early eps,
+  false on sign-in-gated ones) — filter rows by CLASS instead: gated rows
+  carry `body__item--opaque`/`js-have-to-sign`, readable rows neither.
+  (2) A mobile UA 302s to m.tapas.io — same episode-row + content__img markup,
+  but every m. page has a `js-have-to-sign` banner (never use it as a
+  page-level lock signal; zero content__img ⇒ locked) and image URLs are
+  HTML-escaped in attrs (`&amp;` → decode).
+  (3) The cosmos API returns cover paths WITHOUT a file extension and the bare
+  path 404s — append `.jpg` (found on-device: grey grid).
+  Device-verified e2e: popular grid + covers, details, free-chapter filter
+  (3 free eps on a premium series), reader 63 pages. PC: WUF series 5/109
+  free (correct), free community series all 661 eps.
+- **allporncomic v2 → allporncomics.co** (`_ext_allporncomic.js` reworked) —
+  the Turnstile-walled allporncomic.com moved to **allporncomics.co**, which
+  WAF-403s every non-browser TLS fingerprint outright (plain block page, NOT a
+  solvable challenge — serviceHttp's CF detection never reroutes, and PC
+  curl/node can't test it at all). What the new site needed, all found via the
+  Dev-page-source dump loop:
+  (1) `webview_force:true` (+8s settle) on EVERY getHtml — the WebView's real
+  Chrome TLS passes the WAF fine.
+  (2) The Madara CPT archive is DISABLED (/porncomic/ AND /comic/?m_orderby=…
+  redirect home, no cards); browse lives on shortcode pages: `/popular-comics`
+  + `/latest`, paginated `/page/N/` (page 2 verified fresh). Those pages render
+  NO pagination links → has_next = (cards ≥ 30). Series live at
+  `/comic/<slug>/`.
+  (3) post-title holds a language-badge anchor (flag emoji) BEFORE the series
+  anchor, and when the DOM is captured before wp-emoji swaps the raw glyph for
+  an <img>, the first-anchor text is literally "🇺🇸" → titles were flags.
+  Parse the series anchor (`href*=/comic/`) + strip regional-indicator glyphs,
+  in parseList AND details (badge-span strip there). NOTE the file has TWO
+  list parsers (parseList + parseSearch) — patch the right one.
+  (4) The rendered DOM carries tracker pixels INSIDE reading-content
+  (mc.yandex.ru/watch) → pages() now drops tracker/ad URLs.
+  Device-verified: popular + pagination + covers + clean titles, details
+  (author/status/genres), 308-ch inline list. 🟡 Reader: the tracker-filter
+  fix is pushed to the device but the phone dropped off Wi-Fi before the final
+  reader re-check — re-open any chapter and confirm pages render (pre-fix it
+  parsed 12 pages where page 1 was a yandex pixel; the other 11 were real).
 
 **🔲 Not built (see the two 🔴 buckets above for why each is parked).**
 

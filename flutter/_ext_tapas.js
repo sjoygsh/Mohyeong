@@ -100,6 +100,9 @@
       if (!it || !it.seriesId) continue;
       var thumb = it.assetProperty && it.assetProperty.thumbnailImage &&
         it.assetProperty.thumbnailImage.path;
+      // The cosmos API returns the CDN path WITHOUT a file extension and the
+      // bare path 404s — the CDN serves it once you append one (.jpg/.webp).
+      if (thumb && !/\.(jpe?g|png|webp|gif)$/i.test(thumb)) thumb += '.jpg';
       mangas.push({
         url: BASE + '/series/' + it.seriesId,
         title: it.title || String(it.seriesId),
