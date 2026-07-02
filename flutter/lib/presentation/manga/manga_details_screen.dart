@@ -525,6 +525,20 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
   Set<int> _chapterIds = const {};
   StreamSubscription<DownloadEvent>? _sub;
 
+  /// Memoised filter→sort→interleave output (see [_buildBody]). Recomputed
+  /// only when an input that affects list membership or order changes;
+  /// download PROGRESS ticks — the per-page setState storm while a chapter
+  /// downloads — reuse it, since progress only changes tile chrome.
+  List<Chapter>? _cachedSorted;
+  List<Object>? _cachedRendered;
+  Set<String>? _cachedScanlators;
+  Object? _renderKey;
+
+  /// Bumped whenever [_downloadedIds] MEMBERSHIP changes (resolved anew,
+  /// download completed, chapter deleted). The set is mutated in place, so
+  /// its identity can't serve as a cache key.
+  int _downloadedRev = 0;
+
   Manga get manga => widget.manga;
   List<Chapter> get chapters => widget.chapters;
   ChapterRepository get chapterRepo => widget.chapterRepo;
@@ -554,7 +568,12 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
     final ids = await ref
         .read(downloadRepositoryProvider)
         .listDownloadedChapterIds(manga.source, manga.id);
-    if (mounted) setState(() => _downloadedIds = ids);
+    if (mounted) {
+      setState(() {
+        _downloadedIds = ids;
+        _downloadedRev++;
+      });
+    }
   }
 
   void _onEvent(DownloadEvent e) {
@@ -563,9 +582,10 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
       if (e.state == DownloadState.completed) {
         _live.remove(e.chapterId);
         (_downloadedIds ??= <int>{}).add(e.chapterId);
+        _downloadedRev++;
       } else if (e.state == DownloadState.deleted) {
         _live.remove(e.chapterId);
-        _downloadedIds?.remove(e.chapterId);
+        if (_downloadedIds?.remove(e.chapterId) ?? false) _downloadedRev++;
       } else {
         _live[e.chapterId] = e;
       }
@@ -626,72 +646,106 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
     bool groupByVolume,
     bool hideMissing,
   ) {
-    final availableScanlators = <String>{
-      for (final c in chapters)
-        if (c.scanlator != null && c.scanlator!.isNotEmpty) c.scanlator!,
-    };
-
-    final filtered = chapters.where((c) {
-      if (excluded.contains(c.scanlator)) return false;
-      final unreadOk = applyTriState(manga.unreadFilter, () => !c.read);
-      final bookmarkedOk =
-          applyTriState(manga.bookmarkedFilter, () => c.bookmark);
-      // Local-source chapters count as downloaded (Kotlin applies
-      // `|| manga.isLocal()` to the downloaded predicate).
-      final downloadedOk = downloadedIds == null
-          ? true
-          : applyTriState(
-              downloadedFilter,
-              () => downloadedIds.contains(c.id) || manga.source == 0,
-            );
-      return unreadOk && bookmarkedOk && downloadedOk;
-    }).toList(growable: false);
-
-    // Sort via the shared Mihon `getChapterSort` port. NOTE the SOURCE case
-    // is intentionally inverted vs the other modes (sourceOrder 0 == newest),
-    // so descending source order shows the NEWEST chapter at the top — the
-    // Mihon default — rather than the oldest.
-    final sorted = [...filtered]
-      ..sort((a, b) => _chapterSortCompare(a, b, manga));
-
-    // Build the interleaved render list:
-    //  - "Missing N chapters" separators wherever there's a numeric gap
-    //    between adjacent chapters (unless hidden) — 1:1 with Mihon's
-    //    chapterListItems.insertSeparators (MangaScreenModel).
-    //  - Volume header rows each time the volume number changes (when "Group
-    //    chapters by volume" is on) — 1:1 with MangaScreen's VolumeHeaderItem.
-    // A NaN sentinel (which never equals any real value or null) forces a
-    // volume header before the first chapter.
+    // Everything below (scanlator set, filter, sort, interleave) depends only
+    // on these inputs — memoise on them. Without this, every download
+    // progress setState tick (one per PAGE downloaded) redid the whole
+    // O(N log N) pipeline for lists that run to hundreds of chapters. The
+    // record compares lists/sets by identity and Manga by its own ==, which
+    // is exactly right: a new chapters list or filter emission recomputes, a
+    // progress tick doesn't ([_downloadedRev] stands in for the in-place
+    // mutated downloaded set; -1 when the downloaded filter is off, so
+    // completions don't invalidate a list they can't affect).
+    final key = (
+      chapters,
+      excluded,
+      downloadedIds == null ? -1 : _downloadedRev,
+      downloadedFilter,
+      groupByVolume,
+      hideMissing,
+      manga,
+    );
+    final Set<String> availableScanlators;
+    final List<Chapter> sorted;
     final List<Object> rendered;
-    if (groupByVolume || !hideMissing) {
-      rendered = <Object>[];
-      double? lastVolume = double.nan;
-      for (var i = 0; i < sorted.length; i++) {
-        final c = sorted[i];
-        if (!hideMissing) {
+    if (key == _renderKey &&
+        _cachedSorted != null &&
+        _cachedRendered != null &&
+        _cachedScanlators != null) {
+      availableScanlators = _cachedScanlators!;
+      sorted = _cachedSorted!;
+      rendered = _cachedRendered!;
+    } else {
+      availableScanlators = <String>{
+        for (final c in chapters)
+          if (c.scanlator != null && c.scanlator!.isNotEmpty) c.scanlator!,
+      };
+
+      final filtered = chapters.where((c) {
+        if (excluded.contains(c.scanlator)) return false;
+        final unreadOk = applyTriState(manga.unreadFilter, () => !c.read);
+        final bookmarkedOk =
+            applyTriState(manga.bookmarkedFilter, () => c.bookmark);
+        // Local-source chapters count as downloaded (Kotlin applies
+        // `|| manga.isLocal()` to the downloaded predicate).
+        final downloadedOk = downloadedIds == null
+            ? true
+            : applyTriState(
+                downloadedFilter,
+                () => downloadedIds.contains(c.id) || manga.source == 0,
+              );
+        return unreadOk && bookmarkedOk && downloadedOk;
+      }).toList(growable: false);
+
+      // Sort via the shared Mihon `getChapterSort` port. NOTE the SOURCE case
+      // is intentionally inverted vs the other modes (sourceOrder 0 == newest),
+      // so descending source order shows the NEWEST chapter at the top — the
+      // Mihon default — rather than the oldest.
+      sorted = [...filtered]
+        ..sort((a, b) => _chapterSortCompare(a, b, manga));
+
+      // Build the interleaved render list:
+      //  - "Missing N chapters" separators wherever there's a numeric gap
+      //    between adjacent chapters (unless hidden) — 1:1 with Mihon's
+      //    chapterListItems.insertSeparators (MangaScreenModel).
+      //  - Volume header rows each time the volume number changes (when "Group
+      //    chapters by volume" is on) — 1:1 with MangaScreen's VolumeHeaderItem.
+      // A NaN sentinel (which never equals any real value or null) forces a
+      // volume header before the first chapter.
+      if (groupByVolume || !hideMissing) {
+        final interleaved = <Object>[];
+        double? lastVolume = double.nan;
+        for (var i = 0; i < sorted.length; i++) {
+          final c = sorted[i];
+          if (!hideMissing) {
+            final missing = _missingCountBetween(
+              before: i > 0 ? sorted[i - 1] : null,
+              after: c,
+              manga: manga,
+            );
+            if (missing > 0) interleaved.add(_MissingCountItem(missing));
+          }
+          if (groupByVolume && c.volumeNumber != lastVolume) {
+            interleaved.add(_VolumeHeaderItem(c.volumeNumber));
+            lastVolume = c.volumeNumber;
+          }
+          interleaved.add(c);
+        }
+        if (!hideMissing && sorted.isNotEmpty) {
           final missing = _missingCountBetween(
-            before: i > 0 ? sorted[i - 1] : null,
-            after: c,
+            before: sorted.last,
+            after: null,
             manga: manga,
           );
-          if (missing > 0) rendered.add(_MissingCountItem(missing));
+          if (missing > 0) interleaved.add(_MissingCountItem(missing));
         }
-        if (groupByVolume && c.volumeNumber != lastVolume) {
-          rendered.add(_VolumeHeaderItem(c.volumeNumber));
-          lastVolume = c.volumeNumber;
-        }
-        rendered.add(c);
+        rendered = interleaved;
+      } else {
+        rendered = sorted;
       }
-      if (!hideMissing && sorted.isNotEmpty) {
-        final missing = _missingCountBetween(
-          before: sorted.last,
-          after: null,
-          manga: manga,
-        );
-        if (missing > 0) rendered.add(_MissingCountItem(missing));
-      }
-    } else {
-      rendered = sorted;
+      _renderKey = key;
+      _cachedScanlators = availableScanlators;
+      _cachedSorted = sorted;
+      _cachedRendered = rendered;
     }
 
     return SliverMainAxisGroup(
