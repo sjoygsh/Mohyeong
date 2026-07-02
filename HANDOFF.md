@@ -179,23 +179,35 @@ webtoons was fully verified this way before the device pass.
   served the un-rendered shell snapshot a plain `details()` cached for the same
   URL and parse 0 chapters.
 
-**Deferred consensus backlog (both Opus reviewers ranked the first as #1):**
-1. **The ~50s first-grid-load on fully-walled sources** — covers go through
-   `cached_network_image` (own http client, no timeout cap) before the WebView
-   fallback, and all covers serialise through the ONE WebView `_lock`. Fixes:
-   (a) per-source "covers walled → skip CNI, use `_WebViewImageProvider`
-   directly" flag (thread a manifest bool through `source_image.dart` like
-   `installedSourceImageHeadersProvider` is threaded); (b) **batch same-origin
-   covers in ONE JS pass** over the already-parked listing page (fan out N ids
-   over the existing `CFImg` channel) — biggest single win.
-2. `chapter_repository.dart` `syncChaptersWithSource` (~:213) inserts new
-   chapters one-by-one — batch insertAll + re-query ids (CORRECTNESS-sensitive:
-   `added` feeds Updates/auto-download; preserve the `markDuplicateAsRead`
-   exclusion).
+**Deferred consensus backlog:**
+1. **The ~50s first-grid-load on fully-walled sources** — ⚠️ NOT CURRENTLY
+   REPRODUCIBLE (investigated 2026-07-02). The premise needs a source whose
+   LISTING loads but whose cover CDN fingerprint-walls even the Referer+UA that
+   `installedSourceImageHeadersProvider` already sends to `cached_network_image`.
+   No such live source exists: probed the cover CDNs of every working source
+   (zinmanga/harimanga, storage.hivetoon, cdn.asurascans, imgsrv4, natomanga) —
+   all return 200 to a plain curl WITH Referer+UA, i.e. hotlink-protected at
+   most, not fingerprint-walled, so CNI already handles them. The sources whose
+   cover CDNs *are* fingerprint-walled (allporncomic, manhuafast) have their
+   LISTING walled too — they 403 the popular page (CF fingerprint wall on the
+   HTML, no `webview_force`) before any cover renders. So the real blocker there
+   is the listing wall, not cover perf. A skip-CNI flag would have no verifiable
+   beneficiary today. Revisit IF/when a listing-working, cover-walled source
+   appears, OR after recovering allporncomic/manhuafast listings (their CF looks
+   like interactive Turnstile — may be unsolvable via the offscreen WebView;
+   manhuafast was also origin-502 flaky on 2026-07-02). Original fix ideas kept
+   for reference: (a) per-source "covers walled → skip CNI, use
+   `_WebViewImageProvider` directly" manifest flag; (b) batch same-origin covers
+   in ONE JS pass over the parked listing page.
+2. ✅ DONE 2026-07-02: `syncChaptersWithSource` batched insertAll + id re-query
+   (was one INSERT per new chapter; 319-chapter fresh insert device-verified,
+   4 unit tests in `test/sync_chapters_test.dart`, added `AppDatabase.forTesting`
+   for in-memory DB tests). `added` order / mark-duplicate-read exclusion / read
+   preservation / prune-missing all covered.
 3. `manga_details_screen.dart` `_ChaptersSection` re-filters/sorts/interleaves
    the whole list on every download-progress `setState` tick — memoise the
    render list (key on chapters identity + filters/sort/excluded/downloaded), or
-   per-tile progress notifiers.
+   per-tile progress notifiers. **← now the top open perf item.**
 
 ## Build / verify commands
 ```
@@ -224,12 +236,18 @@ node --check _ext_<id>.js        # JS syntax-check every extension edit
    theme moved chapters to a JSON API (`/api/comics/<slug>/chapters?per_page=-1`);
    the old inline `li.wp-manga-chapter` scrape found 0. chapters() now hits that
    API with a page-scrape fallback. (version_code bumped 1→2.)
-2. Deferred perf #1 (the ~50s grid: skip-CNI flag + batch covers) — still open;
-   see the backlog below. This is now the top remaining item.
+2. Deferred perf #2 DONE (batch chapter insert). Deferred perf #1 (~50s grid)
+   found NOT reproducible — see the backlog note below. **Top open perf item is
+   now #3** (`_ChaptersSection` re-filter/sort on every setState tick).
 3. Optional one-offs: webtoons-style API sources, 3hentai (image logic ready),
    readallcomics; skip viz (DRM) / tapas (session) unless needed.
 4. Retest the 🟡 Madara trio (kunmanga/manhuaus/manhwaclan) when their origins
-   are up. Note manhuafast was CF-403/502-flaky during this session.
+   are up. Note manhuafast was CF-403/502-flaky during this session, and
+   allporncomic/manhuafast LISTINGS are CF-fingerprint-walled (403) — their
+   Madara `getHtml` does plain Dio and the bare 403 isn't detected as a CF
+   challenge, so no WebView retry fires. Recovering them needs a force-render
+   listing path, but their wall looks like interactive Turnstile (may not
+   auto-solve offscreen) — probe before investing.
 
 ### Dev harness note
 `flutter/.tmp_manifests/test_ext.js` (the PC test harness) is untracked scratch
