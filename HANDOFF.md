@@ -61,16 +61,28 @@ Templates: `_ext_madara.js` (Madara/WordPress cluster), `_ext_mangathemesia.js`
 (WPMangaStream cluster), `_ext_natomanga.js` (manganato theme). Clone = copy the
 template, change the CONFIG block (BASE/ID/NAME/LANG/MPATH/DIR/AJAX_CHAPTERS).
 
-**✅ Working, device-verified (~18):** natomanga (manganato), mangadex,
-manhuaplus, manhwatop, manhuatop, manhuafast (incl. AJAX chapters), rizzfables
-(rizz comic), thunderscans, harimanga, toongod, demonicscans (manga demon, full
-e2e), allporncomic (titles work; covers blank = cover-CF, has fallback),
-**webtoons** (full e2e), **mgeko** (full e2e via SPA force-render),
-**hivetoons**, **vortexscans**, **asura** (all three full e2e — see the SPA
-cluster note below).
+**✅ Working, device-verified (~22):** natomanga (manganato), mangadex,
+manhuaplus, manhwatop, manhuatop, rizzfables (rizz comic), thunderscans,
+harimanga, toongod, demonicscans (manga demon, full e2e), **manhuaus** (Madara,
+875-ch verified), **webtoons** (full e2e), **mgeko** (full e2e via SPA
+force-render), **hivetoons**, **vortexscans**, **asura** (SPA cluster, full
+e2e), **genztoons** (rebuilt for its relaunch — see note), **3hentai** (doujin
+gallery, full e2e), **brainrot** (brainrotcomics; scroll-until-stable chapter
+load — see note).
 
-**🟡 Built, NOT device-verified (3):** kunmanga, manhuaus, manhwaclan (same
-Madara template; origins were CF-521-down earlier — re-test when up).
+**🔴 Broken by the SITE, not our code (re-test when the origin is up):**
+kunmanga (CF 522 origin-down), manhwaclan (CF 522 origin-down), manhuafast
+(CF 502 origin-down; its extension is fine — was device-proven before),
+allporncomic (CF "Performing security verification" interactive Turnstile —
+does NOT auto-solve in the offscreen WebView; listing + covers both walled).
+readallcomics (CF 521 origin-down). All confirmed via the Dev-page-source
+WebView on 2026-07-02, so it's the origins, not our fetch path.
+
+**🔴 Can't be done (parked with reason):** aquamanga (domain parked/redirect,
+like genztoons.com was — no live successor found), mangayy (CF interactive
+"Just a moment"), read comic online (remote-obfuscated `imageDecryptEval`),
+viz + tapas (DRM / session-gated — skip per original handoff). aryascans
+redirects to brainrotcomics, which IS added, so arya is covered by **brainrot**.
 
 **✅ SPA cluster — DONE (2026-07-02).** All three turned out to be Astro SSR
 sites, NOT the CF-walled Next.js the handoff assumed, and none needed the
@@ -93,14 +105,33 @@ mgeko force-render recipe — plain Dio fetches work:
   `/comics/<slug>-<hash>` SSR page (full list inline; verified 93/93 vs API
   chapter_count). Pages on `cdn.asurascans.com/asura-images/chapters/…`.
 
-**🔲 Not built:** viz manga + viz shonen-jump (licensed/DRM pages), tapas
-(tapas.io — browse/episodes 302/session-gated), 3hentai (3hentai.net — NOT CF;
-`/d/<id>` galleries, NO nhentai JSON API, images `s1.3hentai.net/d<mediaId>/<n>t.jpg`
-thumb → `<n>.jpg` full; image logic solved, but listing/details have no og: meta
-so titles are hard), readallcomics (NOT CF; unusual `category`-as-series +
-`htp-search-result`), read comic online (CF + remote-obfuscated `imageDecryptEval`
-pages — hard), aqua manga / arya scans (→brainrotcomics) / manga yy
-(dead/unknown — unprobed).
+**Other 2026-07-02 additions:**
+- **genztoons** — the old genztoons.com MangaThemesia clone broke: that domain
+  expired and is PARKED (router.parklogic.com). The site relaunched on
+  genztoons.org (canonical; genzupdates.com mirrors) on the "Meowing" platform,
+  so `_ext_genztoons.js` was rewritten ground-up: catalog is the whole
+  `/series/` page (~205 cards, no server pagination/search → search filters
+  client-side), `/latest/` for latest, chapter anchors are self-describing
+  (`<a href="/chapter/<hash>" title="Chapter 45" d="Nov 13, 2024">`), images on
+  `cdn.meowing.org/uploads/<uid>` (eager first page via wp.com proxy + lazy
+  `uid=` placeholders). Series status only lives in the bookmark dropdown → left
+  unknown. NOTE cold chapter pages can exceed Dio's 30s timeout once (Retry
+  works).
+- **3hentai** (3hentai.net) — server-rendered doujin gallery, NOT CF, NO JSON
+  API. popular=`/`, latest=`/language/english`, search=`/search?q=` (empty q
+  404s → popular). Gallery = one chapter; thumbs `s#/d<media>/<n>t.<ext>` → full
+  drops the `t`. Titles come from the card `.title` div / gallery h1 (the old
+  "no og: meta" worry was moot).
+- **brainrot** (brainrotcomics.com; = arya scans redirect) — CF-walled Madara.
+  The catch: chapters lazy-load only on scroll and NEVER populate in the normal
+  page offscreen. Fix: fetch the classic `?style=list` variant AND, because
+  LiteSpeed keeps only visible rows mounted, the `webview_ready_js` scrolls to
+  the bottom each poll and waits for the row count to STABILISE before
+  extracting (20s ceiling — the occluded/backgrounded WebView is render-
+  throttled, so it needs far longer than a foreground tab). This
+  scroll-until-stable pattern is reusable for other lazy-load Madara sites.
+
+**🔲 Not built (see the two 🔴 buckets above for why each is parked).**
 
 ## The PROVEN SPA-cluster recipe (mgeko did this end-to-end)
 1. **Dev-dump the rendered DOM** for: the listing page, a series page, the
@@ -204,18 +235,23 @@ webtoons was fully verified this way before the device pass.
    4 unit tests in `test/sync_chapters_test.dart`, added `AppDatabase.forTesting`
    for in-memory DB tests). `added` order / mark-duplicate-read exclusion / read
    preservation / prune-missing all covered.
-3. `manga_details_screen.dart` `_ChaptersSection` re-filters/sorts/interleaves
-   the whole list on every download-progress `setState` tick — memoise the
-   render list (key on chapters identity + filters/sort/excluded/downloaded), or
-   per-tile progress notifiers. **← now the top open perf item.**
+3. ✅ DONE 2026-07-02: `_ChaptersSection` render list memoised (keyed on
+   chapters identity + excluded set + downloaded-filter revision + group/hide/
+   manga) so download-progress ticks no longer re-run the whole filter→sort→
+   interleave. Device-verified on Get Schooled (254 ch): list identical, a
+   chapter download shows live progress + lands on disk.
+
+**All three deferred perf items are now resolved (or, for #1, shown to have no
+live repro).** Next perf ideas would need profiling a real slow path first.
 
 ## Build / verify commands
 ```
 cd flutter
 flutter analyze lib/            # must stay clean
-flutter test                    # 18 trivial tests, keep green
+flutter test                    # 22 tests now (added test/sync_chapters_test.dart), keep green
 flutter build apk --debug
 node --check _ext_<id>.js        # JS syntax-check every extension edit
+node .tmp_manifests/test_ext.js _ext_<id>.js <method> [arg]   # PC harness (non-CF)
 ```
 
 ## Hard constraints
