@@ -1,7 +1,7 @@
-// Hive Toons (hivetoons.org) extension for Mohyeong's JS runtime.
+// Hive Toons (vortexscans.org) extension for Mohyeong's JS runtime.
 // Astro SSR site (replatformed from the old Next.js build) + its own JSON API,
 // authored against live HTML/API:
-//   listings: https://api.hivetoons.org/api/query?perPage=N&page=N
+//   listings: https://api.vortexscans.org/api/query?perPage=N&page=N
 //             (&orderBy=totalViews popular / updatedAt latest / searchTerm=q)
 //             → {posts:[{slug,postTitle,featuredImage,seriesStatus,genres,…}],
 //                totalCount}
@@ -9,7 +9,7 @@
 //             rows <a href="/series/<slug>/chapter-N"> with <time dateTime>;
 //             genres live in an astro-island's entity-escaped props JSON)
 //   reader  : /series/<slug>/chapter-N — page images inline on
-//             storage.hivetoon.com/…/upload/series/<slug>/…  (no hotlink wall)
+//             storage.vortexscans.org/…/upload/series/<slug>/…  (no hotlink wall)
 // Newest chapters are coin-locked (timed paywall): their series-page row has a
 // bg-black/50 overlay and their reader page has no images — skip them.
 // Contract: register `__extension` with manifest + popular/latest/search/
@@ -17,10 +17,10 @@
 
 (function () {
   // ===== CONFIG ============================================================
-  var BASE = 'https://hivetoons.org';
-  var API = 'https://api.hivetoons.org/api/query';
-  var ID = 'hivetoons';
-  var NAME = 'Hive Toons';
+  var BASE = 'https://vortexscans.org';
+  var API = 'https://api.vortexscans.org/api/query';
+  var ID = 'vortexscans';
+  var NAME = 'Vortex Scans';
   var LANG = 'en';
   var PER_PAGE = 18;
   // =========================================================================
