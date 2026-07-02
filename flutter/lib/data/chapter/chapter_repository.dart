@@ -183,6 +183,15 @@ class ChapterRepository {
         : const <double>{};
     final added = <Chapter>[];
     final updatedCompanions = <db.ChaptersCompanion>[];
+    // New chapters are collected here and inserted in ONE batch below: the
+    // first open of a long series is hundreds of new rows, and one INSERT each
+    // is hundreds of DB round trips. `insertAll` can't return generated ids,
+    // so `added` (which feeds the Updates tab / auto-download) is rebuilt from
+    // a single re-query after the batch. Kept in fetched order via [newOrder].
+    final newInserts = <db.ChaptersCompanion>[];
+    final newOrder = <String>[];
+    final newTemplates = <String, Chapter>{};
+    final newExcluded = <String>{}; // inserted-read duplicates → not "new"
     // Source returns chapters in display order (typically newest first).
     // sourceOrder mirrors the index here so the existing ORDER BY
     // source_order in getChaptersByMangaId works.
@@ -193,7 +202,7 @@ class ChapterRepository {
         final duplicateRead = markDuplicateAsRead &&
             s.chapterNumber >= 0 &&
             readChapterNumbers.contains(s.chapterNumber);
-        final inserted = Chapter(
+        newTemplates[s.url] = Chapter(
           id: -1,
           mangaId: mangaId,
           read: duplicateRead,
@@ -210,26 +219,27 @@ class ChapterRepository {
           version: 1,
           volumeNumber: s.volumeNumber,
         );
-        final id = await _db.into(_db.chapters).insert(
-              db.ChaptersCompanion.insert(
-                mangaId: mangaId,
-                url: s.url,
-                name: s.name,
-                scanlator: Value(s.scanlator),
-                read: duplicateRead ? 1 : 0,
-                bookmark: 0,
-                lastPageRead: 0,
-                chapterNumber: s.chapterNumber,
-                sourceOrder: i,
-                dateFetch: nowMs,
-                dateUpload: s.dateUpload,
-                lastModifiedAt: Value(nowMs),
-                version: const Value(1),
-                isSyncing: const Value(0),
-                volumeNumber: Value(s.volumeNumber),
-              ),
-            );
-        if (!duplicateRead) added.add(inserted.copyWith(id: id));
+        newOrder.add(s.url);
+        if (duplicateRead) newExcluded.add(s.url);
+        newInserts.add(
+          db.ChaptersCompanion.insert(
+            mangaId: mangaId,
+            url: s.url,
+            name: s.name,
+            scanlator: Value(s.scanlator),
+            read: duplicateRead ? 1 : 0,
+            bookmark: 0,
+            lastPageRead: 0,
+            chapterNumber: s.chapterNumber,
+            sourceOrder: i,
+            dateFetch: nowMs,
+            dateUpload: s.dateUpload,
+            lastModifiedAt: Value(nowMs),
+            version: const Value(1),
+            isSyncing: const Value(0),
+            volumeNumber: Value(s.volumeNumber),
+          ),
+        );
       } else {
         updatedCompanions.add(
           db.ChaptersCompanion(
@@ -242,6 +252,19 @@ class ChapterRepository {
             volumeNumber: Value(s.volumeNumber),
           ),
         );
+      }
+    }
+    if (newInserts.isNotEmpty) {
+      await _db.batch((b) => b.insertAll(_db.chapters, newInserts));
+      // insertAll returns no ids — re-read the manga's rows once (chapters are
+      // unique per (manga, url), and duplicates were already pruned above) and
+      // map url→id. A full re-query avoids a giant `url IN (…)` that would blow
+      // SQLite's bound-variable limit on 1000+ chapter series.
+      final idByUrl = {for (final c in await getByMangaId(mangaId)) c.url: c.id};
+      for (final url in newOrder) {
+        if (newExcluded.contains(url)) continue;
+        final id = idByUrl[url];
+        if (id != null) added.add(newTemplates[url]!.copyWith(id: id));
       }
     }
     if (updatedCompanions.isNotEmpty) {

@@ -35,6 +35,11 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  /// Test-only: build the schema on a caller-supplied executor (e.g.
+  /// `NativeDatabase.memory()`) so unit tests can exercise repositories
+  /// without touching the on-device file connection.
+  AppDatabase.forTesting(super.e);
+
   /// schemaVersion 16 was the first Flutter version. schemaVersion 17 widens
   /// `updatesView` to also include manga that aren't favourited themselves
   /// but are on the linked side of a `manga_links` row, so the Updates tab
