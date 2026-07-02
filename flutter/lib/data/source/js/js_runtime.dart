@@ -66,7 +66,14 @@ class JsRuntime {
       final settle = settleMs != null
           ? Duration(milliseconds: settleMs.clamp(0, 20000))
           : const Duration(milliseconds: 1800);
-      final cacheKey = '$method $url';
+      // The render requirements are part of the response's identity: a fetch
+      // that must wait for JS-injected content (webview_force / ready_js, e.g.
+      // an AJAX-chapters Madara chapters() call) can't be satisfied by a
+      // snapshot cached for a plain fetch of the same URL, and vice versa.
+      // Identical plain fetches (the Madara details+chapters double-fetch)
+      // still share a key and collapse.
+      final cacheKey =
+          '$method $url wv:${forceWebView ? 1 : 0}:${settleMs ?? ''}:${readyJs ?? ''}';
       final webAvail = WebViewHttpClient.instance.isAvailable;
 
       if (idempotent) {

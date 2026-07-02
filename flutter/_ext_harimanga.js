@@ -284,6 +284,43 @@
   }
 
   function chapters(manga) {
+    // harimanga.vip's refreshed theme injects the chapter list client-side
+    // from its own JSON API — the same call the site's chapter.js makes
+    // (window.getChaptersUrl; per_page=-1 returns the full list). The series
+    // page HTML only carries a truncated teaser, so the old inline
+    // li.wp-manga-chapter parse finds nothing; keep it as a fallback in case
+    // the theme rolls back.
+    var slug = (/\/manga\/([^\/?#]+)/.exec(manga.url) || [])[1];
+    if (slug) {
+      var api = BASE + '/api/comics/' + slug + '/chapters?per_page=-1&order=desc';
+      return getHtml(api).then(function (body) {
+        var data = JSON.parse(body);
+        var list = (data && data.data && data.data.chapters) || [];
+        var out = [];
+        for (var i = 0; i < list.length; i++) {
+          var c = list[i];
+          if (!c || !c.chapter_slug) continue;
+          var d = c.updated_at ? Date.parse(c.updated_at) : NaN;
+          var num = typeof c.chapter_num === 'number'
+            ? c.chapter_num : parseFloat(c.chapter_num);
+          out.push({
+            url: BASE + '/manga/' + slug + '/' + c.chapter_slug,
+            name: decode(String(c.chapter_name || ('Chapter ' + c.chapter_num))),
+            date_upload: isNaN(d) ? 0 : d,
+            chapter_number: isNaN(num) ? -1 : num,
+          });
+        }
+        if (!out.length) throw new Error('empty chapter API response');
+        return out;
+      }).catch(function (e) {
+        console.log('harimanga chapter API failed (' + e + '); using page parse');
+        return chaptersFromPage(manga);
+      });
+    }
+    return chaptersFromPage(manga);
+  }
+
+  function chaptersFromPage(manga) {
     if (!AJAX_CHAPTERS) {
       return getHtml(abs(manga.url)).then(parseChapters);
     }
@@ -345,7 +382,7 @@
       name: NAME,
       lang: LANG,
       base_url: BASE,
-      version_code: 1,
+      version_code: 2,
       supports_latest: true,
     },
     popular: popular,
