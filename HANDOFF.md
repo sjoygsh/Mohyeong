@@ -70,7 +70,7 @@ e2e), **genztoons** (rebuilt for its relaunch — see note), **3hentai** (doujin
 gallery, full e2e), **brainrot** (brainrotcomics; scroll-until-stable chapter
 load — see note), **aquareader** (aquamanga relaunch, full e2e),
 **tapas** (free-eps-only, full e2e), **allporncomic** (moved to
-allporncomics.co, WebView-forced — see 2026-07-03 notes; reader re-check 🟡).
+allporncomics.co, WebView-forced — see 2026-07-03 notes; full e2e ✅).
 
 **🔴 Broken by the SITE, not our code (re-test when the origin is up):**
 kunmanga (CF 522 origin-down), manhwaclan (CF 522 origin-down), manhuafast
@@ -180,11 +180,18 @@ mgeko force-render recipe — plain Dio fetches work:
   list parsers (parseList + parseSearch) — patch the right one.
   (4) The rendered DOM carries tracker pixels INSIDE reading-content
   (mc.yandex.ru/watch) → pages() now drops tracker/ad URLs.
-  Device-verified: popular + pagination + covers + clean titles, details
-  (author/status/genres), 308-ch inline list. 🟡 Reader: the tracker-filter
-  fix is pushed to the device but the phone dropped off Wi-Fi before the final
-  reader re-check — re-open any chapter and confirm pages render (pre-fix it
-  parsed 12 pages where page 1 was a yandex pixel; the other 11 were real).
+  (5) Reader "No pages."/403 (fixed `a5759b149`, ext v3) was TWO more bugs:
+  (a) Dart: the WebView 403-fallback for fingerprint-walled CDNs lived only in
+  SourceImage's widget branch — crop-borders/rotate-to-fit/dual-page/precache/
+  set-as-cover use the raw provider and got NO fallback (crop was ON → every
+  page image 403'd). `_NetworkImageWithWebViewFallback` now backs
+  `_backendProvider()`; helps every fingerprint-walled source.
+  (b) ext pages(): a cold WebView could burn the whole settle window clearing
+  the WAF and snapshot an image-less DOM → silent empty list. Now gated on a
+  reading-content-img `webview_ready_js`, retried once with a DIFFERENT settle
+  ceiling (settle_ms is in the resp-cache key → retry bypasses the cached bad
+  snapshot), and an empty parse THROWS (retryable error, not "No pages.").
+  Device-verified e2e incl. cold-start reader: ch306 (20 pp) + ch307 (10 pp).
 
 **🔲 Not built (see the two 🔴 buckets above for why each is parked).**
 
