@@ -24,6 +24,26 @@ class ChapterRepository {
         );
   }
 
+  /// (total, unread) chapter counts for EVERY manga in one grouped query.
+  /// The library-update eligibility filter needs only these flags — loading
+  /// each favourite's full chapter list to compute them was an N+1 that
+  /// deserialized thousands of rows per sweep.
+  Future<Map<int, ({int total, int unread})>> readStateCountsByManga() async {
+    final rows = await _db.customSelect(
+      'SELECT manga_id, COUNT(*) AS total, '
+      'SUM(CASE WHEN read = 0 THEN 1 ELSE 0 END) AS unread '
+      'FROM chapters GROUP BY manga_id',
+      readsFrom: {_db.chapters},
+    ).get();
+    return {
+      for (final r in rows)
+        r.read<int>('manga_id'): (
+          total: r.read<int>('total'),
+          unread: r.read<int>('unread'),
+        ),
+    };
+  }
+
   Future<int> upsert(Chapter chapter) async {
     return _db
         .into(_db.chapters)

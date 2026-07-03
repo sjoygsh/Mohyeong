@@ -100,6 +100,24 @@ class CategoryRepository {
     return rows.map((r) => r.read<int>('manga_id')).toSet();
   }
 
+  /// Explicit category memberships for EVERY manga in one query over the
+  /// join table (which holds only explicit assignments — the implicit
+  /// system category id=0 is the absence of rows). Lets sweep-style callers
+  /// (library update filter) avoid a per-manga membership query.
+  Future<Map<int, Set<int>>> getAllMangaCategoryIds() async {
+    final rows = await _db.customSelect(
+      'SELECT manga_id, category_id FROM mangas_categories',
+      readsFrom: {_db.mangasCategories},
+    ).get();
+    final out = <int, Set<int>>{};
+    for (final r in rows) {
+      out
+          .putIfAbsent(r.read<int>('manga_id'), () => <int>{})
+          .add(r.read<int>('category_id'));
+    }
+    return out;
+  }
+
   /// Returns the set of category ids the manga is assigned to. The implicit
   /// system category (id=0) is omitted -- it is the absence-of-category
   /// state, not an explicit row.

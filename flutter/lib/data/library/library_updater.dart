@@ -83,22 +83,45 @@ class LibraryUpdater {
 
     var newChaptersTotal = 0;
     var mangaWithNewChapters = 0;
+    var completed = 0;
     final failures = <LibraryUpdateFailure>[];
-    for (var i = 0; i < eligible.length; i++) {
-      final manga = eligible[i];
-      onProgress?.call(LibraryUpdateProgress(
-        completed: i,
-        total: eligible.length,
-        currentTitle: manga.title,
-      ));
-      try {
-        final newCount = await _updateOne(manga, refreshMetadata);
-        newChaptersTotal += newCount;
-        if (newCount > 0) mangaWithNewChapters++;
-      } catch (e) {
-        failures.add(LibraryUpdateFailure(manga: manga, error: e.toString()));
+    // Parallel across sources, serial within one source (Mihon's grouping,
+    // 5 workers): one slow origin no longer stalls the whole sweep, and no
+    // single site sees concurrent fetches from us. The queue is shared by
+    // the workers — single isolate, and take-next happens synchronously, so
+    // no two workers can grab the same group.
+    final bySource = <int, List<Manga>>{};
+    for (final m in eligible) {
+      bySource.putIfAbsent(m.source, () => []).add(m);
+    }
+    final queue = bySource.values.toList();
+    Future<void> worker() async {
+      while (queue.isNotEmpty) {
+        final group = queue.removeLast();
+        for (final manga in group) {
+          onProgress?.call(LibraryUpdateProgress(
+            completed: completed,
+            total: eligible.length,
+            currentTitle: manga.title,
+          ));
+          try {
+            final newCount = await _updateOne(manga, refreshMetadata);
+            newChaptersTotal += newCount;
+            if (newCount > 0) mangaWithNewChapters++;
+          } catch (e) {
+            failures
+                .add(LibraryUpdateFailure(manga: manga, error: e.toString()));
+          }
+          completed++;
+        }
       }
     }
+
+    const maxParallelSources = 5;
+    await Future.wait([
+      for (var w = 0; w < maxParallelSources && w < queue.length; w++)
+        worker(),
+    ]);
     onProgress?.call(LibraryUpdateProgress(
       completed: eligible.length,
       total: eligible.length,
@@ -142,6 +165,16 @@ class LibraryUpdater {
     final fetchWindowUpper =
         const FetchInterval().getWindow(DateTime.now()).$2;
 
+    // Both maps come from ONE grouped query each — the previous per-manga
+    // chapter-list and membership lookups were an N+1 pair that dominated
+    // sweep startup on large libraries.
+    final needCategories = restrictToMangaIds == null &&
+        (included.isNotEmpty || excluded.isNotEmpty);
+    final catsByManga = needCategories
+        ? await _categories.getAllMangaCategoryIds()
+        : const <int, Set<int>>{};
+    final countsByManga = await _chapters.readStateCountsByManga();
+
     final out = <Manga>[];
     for (final manga in favourites) {
       // Category scope: explicit membership for a per-category run, otherwise
@@ -149,7 +182,7 @@ class LibraryUpdater {
       if (restrictToMangaIds != null) {
         if (!restrictToMangaIds.contains(manga.id)) continue;
       } else if (included.isNotEmpty || excluded.isNotEmpty) {
-        final cats = await _categories.getCategoryIdsForManga(manga.id);
+        final cats = catsByManga[manga.id] ?? const <int>{};
         final effective = cats.isEmpty ? <int>{_defaultCategoryId} : cats;
         final isIncluded = included.isEmpty || effective.any(included.contains);
         final isExcluded = effective.any(excluded.contains);
@@ -157,10 +190,10 @@ class LibraryUpdater {
       }
 
       // Restrictions that need chapter read-state counts.
-      final chapters = await _chapters.getByMangaId(manga.id);
-      final total = chapters.length;
-      final hasUnread = chapters.any((c) => !c.read);
-      final hasStarted = chapters.any((c) => c.read);
+      final counts = countsByManga[manga.id];
+      final total = counts?.total ?? 0;
+      final hasUnread = (counts?.unread ?? 0) > 0;
+      final hasStarted = total - (counts?.unread ?? 0) > 0;
 
       // One-shot sources are fetched exactly once; skip after the first pull.
       if (manga.updateStrategy == UpdateStrategy.onlyFetchOnce && total > 0) {
