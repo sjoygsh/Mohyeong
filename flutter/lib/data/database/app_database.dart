@@ -74,6 +74,13 @@ class AppDatabase extends _$AppDatabase {
           // ON DELETE CASCADE clauses on chapters/manga_sync/etc. actually
           // fire when a manga is deleted.
           await customStatement('PRAGMA foreign_keys = ON');
+          // Two isolates open this same file (UI + the background sweep's
+          // own AppDatabase). WAL lets readers coexist with a writer, and
+          // busy_timeout makes a second writer WAIT for the chapter-sync
+          // transaction instead of throwing SQLITE_BUSY the instant the
+          // lock is held. (On :memory: test DBs these are no-ops.)
+          await customStatement('PRAGMA journal_mode = WAL');
+          await customStatement('PRAGMA busy_timeout = 5000');
         },
       );
 

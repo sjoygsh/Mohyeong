@@ -59,19 +59,26 @@ Future<bool> runLibraryUpdateTask() async {
         categories,
         downloads,
       );
+      // Serialise the progress-notification platform calls: onProgress now
+      // fires from 5 concurrent sweep workers, and an unawaited show landing
+      // AFTER the final cancel left the "Updating library" notification
+      // stuck until the next sweep.
+      var notifChain = Future<void>.value();
       final result = await updater.updateAll(
         onProgress: (p) {
-          if (p.currentTitle == null) {
-            notifications.cancelLibraryProgress();
-          } else {
-            notifications.showLibraryProgress(
+          notifChain = notifChain.then((_) {
+            if (p.currentTitle == null) {
+              return notifications.cancelLibraryProgress();
+            }
+            return notifications.showLibraryProgress(
               current: p.completed,
               total: p.total,
               title: p.currentTitle!,
             );
-          }
+          });
         },
       );
+      await notifChain;
       await notifications.cancelLibraryProgress();
       await notifications.showNewChapters(
         mangaCount: result.mangaWithNewChapters,

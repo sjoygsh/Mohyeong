@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/network/webview_http_client.dart';
@@ -330,16 +332,33 @@ class _NetworkImageWithWebViewFallback
   ) async {
     Uint8List bytes;
     try {
-      final file = await appImageCacheManager.getSingleFile(
-        key.url,
-        headers: key.headers ?? const {},
-      );
+      // Read-through to the legacy default store first on a miss: upgraded
+      // installs have their whole cover library cached there, and without
+      // this an offline relaunch after the upgrade rendered every cover as
+      // an error box. Hits migrate into the new store lazily.
+      var file = (await appImageCacheManager.getFileFromCache(key.url))?.file;
+      if (file == null) {
+        final legacy = await DefaultCacheManager().getFileFromCache(key.url);
+        if (legacy != null) {
+          bytes = await legacy.file.readAsBytes();
+          unawaited(appImageCacheManager.putFile(key.url, bytes));
+          final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+          return decode(buffer);
+        }
+        file = await appImageCacheManager.getSingleFile(
+          key.url,
+          headers: key.headers ?? const {},
+        );
+      }
       bytes = await file.readAsBytes();
     } catch (_) {
       final fallback =
           await WebViewHttpClient.instance.fetchImageBytes(key.url);
       if (fallback == null || fallback.isEmpty) rethrow;
       bytes = fallback;
+      // Persist so the next cold load is a disk hit instead of a doomed
+      // HTTP attempt plus a serialized WebView round trip.
+      unawaited(appImageCacheManager.putFile(key.url, fallback));
     }
     final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
     return decode(buffer);

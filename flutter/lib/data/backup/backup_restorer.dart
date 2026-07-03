@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../manga/excluded_scanlators_repository.dart';
+import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/update_strategy.dart';
 import '../../domain/track/model/track.dart';
 import '../category/category_repository.dart';
@@ -218,6 +219,18 @@ class BackupRestorer {
     return restoredIds;
   }
 
+  /// Earliest KNOWN add-date wins; 0 means "unknown" on either side (e.g. a
+  /// Kotlin-migrated row), never a candidate to keep over a real date. A
+  /// brand-new entry with no date anywhere is stamped now.
+  static int _mergeDateAdded(Manga? existing, int backupDateAdded, int nowMs) {
+    final e = existing?.dateAdded ?? 0;
+    final b = backupDateAdded;
+    if (e == 0 && b == 0) return existing == null ? nowMs : 0;
+    if (e == 0) return b;
+    if (b == 0) return e;
+    return e < b ? e : b;
+  }
+
   Future<void> _restoreManga(
     BackupManga bm,
     List<int> categoryIdByIndex,
@@ -241,21 +254,18 @@ class BackupRestorer {
       // a live library must never UN-favorite an entry the user added since
       // the backup was taken.
       favorite: (bm.favorite || (existing?.favorite ?? false)) ? 1 : 0,
-      lastUpdate: const Value(0),
-      nextUpdate: const Value(0),
+      // Keep the existing entry's update-scheduler state — zeroing it made
+      // every restore discard learned fetch intervals and mark the whole
+      // library due on the next sweep.
+      lastUpdate: Value(existing?.lastUpdate ?? 0),
+      nextUpdate: Value(existing?.nextUpdate ?? 0),
       initialized: bm.initialized ? 1 : 0,
       viewer: bm.viewer,
       chapterFlags: bm.chapterFlags,
       // Keep the local custom-cover stamp — zeroing it invalidated an
       // existing entry's edited cover on every restore.
       coverLastModified: existing?.coverLastModified ?? 0,
-      // Earliest nonzero add-date wins; the add date shouldn't move because
-      // a backup was replayed.
-      dateAdded: existing == null
-          ? (bm.dateAdded == 0 ? nowMs : bm.dateAdded)
-          : (bm.dateAdded == 0 || existing.dateAdded < bm.dateAdded
-              ? existing.dateAdded
-              : bm.dateAdded),
+      dateAdded: _mergeDateAdded(existing, bm.dateAdded, nowMs),
       updateStrategy: Value(
         UpdateStrategy.values
             .elementAt(
@@ -263,7 +273,7 @@ class BackupRestorer {
             )
             .dbValue,
       ),
-      calculateInterval: const Value(0),
+      calculateInterval: Value(existing?.fetchInterval ?? 0),
       lastModifiedAt: Value(bm.lastModifiedAt == 0 ? nowMs : bm.lastModifiedAt),
       favoriteModifiedAt: Value(bm.favoriteModifiedAt),
       version: Value(bm.version),
@@ -324,7 +334,14 @@ class BackupRestorer {
           sourceOrder: bc.sourceOrder,
           dateFetch: bc.dateFetch,
           dateUpload: bc.dateUpload,
-          lastModifiedAt: Value(bc.lastModifiedAt),
+          // When local state won (or was merged), keep the LOCAL stamp too:
+          // writing the backup's older stamp alongside preserved-local values
+          // made the SECOND restore of the same backup see "equal stamps →
+          // backup wins" and un-read what the first pass kept. Restores must
+          // be idempotent.
+          lastModifiedAt: Value(
+            useLocal || merge ? prior.lastModifiedAt : bc.lastModifiedAt,
+          ),
           version: Value(bc.version),
           isSyncing: const Value(0),
           bookmarkNote:

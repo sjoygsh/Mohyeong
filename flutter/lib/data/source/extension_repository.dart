@@ -45,7 +45,14 @@ class ExtensionRepository {
 
   /// In-flight loads by slug, so concurrent [getSource] calls share one
   /// [JsSource.load] instead of each spawning (and orphaning) a runtime.
+  /// Removing an entry INVALIDATES that load: when it completes it disposes
+  /// its runtime instead of caching it (see [getSource]).
   final Map<String, Future<MangaSource>> _loading = {};
+
+  /// Set by [close]; loads that finish afterwards dispose themselves
+  /// instead of repopulating the cleared cache (a background-isolate
+  /// teardown racing an in-flight load leaked the runtime).
+  bool _closed = false;
   final _changes = StreamController<List<InstalledExtension>>.broadcast();
 
   /// Stream of installed-extension lists. Emits on every install/uninstall;
@@ -69,6 +76,7 @@ class ExtensionRepository {
   /// when a direct lookup misses we resolve the numeric id back to its slug
   /// via [sourceNumericId].
   Future<MangaSource> getSource(String id) async {
+    if (_closed) throw StateError('ExtensionRepository is closed');
     final slug = await _resolveSlug(id);
     final cached = _loaded[slug];
     if (cached != null) return cached;
@@ -78,21 +86,32 @@ class ExtensionRepository {
     // caller but the last leaks one.
     final inflight = _loading[slug];
     if (inflight != null) return inflight;
-    final future = _loadSource(slug);
+    late final Future<MangaSource> future;
+    future = () async {
+      final src = await _loadSource(slug);
+      // Invalidated mid-load (uninstall / version install / close removed
+      // this future from [_loading]): caching [src] would resurrect a
+      // runtime for code that no longer exists on disk — dispose it and
+      // start over so the caller gets the CURRENT on-disk state (or a
+      // clear read error when it was uninstalled).
+      if (_loading[slug] != future) {
+        await src.dispose();
+        if (_closed) throw StateError('ExtensionRepository is closed');
+        return getSource(slug);
+      }
+      _loaded[slug] = src;
+      return src;
+    }();
     _loading[slug] = future;
     try {
       return await future;
     } finally {
-      _loading.remove(slug);
+      if (_loading[slug] == future) _loading.remove(slug);
     }
   }
 
   Future<MangaSource> _loadSource(String slug) async {
-    if (slug == LocalSource.sourceId) {
-      final local = LocalSource(_localPrefs);
-      _loaded[slug] = local;
-      return local;
-    }
+    if (slug == LocalSource.sourceId) return LocalSource(_localPrefs);
     final source = await _storage.readSource(slug);
     final js = await JsSource.load(
       source,
@@ -106,7 +125,6 @@ class ExtensionRepository {
     // first call.
     final stored = await getSourcePrefs(slug);
     if (stored.isNotEmpty) js.setSourcePrefs(stored);
-    _loaded[slug] = js;
     return js;
   }
 
@@ -271,9 +289,11 @@ class ExtensionRepository {
       installUrl: installUrl,
     );
     // Drop any cached old version so the next getSource picks up the new
-    // code.
+    // code. Also invalidate an in-flight load of the old code — letting it
+    // finish would cache the stale version over the fresh install.
     final old = _loaded.remove(installed.id);
     await old?.dispose();
+    _loading.remove(installed.id);
     sourcePrefsCapabilityCache.remove(installed.id);
     await _emitChanges();
     return installed;
@@ -282,6 +302,8 @@ class ExtensionRepository {
   Future<void> uninstall(String id) async {
     final loaded = _loaded.remove(id);
     await loaded?.dispose();
+    // An in-flight load must not resurrect the uninstalled source.
+    _loading.remove(id);
     sourcePrefsCapabilityCache.remove(id);
     await _storage.uninstall(id);
     await _emitChanges();
@@ -292,6 +314,10 @@ class ExtensionRepository {
   }
 
   Future<void> close() async {
+    _closed = true;
+    // Invalidate in-flight loads; each disposes its own runtime on
+    // completion instead of storing into the cleared map.
+    _loading.clear();
     for (final s in _loaded.values) {
       await s.dispose();
     }

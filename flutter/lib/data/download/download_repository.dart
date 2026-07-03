@@ -334,15 +334,20 @@ class DownloadRepository {
   Future<void> enqueue(Manga manga, Chapter chapter) async {
     final existing = _byChapter[chapter.id];
     if (existing != null) return;
+    // Reserve the slot BEFORE the isDownloaded await: two concurrent
+    // enqueues of one chapter (an update-sweep worker racing the details
+    // screen's refresh) both passed the lookup and double-queued it, and
+    // the second overwrote _byChapter so cancel only saw one of them.
+    final job = _DownloadJob(manga: manga, chapter: chapter);
+    _byChapter[chapter.id] = job;
     if (await isDownloaded(manga.source, manga.id, chapter.id)) {
+      if (_byChapter[chapter.id] == job) _byChapter.remove(chapter.id);
       _events.add(
         DownloadEvent(chapterId: chapter.id, state: DownloadState.completed),
       );
       return;
     }
-    final job = _DownloadJob(manga: manga, chapter: chapter);
     _queue.add(job);
-    _byChapter[chapter.id] = job;
     _events.add(
       DownloadEvent(chapterId: chapter.id, state: DownloadState.queued),
     );

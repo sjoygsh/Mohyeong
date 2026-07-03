@@ -152,6 +152,46 @@ void main() {
     expect(after.every((t) => t.id > 0), isTrue);
   });
 
+  test('re-restoring the same old backup twice stays idempotent', () async {
+    // Regression: preserving local read-state while writing the BACKUP's
+    // older lastModifiedAt stamp made the second restore of the same file
+    // see equal stamps → "backup wins" → un-read what pass one preserved.
+    await restorer.restore(backupWith(
+      BackupManga(
+        source: 7,
+        url: 'm/1',
+        title: 'Seed',
+        chapters: [
+          BackupChapter(
+            url: 'c/1',
+            name: 'Ch 1',
+            read: true,
+            lastPageRead: 17,
+            lastModifiedAt: 200,
+          ),
+        ],
+      ),
+    ));
+
+    final staleBackup = backupWith(
+      BackupManga(
+        source: 7,
+        url: 'm/1',
+        title: 'Seed',
+        chapters: [
+          BackupChapter(url: 'c/1', name: 'Ch 1', lastModifiedAt: 100),
+        ],
+      ),
+    );
+    await restorer.restore(staleBackup);
+    await restorer.restore(staleBackup); // second pass must change nothing
+
+    final m = await mangas.getByUrlAndSource('m/1', 7);
+    final c = (await chapters.getByMangaId(m!.id)).single;
+    expect(c.read, isTrue, reason: 'replaying a stale backup must not un-read');
+    expect(c.lastPageRead, 17);
+  });
+
   test('a provably newer backup chapter overwrites local state', () async {
     await restorer.restore(backupWith(
       BackupManga(

@@ -456,22 +456,27 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final notifications = NotificationService.instance;
     try {
       final updater = ref.read(libraryUpdaterProvider);
-      // Mirror Mihon's foreground-update progress notification.
+      // Mirror Mihon's foreground-update progress notification. Serialised:
+      // onProgress fires from 5 concurrent sweep workers, and an unawaited
+      // show landing after the final cancel left the notification stuck.
+      var notifChain = Future<void>.value();
       void onProgress(LibraryUpdateProgress p) {
-        if (p.currentTitle == null) {
-          notifications.cancelLibraryProgress();
-        } else {
-          notifications.showLibraryProgress(
+        notifChain = notifChain.then((_) {
+          if (p.currentTitle == null) {
+            return notifications.cancelLibraryProgress();
+          }
+          return notifications.showLibraryProgress(
             current: p.completed,
             total: p.total,
             title: p.currentTitle!,
           );
-        }
+        });
       }
 
       final result = categoryId == null
           ? await updater.updateAll(onProgress: onProgress)
           : await updater.updateCategory(categoryId, onProgress: onProgress);
+      await notifChain;
       await notifications.cancelLibraryProgress();
       await notifications.showNewChapters(
         mangaCount: result.mangaWithNewChapters,
