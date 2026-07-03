@@ -88,7 +88,10 @@ class BackupRestorer {
 
     for (final bm in backup.backupManga) {
       try {
-        await _restoreManga(bm, restoredCategoryIds);
+        // One transaction per manga: keeps a mid-restore failure from
+        // leaving that entry half-written (manga row without its chapters)
+        // and collapses its dozens of writes into one fsync.
+        await _db.transaction(() => _restoreManga(bm, restoredCategoryIds));
         mangaCount += 1;
       } catch (_) {
         // Best-effort: a single corrupt entry shouldn't abort the restore.
@@ -234,14 +237,25 @@ class BackupRestorer {
       genre: Value(bm.genre.isEmpty ? null : bm.genre.join(',')),
       status: bm.status,
       thumbnailUrl: Value(bm.thumbnailUrl),
-      favorite: bm.favorite ? 1 : 0,
+      // OR with the local flag (Mihon parity): restoring an old backup over
+      // a live library must never UN-favorite an entry the user added since
+      // the backup was taken.
+      favorite: (bm.favorite || (existing?.favorite ?? false)) ? 1 : 0,
       lastUpdate: const Value(0),
       nextUpdate: const Value(0),
       initialized: bm.initialized ? 1 : 0,
       viewer: bm.viewer,
       chapterFlags: bm.chapterFlags,
-      coverLastModified: 0,
-      dateAdded: bm.dateAdded == 0 ? nowMs : bm.dateAdded,
+      // Keep the local custom-cover stamp — zeroing it invalidated an
+      // existing entry's edited cover on every restore.
+      coverLastModified: existing?.coverLastModified ?? 0,
+      // Earliest nonzero add-date wins; the add date shouldn't move because
+      // a backup was replayed.
+      dateAdded: existing == null
+          ? (bm.dateAdded == 0 ? nowMs : bm.dateAdded)
+          : (bm.dateAdded == 0 || existing.dateAdded < bm.dateAdded
+              ? existing.dateAdded
+              : bm.dateAdded),
       updateStrategy: Value(
         UpdateStrategy.values
             .elementAt(
@@ -254,7 +268,8 @@ class BackupRestorer {
       favoriteModifiedAt: Value(bm.favoriteModifiedAt),
       version: Value(bm.version),
       isSyncing: const Value(0),
-      notes: Value(bm.notes),
+      // Don't blank local notes with a backup that never had any.
+      notes: Value(bm.notes.isEmpty ? (existing?.notes ?? '') : bm.notes),
     );
 
     final int mangaId;
@@ -266,37 +281,62 @@ class BackupRestorer {
           .write(companion);
     }
 
-    // Chapters — merge by URL.
+    // Chapters — merge by URL. Local state wins when it's provably newer;
+    // when the backup predates lastModifiedAt stamping (0) the two can't be
+    // ordered, so merge progress like Mihon does (OR the flags, max the
+    // page) instead of letting an old backup un-read local chapters. All
+    // rows land in ONE batch — per-row upserts made a large restore
+    // thousands of sequential round trips.
     final localChapters = await _chapters.getByMangaId(mangaId);
     final localByUrl = {for (final c in localChapters) c.url: c};
+    final chapterRows = <db.ChaptersCompanion>[];
     for (final bc in bm.chapters) {
       final prior = localByUrl[bc.url];
       final useLocal = prior != null &&
           bc.lastModifiedAt != 0 &&
           prior.lastModifiedAt > bc.lastModifiedAt;
+      final merge = prior != null && bc.lastModifiedAt == 0;
+      final read = useLocal
+          ? prior.read
+          : (merge ? (prior.read || bc.read) : bc.read);
+      final bookmark = useLocal
+          ? prior.bookmark
+          : (merge ? (prior.bookmark || bc.bookmark) : bc.bookmark);
+      final lastPageRead = useLocal
+          ? prior.lastPageRead
+          : (merge
+              ? (prior.lastPageRead > bc.lastPageRead
+                  ? prior.lastPageRead
+                  : bc.lastPageRead)
+              : bc.lastPageRead);
 
-      await _db.into(_db.chapters).insertOnConflictUpdate(
-            db.ChaptersCompanion.insert(
-              id: prior == null ? const Value.absent() : Value(prior.id),
-              mangaId: mangaId,
-              url: bc.url,
-              name: bc.name,
-              scanlator: Value(bc.scanlator),
-              read: (useLocal ? prior.read : bc.read) ? 1 : 0,
-              bookmark: (useLocal ? prior.bookmark : bc.bookmark) ? 1 : 0,
-              lastPageRead: useLocal ? prior.lastPageRead : bc.lastPageRead,
-              chapterNumber: bc.chapterNumber,
-              sourceOrder: bc.sourceOrder,
-              dateFetch: bc.dateFetch,
-              dateUpload: bc.dateUpload,
-              lastModifiedAt: Value(bc.lastModifiedAt),
-              version: Value(bc.version),
-              isSyncing: const Value(0),
-              bookmarkNote:
-                  Value(bc.bookmarkNote.isEmpty ? null : bc.bookmarkNote),
-              volumeNumber: Value(bc.volumeNumber),
-            ),
-          );
+      chapterRows.add(
+        db.ChaptersCompanion.insert(
+          id: prior == null ? const Value.absent() : Value(prior.id),
+          mangaId: mangaId,
+          url: bc.url,
+          name: bc.name,
+          scanlator: Value(bc.scanlator),
+          read: read ? 1 : 0,
+          bookmark: bookmark ? 1 : 0,
+          lastPageRead: lastPageRead,
+          chapterNumber: bc.chapterNumber,
+          sourceOrder: bc.sourceOrder,
+          dateFetch: bc.dateFetch,
+          dateUpload: bc.dateUpload,
+          lastModifiedAt: Value(bc.lastModifiedAt),
+          version: Value(bc.version),
+          isSyncing: const Value(0),
+          bookmarkNote:
+              Value(bc.bookmarkNote.isEmpty ? null : bc.bookmarkNote),
+          volumeNumber: Value(bc.volumeNumber),
+        ),
+      );
+    }
+    if (chapterRows.isNotEmpty) {
+      await _db.batch(
+        (b) => b.insertAllOnConflictUpdate(_db.chapters, chapterRows),
+      );
     }
 
     // History rows reference chapters by URL on the wire — resolve to
