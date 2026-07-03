@@ -3,9 +3,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../../data/network/webview_http_client.dart';
+import '../../data/storage/app_cache.dart';
 import '../../data/source/local_archive.dart';
 import '../../data/source/saf.dart';
 import 'crop_borders_image.dart';
@@ -330,8 +330,10 @@ class _NetworkImageWithWebViewFallback
   ) async {
     Uint8List bytes;
     try {
-      final file = await DefaultCacheManager()
-          .getSingleFile(key.url, headers: key.headers ?? const {});
+      final file = await appImageCacheManager.getSingleFile(
+        key.url,
+        headers: key.headers ?? const {},
+      );
       bytes = await file.readAsBytes();
     } catch (_) {
       final fallback =

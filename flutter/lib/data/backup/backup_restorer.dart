@@ -340,19 +340,24 @@ class BackupRestorer {
     }
 
     // History rows reference chapters by URL on the wire — resolve to
-    // local chapter IDs now that chapters are in place.
-    final refreshedChapters = await _chapters.getByMangaId(mangaId);
-    final chapterIdByUrl = {for (final c in refreshedChapters) c.url: c.id};
-    for (final h in bm.history) {
-      final chapterId = chapterIdByUrl[h.url];
-      if (chapterId == null) continue;
-      // Absolute (max) write, not additive — re-applying a backup or the
-      // sync restore-then-push cycle must not keep accumulating read time.
-      await _history.upsertAbsolute(
-        chapterId: chapterId,
-        readAtMs: h.lastRead == 0 ? null : h.lastRead,
-        timeReadMs: h.readDuration,
-      );
+    // local chapter IDs now that chapters are in place. The re-read only
+    // pays off when there IS history (most entries have none), and only the
+    // just-inserted chapters need fresh ids — existing ones are in
+    // [localByUrl] already.
+    if (bm.history.isNotEmpty) {
+      final refreshedChapters = await _chapters.getByMangaId(mangaId);
+      final chapterIdByUrl = {for (final c in refreshedChapters) c.url: c.id};
+      for (final h in bm.history) {
+        final chapterId = chapterIdByUrl[h.url];
+        if (chapterId == null) continue;
+        // Absolute (max) write, not additive — re-applying a backup or the
+        // sync restore-then-push cycle must not keep accumulating read time.
+        await _history.upsertAbsolute(
+          chapterId: chapterId,
+          readAtMs: h.lastRead == 0 ? null : h.lastRead,
+          timeReadMs: h.readDuration,
+        );
+      }
     }
 
     for (final t in bm.tracking) {

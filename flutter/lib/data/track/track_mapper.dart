@@ -25,13 +25,14 @@ class TrackMapper {
 
   static db.MangaSyncCompanion toCompanion(Track track) {
     return db.MangaSyncCompanion.insert(
-      // Sentinel ids (bind flows and backup restore build tracks with -1)
-      // must NOT be written literally: the PK-targeted upsert would collapse
-      // every new track onto the single `_id = -1` row, clobbering the
-      // previous manga's binding. Absent → autoincrement; a real (manga,
-      // tracker) duplicate is handled by the table's UNIQUE ON CONFLICT
-      // REPLACE.
-      id: track.id < 0 ? const Value.absent() : Value(track.id),
+      // Sentinel ids must NOT be written literally: the PK-targeted upsert
+      // would collapse every new track onto the single sentinel row,
+      // clobbering the previous manga's binding. There are TWO sentinels in
+      // the wild — bind flows and backup restore build tracks with -1, the
+      // migration service copies with id 0 — hence <= 0, not < 0. Absent →
+      // autoincrement; a real (manga, tracker) duplicate is handled by the
+      // table's UNIQUE ON CONFLICT REPLACE.
+      id: track.id <= 0 ? const Value.absent() : Value(track.id),
       mangaId: track.mangaId,
       syncId: track.trackerId,
       remoteId: track.remoteId,

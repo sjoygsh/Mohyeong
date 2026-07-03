@@ -85,20 +85,36 @@ class LibraryUpdater {
     var mangaWithNewChapters = 0;
     var completed = 0;
     final failures = <LibraryUpdateFailure>[];
-    // Parallel across sources, serial within one source (Mihon's grouping,
+    // Parallel across sources, serial within one source (Mihon's model,
     // 5 workers): one slow origin no longer stalls the whole sweep, and no
-    // single site sees concurrent fetches from us. The queue is shared by
-    // the workers — single isolate, and take-next happens synchronously, so
-    // no two workers can grab the same group.
+    // single site sees concurrent fetches from us. Workers steal ONE manga
+    // at a time from any source not currently being fetched (largest
+    // backlog first) — handing a worker a whole source group would let a
+    // skewed library (most titles on one source) idle the other workers
+    // into a serial tail. Single isolate: the pick-and-mark-busy step runs
+    // synchronously, so two workers can't own one source.
     final bySource = <int, List<Manga>>{};
     for (final m in eligible) {
       bySource.putIfAbsent(m.source, () => []).add(m);
     }
-    final queue = bySource.values.toList();
+    final queues = bySource.values.toList();
+    final busy = <int>{};
     Future<void> worker() async {
-      while (queue.isNotEmpty) {
-        final group = queue.removeLast();
-        for (final manga in group) {
+      while (true) {
+        var idx = -1, backlog = 0;
+        for (var i = 0; i < queues.length; i++) {
+          if (busy.contains(i) || queues[i].isEmpty) continue;
+          if (queues[i].length > backlog) {
+            backlog = queues[i].length;
+            idx = i;
+          }
+        }
+        // Nothing claimable. Any remaining items live in busy queues whose
+        // owning worker will loop back for them — safe to retire.
+        if (idx < 0) return;
+        busy.add(idx);
+        final manga = queues[idx].removeAt(0);
+        try {
           onProgress?.call(LibraryUpdateProgress(
             completed: completed,
             total: eligible.length,
@@ -113,13 +129,15 @@ class LibraryUpdater {
                 .add(LibraryUpdateFailure(manga: manga, error: e.toString()));
           }
           completed++;
+        } finally {
+          busy.remove(idx);
         }
       }
     }
 
     const maxParallelSources = 5;
     await Future.wait([
-      for (var w = 0; w < maxParallelSources && w < queue.length; w++)
+      for (var w = 0; w < maxParallelSources && w < queues.length; w++)
         worker(),
     ]);
     onProgress?.call(LibraryUpdateProgress(

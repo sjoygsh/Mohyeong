@@ -64,10 +64,9 @@ dependencies:
   # File picker (for backup import, local source folder selection)
   file_picker: ^10.3.3
 
-  # Image loading + caching (cover art, reader pages)
-  cached_network_image: ^3.3.1
-  # Underlying cache store for cached_network_image — declared directly so
-  # the advanced "clear cached covers" action can call emptyCache().
+  # Image disk cache (cover art, reader pages) — the app's own
+  # _NetworkImageWithWebViewFallback provider reads through it, and the
+  # advanced "clear cached covers" action calls emptyCache().
   flutter_cache_manager: ^3.3.1
 
   # Cupertino icons (iOS-style)

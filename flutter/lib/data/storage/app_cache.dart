@@ -4,9 +4,23 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 
+/// The app's image disk cache (covers + reader pages), read through by
+/// `_NetworkImageWithWebViewFallback` in source_image.dart. A dedicated
+/// store instead of [DefaultCacheManager] because the default caps at ~200
+/// objects — smaller than one screenful-history of a large library's
+/// covers, so grids permanently thrashed (evict + re-download on every full
+/// scroll). Sized for a big library; covers are small, pages are transient.
+final CacheManager appImageCacheManager = CacheManager(
+  Config(
+    'mohyeongImages',
+    stalePeriod: const Duration(days: 30),
+    maxNrOfCacheObjects: 2000,
+  ),
+);
+
 /// Cache-size accounting and clearing for the "Clear chapter cache" action
 /// (Mihon `ChapterCache.readableSize` / `clear()`). The Flutter equivalent of
-/// the chapter+image cache is the temp dir: the cached_network_image store
+/// the chapter+image cache is the temp dir: the flutter_cache_manager store
 /// (reader pages, covers) plus staged share images all live there.
 abstract final class AppCache {
   /// Total size in bytes of everything under the app cache dir.
@@ -30,6 +44,9 @@ abstract final class AppCache {
   /// dir. Returns the number of files removed (Mihon's `cache_deleted`
   /// toast count).
   static Future<int> clear() async {
+    await appImageCacheManager.emptyCache();
+    // Legacy store from when covers went through cached_network_image —
+    // may still hold data on upgraded installs.
     await DefaultCacheManager().emptyCache();
     final dir = await getTemporaryDirectory();
     var deleted = 0;

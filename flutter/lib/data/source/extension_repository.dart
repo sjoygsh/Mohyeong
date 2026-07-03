@@ -331,7 +331,7 @@ final installedSourceLangsProvider =
 
 /// Map of `int` source id → default image-request headers (Referer = the
 /// source's base URL, plus the browser User-Agent), derived from the installed
-/// extension list. Cover/thumbnail fetches go through `cached_network_image`,
+/// extension list. Cover/thumbnail fetches go through the shared image cache,
 /// which sends no source headers by default, so a CDN with hotlink protection
 /// 403s and the cover renders blank — e.g. NatoManga's 2xstorage requires
 /// `Referer: https://www.natomanga.com/`. Cover widgets look these up by

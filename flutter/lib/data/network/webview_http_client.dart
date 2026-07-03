@@ -65,6 +65,14 @@ class WebViewHttpClient {
   /// One WebView ⇒ one in-flight navigation at a time.
   Future<void> _lock = Future<void>.value();
 
+  /// Whether the last navigation's caller-supplied readiness predicate
+  /// (`readyJs`) actually fired before the settle ceiling. Single-threaded
+  /// under [_lock]. Callers use it to mark a snapshot that MAY be missing
+  /// its content (cold WebView burned the window on a challenge) so the
+  /// response cache can skip it — a cached not-ready snapshot turns one
+  /// slow render into repeated "no content" parses for its whole TTL.
+  bool _lastNavReady = true;
+
   /// In-page image-fetch results, keyed by request id (the JS canvas extract
   /// posts back over the CFImg channel since toDataURL is async).
   final Map<int, Completer<Map<String, dynamic>>> _imgPending = {};
@@ -191,6 +199,7 @@ class WebViewHttpClient {
       'headers': const <String, String>{},
       'final_url': url,
       'via': 'webview',
+      'ready': _lastNavReady,
     };
   }
 
@@ -205,7 +214,7 @@ class WebViewHttpClient {
   }
 
   /// Fetches a cover/image's bytes through the browser, for sources whose CDN
-  /// 403s non-browser clients (cached_network_image can't pass the fingerprint
+  /// 403s non-browser clients (the plain HTTP image path can't pass the fingerprint
   /// wall). Parks the WebView on the image's own origin (so the in-page <img>
   /// is same-origin and the canvas isn't tainted, and Cloudflare is passed by
   /// the browser fingerprint), then draws it to a canvas and reads the bytes.
@@ -351,7 +360,7 @@ class WebViewHttpClient {
           // present) or fall back to DOM-size stabilisation. [settle] is the
           // CEILING, not a fixed floor — most pages settle in a few hundred ms,
           // so this replaces the old unconditional 1.8s / 8s waits.
-          await _awaitContent(c, settle, readyJs);
+          _lastNavReady = await _awaitContent(c, settle, readyJs);
           return true;
         }
       } catch (_) {
@@ -365,7 +374,12 @@ class WebViewHttpClient {
   /// With [readyJs] (a JS boolean expression) it returns as soon as that's
   /// true; otherwise it returns once the DOM node count stops growing (two
   /// equal samples ~250ms apart). A short minimum lets a static page flush.
-  Future<void> _awaitContent(
+  ///
+  /// Returns whether the content is believed ready: with [readyJs], true
+  /// only when the predicate actually fired (hitting the ceiling without it
+  /// means the snapshot is likely content-less and shouldn't be cached);
+  /// without one, always true — DOM stabilisation has no failure signal.
+  Future<bool> _awaitContent(
       WebViewController c, Duration ceiling, String? readyJs) async {
     final deadline = DateTime.now().add(ceiling);
     await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -379,7 +393,7 @@ class WebViewHttpClient {
                   )
                   .timeout(const Duration(seconds: 5)))
               .toString();
-          if (r.replaceAll('"', '').trim() == '1') return;
+          if (r.replaceAll('"', '').trim() == '1') return true;
         } else {
           final r = (await c
                   .runJavaScriptReturningResult(
@@ -388,14 +402,15 @@ class WebViewHttpClient {
                   .timeout(const Duration(seconds: 5)))
               .toString();
           final n = int.tryParse(r.replaceAll('"', '').trim()) ?? -1;
-          if (n >= 0 && n == lastCount) return; // unchanged → settled
+          if (n >= 0 && n == lastCount) return true; // unchanged → settled
           lastCount = n;
         }
       } catch (_) {
-        return;
+        return readyJs == null;
       }
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
+    return readyJs == null;
   }
 
   /// `runJavaScriptReturningResult` returns a JSON-encoded string on Android

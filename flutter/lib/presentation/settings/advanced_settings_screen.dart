@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/network/app_http_client.dart';
 import '../../data/network/network_preferences.dart';
+import '../../data/storage/app_cache.dart';
 import 'pref_tiles.dart';
 
 /// Advanced sub-screen. Mirror of the blind-executable parts of Mihon's
@@ -153,9 +154,10 @@ class AdvancedSettingsScreen extends ConsumerWidget {
     }
   }
 
-  /// Clear the cover/image cache backing `cached_network_image`
-  /// (`flutter_cache_manager`'s default store).
+  /// Clear the cover/image disk cache ([appImageCacheManager], plus the
+  /// legacy default store older installs may still carry).
   Future<void> _clearCoverCache(BuildContext context) async {
+    await appImageCacheManager.emptyCache();
     await DefaultCacheManager().emptyCache();
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

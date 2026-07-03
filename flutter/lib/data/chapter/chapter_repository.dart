@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show Value, Variable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -287,11 +287,20 @@ class ChapterRepository {
     }
     if (newInserts.isNotEmpty) {
       await _db.batch((b) => b.insertAll(_db.chapters, newInserts));
-      // insertAll returns no ids — re-read the manga's rows once (chapters are
-      // unique per (manga, url), and duplicates were already pruned above) and
-      // map url→id. A full re-query avoids a giant `url IN (…)` that would blow
+      // insertAll returns no ids — re-read just this batch's rows (every
+      // insert above was stamped the same dateFetch=nowMs, which old rows
+      // can't carry) and map url→id. Narrower than a full re-read (a sweep
+      // adding 2 chapters to a 1500-row series shouldn't deserialize all
+      // 1500) and still avoids a giant `url IN (…)` that would blow
       // SQLite's bound-variable limit on 1000+ chapter series.
-      final idByUrl = {for (final c in await getByMangaId(mangaId)) c.url: c.id};
+      final newRows = await _db.customSelect(
+        'SELECT _id, url FROM chapters WHERE manga_id = ?1 AND date_fetch = ?2',
+        variables: [Variable<int>(mangaId), Variable<int>(nowMs)],
+        readsFrom: {_db.chapters},
+      ).get();
+      final idByUrl = {
+        for (final r in newRows) r.read<String>('url'): r.read<int>('_id'),
+      };
       for (final url in newOrder) {
         if (newExcluded.contains(url)) continue;
         final id = idByUrl[url];

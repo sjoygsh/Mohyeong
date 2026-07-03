@@ -99,7 +99,11 @@ class JsRuntime {
           settle: settle, readyJs: readyJs,
         );
         if (via != null) {
-          _cacheStore(cacheKey, via);
+          // A snapshot whose readyJs never fired may be content-less (cold
+          // WebView burned the settle window on a challenge) — return it so
+          // the caller can try parsing, but DON'T cache it: a cached bad
+          // snapshot would defeat the caller's retry for the whole TTL.
+          if (via['ready'] != false) _cacheStore(cacheKey, via);
           return via;
         }
       }
@@ -129,7 +133,11 @@ class JsRuntime {
           settle: settle, readyJs: readyJs,
         );
         if (via != null) {
-          _cacheStore(cacheKey, via);
+          // A snapshot whose readyJs never fired may be content-less (cold
+          // WebView burned the settle window on a challenge) — return it so
+          // the caller can try parsing, but DON'T cache it: a cached bad
+          // snapshot would defeat the caller's retry for the whole TTL.
+          if (via['ready'] != false) _cacheStore(cacheKey, via);
           return via;
         }
       }

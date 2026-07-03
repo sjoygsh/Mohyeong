@@ -142,6 +142,14 @@ void main() {
     expect({for (final t in all) t.remoteId}, {100, 200});
     expect({for (final t in all) t.id}.length, 2, reason: 'distinct real ids');
     expect(all.every((t) => t.id > 0), isTrue);
+
+    // The migration service uses a DIFFERENT sentinel (id 0, not -1) when
+    // copying tracks to a merge target — it must not collapse rows either.
+    final zero = all.first.copyWith(id: 0, trackerId: 2, remoteId: 300);
+    await tracks.upsert(zero);
+    final after = await tracks.getAll();
+    expect(after, hasLength(3), reason: 'id-0 sentinel must autoincrement');
+    expect(after.every((t) => t.id > 0), isTrue);
   });
 
   test('a provably newer backup chapter overwrites local state', () async {
