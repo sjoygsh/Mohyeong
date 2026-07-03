@@ -71,6 +71,14 @@ class MangaDetailsScreen extends ConsumerStatefulWidget {
 class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   final Set<int> _selectedChapterIds = <int>{};
 
+  /// Created once per screen — building these inside `build` resubscribed
+  /// (and re-ran) the manga row + full chapter-list queries on every
+  /// setState, e.g. each chapter-selection tap.
+  late final Stream<Manga?> _mangaStream =
+      ref.read(mangaRepositoryProvider).watchById(widget.mangaId);
+  late final Stream<List<Chapter>> _chaptersStream =
+      ref.read(chapterRepositoryProvider).watchByMangaId(widget.mangaId);
+
   bool get _selecting => _selectedChapterIds.isNotEmpty;
 
   /// True while a manual "Refresh" metadata sweep is in flight. Used to
@@ -279,12 +287,9 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mangaRepo = ref.watch(mangaRepositoryProvider);
-    final chapterRepo = ref.watch(chapterRepositoryProvider);
-
     return Scaffold(
       body: StreamBuilder<Manga?>(
-        stream: mangaRepo.watchById(widget.mangaId),
+        stream: _mangaStream,
         builder: (context, mangaSnap) {
           if (mangaSnap.hasError) {
             return _Error(error: mangaSnap.error!);
@@ -298,7 +303,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
           }
           _maybeAutoFetch(manga);
           return StreamBuilder<List<Chapter>>(
-            stream: chapterRepo.watchByMangaId(widget.mangaId),
+            stream: _chaptersStream,
             builder: (context, chapSnap) {
               final chapters = chapSnap.data ?? const <Chapter>[];
               final nextUnread = _pickNextUnread(chapters, manga);
@@ -467,7 +472,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                     _ChaptersSection(
                       manga: manga,
                       chapters: chapters,
-                      chapterRepo: chapterRepo,
+                      chapterRepo: ref.read(chapterRepositoryProvider),
                       selectedIds: _selectedChapterIds,
                       onToggleSelected: _toggleChapterSelected,
                     ),

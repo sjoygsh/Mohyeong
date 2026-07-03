@@ -35,6 +35,12 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
   bool _searching = false;
   String _query = '';
 
+  /// Created once — building the stream inside `build` made every setState
+  /// (each search keystroke, each selection tap) resubscribe and re-run the
+  /// whole updates-view query in drift.
+  late final Stream<List<LibraryUpdate>> _updatesStream =
+      ref.read(updatesRepositoryProvider).watchAll();
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -197,7 +203,6 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final repo = ref.watch(updatesRepositoryProvider);
     final filters = ref.watch(updatesFiltersProvider);
     final scheme = Theme.of(context).colorScheme;
     // Reselecting the Updates bottom-nav destination opens the download
@@ -212,7 +217,7 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
       }
     });
     return StreamBuilder<List<LibraryUpdate>>(
-      stream: repo.watchAll(),
+      stream: _updatesStream,
       builder: (context, snapshot) {
         final updates = snapshot.data ?? const <LibraryUpdate>[];
         // Case-insensitive substring match against manga title — same

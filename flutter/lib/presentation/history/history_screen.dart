@@ -23,6 +23,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   bool _searching = false;
   String _query = '';
 
+  /// Created once — building it in `build` re-ran the recent-history join
+  /// on every search keystroke (each setState resubscribed the stream).
+  late final Stream<List<HistoryWithContext>> _historyStream =
+      ref.read(historyRepositoryProvider).watchRecent();
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -95,7 +100,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           ],
         ),
         body: StreamBuilder<List<HistoryWithContext>>(
-          stream: repo.watchRecent(),
+          stream: _historyStream,
           builder: (context, snap) {
             if (snap.hasError) {
               return Center(child: Text('Error: ${snap.error}'));
