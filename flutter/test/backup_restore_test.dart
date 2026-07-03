@@ -117,6 +117,33 @@ void main() {
     expect(byUrl.length, 2);
   });
 
+  test('restoring multiple tracked manga keeps every track row', () async {
+    // Regression: tracks are built with sentinel id -1; writing that id
+    // literally made every insert target the same `_id = -1` row, so the
+    // second manga's track clobbered the first.
+    await restorer.restore(Backup(backupManga: [
+      BackupManga(
+        source: 7,
+        url: 'm/1',
+        title: 'One',
+        tracking: [BackupTracking(syncId: 1, mediaId: 100, title: 'One')],
+      ),
+      BackupManga(
+        source: 7,
+        url: 'm/2',
+        title: 'Two',
+        tracking: [BackupTracking(syncId: 1, mediaId: 200, title: 'Two')],
+      ),
+    ]));
+
+    final tracks = TrackRepository(db);
+    final all = await tracks.getAll();
+    expect(all, hasLength(2), reason: 'one track row per tracked manga');
+    expect({for (final t in all) t.remoteId}, {100, 200});
+    expect({for (final t in all) t.id}.length, 2, reason: 'distinct real ids');
+    expect(all.every((t) => t.id > 0), isTrue);
+  });
+
   test('a provably newer backup chapter overwrites local state', () async {
     await restorer.restore(backupWith(
       BackupManga(
