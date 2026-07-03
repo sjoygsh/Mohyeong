@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -1227,13 +1228,23 @@ class _MangaListTile extends ConsumerWidget {
 final _downloadedCountsProvider =
     FutureProvider.autoDispose<Map<String, int>>((ref) async {
   final repo = ref.watch(downloadRepositoryProvider);
+  // Coalesce bursts: a bulk download completes chapters back-to-back, and an
+  // invalidation per event would re-walk the whole downloads tree each time.
+  // One armed timer per burst caps the walks at ~1/s; badge lag is ≤1 s.
+  Timer? scheduled;
   final sub = repo.events.listen((e) {
     if (e.state == DownloadState.completed ||
         e.state == DownloadState.deleted) {
-      ref.invalidateSelf();
+      scheduled ??= Timer(const Duration(seconds: 1), () {
+        scheduled = null;
+        ref.invalidateSelf();
+      });
     }
   });
-  ref.onDispose(sub.cancel);
+  ref.onDispose(() {
+    scheduled?.cancel();
+    sub.cancel();
+  });
   return repo.downloadedCountsByManga();
 });
 

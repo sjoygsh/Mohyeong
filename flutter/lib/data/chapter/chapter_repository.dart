@@ -124,6 +124,17 @@ class ChapterRepository {
     List<SourceChapter> fetched,
   ) async {
     if (fetched.isEmpty) return const [];
+    // One transaction around the prune + insert + update writes: without it
+    // drift query streams emit each intermediate state (the open details
+    // screen flickers mid-sync), and a failure after the prune permanently
+    // drops the pruned rows before their replacements land.
+    return _db.transaction(() => _syncChaptersInTxn(mangaId, fetched));
+  }
+
+  Future<List<Chapter>> _syncChaptersInTxn(
+    int mangaId,
+    List<SourceChapter> fetched,
+  ) async {
     final existing = await getByMangaId(mangaId);
 
     // Dedupe the source list by URL. A misbehaving extension can return the

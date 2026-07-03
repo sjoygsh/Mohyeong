@@ -72,8 +72,16 @@ class JsRuntime {
       // snapshot cached for a plain fetch of the same URL, and vice versa.
       // Identical plain fetches (the Madara details+chapters double-fetch)
       // still share a key and collapse.
+      // Headers are part of the identity too: the map is static (shared by
+      // every source), and two sources can legitimately GET one CDN URL with
+      // different Referer/auth within the TTL.
       final cacheKey =
-          '$method $url wv:${forceWebView ? 1 : 0}:${settleMs ?? ''}:${readyJs ?? ''}';
+          '$method $url wv:${forceWebView ? 1 : 0}:${settleMs ?? ''}:${readyJs ?? ''} '
+          'h:${headers == null ? 0 : Object.hashAll([
+              for (final e in (headers.entries.toList()
+                ..sort((a, b) => a.key.compareTo(b.key))))
+                '${e.key}=${e.value}',
+            ])}';
       final webAvail = WebViewHttpClient.instance.isAvailable;
 
       if (idempotent) {

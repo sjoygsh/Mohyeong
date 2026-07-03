@@ -69,6 +69,11 @@ class CropBordersImageProvider
       return ImageInfo(image: original);
     }
     final cropped = await _crop(original, rect);
+    // `original` is this listener's own clone (see [_resolveInner]); once the
+    // crop is painted into a new image nothing else disposes it, and an
+    // undisposed handle pins the full-res native bitmap even after the inner
+    // provider's cache entry is evicted — one leaked page decode per crop.
+    original.dispose();
     return ImageInfo(image: cropped);
   }
 
@@ -280,6 +285,9 @@ class HalfPageImageProvider extends ImageProvider<HalfPageImageProvider> {
         : ui.Rect.fromLTWH(
             half.toDouble(), 0, (w - half).toDouble(), h.toDouble());
     final cropped = await CropBordersImageProvider._crop(original, rect);
+    // Same ownership rule as _resolveAndCrop: the clone would otherwise pin
+    // the full-res bitmap (twice per wide page — one clone per half).
+    original.dispose();
     return ImageInfo(image: cropped);
   }
 

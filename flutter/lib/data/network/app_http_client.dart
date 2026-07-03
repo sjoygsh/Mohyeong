@@ -24,11 +24,15 @@ class AppHttpClient {
   final Dio dio;
   final CookieJar cookies;
 
-  static AppHttpClient? _instance;
+  static Future<AppHttpClient>? _instance;
 
-  static Future<AppHttpClient> instance() async {
-    final existing = _instance;
-    if (existing != null) return existing;
+  /// Memoises the in-flight future, not the finished client: two concurrent
+  /// first callers must not each build a Dio + PersistCookieJar over the same
+  /// on-disk cookie directory (the await below is a real suspension point).
+  static Future<AppHttpClient> instance() =>
+      _instance ??= _create();
+
+  static Future<AppHttpClient> _create() async {
     final support = await getApplicationSupportDirectory();
     final cookieDir = p.join(support.path, 'cookies');
     final jar = WebViewCookieJar(
@@ -72,9 +76,7 @@ class AppHttpClient {
         },
       ),
     );
-    final c = AppHttpClient._(dio, jar);
-    _instance = c;
-    return c;
+    return AppHttpClient._(dio, jar);
   }
 }
 

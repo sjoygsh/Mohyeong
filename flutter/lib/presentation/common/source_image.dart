@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -13,7 +12,8 @@ import 'crop_borders_image.dart';
 
 /// Image widget that paints whatever a source hands us — local file path,
 /// `file://` URI, a SAF `content://` document URI (Local source on Android),
-/// or a remote HTTP(S) URL. Wraps [CachedNetworkImage] for network URLs,
+/// or a remote HTTP(S) URL. Wraps [_NetworkImageWithWebViewFallback] for
+/// network URLs,
 /// [Image.file] for local paths, and a [_SafImageProvider] for content URIs,
 /// so the same call sites in Library / History / Manga details / Reader /
 /// Browse handle every backend uniformly.
@@ -177,31 +177,25 @@ class SourceImage extends StatelessWidget {
             errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
       );
     }
-    return CachedNetworkImage(
-      imageUrl: url,
+    // Same provider (and therefore the same ImageCache key) as
+    // [_backendProvider], so the reader's precache / aspect-probe /
+    // crop-and-rotate pipelines and this widget all share ONE decode per URL.
+    // The WebView fingerprint-wall fallback lives inside the provider.
+    final network = _NetworkImageWithWebViewFallback(url, headers);
+    return Image(
+      image: cacheWidth == null
+          ? network
+          : ResizeImage(network, width: cacheWidth),
       fit: fit,
-      httpHeaders: headers,
-      memCacheWidth: cacheWidth,
-      // Also cap the on-disk cache so cold loads don't re-decode the full-res
-      // original before downscaling (covers are often 1000px+).
-      maxWidthDiskCache: cacheWidth,
-      placeholder: placeholder == null
+      gaplessPlayback: true,
+      frameBuilder: placeholder == null
           ? null
-          : (ctx, _) => placeholder!(ctx),
-      // On a network failure (commonly a Cloudflare 403 on sources whose CDN
-      // fingerprint-blocks non-browser clients), fall back to fetching the
-      // image through the offscreen WebView, which carries a browser
-      // fingerprint. Cached after the first fetch; if that also fails, show
-      // the caller's error widget / default box.
-      errorWidget: (ctx, _, error) => Image(
-        image: cacheWidth == null
-            ? _WebViewImageProvider(url)
-            : ResizeImage(_WebViewImageProvider(url), width: cacheWidth),
-        fit: fit,
-        gaplessPlayback: true,
-        errorBuilder: (c2, e2, _) =>
-            errorWidget?.call(c2, e2) ?? const _DefaultErrorBox(),
-      ),
+          : (ctx, child, frame, wasSync) {
+              if (frame != null || wasSync) return child;
+              return placeholder!(ctx);
+            },
+      errorBuilder: (ctx, error, _) =>
+          errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
     );
   }
 }
@@ -297,60 +291,14 @@ class _ArchiveImageProvider extends ImageProvider<_ArchiveImageProvider> {
   int get hashCode => url.hashCode;
 }
 
-/// [ImageProvider] that fetches a network image's bytes through the offscreen
-/// WebView ([WebViewHttpClient.fetchImageBytes]) — used as a fallback when the
-/// normal HTTP image client is fingerprint-blocked (Cloudflare 403). Keyed on
-/// the URL so Flutter's [ImageCache] de-dupes; the WebView client also caches
-/// the decoded bytes. Throws on failure so the caller's errorBuilder runs.
-class _WebViewImageProvider extends ImageProvider<_WebViewImageProvider> {
-  const _WebViewImageProvider(this.url);
-
-  final String url;
-
-  @override
-  Future<_WebViewImageProvider> obtainKey(ImageConfiguration configuration) =>
-      SynchronousFuture<_WebViewImageProvider>(this);
-
-  @override
-  ImageStreamCompleter loadImage(
-    _WebViewImageProvider key,
-    ImageDecoderCallback decode,
-  ) {
-    return MultiFrameImageStreamCompleter(
-      codec: _loadAsync(key, decode),
-      scale: 1.0,
-      debugLabel: key.url,
-    );
-  }
-
-  Future<ui.Codec> _loadAsync(
-    _WebViewImageProvider key,
-    ImageDecoderCallback decode,
-  ) async {
-    final bytes = await WebViewHttpClient.instance.fetchImageBytes(key.url);
-    if (bytes == null || bytes.isEmpty) {
-      throw StateError('WebView image fetch failed for ${key.url}');
-    }
-    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-    return decode(buffer);
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      other is _WebViewImageProvider && other.url == url;
-
-  @override
-  int get hashCode => url.hashCode;
-}
-
-/// Network [ImageProvider] with the same WebView fallback the widget path in
-/// [SourceImage._buildImage] has: bytes come from the shared image disk cache
-/// (the store [CachedNetworkImageProvider] uses), and on a fetch failure —
+/// The ONE network [ImageProvider] behind both the [SourceImage] widget and
+/// every provider-based consumer ([SourceImage.providerFor], the crop /
+/// rotate / dual-page reader pipelines, precache, aspect probes) — a single
+/// [ImageCache] key per URL, so a page decoded by any of them is reused by
+/// all. Bytes come from the shared image disk cache; on a fetch failure —
 /// commonly a 403 from a CDN that fingerprint-blocks non-browser TLS — the
-/// offscreen WebView is tried before giving up. This is the backend behind
-/// [SourceImage.providerFor] and the crop/rotate/dual-page reader pipelines,
-/// which wrap the raw provider and would otherwise miss the widget-level
-/// fallback. Keyed on the URL so Flutter's [ImageCache] de-dupes.
+/// offscreen WebView ([WebViewHttpClient.fetchImageBytes]) is tried before
+/// giving up.
 class _NetworkImageWithWebViewFallback
     extends ImageProvider<_NetworkImageWithWebViewFallback> {
   const _NetworkImageWithWebViewFallback(this.url, this.headers);

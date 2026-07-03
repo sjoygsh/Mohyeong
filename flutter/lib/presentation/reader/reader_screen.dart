@@ -2076,6 +2076,11 @@ class _ReaderViewport extends StatelessWidget {
       // Report total synchronously — local pages are already enumerated.
       onTotalChanged(data.localPagePaths!.length);
       return _LocalPageList(
+        // In-place chapter navigation swaps the chapter under this same
+        // element (see _ReaderBody.didUpdateWidget). Key the subtree by
+        // chapter so the viewer (controllers, positions) starts fresh
+        // instead of carrying the previous chapter's state.
+        key: ValueKey('local-${data.chapter.id}'),
         paths: data.localPagePaths!,
         mode: mode,
         fit: fit,
@@ -2099,6 +2104,12 @@ class _ReaderViewport extends StatelessWidget {
       );
     }
     return _PageList(
+      // Same in-place chapter-swap hazard as above, and worse here:
+      // _PageListState fetches its page list once in initState, so a reused
+      // element keeps RENDERING THE OLD CHAPTER'S PAGES while progress /
+      // mark-read writes target the new chapter id. The key forces a fresh
+      // fetch per chapter.
+      key: ValueKey('remote-${data.chapter.id}'),
       source: data.source!,
       chapter: data.chapter,
       mode: mode,
@@ -2119,6 +2130,7 @@ class _ReaderViewport extends StatelessWidget {
 
 class _PageList extends StatefulWidget {
   const _PageList({
+    super.key,
     required this.source,
     required this.chapter,
     required this.mode,
@@ -2268,6 +2280,7 @@ class _PageListState extends State<_PageList> {
 
 class _LocalPageList extends StatelessWidget {
   const _LocalPageList({
+    super.key,
     required this.paths,
     required this.mode,
     required this.fit,

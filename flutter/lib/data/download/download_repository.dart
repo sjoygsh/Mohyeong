@@ -281,6 +281,8 @@ class DownloadRepository {
     final files = entries
         .whereType<File>()
         .where((e) => p.basename(e.path) != '.done')
+        // Never serve an interrupted page write as a page (see _downloadPage).
+        .where((e) => p.extension(e.path) != '.part')
         .map((e) => e.path)
         .toList();
     files.sort();
@@ -596,12 +598,19 @@ class DownloadRepository {
       '${(index + 1).toString().padLeft(4, '0')}.$ext',
     ));
     if (!await target.exists()) {
+      // Write to a temp path and rename on success: Dio's deleteOnError only
+      // covers request errors, not the process being killed mid-write. A
+      // truncated file at the final path would be skipped as "already
+      // downloaded" on re-queue and ship a corrupt page under the .done
+      // marker; a leftover .part is simply re-downloaded.
+      final part = File('${target.path}.part');
       await _dio.download(
         imageUrl,
-        target.path,
+        part.path,
         options: Options(headers: page.headers),
         cancelToken: job.cancelToken,
       );
+      await part.rename(target.path);
     }
     return target;
   }

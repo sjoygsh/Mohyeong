@@ -42,6 +42,10 @@ class ExtensionRepository {
   final AppHttpClient _http;
   final LocalSourcePreferences _localPrefs;
   final Map<String, MangaSource> _loaded = {};
+
+  /// In-flight loads by slug, so concurrent [getSource] calls share one
+  /// [JsSource.load] instead of each spawning (and orphaning) a runtime.
+  final Map<String, Future<MangaSource>> _loading = {};
   final _changes = StreamController<List<InstalledExtension>>.broadcast();
 
   /// Stream of installed-extension lists. Emits on every install/uninstall;
@@ -68,6 +72,22 @@ class ExtensionRepository {
     final slug = await _resolveSlug(id);
     final cached = _loaded[slug];
     if (cached != null) return cached;
+    // De-dupe concurrent first requests for one source: the download drain
+    // runs several chapters of the same manga in parallel, and each spawned
+    // load is a live worker isolate + QuickJS runtime — without this, every
+    // caller but the last leaks one.
+    final inflight = _loading[slug];
+    if (inflight != null) return inflight;
+    final future = _loadSource(slug);
+    _loading[slug] = future;
+    try {
+      return await future;
+    } finally {
+      _loading.remove(slug);
+    }
+  }
+
+  Future<MangaSource> _loadSource(String slug) async {
     if (slug == LocalSource.sourceId) {
       final local = LocalSource(_localPrefs);
       _loaded[slug] = local;
