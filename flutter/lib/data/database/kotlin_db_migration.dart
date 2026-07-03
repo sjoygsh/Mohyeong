@@ -52,15 +52,21 @@ class KotlinDbMigration {
     // case the user wiped app_flutter manually.
     await driftFile.parent.create(recursive: true);
 
-    // Copy the main DB plus any WAL/SHM sidecars so we don't leave the
-    // SQLite engine staring at an inconsistent journal.
-    await legacyFile.copy(driftPath);
+    // Copy the WAL/SHM sidecars FIRST and land the main file last via a
+    // staging name + rename: `mihon.sqlite` existing is the "migration
+    // done" marker above, so it must only appear once everything it depends
+    // on is in place. (Main-first left a window where a crash before the
+    // WAL copy made the next launch skip migration and silently drop the
+    // Kotlin app's most recent committed transactions.) A crash mid-copy
+    // now simply re-runs the whole migration on the next launch.
     for (final suffix in const ['-wal', '-shm']) {
       final sidecar = File('${legacyFile.path}$suffix');
       if (await sidecar.exists()) {
         await sidecar.copy('$driftPath$suffix');
       }
     }
+    final staging = await legacyFile.copy('$driftPath.migrating');
+    await staging.rename(driftPath);
 
     return driftPath;
   }

@@ -254,7 +254,15 @@ class _SearchListingState extends State<_SearchListing>
     }).catchError((_) {});
   }
 
+  /// Bumped on every new search; an in-flight fetch that comes back with a
+  /// stale generation is discarded. Without this, re-searching while a page
+  /// was loading (a) bailed on the `_loading` guard so the NEW query never
+  /// fetched, and (b) let the OLD query's response append into the freshly
+  /// cleared list.
+  int _generation = 0;
+
   Future<void> _search(String query) async {
+    _generation++;
     setState(() {
       _query = query;
       _searchedOnce = true;
@@ -262,6 +270,9 @@ class _SearchListingState extends State<_SearchListing>
       _page = 1;
       _hasNext = true;
       _error = null;
+      // Any in-flight fetch belongs to the old generation now — release the
+      // flag so THIS search's first page can start immediately.
+      _loading = false;
     });
     await _loadMore();
   }
@@ -272,6 +283,7 @@ class _SearchListingState extends State<_SearchListing>
     if (_loading || !_hasNext || (_query.isEmpty && _selections.isEmpty)) {
       return;
     }
+    final gen = _generation;
     setState(() => _loading = true);
     try {
       final page = await widget.source.fetchSearch(
@@ -279,7 +291,7 @@ class _SearchListingState extends State<_SearchListing>
         _page,
         filters: _selections.isEmpty ? null : Map.of(_selections),
       );
-      if (!mounted) return;
+      if (!mounted || gen != _generation) return;
       setState(() {
         _items.addAll(page.mangas);
         _hasNext = page.hasNextPage;
@@ -287,7 +299,7 @@ class _SearchListingState extends State<_SearchListing>
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || gen != _generation) return;
       setState(() {
         _error = e;
         _loading = false;
