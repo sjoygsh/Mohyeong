@@ -30,9 +30,21 @@ import 'presentation/security/auth_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final http = await AppHttpClient.instance();
-  final storage = await ExtensionStorage.create();
-  final prefs = await SharedPreferences.getInstance();
+  // These five inits are independent platform-channel round trips — start
+  // them all before awaiting any so cold start pays the slowest one, not
+  // the sum (they were strictly serial before).
+  final httpFuture = AppHttpClient.instance();
+  final storageFuture = ExtensionStorage.create();
+  final prefsFuture = SharedPreferences.getInstance();
+  final coverCacheFuture = CoverCache.create();
+  // Create notification channels up front (mirrors Mihon creating them in
+  // App.onCreate) so the first notification doesn't have to.
+  final notifFuture = NotificationService.instance.init();
+  final http = await httpFuture;
+  final storage = await storageFuture;
+  final prefs = await prefsFuture;
+  final coverCache = await coverCacheFuture;
+  await notifFuture;
   // Global incognito mode is per-session: clear it on every cold start, as
   // Mihon does in MainActivity. Per-extension incognito persists.
   await prefs.setBool(incognitoModeKey, false);
@@ -44,10 +56,6 @@ Future<void> main() async {
   }
   final localPrefs = LocalSourcePreferences(prefs);
   final repo = ExtensionRepository(storage, http, localPrefs);
-  final coverCache = await CoverCache.create();
-  // Create notification channels up front (mirrors Mihon creating them in
-  // App.onCreate) so the first notification doesn't have to.
-  await NotificationService.instance.init();
   runApp(
     ProviderScope(
       overrides: [
