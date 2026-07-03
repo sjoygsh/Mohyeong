@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mihon's splash background (colors.xml: splash → accent_blue), so the
+         Flutter app's launch matches the Kotlin app's cosmetics. -->
+    <color name="splash_background">#0058A0</color>
+</resources>
