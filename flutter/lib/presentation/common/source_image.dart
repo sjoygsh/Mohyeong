@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../../data/network/webview_http_client.dart';
 import '../../data/source/local_archive.dart';
@@ -104,7 +105,7 @@ class SourceImage extends StatelessWidget {
     if (_isArchive) return _ArchiveImageProvider(url);
     if (_isContent) return _SafImageProvider(url);
     if (_isLocal) return FileImage(File(_localPath));
-    return CachedNetworkImageProvider(url, headers: headers);
+    return _NetworkImageWithWebViewFallback(url, headers);
   }
 
   @override
@@ -337,6 +338,68 @@ class _WebViewImageProvider extends ImageProvider<_WebViewImageProvider> {
   @override
   bool operator ==(Object other) =>
       other is _WebViewImageProvider && other.url == url;
+
+  @override
+  int get hashCode => url.hashCode;
+}
+
+/// Network [ImageProvider] with the same WebView fallback the widget path in
+/// [SourceImage._buildImage] has: bytes come from the shared image disk cache
+/// (the store [CachedNetworkImageProvider] uses), and on a fetch failure —
+/// commonly a 403 from a CDN that fingerprint-blocks non-browser TLS — the
+/// offscreen WebView is tried before giving up. This is the backend behind
+/// [SourceImage.providerFor] and the crop/rotate/dual-page reader pipelines,
+/// which wrap the raw provider and would otherwise miss the widget-level
+/// fallback. Keyed on the URL so Flutter's [ImageCache] de-dupes.
+class _NetworkImageWithWebViewFallback
+    extends ImageProvider<_NetworkImageWithWebViewFallback> {
+  const _NetworkImageWithWebViewFallback(this.url, this.headers);
+
+  final String url;
+  final Map<String, String>? headers;
+
+  @override
+  Future<_NetworkImageWithWebViewFallback> obtainKey(
+    ImageConfiguration configuration,
+  ) =>
+      SynchronousFuture<_NetworkImageWithWebViewFallback>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _NetworkImageWithWebViewFallback key,
+    ImageDecoderCallback decode,
+  ) {
+    return MultiFrameImageStreamCompleter(
+      codec: _loadAsync(key, decode),
+      scale: 1.0,
+      debugLabel: key.url,
+    );
+  }
+
+  Future<ui.Codec> _loadAsync(
+    _NetworkImageWithWebViewFallback key,
+    ImageDecoderCallback decode,
+  ) async {
+    Uint8List bytes;
+    try {
+      final file = await DefaultCacheManager()
+          .getSingleFile(key.url, headers: key.headers ?? const {});
+      bytes = await file.readAsBytes();
+    } catch (_) {
+      final fallback =
+          await WebViewHttpClient.instance.fetchImageBytes(key.url);
+      if (fallback == null || fallback.isEmpty) rethrow;
+      bytes = fallback;
+    }
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    return decode(buffer);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _NetworkImageWithWebViewFallback &&
+      other.url == url &&
+      mapEquals(other.headers, headers);
 
   @override
   int get hashCode => url.hashCode;

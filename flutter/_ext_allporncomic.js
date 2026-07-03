@@ -334,35 +334,59 @@
 
   // --- pages ---------------------------------------------------------------
 
+  function parsePages(html) {
+    var start = html.indexOf('reading-content');
+    var region = start >= 0 ? html.substring(start) : html;
+    var out = [];
+    var seen = {};
+    var re = /<img\b([^>]*)>/g, m, idx = 0;
+    while ((m = re.exec(region)) !== null) {
+      var tag = m[1];
+      var src = attr(tag, 'data-src') || attr(tag, 'src');
+      if (!src) continue;
+      src = src.replace(/^\s+|\s+$/g, '');
+      if (src.indexOf('http') !== 0) continue;
+      // Skip the theme logo / UI chrome; page images live on a CDN path.
+      if (/\/themes\/|logo|loading|dflazy|avatar|gravatar/i.test(src)) continue;
+      // Skip analytics/tracker pixels the rendered DOM carries (the WebView
+      // proxy returns the LIVE DOM, scripts included — yandex metrika's
+      // <img src="mc.yandex.ru/watch/…"> lands inside reading-content).
+      if (/yandex|metrika|analytics|\/watch\/|counter|pixel|\/ads?[\/.]|doubleclick/i.test(src)) continue;
+      if (seen[src]) continue;
+      seen[src] = true;
+      out.push({
+        index: idx++,
+        url: src,
+        image_url: src,
+        headers: { Referer: BASE + '/', 'User-Agent': UA },
+      });
+    }
+    return out;
+  }
+
   function pages(chapter) {
-    return getHtml(abs(chapter.url)).then(function (html) {
-      var start = html.indexOf('reading-content');
-      var region = start >= 0 ? html.substring(start) : html;
-      var out = [];
-      var seen = {};
-      var re = /<img\b([^>]*)>/g, m, idx = 0;
-      while ((m = re.exec(region)) !== null) {
-        var tag = m[1];
-        var src = attr(tag, 'data-src') || attr(tag, 'src');
-        if (!src) continue;
-        src = src.replace(/^\s+|\s+$/g, '');
-        if (src.indexOf('http') !== 0) continue;
-        // Skip the theme logo / UI chrome; page images live on a CDN path.
-        if (/\/themes\/|logo|loading|dflazy|avatar|gravatar/i.test(src)) continue;
-        // Skip analytics/tracker pixels the rendered DOM carries (the WebView
-        // proxy returns the LIVE DOM, scripts included — yandex metrika's
-        // <img src="mc.yandex.ru/watch/…"> lands inside reading-content).
-        if (/yandex|metrika|analytics|\/watch\/|counter|pixel|\/ads?[\/.]|doubleclick/i.test(src)) continue;
-        if (seen[src]) continue;
-        seen[src] = true;
-        out.push({
-          index: idx++,
-          url: src,
-          image_url: src,
-          headers: { Referer: BASE + '/', 'User-Agent': UA },
-        });
-      }
-      return out;
+    var url = abs(chapter.url);
+    // A cold WebView can burn the whole settle window clearing the WAF and
+    // snapshot the DOM before the reader images exist — ready_js returns as
+    // soon as they do; the ceiling only costs time on the failure path. The
+    // retry uses a DIFFERENT settle ceiling on purpose: settle_ms is part of
+    // the response-cache key, so it can't be served the first attempt's
+    // image-less snapshot (12s TTL).
+    function attempt(settleMs) {
+      return getHtml(url, {
+        webview_settle_ms: settleMs,
+        webview_ready_js:
+          "document.querySelectorAll('.reading-content img').length>0",
+      }).then(parsePages);
+    }
+    return attempt(12000).then(function (out) {
+      if (out.length) return out;
+      return attempt(15000).then(function (out2) {
+        // An empty page list is always a failed render, never a real chapter —
+        // throw so the reader shows a retryable error instead of "No pages.".
+        if (!out2.length) throw new Error('no pages rendered for ' + url);
+        return out2;
+      });
     });
   }
 
@@ -376,7 +400,7 @@
       name: NAME,
       lang: LANG,
       base_url: BASE,
-      version_code: 2,
+      version_code: 3,
       supports_latest: true,
     },
     popular: popular,
