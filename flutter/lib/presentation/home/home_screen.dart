@@ -184,13 +184,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     )
                   : const _IncognitoBanner(),
             Expanded(
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _onScroll,
-                child: IndexedStack(
-                  index: index,
-                  children: HomeScreen._tabs
-                      .map((t) => t.child)
-                      .toList(growable: false),
+              // The raw pointer listener is the reveal-only escape hatch: a
+              // tab whose content fits the viewport has no scrollable to
+              // notify (Compose can't get trapped like this — every drag
+              // reaches Kotlin's onPreScroll), so a hidden bar could become
+              // permanent — the bar is the only way off the tab. Hiding stays
+              // scroll-notification-driven, matching Kotlin.
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerMove: (event) {
+                  if (!_bottomNavVisible && event.delta.dy > 1) {
+                    setState(() => _bottomNavVisible = true);
+                  }
+                },
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _onScroll,
+                  child: IndexedStack(
+                    index: index,
+                    children: HomeScreen._tabs
+                        .map((t) => t.child)
+                        .toList(growable: false),
+                  ),
                 ),
               ),
             ),
