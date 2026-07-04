@@ -24,6 +24,7 @@ class InstalledExtension {
     required this.supportsLatest,
     required this.sourcePath,
     required this.installUrl,
+    this.userAgent,
   });
 
   final String id;
@@ -33,6 +34,12 @@ class InstalledExtension {
   final int versionCode;
   final bool supportsLatest;
   final String sourcePath;
+
+  /// Optional manifest `user_agent`: sent instead of the app default on
+  /// image fetches (covers). Needed by hosts that reject browser UAs
+  /// (MangaDex requires an identifying UA since mid-2026); mirrors a Kotlin
+  /// source overriding `headersBuilder`.
+  final String? userAgent;
 
   /// URL the extension was originally installed from. Null when the
   /// install came from a local file pick (no remembered origin). When
@@ -52,6 +59,7 @@ class InstalledExtension {
       versionCode: (manifest['version_code'] as num?)?.toInt() ?? 1,
       supportsLatest: manifest['supports_latest'] as bool? ?? false,
       sourcePath: sourcePath,
+      userAgent: manifest['user_agent'] as String?,
       // `__install_url` is a sidecar key we stamp into the persisted
       // manifest copy at install time. Not part of the JS-side manifest
       // contract — the underscore prefix is the marker.

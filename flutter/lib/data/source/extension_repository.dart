@@ -361,8 +361,8 @@ final installedSourceLangsProvider =
 /// which sends no source headers by default, so a CDN with hotlink protection
 /// 403s and the cover renders blank — e.g. NatoManga's 2xstorage requires
 /// `Referer: https://www.natomanga.com/`. Cover widgets look these up by
-/// `manga.source` and pass them to [SourceImage]. Sources whose CDN ignores
-/// Referer (MangaDex) work with or without them.
+/// `manga.source` and pass them to [SourceImage]. A manifest `user_agent`
+/// replaces the browser UA for hosts that reject it (MangaDex).
 final installedSourceImageHeadersProvider =
     StreamProvider<Map<int, Map<String, String>>>((ref) async* {
   final repo = ref.watch(extensionRepositoryProvider);
@@ -373,7 +373,7 @@ final installedSourceImageHeadersProvider =
       final base = e.baseUrl.replaceAll(RegExp(r'/+$'), '');
       m[sourceNumericId(e.id)] = {
         'Referer': '$base/',
-        'User-Agent': defaultUserAgent,
+        'User-Agent': e.userAgent ?? defaultUserAgent,
       };
     }
     yield m;
