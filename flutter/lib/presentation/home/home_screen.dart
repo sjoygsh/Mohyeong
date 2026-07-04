@@ -110,10 +110,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// Mirrors the Kotlin `onPreScroll` thresholds (±1px): scrolling toward the
   /// end of the list hides the nav, scrolling back toward the top reveals it.
+  ///
+  /// Kotlin's `onPreScroll` sees the OFFERED drag delta even when the list is
+  /// pinned at an edge; Flutter reports that case as [OverscrollNotification]
+  /// instead of a [ScrollUpdateNotification]. Both must be handled — otherwise
+  /// a bar hidden while the list sits at the top (or on a tab too short to
+  /// scroll) can never be revealed, and the bar is the only way off the tab.
   bool _onScroll(ScrollNotification notification) {
-    if (notification is! ScrollUpdateNotification) return false;
     if (notification.metrics.axis != Axis.vertical) return false;
-    final delta = notification.scrollDelta ?? 0;
+    final double delta;
+    if (notification is ScrollUpdateNotification) {
+      delta = notification.scrollDelta ?? 0;
+    } else if (notification is OverscrollNotification) {
+      delta = notification.overscroll;
+    } else {
+      return false;
+    }
     if (delta > 1 && _bottomNavVisible) {
       setState(() => _bottomNavVisible = false);
     } else if (delta < -1 && !_bottomNavVisible) {
@@ -139,6 +151,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.listen<int>(homeTabIndexProvider, (_, next) {
       if (next == 1 && ref.read(newUpdatesCountProvider) != 0) {
         ref.read(newUpdatesCountProvider.notifier).set(0);
+      }
+      // Re-show the nav on any tab switch. The only way to change tabs while
+      // the bar is hidden is the back-to-Library PopScope below, and the new
+      // tab may have nothing to scroll (Compose can't get stuck here — drags
+      // always reach Kotlin's onPreScroll even on unscrollable content — so
+      // this is the Flutter-side escape hatch, not a behaviour difference).
+      if (!_bottomNavVisible) {
+        setState(() => _bottomNavVisible = true);
       }
     });
     // Mirrors Kotlin HomeScreen's BackHandler: when not on the Library tab,
