@@ -18,7 +18,7 @@ local.properties
 app/google-services.json
 
 # JS source extensions live locally only (user decision 2026-07-04) — backed up
-# in extensions_backup/ (also untracked). See HANDOFF.md.
+# in extensions_backup/ (also untracked).
 flutter/_ext_*.js
 flutter/.tmp_manifests/
 extensions_backup/
