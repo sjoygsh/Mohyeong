@@ -49,7 +49,9 @@ class NotificationService {
   /// to call from app start and again from the background isolate.
   Future<void> init() async {
     if (_initialised) return;
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    // Mihon uses the white-alpha み glyph (R.drawable.ic_mihon) as the status
+    // bar icon, not the full-colour launcher mipmap.
+    const android = AndroidInitializationSettings('@drawable/ic_mihon');
     await _plugin.initialize(
       const InitializationSettings(android: android),
     );
