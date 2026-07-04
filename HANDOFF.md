@@ -325,8 +325,12 @@ node .tmp_manifests/test_ext.js _ext_<id>.js <method> [arg]   # PC harness (non-
   <noreply@anthropic.com>`. (History: the handoff's Opus 4.6 → Opus 4.8 while
   Fable was unavailable → Fable 5 now.)
 - The "Dev: page source" tool + the side-loaded `_ext_*.js` are dev artifacts;
-  decide a shippable bundling location before release (currently uncommitted on
-  device, committed in-repo as `flutter/_ext_*.js`).
+  decide a shippable bundling location before release. **Extensions are
+  LOCAL-ONLY (user decision 2026-07-04): `flutter/_ext_*.js` is gitignored and
+  NOT on GitHub** (removed from tracking; old revisions still carry them in
+  history). Local save points: the working tree + `extensions_backup/`
+  (repo copies, a device pull, and `device_extensions.tar`) — do not delete
+  both the phone copies and the local files without a fresh backup.
 
 ## Immediate next steps (priority order)
 1. ✅ DONE 2026-07-02: Round-2 perf device-verified; SPA cluster finished
