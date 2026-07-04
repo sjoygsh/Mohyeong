@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Dark-mode variant of the v31 splash: same Mihon blue + logo (Mihon uses
-     one splash colour for both modes), dark parent to match values-night. -->
+<!-- Dark-mode variant of the v31 splash: same glyph on the night
+     splash_background (values-night/colors.xml), dark parent to match
+     values-night. -->
 <resources>
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_mihon_splash</item>

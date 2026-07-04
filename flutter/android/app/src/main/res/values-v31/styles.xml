@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 12+ system splash, matching Mihon's Theme.Tachiyomi.SplashScreen:
-     the Mihon logo on splash blue instead of the default (launcher icon on a
-     themed background). windowBackground still covers the gap between the
-     system splash dismissing and Flutter's first frame. -->
+<!-- Android 12+ system splash, matching the Kotlin app's
+     Theme.Tachiyomi.SplashScreen: the Mohyeong glyph on @color/splash_background
+     instead of the default (launcher icon on a themed background).
+     windowBackground still covers the gap between the system splash dismissing
+     and Flutter's first frame. -->
 <resources>
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_mihon_splash</item>

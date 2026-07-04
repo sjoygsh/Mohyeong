@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Pre-Android-12 splash: Mihon's splash blue with the logo centred,
+<!-- Pre-Android-12 splash: the Mohyeong glyph centred on splash_background,
      matching the Kotlin app (Theme.Tachiyomi.SplashScreen). Android 12+
      ignores this and uses the windowSplashScreen* attrs in values-v31. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
