@@ -149,9 +149,10 @@ class _LogoHeader extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 32),
-          child: Icon(
-            Icons.menu_book,
-            size: 64,
+          child: Image.asset(
+            'assets/ic_mihon.png',
+            width: 64,
+            height: 64,
             color: Theme.of(context).colorScheme.onSurface,
           ),
         ),

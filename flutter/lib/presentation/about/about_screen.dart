@@ -50,9 +50,10 @@ class AboutScreen extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 56),
                 child: Center(
-                  child: Icon(
-                    Icons.menu_book,
-                    size: 64,
+                  child: Image.asset(
+                    'assets/ic_mihon.png',
+                    width: 64,
+                    height: 64,
                     color: theme.colorScheme.onSurface,
                   ),
                 ),
