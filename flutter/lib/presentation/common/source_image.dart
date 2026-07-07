@@ -38,10 +38,18 @@ class SourceImage extends StatelessWidget {
     this.rotateToFit = false,
     this.rotateInvert = false,
     this.cacheWidth,
+    this.fadeIn = true,
   });
 
   final String url;
   final BoxFit fit;
+
+  /// Fade the image in over 300ms when it loads asynchronously. Mirrors
+  /// Mihon's global Coil `crossfade(300)` (App.kt) — on by default for
+  /// covers/thumbnails everywhere; the reader page lists pass false, matching
+  /// `ReaderPageImageView`'s explicit `crossfade(false)`. Synchronous loads
+  /// (memory-cache hits) never fade, same as Coil.
+  final bool fadeIn;
 
   /// Decode-target width in PHYSICAL pixels. Covers and thumbnails should
   /// set this (≈ rendered logical width × devicePixelRatio) so a 1000px
@@ -123,17 +131,30 @@ class SourceImage extends StatelessWidget {
     );
   }
 
+  /// frameBuilder shared by every backend branch: [placeholder] until the
+  /// first frame, faded in per [fadeIn]. Null when there's nothing to wrap.
+  ImageFrameBuilder? _frameBuilder() {
+    final ph = placeholder;
+    if (!fadeIn && ph == null) return null;
+    return (ctx, child, frame, wasSync) {
+      if (wasSync) return child;
+      if (!fadeIn) {
+        return frame == null ? ph!(ctx) : child;
+      }
+      return _CrossfadeFrame(
+        frame: frame,
+        placeholder: ph?.call(ctx),
+        child: child,
+      );
+    };
+  }
+
   Widget _buildImage(BuildContext context) {
     if (cropBorders) {
       return Image(
         image: CropBordersImageProvider(_backendProvider()),
         fit: fit,
-        frameBuilder: placeholder == null
-            ? null
-            : (ctx, child, frame, wasSync) {
-                if (frame != null || wasSync) return child;
-                return placeholder!(ctx);
-              },
+        frameBuilder: _frameBuilder(),
         errorBuilder: (ctx, error, _) =>
             errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
       );
@@ -144,12 +165,7 @@ class SourceImage extends StatelessWidget {
             ? _ArchiveImageProvider(url)
             : ResizeImage(_ArchiveImageProvider(url), width: cacheWidth),
         fit: fit,
-        frameBuilder: placeholder == null
-            ? null
-            : (ctx, child, frame, wasSync) {
-                if (frame != null || wasSync) return child;
-                return placeholder!(ctx);
-              },
+        frameBuilder: _frameBuilder(),
         errorBuilder: (ctx, error, _) =>
             errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
       );
@@ -160,12 +176,7 @@ class SourceImage extends StatelessWidget {
             ? _SafImageProvider(url)
             : ResizeImage(_SafImageProvider(url), width: cacheWidth),
         fit: fit,
-        frameBuilder: placeholder == null
-            ? null
-            : (ctx, child, frame, wasSync) {
-                if (frame != null || wasSync) return child;
-                return placeholder!(ctx);
-              },
+        frameBuilder: _frameBuilder(),
         errorBuilder: (ctx, error, _) =>
             errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
       );
@@ -175,6 +186,7 @@ class SourceImage extends StatelessWidget {
         File(_localPath),
         fit: fit,
         cacheWidth: cacheWidth,
+        frameBuilder: _frameBuilder(),
         errorBuilder: (ctx, error, _) =>
             errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
       );
@@ -190,12 +202,7 @@ class SourceImage extends StatelessWidget {
           : ResizeImage(network, width: cacheWidth),
       fit: fit,
       gaplessPlayback: true,
-      frameBuilder: placeholder == null
-          ? null
-          : (ctx, child, frame, wasSync) {
-              if (frame != null || wasSync) return child;
-              return placeholder!(ctx);
-            },
+      frameBuilder: _frameBuilder(),
       errorBuilder: (ctx, error, _) =>
           errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
     );
@@ -456,6 +463,52 @@ class _RotateToFitIfWideState extends State<_RotateToFitIfWide> {
       quarterTurns: widget.invert ? 3 : 1,
       child: widget.child,
     );
+  }
+}
+
+/// One decoded-frame slot with the Coil-style crossfade: transparent until
+/// the first frame arrives, then a 300ms linear fade drawn over the
+/// placeholder, which is dropped once the fade lands. [frame] falling back to
+/// null later (gaplessPlayback resets it when the provider changes, e.g. a
+/// cover refresh) does NOT re-hide the image — the old frame keeps painting,
+/// so refreshes stay gapless instead of blinking.
+class _CrossfadeFrame extends StatefulWidget {
+  const _CrossfadeFrame({
+    required this.frame,
+    required this.placeholder,
+    required this.child,
+  });
+
+  final int? frame;
+  final Widget? placeholder;
+  final Widget child;
+
+  @override
+  State<_CrossfadeFrame> createState() => _CrossfadeFrameState();
+}
+
+class _CrossfadeFrameState extends State<_CrossfadeFrame> {
+  bool _hadFrame = false;
+  bool _settled = false;
+
+  @override
+  Widget build(BuildContext context) {
+    _hadFrame = _hadFrame || widget.frame != null;
+    final image = AnimatedOpacity(
+      // Coil's CrossfadeDrawable: linear alpha over 300ms (App.kt crossfade).
+      opacity: _hadFrame ? 1 : 0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.linear,
+      onEnd: () {
+        if (_hadFrame && !_settled && mounted) {
+          setState(() => _settled = true);
+        }
+      },
+      child: widget.child,
+    );
+    final ph = widget.placeholder;
+    if (ph == null || _settled) return image;
+    return Stack(fit: StackFit.passthrough, children: [ph, image]);
   }
 }
 

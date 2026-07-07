@@ -2252,6 +2252,9 @@ class _PageListState extends State<_PageList> {
               url: imageUrl,
               fit: widget.fit,
               headers: page.headers,
+              // ReaderPageImageView sets crossfade(false): pages appear at
+              // full opacity, exempt from the global cover fade.
+              fadeIn: false,
               cropBorders: widget.cropBorders,
               rotateToFit: widget.rotateToFit,
               rotateInvert: widget.rotateInvert,
@@ -2337,6 +2340,8 @@ class _LocalPageList extends StatelessWidget {
       itemBuilder: (_, i) => SourceImage(
         url: paths[i],
         fit: fit,
+        // ReaderPageImageView sets crossfade(false) — same for local pages.
+        fadeIn: false,
         cropBorders: cropBorders,
         rotateToFit: rotateToFit,
         rotateInvert: rotateInvert,
