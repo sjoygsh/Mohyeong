@@ -173,5 +173,14 @@ void main() {
 
     // The library should be in its empty state since the fake repo returns [].
     expect(find.text('Your library is empty.'), findsOneWidget);
+
+    // Tabs build lazily on first visit (the IndexedStack starts them as
+    // placeholders), so the Updates empty state must not exist yet…
+    expect(find.text('No recent updates'), findsNothing);
+    // …and materialise after tapping the destination, once the 200ms
+    // fade-through finishes.
+    await tester.tap(find.text('Updates'));
+    await tester.pumpAndSettle();
+    expect(find.text('No recent updates'), findsOneWidget);
   });
 }

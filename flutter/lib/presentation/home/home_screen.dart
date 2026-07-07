@@ -341,6 +341,12 @@ class _IncognitoBanner extends ConsumerWidget {
 /// index swapped at the 35% crossover reproduces it exactly, while the
 /// [IndexedStack] keeps every tab alive (scroll positions, in-flight loads)
 /// just like the raw stack did.
+///
+/// Tabs build lazily: an [IndexedStack] normally builds ALL children up
+/// front, which ran five screens' inits and DB stream queries on cold start.
+/// A tab is swapped in on its first visit and stays alive after — the same
+/// lifecycle as Mihon's Voyager tabs, which are created on first show and
+/// then retained.
 class _FadeThroughIndexedStack extends StatefulWidget {
   const _FadeThroughIndexedStack({
     required this.index,
@@ -384,6 +390,10 @@ class _FadeThroughIndexedStackState extends State<_FadeThroughIndexedStack>
   /// fade-out completes.
   late int _shown = widget.index;
 
+  /// Tabs that have been visited and therefore actually build; the rest stay
+  /// [SizedBox.shrink] placeholders until first shown.
+  late final Set<int> _built = {widget.index};
+
   @override
   void initState() {
     super.initState();
@@ -400,6 +410,10 @@ class _FadeThroughIndexedStackState extends State<_FadeThroughIndexedStack>
   void didUpdateWidget(covariant _FadeThroughIndexedStack old) {
     super.didUpdateWidget(old);
     if (widget.index != old.index) {
+      // Build the incoming tab now, during the fade-out, so its first (and
+      // possibly heavy) build isn't crammed into the fade-in half. It isn't
+      // painted until [_shown] swaps at the crossover.
+      _built.add(widget.index);
       _controller.forward(from: 0);
     }
   }
@@ -414,7 +428,13 @@ class _FadeThroughIndexedStackState extends State<_FadeThroughIndexedStack>
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _opacity,
-      child: IndexedStack(index: _shown, children: widget.children),
+      child: IndexedStack(
+        index: _shown,
+        children: [
+          for (final (i, child) in widget.children.indexed)
+            if (_built.contains(i)) child else const SizedBox.shrink(),
+        ],
+      ),
     );
   }
 }
