@@ -1,3 +1,4 @@
+import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 
 /// The colour palettes Mihon ships under Settings → Appearance → "App theme"
@@ -51,12 +52,26 @@ enum AppColorTheme {
 class AppTheme {
   AppTheme._();
 
+  /// Screen push/pop transition: Material shared-axis X (30dp slide + fade),
+  /// the same motion Mihon's `DefaultNavigatorScreenTransition` applies to
+  /// every Voyager push/pop via `materialSharedAxisX` (Navigator.kt). Also
+  /// lighter per frame than Flutter's default Android Zoom transition, which
+  /// scales both routes.
+  static const _pageTransitions = PageTransitionsTheme(
+    builders: {
+      TargetPlatform.android: SharedAxisPageTransitionsBuilder(
+        transitionType: SharedAxisTransitionType.horizontal,
+      ),
+    },
+  );
+
   static ThemeData light(Color seed) => ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
           seedColor: seed,
           brightness: Brightness.light,
         ),
+        pageTransitionsTheme: _pageTransitions,
       );
 
   static ThemeData dark(Color seed) => ThemeData(
@@ -65,6 +80,7 @@ class AppTheme {
           seedColor: seed,
           brightness: Brightness.dark,
         ),
+        pageTransitionsTheme: _pageTransitions,
       );
 
   /// Pure-black dark variant for OLED screens. Same seed-derived accent

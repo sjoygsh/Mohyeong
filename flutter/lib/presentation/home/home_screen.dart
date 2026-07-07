@@ -199,7 +199,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 },
                 child: NotificationListener<ScrollNotification>(
                   onNotification: _onScroll,
-                  child: IndexedStack(
+                  child: _FadeThroughIndexedStack(
                     index: index,
                     children: HomeScreen._tabs
                         .map((t) => t.child)
@@ -326,6 +326,95 @@ class _IncognitoBanner extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// [IndexedStack] whose index changes play Mihon's tab-switch motion: the
+/// Kotlin HomeScreen wraps the current tab in `AnimatedContent` with
+/// `materialFadeThroughIn(initialScale = 1f) togetherWith
+/// materialFadeThroughOut` over `TabFadeDuration` (200ms) — a scale-free
+/// fade-through: the old tab fades out over the first 35% (accelerate
+/// easing), the new one fades in over the remaining 65% (decelerate easing).
+///
+/// Because the two fades never overlap, one opacity over the stack with the
+/// index swapped at the 35% crossover reproduces it exactly, while the
+/// [IndexedStack] keeps every tab alive (scroll positions, in-flight loads)
+/// just like the raw stack did.
+class _FadeThroughIndexedStack extends StatefulWidget {
+  const _FadeThroughIndexedStack({
+    required this.index,
+    required this.children,
+  });
+
+  final int index;
+  final List<Widget> children;
+
+  @override
+  State<_FadeThroughIndexedStack> createState() =>
+      _FadeThroughIndexedStackState();
+}
+
+class _FadeThroughIndexedStackState extends State<_FadeThroughIndexedStack>
+    with SingleTickerProviderStateMixin {
+  // Compose's FastOutLinearInEasing / LinearOutSlowInEasing, the pair
+  // materialFadeThroughOut/In use.
+  static const _accelerate = Cubic(0.4, 0.0, 1.0, 1.0);
+  static const _decelerate = Cubic(0.0, 0.0, 0.2, 1.0);
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200), // Kotlin TabFadeDuration
+  );
+
+  late final Animation<double> _opacity = _controller.drive(
+    TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 0.0).chain(CurveTween(curve: _accelerate)),
+        weight: 35,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 1.0).chain(CurveTween(curve: _decelerate)),
+        weight: 65,
+      ),
+    ]),
+  );
+
+  /// The tab the stack is currently showing; trails [widget.index] until the
+  /// fade-out completes.
+  late int _shown = widget.index;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_swapAtCrossover);
+  }
+
+  void _swapAtCrossover() {
+    if (_controller.value >= 0.35 && _shown != widget.index) {
+      setState(() => _shown = widget.index);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _FadeThroughIndexedStack old) {
+    super.didUpdateWidget(old);
+    if (widget.index != old.index) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: IndexedStack(index: _shown, children: widget.children),
     );
   }
 }

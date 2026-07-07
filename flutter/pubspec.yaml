@@ -69,6 +69,11 @@ dependencies:
   # advanced "clear cached covers" action calls emptyCache().
   flutter_cache_manager: ^3.3.1
 
+  # Material motion transitions (shared axis) — the Flutter counterpart of
+  # the `soup.compose.material.motion` library Mihon uses for its
+  # materialSharedAxisX screen transitions (Navigator.kt).
+  animations: ^2.0.11
+
   # Cupertino icons (iOS-style)
   cupertino_icons: ^1.0.8
 
