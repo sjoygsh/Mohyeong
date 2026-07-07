@@ -19,8 +19,9 @@ import 'webview_cookie_sync.dart' show registrableDomain;
 /// look like a browser. Copying the cookie can't fix that — the request itself
 /// has to originate from the browser engine.
 ///
-/// How it works: a single hidden 1×1 WebView (mounted by [OffscreenWebViewHost]
-/// in the app root, created lazily on first need) NAVIGATES to the target URL.
+/// How it works: a single hidden WebView (mounted by [OffscreenWebViewHost]
+/// in the app root, created lazily on first need and torn down again after
+/// [_idleTeardown] without requests) NAVIGATES to the target URL.
 /// A top-level navigation passes Cloudflare's managed challenge (the WebView
 /// runs the challenge JS and auto-redirects to the real page) — unlike an
 /// in-page `fetch()`/XHR, which Cloudflare serves the challenge to because of
@@ -38,7 +39,7 @@ class WebViewHttpClient {
   static final WebViewHttpClient instance = WebViewHttpClient._();
 
   WebViewController? _controller;
-  final Completer<void> _ready = Completer<void>();
+  Completer<void> _ready = Completer<void>();
 
   /// Flipped true the first time a Cloudflare-challenged request actually needs
   /// the browser. [OffscreenWebViewHost] watches it and only then creates the
@@ -64,6 +65,43 @@ class WebViewHttpClient {
 
   /// One WebView ⇒ one in-flight navigation at a time.
   Future<void> _lock = Future<void>.value();
+
+  /// Requests queued or in flight. While zero for [_idleTeardown], the WebView
+  /// is torn down: an idle platform view isn't free — every app frame pays a
+  /// compositing split for it — and Mihon likewise destroys its challenge
+  /// WebView after use rather than keeping one alive. The next request
+  /// re-activates a fresh one; the CF clearance cookie lives in the global
+  /// CookieManager, so it survives teardown.
+  int _pending = 0;
+  Timer? _idleTimer;
+  static const Duration _idleTeardown = Duration(seconds: 90);
+
+  void _noteBusy() {
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    _pending++;
+  }
+
+  void _noteDone() {
+    _pending--;
+    if (_pending <= 0) {
+      _pending = 0;
+      _idleTimer?.cancel();
+      _idleTimer = Timer(_idleTeardown, _teardownIfIdle);
+    }
+  }
+
+  void _teardownIfIdle() {
+    _idleTimer = null;
+    if (_pending > 0) return;
+    _controller = null;
+    _ready = Completer<void>();
+    _navHost = null;
+    _currentOrigin = null;
+    // The host watches this and unmounts the WebViewWidget; flipping it back
+    // to true later mounts a fresh one.
+    activate.value = false;
+  }
 
   /// Whether the last navigation's caller-supplied readiness predicate
   /// (`readyJs`) actually fired before the settle ceiling. Single-threaded
@@ -143,6 +181,7 @@ class WebViewHttpClient {
     if (!isAvailable || _giveUp) return Future.value(null);
     // Ask the host to create the WebView now (no-op if already up / on an
     // isolate without a host). _run then waits briefly for it to attach.
+    _noteBusy();
     activate.value = true;
     final completer = Completer<Map<String, dynamic>?>();
     // Serialise + outer timeout so a stuck platform call can't wedge the queue.
@@ -153,6 +192,8 @@ class WebViewHttpClient {
         completer.complete(res);
       } catch (_) {
         completer.complete(null);
+      } finally {
+        _noteDone();
       }
     });
     return completer.future;
@@ -235,6 +276,7 @@ class WebViewHttpClient {
     }
     final inflight = _imgInflight[url];
     if (inflight != null) return inflight; // share one fetch for duplicate URLs
+    _noteBusy();
     activate.value = true;
     final completer = Completer<Uint8List?>();
     _imgInflight[url] = completer.future;
@@ -249,6 +291,7 @@ class WebViewHttpClient {
         completer.complete(null);
       } finally {
         _imgInflight.remove(url);
+        _noteDone();
       }
     });
     return completer.future;
@@ -460,8 +503,18 @@ class _OffscreenWebViewHostState extends State<OffscreenWebViewHost> {
   }
 
   void _onActivate() {
-    if (_controller != null || !mounted) return;
-    setState(() => _controller = WebViewHttpClient.instance.buildController());
+    if (!mounted) return;
+    final active = WebViewHttpClient.instance.activate.value;
+    if (active && _controller == null) {
+      setState(
+        () => _controller = WebViewHttpClient.instance.buildController(),
+      );
+    } else if (!active && _controller != null) {
+      // Idle teardown: dropping the WebViewWidget releases the platform view
+      // (and its per-frame compositing cost); the next activation mounts a
+      // fresh controller.
+      setState(() => _controller = null);
+    }
   }
 
   @override
