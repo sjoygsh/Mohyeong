@@ -650,20 +650,23 @@ class _MangaCard extends ConsumerWidget {
         const <String>{};
     final inLibrary = favoritedUrls.contains(manga.url);
 
-    // Mirrors Mihon: covers already in the library are dimmed.
-    final coverImage = Opacity(
-      opacity: inLibrary ? 0.34 : 1,
-      child: (url == null || url.isEmpty)
-          ? Container(color: placeholder)
-          : SourceImage(
-              cacheWidth: 480,
-              url: url,
-              headers: imageHeaders,
-              fit: BoxFit.cover,
-              placeholder: (_) => Container(color: placeholder),
-              errorWidget: (_, _) => Container(color: placeholder),
-            ),
-    );
+    // Mirrors Mihon: covers already in the library are dimmed. The dim rides
+    // the image paint (Image.opacity) / a translucent fill instead of an
+    // Opacity widget, which saveLayered every dimmed cell each scrolled frame.
+    final fillColor =
+        inLibrary ? placeholder.withValues(alpha: 0.34) : placeholder;
+    final coverImage = (url == null || url.isEmpty)
+        ? Container(color: fillColor)
+        : SourceImage(
+            cacheWidth: 480,
+            url: url,
+            headers: imageHeaders,
+            fit: BoxFit.cover,
+            opacity:
+                inLibrary ? const AlwaysStoppedAnimation<double>(0.34) : null,
+            placeholder: (_) => Container(color: fillColor),
+            errorWidget: (_, _) => Container(color: fillColor),
+          );
 
     // Tap routes via `insertFromSource` (resolves an existing row when
     // (url, source) already matches, inserts a non-favourite row otherwise)

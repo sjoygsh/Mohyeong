@@ -39,10 +39,18 @@ class SourceImage extends StatelessWidget {
     this.rotateInvert = false,
     this.cacheWidth,
     this.fadeIn = true,
+    this.opacity,
   });
 
   final String url;
   final BoxFit fit;
+
+  /// Paint-time opacity forwarded to the underlying [Image] — applied while
+  /// rasterising the bitmap, so unlike an [Opacity] wrapper it costs no
+  /// compositing layer. Browse/global-search dim in-library covers with this
+  /// (Mihon's 0.34 alpha), which used to saveLayer every dimmed cell each
+  /// scrolled frame.
+  final Animation<double>? opacity;
 
   /// Fade the image in over 300ms when it loads asynchronously. Mirrors
   /// Mihon's global Coil `crossfade(300)` (App.kt) — on by default for
@@ -154,6 +162,7 @@ class SourceImage extends StatelessWidget {
       return Image(
         image: CropBordersImageProvider(_backendProvider()),
         fit: fit,
+        opacity: opacity,
         frameBuilder: _frameBuilder(),
         errorBuilder: (ctx, error, _) =>
             errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
@@ -165,6 +174,7 @@ class SourceImage extends StatelessWidget {
             ? _ArchiveImageProvider(url)
             : ResizeImage(_ArchiveImageProvider(url), width: cacheWidth),
         fit: fit,
+        opacity: opacity,
         frameBuilder: _frameBuilder(),
         errorBuilder: (ctx, error, _) =>
             errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
@@ -176,6 +186,7 @@ class SourceImage extends StatelessWidget {
             ? _SafImageProvider(url)
             : ResizeImage(_SafImageProvider(url), width: cacheWidth),
         fit: fit,
+        opacity: opacity,
         frameBuilder: _frameBuilder(),
         errorBuilder: (ctx, error, _) =>
             errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
@@ -186,6 +197,7 @@ class SourceImage extends StatelessWidget {
         File(_localPath),
         fit: fit,
         cacheWidth: cacheWidth,
+        opacity: opacity,
         frameBuilder: _frameBuilder(),
         errorBuilder: (ctx, error, _) =>
             errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
@@ -201,6 +213,7 @@ class SourceImage extends StatelessWidget {
           ? network
           : ResizeImage(network, width: cacheWidth),
       fit: fit,
+      opacity: opacity,
       gaplessPlayback: true,
       frameBuilder: _frameBuilder(),
       errorBuilder: (ctx, error, _) =>

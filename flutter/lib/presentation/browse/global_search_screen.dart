@@ -386,19 +386,33 @@ class _ResultCard extends ConsumerWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Mirrors Mihon: covers already in the library are dimmed.
-          Opacity(
-            opacity: inLibrary ? 0.34 : 1,
-            child: (url == null || url.isEmpty)
-                ? Container(color: placeholder)
-                : SourceImage(
-                    cacheWidth: 360,
-                    url: url,
-                    fit: BoxFit.cover,
-                    placeholder: (_) => Container(color: placeholder),
-                    errorWidget: (_, _) => Container(color: placeholder),
-                  ),
-          ),
+          // Mirrors Mihon: covers already in the library are dimmed. Painted
+          // via Image.opacity / a translucent fill rather than an Opacity
+          // widget, which saveLayered every dimmed cell each scrolled frame.
+          if (url == null || url.isEmpty)
+            Container(
+              color: inLibrary
+                  ? placeholder.withValues(alpha: 0.34)
+                  : placeholder,
+            )
+          else
+            SourceImage(
+              cacheWidth: 360,
+              url: url,
+              fit: BoxFit.cover,
+              opacity:
+                  inLibrary ? const AlwaysStoppedAnimation<double>(0.34) : null,
+              placeholder: (_) => Container(
+                color: inLibrary
+                    ? placeholder.withValues(alpha: 0.34)
+                    : placeholder,
+              ),
+              errorWidget: (_, _) => Container(
+                color: inLibrary
+                    ? placeholder.withValues(alpha: 0.34)
+                    : placeholder,
+              ),
+            ),
           DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
