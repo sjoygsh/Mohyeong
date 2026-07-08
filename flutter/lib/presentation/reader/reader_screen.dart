@@ -973,8 +973,8 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     }
   }
 
-  /// Pre-decode the next two pages so the swipe lands on an already-decoded
-  /// frame (Mihon's HttpPageLoader preloads ahead; PageView's implicit ±1
+  /// Pre-decode the next pages so the swipe lands on an already-decoded
+  /// frame (Mihon's HttpPageLoader preloads 4 ahead; PageView's implicit ±1
   /// only *builds* the neighbour — the decode itself still happened at
   /// swipe time, which is exactly when it stutters). The provider chain
   /// matches the displayed one (crop included) so the cache key is shared.
@@ -983,7 +983,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     final refs = _pageRefs;
     if (refs == null) return;
     final crop = ref.read(readerCropBordersProvider);
-    for (var i = page + 1; i <= page + 2 && i < refs.length; i++) {
+    for (var i = page + 1; i <= page + 4 && i < refs.length; i++) {
       final r = refs[i];
       ImageProvider provider =
           SourceImage.providerFor(r.url, headers: r.headers);

@@ -30,6 +30,12 @@ import 'presentation/security/auth_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Reader pages decode at full resolution (zoom needs it) — 10-15MB each,
+  // so Flutter's default 100MB ImageCache holds ~7 and evicts the read-ahead
+  // pages before the swipe/scroll reaches them, re-decoding at exactly the
+  // moment it stutters. 256MB matches the budget Coil ends up with on the
+  // same class of device (25% of a typical largeHeap memory class) in Mihon.
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 256 << 20;
   // These five inits are independent platform-channel round trips — start
   // them all before awaiting any so cold start pays the slowest one, not
   // the sum (they were strictly serial before).
