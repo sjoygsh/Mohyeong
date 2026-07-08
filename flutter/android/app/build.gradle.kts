@@ -45,6 +45,21 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Same .dev suffix as debug: release is (for now) the AOT
+            // daily-driver build for the test device, installed IN PLACE of
+            // the debug APK — same id + same debug keys means the app data
+            // (library, extensions) survives the swap, and a debug build can
+            // be swapped back on whenever a run-as workflow (extension
+            // side-load, DB pull) is needed. Debug's JIT was itself a big
+            // chunk of the perceived UI lag vs the Kotlin app. Remove the
+            // suffix (and add real signing) if a shipping build that
+            // in-place-updates app.mohyeong ever happens.
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            // No R8: Dart perf comes from AOT, not Java minification, and an
+            // unshrunk build can't hit plugin keep-rule gaps.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
