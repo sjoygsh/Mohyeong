@@ -93,6 +93,36 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   /// un-initialized manga.
   bool _autoFetchTried = false;
 
+  /// False while the entrance route transition is still running. The
+  /// description/tracker/chapter slivers wait for it (showing the same
+  /// spinner row the chapters-loading state uses) so their first build —
+  /// the heavy part of this screen — doesn't land inside the 300ms
+  /// shared-axis animation and drop its frames. Purely scheduling: content
+  /// appears one frame after the transition settles.
+  bool _routeSettled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_routeSettled) return;
+    final anim = ModalRoute.of(context)?.animation;
+    if (anim == null || anim.isCompleted) {
+      _routeSettled = true;
+      return;
+    }
+    late final AnimationStatusListener listener;
+    listener = (status) {
+      if (status == AnimationStatus.completed ||
+          status == AnimationStatus.dismissed) {
+        anim.removeStatusListener(listener);
+        if (mounted && !_routeSettled) {
+          setState(() => _routeSettled = true);
+        }
+      }
+    };
+    anim.addStatusListener(listener);
+  }
+
   /// Re-fetches the manga's metadata + chapter list from its source and
   /// persists both. Mihon parity with the "Refresh" overflow action —
   /// covers the case where the source has updated the description /
@@ -440,6 +470,17 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                       onOpenInBrowser: () => _openInBrowser(context, ref, manga),
                     ),
                   ),
+                  if (!_routeSettled)
+                    // Entrance transition still running — hold the heavy
+                    // content back behind the same spinner row the
+                    // chapters-loading state shows (see _routeSettled).
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    )
+                  else ...[
                   if (manga.favorite)
                     SliverToBoxAdapter(child: _TrackerPreviewBar(manga: manga)),
                   SliverToBoxAdapter(child: _DescriptionAndTags(manga: manga)),
@@ -476,6 +517,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                       selectedIds: _selectedChapterIds,
                       onToggleSelected: _toggleChapterSelected,
                     ),
+                  ],
                 ],
               ),
             ),
