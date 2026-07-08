@@ -3171,7 +3171,13 @@ class _ZoomablePageState extends ConsumerState<_ZoomablePage>
     final size = context.size;
     if (size == null || size.width <= 0 || size.height <= 0) return;
     final viewportAspect = size.width / size.height;
-    if (imageAspect <= viewportAspect) return; // not a wide page
+    // Kotlin landscapeZoom() requires an actually-landscape image
+    // (`sWidth > sHeight`) — comparing against the viewport aspect alone
+    // classified ordinary portrait pages (~0.7) as "wide" in a portrait
+    // viewport (~0.44) and started every page zoomed ~1.5x. The viewport
+    // check stays so the height-fill scale below is >1 (never zoom OUT
+    // below fit on a rotated/landscape device).
+    if (imageAspect <= 1 || imageAspect <= viewportAspect) return;
     final scale = size.height * imageAspect / size.width;
 
     var start = ref.read(readerZoomStartProvider);
