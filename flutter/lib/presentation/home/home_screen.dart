@@ -398,6 +398,33 @@ class _FadeThroughIndexedStackState extends State<_FadeThroughIndexedStack>
   void initState() {
     super.initState();
     _controller.addListener(_swapAtCrossover);
+    // Pre-warm the unvisited tabs during post-launch idle, one per pass, so
+    // the first switch to each lands on an already-built screen (its DB
+    // streams primed) instead of paying the whole first build inside the
+    // 200ms fade. Lazy-build keeps the cold-start critical path short; this
+    // moves the deferred cost into idle time shortly after instead of into
+    // the user's first tap.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 600), _warmNextTab);
+    });
+  }
+
+  void _warmNextTab() {
+    if (!mounted) return;
+    var next = -1;
+    for (var i = 0; i < widget.children.length; i++) {
+      if (!_built.contains(i)) {
+        next = i;
+        break;
+      }
+    }
+    if (next == -1) return;
+    setState(() => _built.add(next));
+    // Space the warms out a frame + a beat apart so five screen inits never
+    // stack into one long frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 250), _warmNextTab);
+    });
   }
 
   void _swapAtCrossover() {

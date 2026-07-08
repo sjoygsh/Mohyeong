@@ -182,5 +182,19 @@ void main() {
     await tester.tap(find.text('Updates'));
     await tester.pumpAndSettle();
     expect(find.text('No recent updates'), findsOneWidget);
+
+    // The remaining tabs pre-warm during post-launch idle (600ms after the
+    // first frame, then one per ~250ms) so the first visit doesn't pay the
+    // screen's first build inside the tab fade. Pump past the warm-up chain
+    // and the never-visited History tab should already be built offstage.
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    // skipOffstage: false — the pre-warmed tab is alive but offstage in the
+    // IndexedStack until actually selected.
+    expect(
+      find.text('Nothing read recently', skipOffstage: false),
+      findsOneWidget,
+    );
   });
 }
