@@ -599,7 +599,12 @@ class _ReaderBody extends ConsumerStatefulWidget {
 
 class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   bool _chromeVisible = true;
-  int _currentPage = 0;
+  // Current SOURCE page index. A ValueNotifier rather than setState state:
+  // a page turn repaints only the page-indicator label and the chrome
+  // slider (the two ValueListenableBuilder consumers in build) — a full
+  // body setState per turn rebuilt the entire viewport + chrome and was a
+  // per-swipe jank source on slower devices.
+  final ValueNotifier<int> _currentPage = ValueNotifier<int>(0);
   int _totalPages = 0;
   // Resolved page image handles, threaded up from the active page list so
   // the long-press "Set as cover" action can rebuild the current page's
@@ -703,7 +708,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     if (widget.data.chapter.id != old.data.chapter.id) {
       _autoMarkedRead = false;
       _downloadedAhead = false;
-      _currentPage = 0;
+      _currentPage.value = 0;
       _totalPages = 0;
       _pageRefs = null;
       _flashReadingMode();
@@ -716,6 +721,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
 
   @override
   void dispose() {
+    _currentPage.dispose();
     _autoHideTimer?.cancel();
     _flashTimer?.cancel();
     _overlayTimer?.cancel();
@@ -750,7 +756,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     _pageRefs = refs;
     // Warm the pages after the resume point once layout settles.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _precacheAhead(_currentPage);
+      if (mounted) _precacheAhead(_currentPage.value);
     });
   }
 
@@ -760,10 +766,11 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   /// decoded frame is the uniform equivalent here.
   Future<Uint8List> _currentPageBytes() async {
     final refs = _pageRefs;
-    if (refs == null || _currentPage < 0 || _currentPage >= refs.length) {
+    final page = _currentPage.value;
+    if (refs == null || page < 0 || page >= refs.length) {
       throw StateError("This page isn't ready yet.");
     }
-    final ref0 = refs[_currentPage];
+    final ref0 = refs[page];
     final provider = SourceImage.providerFor(ref0.url, headers: ref0.headers);
     final bytes = await encodeImageProviderToPng(provider);
     if (bytes == null || bytes.isEmpty) {
@@ -802,7 +809,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     final base = ReaderImageActions.buildValidFilename(
       '${widget.data.manga.title} - ${widget.data.chapter.name}',
     );
-    return '$base - ${_currentPage + 1}';
+    return '$base - ${_currentPage.value + 1}';
   }
 
   /// Capture the current page's bitmap and store it as [data.manga]'s custom
@@ -865,7 +872,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
         bytes,
         filename: '${_pageFilename()}.png',
         message: '${widget.data.manga.title}: ${widget.data.chapter.name}, '
-            'page ${_currentPage + 1}',
+            'page ${_currentPage.value + 1}',
       );
     } catch (e) {
       messenger.showSnackBar(
@@ -986,8 +993,8 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   }
 
   void _onPageChanged(int page) {
-    if (page != _currentPage) {
-      setState(() => _currentPage = page);
+    if (page != _currentPage.value) {
+      _currentPage.value = page;
       _maybeFlash();
     }
     // The transition page reports index == _totalPages; progress persists
@@ -1073,8 +1080,8 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   }
 
   void _seekTo(int page, {bool animate = false}) {
+    _currentPage.value = page;
     setState(() {
-      _currentPage = page;
       _seekTarget = page;
       _seekAnimate = animate;
       _seekRequestId++;
@@ -1325,7 +1332,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     // Mihon navigateToPan: a zoomed page consumes navigation steps as pans
     // until its edge is reached.
     if (widget.mode.isPaged && ref.read(readerNavigateToPanProvider)) {
-      final handle = _zoomRegistry[_currentPage];
+      final handle = _zoomRegistry[_currentPage.value];
       if (handle != null && handle.panTowards(forward: forward)) return;
     }
     // Step in DISPLAY-slot space via the live pager so both halves of a
@@ -1583,12 +1590,15 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
               right: 0,
               bottom: 0,
               child: IgnorePointer(
-                child: _PageIndicator(
-                  // Clamped: the transition page isn't a numbered page.
-                  current: _currentPage.clamp(0, _totalPages > 0 ? _totalPages - 1 : 0),
-                  total: _totalPages,
-                  color: widget.background
-                      .resolveOnColor(Theme.of(context).brightness),
+                child: ValueListenableBuilder<int>(
+                  valueListenable: _currentPage,
+                  builder: (context, page, _) => _PageIndicator(
+                    // Clamped: the transition page isn't a numbered page.
+                    current: page.clamp(0, _totalPages > 0 ? _totalPages - 1 : 0),
+                    total: _totalPages,
+                    color: widget.background
+                        .resolveOnColor(Theme.of(context).brightness),
+                  ),
                 ),
               ),
             ),
@@ -1608,20 +1618,23 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _ChapterNavigator(
-                      isRtl: widget.mode == ReadingMode.rightToLeft,
-                      onPreviousChapter: prev == null
-                          ? null
-                          : () => widget.onJumpToChapter(prev.id),
-                      onNextChapter: next == null
-                          ? null
-                          : () => widget.onJumpToChapter(next.id),
-                      currentPage:
-                          _currentPage.clamp(0, _totalPages > 0 ? _totalPages - 1 : 0),
-                      totalPages: _totalPages,
-                      showSlider: widget.mode.isPaged,
-                      onPageIndexChange: _seekTo,
-                      barColor: barColor,
+                    ValueListenableBuilder<int>(
+                      valueListenable: _currentPage,
+                      builder: (context, page, _) => _ChapterNavigator(
+                        isRtl: widget.mode == ReadingMode.rightToLeft,
+                        onPreviousChapter: prev == null
+                            ? null
+                            : () => widget.onJumpToChapter(prev.id),
+                        onNextChapter: next == null
+                            ? null
+                            : () => widget.onJumpToChapter(next.id),
+                        currentPage:
+                            page.clamp(0, _totalPages > 0 ? _totalPages - 1 : 0),
+                        totalPages: _totalPages,
+                        showSlider: widget.mode.isPaged,
+                        onPageIndexChange: _seekTo,
+                        barColor: barColor,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Material(
