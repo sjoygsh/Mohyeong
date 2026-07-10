@@ -929,7 +929,11 @@ class _LibraryBody extends ConsumerWidget {
                   child: _LibraryGrid(
                     items: sorted,
                     displayMode: displayMode,
-                    columns: MediaQuery.of(context).orientation ==
+                    // orientationOf, not MediaQuery.of: the latter
+                    // subscribes to every media-query aspect, so the whole
+                    // grid rebuilt per frame of the keyboard-inset animation
+                    // when library search focused.
+                    columns: MediaQuery.orientationOf(context) ==
                             Orientation.landscape
                         ? ref.watch(landscapeColumnsProvider)
                         : ref.watch(portraitColumnsProvider),
@@ -1893,7 +1897,7 @@ class _LibrarySettingsSheetState extends ConsumerState<_LibrarySettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final height = MediaQuery.of(context).size.height * 0.6;
+    final height = MediaQuery.sizeOf(context).height * 0.6;
     return SizedBox(
       height: height,
       child: DefaultTabController(
@@ -2087,7 +2091,7 @@ class _DisplayTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(libraryDisplayModeProvider);
     final isLandscape =
-        MediaQuery.of(context).orientation == Orientation.landscape;
+        MediaQuery.orientationOf(context) == Orientation.landscape;
     final columns = isLandscape
         ? ref.watch(landscapeColumnsProvider)
         : ref.watch(portraitColumnsProvider);
@@ -2184,7 +2188,7 @@ class _DisplayTab extends ConsumerWidget {
           onChanged: (v) =>
               ref.read(categoryNumberOfItemsProvider.notifier).setEnabled(v),
         ),
-        SizedBox(height: MediaQuery.of(context).padding.bottom),
+        SizedBox(height: MediaQuery.paddingOf(context).bottom),
       ],
     );
   }

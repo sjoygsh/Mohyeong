@@ -416,7 +416,7 @@ class _MigrationConfigSheetState extends State<_MigrationConfigSheet> {
         padding: EdgeInsets.only(
           left: 16,
           right: 16,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+          bottom: MediaQuery.viewInsetsOf(context).bottom + 16,
         ),
         child: SingleChildScrollView(
           child: Column(

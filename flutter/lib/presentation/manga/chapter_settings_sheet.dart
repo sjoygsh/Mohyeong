@@ -52,7 +52,7 @@ class _ChapterSettingsSheetState extends ConsumerState<ChapterSettingsSheet>
   Widget build(BuildContext context) {
     return SafeArea(
       child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.55,
+        height: MediaQuery.sizeOf(context).height * 0.55,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
