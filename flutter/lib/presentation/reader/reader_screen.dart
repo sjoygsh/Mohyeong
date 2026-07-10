@@ -90,23 +90,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _progressTimer = Timer(const Duration(milliseconds: 600), _flushProgress);
   }
 
-  /// Take (and clear) the coalesced page-progress write, if any.
-  (int chapterId, int page)? _takePendingProgress() {
+  void _flushProgress() {
     _progressTimer?.cancel();
     _progressTimer = null;
     final chapterId = _pendingProgressChapterId;
-    if (chapterId == null) return null;
+    if (chapterId == null) return;
     _pendingProgressChapterId = null;
-    return (chapterId, _pendingProgressPage);
-  }
-
-  void _flushProgress() {
-    final pending = _takePendingProgress();
-    if (pending == null) return;
     unawaited(
       ref
           .read(chapterRepositoryProvider)
-          .setLastPageRead(pending.$1, pending.$2),
+          .setLastPageRead(chapterId, _pendingProgressPage),
     );
   }
 
@@ -167,33 +160,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   @override
   void dispose() {
-    // Bank the final read-time slice for the chapter on screen and any
-    // coalesced page progress — but land the DB writes only after the pop
-    // transition settles. Flushing right here invalidates drift query
-    // streams, and the details/history screens sitting under the reader
-    // rebuilding mid-animation janks the exit. The values are captured now;
-    // only the write is deferred past the 300ms route transition.
-    final progress = _takePendingProgress();
-    final readTime = _takeReadTimeSlice();
-    if (progress != null || readTime != null) {
-      final chapterRepo = ref.read(chapterRepositoryProvider);
-      final historyRepo = ref.read(historyRepositoryProvider);
-      final readAt = DateTime.now();
-      Timer(const Duration(milliseconds: 400), () {
-        if (progress != null) {
-          unawaited(chapterRepo.setLastPageRead(progress.$1, progress.$2));
-        }
-        if (readTime != null) {
-          unawaited(
-            historyRepo.upsert(
-              chapterId: readTime.$1,
-              readAt: readAt,
-              timeReadMs: readTime.$2,
-            ),
-          );
-        }
-      });
-    }
+    // Bank the final read-time slice for the chapter on screen before tearing
+    // the reader down, and persist any coalesced page progress. NOTE: do not
+    // defer these writes "past the pop transition" — a popped route's State
+    // disposes only AFTER the exit animation completes, so they already land
+    // post-transition, and delaying them further opens a window where a fast
+    // reopen reads a stale lastPageRead / overwrites a newer last_read
+    // backwards (both DB writes are unconditional last-write-wins).
+    _flushProgress();
+    _flushReadTime();
     WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // Give the notch letterbox back to the rest of the app.
@@ -308,27 +283,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// current chapter's history row and refresh its `last_read` to now. Resets
   /// the session clock so the same span isn't counted twice. No-op when no
   /// chapter is being timed.
-  /// Take the elapsed foreground slice since the last checkpoint and reset
-  /// the session clock, without writing it. Null when nothing is being timed
-  /// or no time has passed.
-  (int chapterId, int elapsedMs)? _takeReadTimeSlice() {
+  void _flushReadTime() {
     final chapterId = _historyChapterId;
     final startedAt = _sessionStartedAt;
-    if (chapterId == null || startedAt == null) return null;
+    if (chapterId == null || startedAt == null) return;
     final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
     _sessionStartedAt = DateTime.now();
-    if (elapsedMs <= 0) return null;
-    return (chapterId, elapsedMs);
-  }
-
-  void _flushReadTime() {
-    final slice = _takeReadTimeSlice();
-    if (slice == null) return;
+    if (elapsedMs <= 0) return;
     unawaited(
       ref.read(historyRepositoryProvider).upsert(
-            chapterId: slice.$1,
+            chapterId: chapterId,
             readAt: DateTime.now(),
-            timeReadMs: slice.$2,
+            timeReadMs: elapsedMs,
           ),
     );
   }
@@ -509,15 +475,15 @@ Future<_ReaderData?> _loadReaderData(
   // Resolve the source even when the chapter is downloaded — the viewport
   // won't need it for pages, but the top bar's WebView / browser / share
   // overflow still wants the chapter URL (Kotlin gates those purely on the
-  // source being an HttpSource). Failure is only fatal when the pages must
-  // actually be fetched from the source.
-  Object? sourceError;
-  final sourceFuture = extRepo
-      .getSource(manga.source.toString())
-      .then<MangaSource?>((s) => s, onError: (Object e) {
-    sourceError = e;
-    return null;
-  });
+  // source being an HttpSource). The (source, error) pair keeps the failure
+  // with its future instead of a side-effect variable, so no await ordering
+  // below can misattribute it; a fetch error is only fatal when the pages
+  // must actually come from the source (no local download).
+  final sourceFuture = extRepo.getSource(manga.source.toString()).then<
+      (MangaSource?, Object?)>(
+    (s) => (s, null),
+    onError: (Object e) => (null, e),
+  );
   // Resolve incognito once for the whole session (1:1 with Mihon's
   // `by lazy { getIncognitoState.await(manga?.source) }`).
   final incognitoFuture = resolveIncognitoState(
@@ -558,8 +524,8 @@ Future<_ReaderData?> _loadReaderData(
   if (target == null) return null;
 
   final localPages = await localPagesFuture;
-  final source = await sourceFuture;
-  if (localPages != null) sourceError = null;
+  final (source, sourceFetchError) = await sourceFuture;
+  final sourceError = localPages == null ? sourceFetchError : null;
   final incognito = await incognitoFuture;
 
   return _ReaderData(
