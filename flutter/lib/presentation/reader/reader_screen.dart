@@ -90,16 +90,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _progressTimer = Timer(const Duration(milliseconds: 600), _flushProgress);
   }
 
-  void _flushProgress() {
+  /// Take (and clear) the coalesced page-progress write, if any.
+  (int chapterId, int page)? _takePendingProgress() {
     _progressTimer?.cancel();
     _progressTimer = null;
     final chapterId = _pendingProgressChapterId;
-    if (chapterId == null) return;
+    if (chapterId == null) return null;
     _pendingProgressChapterId = null;
+    return (chapterId, _pendingProgressPage);
+  }
+
+  void _flushProgress() {
+    final pending = _takePendingProgress();
+    if (pending == null) return;
     unawaited(
       ref
           .read(chapterRepositoryProvider)
-          .setLastPageRead(chapterId, _pendingProgressPage),
+          .setLastPageRead(pending.$1, pending.$2),
     );
   }
 
@@ -160,10 +167,33 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   @override
   void dispose() {
-    // Bank the final read-time slice for the chapter on screen before tearing
-    // the reader down, and persist any coalesced page progress.
-    _flushProgress();
-    _flushReadTime();
+    // Bank the final read-time slice for the chapter on screen and any
+    // coalesced page progress — but land the DB writes only after the pop
+    // transition settles. Flushing right here invalidates drift query
+    // streams, and the details/history screens sitting under the reader
+    // rebuilding mid-animation janks the exit. The values are captured now;
+    // only the write is deferred past the 300ms route transition.
+    final progress = _takePendingProgress();
+    final readTime = _takeReadTimeSlice();
+    if (progress != null || readTime != null) {
+      final chapterRepo = ref.read(chapterRepositoryProvider);
+      final historyRepo = ref.read(historyRepositoryProvider);
+      final readAt = DateTime.now();
+      Timer(const Duration(milliseconds: 400), () {
+        if (progress != null) {
+          unawaited(chapterRepo.setLastPageRead(progress.$1, progress.$2));
+        }
+        if (readTime != null) {
+          unawaited(
+            historyRepo.upsert(
+              chapterId: readTime.$1,
+              readAt: readAt,
+              timeReadMs: readTime.$2,
+            ),
+          );
+        }
+      });
+    }
     WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // Give the notch letterbox back to the rest of the app.
@@ -278,18 +308,27 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// current chapter's history row and refresh its `last_read` to now. Resets
   /// the session clock so the same span isn't counted twice. No-op when no
   /// chapter is being timed.
-  void _flushReadTime() {
+  /// Take the elapsed foreground slice since the last checkpoint and reset
+  /// the session clock, without writing it. Null when nothing is being timed
+  /// or no time has passed.
+  (int chapterId, int elapsedMs)? _takeReadTimeSlice() {
     final chapterId = _historyChapterId;
     final startedAt = _sessionStartedAt;
-    if (chapterId == null || startedAt == null) return;
+    if (chapterId == null || startedAt == null) return null;
     final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
     _sessionStartedAt = DateTime.now();
-    if (elapsedMs <= 0) return;
+    if (elapsedMs <= 0) return null;
+    return (chapterId, elapsedMs);
+  }
+
+  void _flushReadTime() {
+    final slice = _takeReadTimeSlice();
+    if (slice == null) return;
     unawaited(
       ref.read(historyRepositoryProvider).upsert(
-            chapterId: chapterId,
+            chapterId: slice.$1,
             readAt: DateTime.now(),
-            timeReadMs: elapsedMs,
+            timeReadMs: slice.$2,
           ),
     );
   }
@@ -454,16 +493,51 @@ Future<_ReaderData?> _loadReaderData(
   required Set<String> incognitoExtensions,
   required bool downloadedOnly,
 }) async {
+  // Every await below sits between tapping a chapter and the page-list
+  // fetch starting, so independent lookups run concurrently instead of as
+  // serial round-trips. The `.ignore()`s keep a rejection from surfacing as
+  // an uncaught zone error when an early `return null` abandons a future
+  // before its await; awaited errors still propagate to the reader's error
+  // state as before.
+  final siblingsFuture = chapterRepo.getByMangaId(mangaId)..ignore();
   final manga = await mangaRepo.getById(mangaId);
   if (manga == null) return null;
-  var siblings = await chapterRepo.getByMangaId(mangaId);
+
+  final localPagesFuture =
+      downloadRepo.localPagePaths(manga.source, manga.id, chapterId)
+        ..ignore();
+  // Resolve the source even when the chapter is downloaded — the viewport
+  // won't need it for pages, but the top bar's WebView / browser / share
+  // overflow still wants the chapter URL (Kotlin gates those purely on the
+  // source being an HttpSource). Failure is only fatal when the pages must
+  // actually be fetched from the source.
+  Object? sourceError;
+  final sourceFuture = extRepo
+      .getSource(manga.source.toString())
+      .then<MangaSource?>((s) => s, onError: (Object e) {
+    sourceError = e;
+    return null;
+  });
+  // Resolve incognito once for the whole session (1:1 with Mihon's
+  // `by lazy { getIncognitoState.await(manga?.source) }`).
+  final incognitoFuture = resolveIncognitoState(
+    globalIncognito: globalIncognito,
+    incognitoExtensions: incognitoExtensions,
+    extensionRepository: extRepo,
+    sourceId: manga.source,
+  )..ignore();
+  final downloadedIdsFuture = downloadedOnly && manga.source != 0
+      ? (downloadRepo.listDownloadedChapterIds(manga.source, manga.id)
+        ..ignore())
+      : null;
+
+  var siblings = await siblingsFuture;
   // "Downloaded only" mode: the reader's chapter list (prev/next navigation)
   // keeps only downloaded chapters, mirroring Kotlin's
   // `chaptersForReader.filterDownloaded(manga)`. Local manga are exempt and
   // the open chapter itself always stays in the list.
-  if (downloadedOnly && manga.source != 0) {
-    final downloadedIds =
-        await downloadRepo.listDownloadedChapterIds(manga.source, manga.id);
+  if (downloadedIdsFuture != null) {
+    final downloadedIds = await downloadedIdsFuture;
     siblings = siblings
         .where((c) => c.id == chapterId || downloadedIds.contains(c.id))
         .toList(growable: false);
@@ -483,30 +557,10 @@ Future<_ReaderData?> _loadReaderData(
   }
   if (target == null) return null;
 
-  final localPages =
-      await downloadRepo.localPagePaths(manga.source, manga.id, chapterId);
-
-  // Resolve the source even when the chapter is downloaded — the viewport
-  // won't need it for pages, but the top bar's WebView / browser / share
-  // overflow still wants the chapter URL (Kotlin gates those purely on the
-  // source being an HttpSource). Failure is only fatal when the pages must
-  // actually be fetched from the source.
-  MangaSource? source;
-  Object? sourceError;
-  try {
-    source = await extRepo.getSource(manga.source.toString());
-  } catch (e) {
-    if (localPages == null) sourceError = e;
-  }
-
-  // Resolve incognito once for the whole session (1:1 with Mihon's
-  // `by lazy { getIncognitoState.await(manga?.source) }`).
-  final incognito = await resolveIncognitoState(
-    globalIncognito: globalIncognito,
-    incognitoExtensions: incognitoExtensions,
-    extensionRepository: extRepo,
-    sourceId: manga.source,
-  );
+  final localPages = await localPagesFuture;
+  final source = await sourceFuture;
+  if (localPages != null) sourceError = null;
+  final incognito = await incognitoFuture;
 
   return _ReaderData(
     chapter: target,
