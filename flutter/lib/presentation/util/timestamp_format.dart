@@ -15,10 +15,17 @@ import 'package:intl/intl.dart';
 
 String _two(int v) => v.toString().padLeft(2, '0');
 
+/// One DateFormat per pattern (the empty "device default" pattern keys the
+/// locale short date). Constructing a DateFormat parses the ICU pattern —
+/// noticeable when every history tile did it on each scroll-in. Bounded:
+/// patterns come from the fixed `app_date_format` preset list.
+final Map<String, DateFormat> _formatCache = {};
+
 /// Formats just the date portion of [t] using [pattern]. An empty [pattern]
 /// uses the locale's short date (Mihon's "Default" option).
 String formatDate(DateTime t, String pattern) {
-  final format = pattern.isEmpty ? DateFormat.yMd() : DateFormat(pattern);
+  final format = _formatCache[pattern] ??=
+      pattern.isEmpty ? DateFormat.yMd() : DateFormat(pattern);
   return format.format(t);
 }
 

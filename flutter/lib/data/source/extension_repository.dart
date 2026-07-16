@@ -186,20 +186,32 @@ class ExtensionRepository {
   /// otherwise, if the id is a numeric source id, we find the installed
   /// extension whose slug hashes to it. Falls back to the original id when
   /// nothing matches (the subsequent readSource surfaces a clear error).
+  ///
+  /// Memoised per requested id: this runs on EVERY [getSource], and the
+  /// numeric-id form hashed every installed slug per call. The mapping only
+  /// changes on install/uninstall, which clears the memo in [_emitChanges]
+  /// (so a fallback recorded before an extension was installed re-resolves).
+  final Map<String, String> _slugCache = {};
+
   Future<String> _resolveSlug(String id) async {
-    if (id == LocalSource.sourceId) return id;
-    if (_loaded.containsKey(id)) return id;
-    final installed = await listInstalled();
-    for (final e in installed) {
-      if (e.id == id) return id;
-    }
-    final numeric = int.tryParse(id);
-    if (numeric != null) {
+    final hit = _slugCache[id];
+    if (hit != null) return hit;
+    final resolved = await () async {
+      if (id == LocalSource.sourceId) return id;
+      if (_loaded.containsKey(id)) return id;
+      final installed = await listInstalled();
       for (final e in installed) {
-        if (sourceNumericId(e.id) == numeric) return e.id;
+        if (e.id == id) return id;
       }
-    }
-    return id;
+      final numeric = int.tryParse(id);
+      if (numeric != null) {
+        for (final e in installed) {
+          if (sourceNumericId(e.id) == numeric) return e.id;
+        }
+      }
+      return id;
+    }();
+    return _slugCache[id] = resolved;
   }
 
   /// The installed-extension slug that owns [sourceId], or null when no
@@ -332,9 +344,11 @@ class ExtensionRepository {
   }
 
   Future<void> _emitChanges() async {
-    // The on-disk set just changed — drop the cache before re-reading so
-    // the emission (and every later listInstalled) reflects it.
+    // The on-disk set just changed — drop the caches before re-reading so
+    // the emission (and every later listInstalled / slug resolution)
+    // reflects it.
     _installedCache = null;
+    _slugCache.clear();
     _changes.add(await listInstalled());
   }
 

@@ -217,6 +217,9 @@ class JsRuntime {
   }
 
   void _cacheStore(String key, Map<String, dynamic> value) {
+    // Expired entries hold full HTML bodies; drop them now instead of
+    // letting them squat in the FIFO until 24 newer responses push them out.
+    _respCache.removeWhere((_, cached) => !cached.isFresh);
     _respCache[key] =
         _CachedResp(value, DateTime.now().add(const Duration(seconds: 12)));
     if (_respCache.length > 24) _respCache.remove(_respCache.keys.first);
