@@ -48,6 +48,13 @@ class JsRuntime {
   // TTL is short so a manual "Refresh from source" still re-fetches.
   static final Map<String, _CachedResp> _respCache = {};
 
+  // In-flight coalescing for idempotent fetches: the response cache only
+  // helps a caller that arrives AFTER the first fetch completed. Callers
+  // that run concurrently (parallel details()+chapters() of one series URL,
+  // the library-update sweep workers) share the same future instead of each
+  // firing their own network request.
+  static final Map<String, Future<Map<String, dynamic>>> _inflight = {};
+
   Future<Map<String, dynamic>> serviceHttp(dynamic args) async {
     try {
       final Map<String, dynamic> req = args is String
@@ -87,77 +94,126 @@ class JsRuntime {
       if (idempotent) {
         final cached = _respCache[cacheKey];
         if (cached != null && cached.isFresh) return cached.value;
-      }
-
-      // Forced sources (JS-SPA / content the page's own JS injects, e.g. mgeko,
-      // Madara admin-ajax chapters): skip the wasted Dio shell fetch (which on a
-      // SPA returns an empty page, and on a walled CDN can hang to timeout) and
-      // go straight to the JS-running browser. Fall back to Dio if it fails.
-      if (forceWebView && idempotent && webAvail) {
-        final via = await WebViewHttpClient.instance.request(
-          url, method: method, headers: headers, body: body,
-          settle: settle, readyJs: readyJs,
-        );
-        if (via != null) {
-          // A snapshot whose readyJs never fired may be content-less (cold
-          // WebView burned the settle window on a challenge) — return it so
-          // the caller can try parsing, but DON'T cache it: a cached bad
-          // snapshot would defeat the caller's retry for the whole TTL.
-          if (via['ready'] != false) _cacheStore(cacheKey, via);
-          return via;
-        }
-      }
-
-      final response = await dio.request<dynamic>(
-        url,
-        data: body,
-        options: Options(
+        final running = _inflight[cacheKey];
+        if (running != null) return await running;
+        final future = _fetch(
           method: method,
+          url: url,
           headers: headers,
-          responseType: ResponseType.plain,
-          validateStatus: (_) => true,
-        ),
-      );
-      final status = response.statusCode ?? 0;
-      final bodyStr = response.data?.toString() ?? '';
-
-      // Cloudflare fingerprint wall: Dio gets the "Just a moment" challenge even
-      // with a valid cf_clearance (TLS/JA3). Retry through the offscreen WebView
-      // (real Chromium fingerprint + shared clearance). Idempotent only — Dio
-      // already ran, so replaying a POST would double a side effect. (force was
-      // handled above; this also covers force when the WebView was unavailable.)
-      final challenge = _looksLikeCloudflareChallenge(status, bodyStr);
-      if (idempotent && webAvail && (forceWebView || challenge)) {
-        final via = await WebViewHttpClient.instance.request(
-          url, method: method, headers: headers, body: body,
-          settle: settle, readyJs: readyJs,
+          body: body,
+          idempotent: idempotent,
+          forceWebView: forceWebView,
+          settle: settle,
+          readyJs: readyJs,
+          cacheKey: cacheKey,
+          webAvail: webAvail,
         );
-        if (via != null) {
-          // A snapshot whose readyJs never fired may be content-less (cold
-          // WebView burned the settle window on a challenge) — return it so
-          // the caller can try parsing, but DON'T cache it: a cached bad
-          // snapshot would defeat the caller's retry for the whole TTL.
-          if (via['ready'] != false) _cacheStore(cacheKey, via);
-          return via;
+        _inflight[cacheKey] = future;
+        try {
+          return await future;
+        } finally {
+          _inflight.remove(cacheKey);
         }
       }
 
-      final result = {
-        'ok': true,
-        'status': status,
-        'body': bodyStr,
-        'headers': response.headers.map.map(
-          (k, v) => MapEntry(k, v.join(', ')),
-        ),
-        'final_url': response.realUri.toString(),
-      };
-      if (idempotent && status >= 200 && status < 300 && !challenge) {
-        _cacheStore(cacheKey, result);
-      }
-      return result;
+      return await _fetch(
+        method: method,
+        url: url,
+        headers: headers,
+        body: body,
+        idempotent: idempotent,
+        forceWebView: forceWebView,
+        settle: settle,
+        readyJs: readyJs,
+        cacheKey: cacheKey,
+        webAvail: webAvail,
+      );
     } catch (e) {
       return {'ok': false, 'error': e.toString()};
     }
+  }
+
+  /// The actual network dispatch behind [serviceHttp], after the cache and
+  /// in-flight-coalescing layers. May throw; [serviceHttp] wraps every path
+  /// in the `{'ok': false}` error envelope.
+  Future<Map<String, dynamic>> _fetch({
+    required String method,
+    required String url,
+    required Map<String, dynamic>? headers,
+    required Object? body,
+    required bool idempotent,
+    required bool forceWebView,
+    required Duration settle,
+    required String? readyJs,
+    required String cacheKey,
+    required bool webAvail,
+  }) async {
+    // Forced sources (JS-SPA / content the page's own JS injects, e.g. mgeko,
+    // Madara admin-ajax chapters): skip the wasted Dio shell fetch (which on a
+    // SPA returns an empty page, and on a walled CDN can hang to timeout) and
+    // go straight to the JS-running browser. Fall back to Dio if it fails.
+    if (forceWebView && idempotent && webAvail) {
+      final via = await WebViewHttpClient.instance.request(
+        url, method: method, headers: headers, body: body,
+        settle: settle, readyJs: readyJs,
+      );
+      if (via != null) {
+        // A snapshot whose readyJs never fired may be content-less (cold
+        // WebView burned the settle window on a challenge) — return it so
+        // the caller can try parsing, but DON'T cache it: a cached bad
+        // snapshot would defeat the caller's retry for the whole TTL.
+        if (via['ready'] != false) _cacheStore(cacheKey, via);
+        return via;
+      }
+    }
+
+    final response = await dio.request<dynamic>(
+      url,
+      data: body,
+      options: Options(
+        method: method,
+        headers: headers,
+        responseType: ResponseType.plain,
+        validateStatus: (_) => true,
+      ),
+    );
+    final status = response.statusCode ?? 0;
+    final bodyStr = response.data?.toString() ?? '';
+
+    // Cloudflare fingerprint wall: Dio gets the "Just a moment" challenge even
+    // with a valid cf_clearance (TLS/JA3). Retry through the offscreen WebView
+    // (real Chromium fingerprint + shared clearance). Idempotent only — Dio
+    // already ran, so replaying a POST would double a side effect. (force was
+    // handled above; this also covers force when the WebView was unavailable.)
+    final challenge = _looksLikeCloudflareChallenge(status, bodyStr);
+    if (idempotent && webAvail && (forceWebView || challenge)) {
+      final via = await WebViewHttpClient.instance.request(
+        url, method: method, headers: headers, body: body,
+        settle: settle, readyJs: readyJs,
+      );
+      if (via != null) {
+        // A snapshot whose readyJs never fired may be content-less (cold
+        // WebView burned the settle window on a challenge) — return it so
+        // the caller can try parsing, but DON'T cache it: a cached bad
+        // snapshot would defeat the caller's retry for the whole TTL.
+        if (via['ready'] != false) _cacheStore(cacheKey, via);
+        return via;
+      }
+    }
+
+    final result = {
+      'ok': true,
+      'status': status,
+      'body': bodyStr,
+      'headers': response.headers.map.map(
+        (k, v) => MapEntry(k, v.join(', ')),
+      ),
+      'final_url': response.realUri.toString(),
+    };
+    if (idempotent && status >= 200 && status < 300 && !challenge) {
+      _cacheStore(cacheKey, result);
+    }
+    return result;
   }
 
   void _cacheStore(String key, Map<String, dynamic> value) {
