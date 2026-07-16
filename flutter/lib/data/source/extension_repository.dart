@@ -58,11 +58,33 @@ class ExtensionRepository {
   /// Stream of installed-extension lists. Emits on every install/uninstall;
   /// subscribers (the extensions tab) re-render off this.
   Stream<List<InstalledExtension>> watchInstalled() async* {
-    yield await _storage.listInstalled();
+    yield await listInstalled();
     yield* _changes.stream;
   }
 
-  Future<List<InstalledExtension>> listInstalled() => _storage.listInstalled();
+  /// Cached installed-extension list. Every call previously re-read and
+  /// re-decoded every manifest.json on disk — and [_resolveSlug] runs on
+  /// every [getSource], so numeric-id lookups of non-numeric slugs (the
+  /// reader / details / downloader paths) paid that walk per fetch.
+  /// Invalidated by [_emitChanges] on install/uninstall; a failed read is
+  /// not cached. Consumers treat the shared list as read-only (they filter
+  /// into copies).
+  Future<List<InstalledExtension>>? _installedCache;
+
+  Future<List<InstalledExtension>> listInstalled() {
+    final cached = _installedCache;
+    if (cached != null) return cached;
+    late final Future<List<InstalledExtension>> future;
+    future = () async {
+      try {
+        return await _storage.listInstalled();
+      } catch (_) {
+        if (_installedCache == future) _installedCache = null;
+        rethrow;
+      }
+    }();
+    return _installedCache = future;
+  }
 
   /// Returns a loaded [MangaSource], spinning up its JS runtime the first
   /// time it's requested. Source id `'0'` is the built-in Local source,
@@ -167,7 +189,7 @@ class ExtensionRepository {
   Future<String> _resolveSlug(String id) async {
     if (id == LocalSource.sourceId) return id;
     if (_loaded.containsKey(id)) return id;
-    final installed = await _storage.listInstalled();
+    final installed = await listInstalled();
     for (final e in installed) {
       if (e.id == id) return id;
     }
@@ -186,7 +208,7 @@ class ExtensionRepository {
   /// slug stands in for the APK package name. Used to resolve per-extension
   /// incognito state.
   Future<String?> getExtensionPackage(int sourceId) async {
-    final installed = await _storage.listInstalled();
+    final installed = await listInstalled();
     for (final e in installed) {
       if (sourceNumericId(e.id) == sourceId) return e.id;
     }
@@ -222,7 +244,7 @@ class ExtensionRepository {
   /// (offline, dead URL) are skipped so one bad origin doesn't poison the
   /// whole check.
   Future<Set<String>> checkForUpdates() async {
-    final installed = await _storage.listInstalled();
+    final installed = await listInstalled();
     final updatable = <String>{};
     for (final e in installed) {
       final url = e.installUrl;
@@ -310,7 +332,10 @@ class ExtensionRepository {
   }
 
   Future<void> _emitChanges() async {
-    _changes.add(await _storage.listInstalled());
+    // The on-disk set just changed — drop the cache before re-reading so
+    // the emission (and every later listInstalled) reflects it.
+    _installedCache = null;
+    _changes.add(await listInstalled());
   }
 
   Future<void> close() async {
