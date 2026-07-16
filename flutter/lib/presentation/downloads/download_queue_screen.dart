@@ -9,8 +9,11 @@ import '../../data/download/download_repository.dart';
 /// (if any) followed by everything still queued, with a per-row cancel
 /// button for queued items and a "Clear queue" action in the app bar.
 ///
-/// Progress percentage is surfaced via the repository's broadcast event
-/// stream — we just rebuild on every event since the snapshot is small.
+/// Progress is surfaced via the repository's broadcast event stream.
+/// Structural events (enqueue / completion / pause / …) rebuild the
+/// screen; per-page `downloading` ticks — several a second during a bulk
+/// download — flow through per-chapter ValueNotifiers so only the running
+/// row's progress area repaints, not the whole queue.
 class DownloadQueueScreen extends ConsumerStatefulWidget {
   const DownloadQueueScreen({super.key});
 
@@ -21,11 +24,14 @@ class DownloadQueueScreen extends ConsumerStatefulWidget {
 
 class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
   StreamSubscription<DownloadEvent>? _sub;
-  // ChapterId -> last reported 0..1 progress. Stale rows are pruned when
-  // the snapshot drops them.
-  final Map<int, double> _progress = {};
-  // ChapterId -> (downloaded, total) page counts for the "x/y" label.
-  final Map<int, (int, int)> _pageCounts = {};
+  // ChapterId -> live progress/page-count payload for that row's tile.
+  // Entries persist until the screen closes (bounded by the chapters seen
+  // while open) so a notifier is never disposed under a listening builder.
+  final Map<int, ValueNotifier<_TileProgress?>> _ticks = {};
+  // ChapterIds we've seen a `downloading` event for — the first tick of a
+  // chapter means it just went queued -> running (row pins to the top),
+  // which IS a structural change worth one rebuild.
+  final Set<int> _running = <int>{};
 
   @override
   void initState() {
@@ -37,30 +43,40 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
   @override
   void dispose() {
     _sub?.cancel();
+    for (final n in _ticks.values) {
+      n.dispose();
+    }
     super.dispose();
   }
 
+  ValueNotifier<_TileProgress?> _tickFor(int chapterId) =>
+      _ticks[chapterId] ??= ValueNotifier<_TileProgress?>(null);
+
   void _onEvent(DownloadEvent ev) {
     if (!mounted) return;
-    setState(() {
-      switch (ev.state) {
-        case DownloadState.downloading:
-          if (ev.progress != null) _progress[ev.chapterId] = ev.progress!;
-          if (ev.downloadedPages != null && ev.totalPages != null) {
-            _pageCounts[ev.chapterId] = (ev.downloadedPages!, ev.totalPages!);
-          }
-        case DownloadState.completed:
-        case DownloadState.failed:
-        case DownloadState.deleted:
-          _progress.remove(ev.chapterId);
-          _pageCounts.remove(ev.chapterId);
-        case DownloadState.queued:
-        case DownloadState.queuePaused:
-        case DownloadState.queueResumed:
-        case DownloadState.networkWaiting:
-          break;
-      }
-    });
+    switch (ev.state) {
+      case DownloadState.downloading:
+        final tick = _tickFor(ev.chapterId);
+        final prev = tick.value;
+        tick.value = _TileProgress(
+          progress: ev.progress ?? prev?.progress,
+          counts: (ev.downloadedPages != null && ev.totalPages != null)
+              ? (ev.downloadedPages!, ev.totalPages!)
+              : prev?.counts,
+        );
+        if (_running.add(ev.chapterId)) setState(() {});
+      case DownloadState.completed:
+      case DownloadState.failed:
+      case DownloadState.deleted:
+        _running.remove(ev.chapterId);
+        _ticks[ev.chapterId]?.value = null;
+        setState(() {});
+      case DownloadState.queued:
+      case DownloadState.queuePaused:
+      case DownloadState.queueResumed:
+      case DownloadState.networkWaiting:
+        setState(() {});
+    }
   }
 
   @override
@@ -300,13 +316,6 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     bool inGroup = false,
     Key? key,
   }) {
-    final progress = _progress[item.chapter.id];
-    // Prefer the live event count; fall back to the snapshot's counts so a
-    // freshly opened screen still shows "x/y" before the next event.
-    final counts = _pageCounts[item.chapter.id] ??
-        (item.totalPages > 0
-            ? (item.downloadedPages, item.totalPages)
-            : null);
     final repo = ref.read(downloadRepositoryProvider);
     final chapterLabel = item.chapter.name.isEmpty
         ? 'Chapter ${item.chapter.chapterNumber}'
@@ -339,20 +348,35 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-          if (item.current && progress != null) ...[
-            const SizedBox(height: 4),
-            LinearProgressIndicator(value: progress),
-            if (counts != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                '${counts.$1}/${counts.$2}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ] else if (item.current) ...[
-            const SizedBox(height: 4),
-            const LinearProgressIndicator(),
-          ] else if (item.errored) ...[
+          if (item.current)
+            ValueListenableBuilder<_TileProgress?>(
+              valueListenable: _tickFor(item.chapter.id),
+              builder: (context, tick, _) {
+                final progress = tick?.progress;
+                // Prefer the live event count; fall back to the snapshot's
+                // counts so a freshly opened screen still shows "x/y"
+                // before the next event.
+                final counts = tick?.counts ??
+                    (item.totalPages > 0
+                        ? (item.downloadedPages, item.totalPages)
+                        : null);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 4),
+                    LinearProgressIndicator(value: progress),
+                    if (progress != null && counts != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '${counts.$1}/${counts.$2}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ],
+                );
+              },
+            )
+          else if (item.errored) ...[
             const SizedBox(height: 4),
             Text(
               'Download error',
@@ -385,6 +409,21 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
 
 /// Sort options for the download queue, mirroring Kotlin's Sort menu.
 enum _QueueSort { dateNewest, dateOldest, numberAsc, numberDesc }
+
+/// Live progress payload for one queue row, pushed through its
+/// ValueNotifier by the screen's single event subscription. Either side
+/// may lag the other (events don't always carry both), so each event
+/// merges with the previous value.
+class _TileProgress {
+  const _TileProgress({this.progress, this.counts});
+
+  /// Last reported 0..1 progress, null until the first progress-bearing
+  /// event (renders as an indeterminate bar).
+  final double? progress;
+
+  /// (downloaded, total) page counts for the "x/y" label.
+  final (int, int)? counts;
+}
 
 /// Small rounded count badge shown next to the app-bar title (Kotlin's
 /// Pill).
