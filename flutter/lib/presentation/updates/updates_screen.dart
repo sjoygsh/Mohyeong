@@ -41,6 +41,14 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
   late final Stream<List<LibraryUpdate>> _updatesStream =
       ref.read(updatesRepositoryProvider).watchAll();
 
+  /// Memoised filter + day-grouping output (same shape as the History tab's
+  /// memo). Recomputed when the stream emits, the query or a filter axis
+  /// changes, or the calendar day rolls over — not on every selection-tap /
+  /// keystroke rebuild.
+  Object? _visibleKey;
+  List<LibraryUpdate> _visible = const [];
+  List<Object> _rows = const [];
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -224,19 +232,49 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
         // shape as the History tab search field. Empty query is a fast
         // pass-through (no allocation, no per-row toLower).
         final q = _query.toLowerCase();
-        final visible = updates.where((u) {
-          if (q.isNotEmpty && !u.mangaTitle.toLowerCase().contains(q)) {
-            return false;
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final visibleKey = (
+          updates,
+          q,
+          filters.unread,
+          filters.bookmark,
+          filters.hideMutedScanlators,
+          today,
+        );
+        if (visibleKey != _visibleKey) {
+          _visible = updates.where((u) {
+            if (q.isNotEmpty && !u.mangaTitle.toLowerCase().contains(q)) {
+              return false;
+            }
+            if (!applyTriState(filters.unread, () => !u.read)) return false;
+            if (!applyTriState(filters.bookmark, () => u.bookmark)) {
+              return false;
+            }
+            if (filters.hideMutedScanlators && u.isScanlatorMuted) {
+              return false;
+            }
+            return true;
+          }).toList(growable: false);
+          // Insert a day header whenever the date_fetch day changes. The
+          // stream is already ordered date_fetch DESC, so a single pass
+          // groups it -- mirrors Kotlin `getUiModel()`'s insertSeparators
+          // over `dateFetch.toLocalDate()`.
+          final rows = <Object>[];
+          String? lastLabel;
+          for (final u in _visible) {
+            final label = _dayLabel(u.dateFetch, today);
+            if (label != lastLabel) {
+              rows.add(label);
+              lastLabel = label;
+            }
+            rows.add(u);
           }
-          if (!applyTriState(filters.unread, () => !u.read)) return false;
-          if (!applyTriState(filters.bookmark, () => u.bookmark)) {
-            return false;
-          }
-          if (filters.hideMutedScanlators && u.isScanlatorMuted) {
-            return false;
-          }
-          return true;
-        }).toList(growable: false);
+          _rows = rows;
+          _visibleKey = visibleKey;
+        }
+        final visible = _visible;
+        final rows = _rows;
         return PopScope(
           // System back closes the in-flight thing first: selection >
           // search > pop.
@@ -356,20 +394,6 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                 }
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
-                }
-                // Insert a day header whenever the date_fetch day changes.
-                // The stream is already ordered date_fetch DESC, so a single
-                // pass groups it -- mirrors Kotlin `getUiModel()`'s
-                // insertSeparators over `dateFetch.toLocalDate()`.
-                final rows = <Object>[];
-                String? lastLabel;
-                for (final u in visible) {
-                  final label = _dayLabel(u.dateFetch);
-                  if (label != lastLabel) {
-                    rows.add(label);
-                    lastLabel = label;
-                  }
-                  rows.add(u);
                 }
                 return RefreshIndicator(
                   onRefresh: _refresh,
@@ -611,10 +635,10 @@ class _Thumb extends StatelessWidget {
 /// Relative day label for a `date_fetch` epoch-ms value. Mirrors Kotlin's
 /// `relativeDateText`: Today / Yesterday / weekday (within a week) / absolute
 /// date. Kept identical to the History tab's grouping for visual consistency.
-String _dayLabel(int epochMs) {
+/// [today] is the midnight-truncated current date, resolved once by the
+/// caller rather than per row.
+String _dayLabel(int epochMs, DateTime today) {
   final t = DateTime.fromMillisecondsSinceEpoch(epochMs);
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
   final that = DateTime(t.year, t.month, t.day);
   final diffDays = today.difference(that).inDays;
   if (diffDays == 0) return 'Today';
