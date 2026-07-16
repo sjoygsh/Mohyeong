@@ -28,6 +28,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   late final Stream<List<HistoryWithContext>> _historyStream =
       ref.read(historyRepositoryProvider).watchRecent();
 
+  /// Memoised filter + day-grouping output. Recomputed only when the stream
+  /// emits a new list, the query changes, or the calendar day rolls over
+  /// (the key carries today's date so "Today"/"Yesterday" labels stay
+  /// correct across midnight) — not on every rebuild.
+  Object? _rowsKey;
+  List<_Row> _rows = const [];
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -117,15 +124,22 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             // Day grouping runs after filtering so the day
             // headers only reflect the visible rows.
             final q = _query.toLowerCase();
-            final filtered = q.isEmpty
-                ? entries
-                : entries
-                    .where((e) => e.mangaTitle.toLowerCase().contains(q))
-                    .toList(growable: false);
-            if (filtered.isEmpty) {
+            final now = DateTime.now();
+            final today = DateTime(now.year, now.month, now.day);
+            final rowsKey = (entries, q, today);
+            if (rowsKey != _rowsKey) {
+              final filtered = q.isEmpty
+                  ? entries
+                  : entries
+                      .where((e) => e.mangaTitle.toLowerCase().contains(q))
+                      .toList(growable: false);
+              _rows = _groupByDay(filtered, today);
+              _rowsKey = rowsKey;
+            }
+            final rows = _rows;
+            if (rows.isEmpty) {
               return const Center(child: Text('No results found'));
             }
-            final rows = _groupByDay(filtered);
             return ListView.builder(
               itemCount: rows.length,
               itemBuilder: (_, i) {
@@ -183,12 +197,14 @@ class _EntryRow extends _Row {
 
 /// Walks the entries in stream-order (most recent first) and emits a
 /// `_HeaderRow` whenever the day label changes. Entries with `readAt
-/// == null` are bucketed under "Unknown".
-List<_Row> _groupByDay(List<HistoryWithContext> entries) {
+/// == null` are bucketed under "Unknown". [today] is the midnight-
+/// truncated current date, resolved once by the caller rather than per
+/// entry.
+List<_Row> _groupByDay(List<HistoryWithContext> entries, DateTime today) {
   final rows = <_Row>[];
   String? lastLabel;
   for (final e in entries) {
-    final label = _dayLabel(e.readAt);
+    final label = _dayLabel(e.readAt, today);
     if (label != lastLabel) {
       rows.add(_HeaderRow(label));
       lastLabel = label;
@@ -198,10 +214,8 @@ List<_Row> _groupByDay(List<HistoryWithContext> entries) {
   return rows;
 }
 
-String _dayLabel(DateTime? t) {
+String _dayLabel(DateTime? t, DateTime today) {
   if (t == null) return 'Unknown';
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
   final that = DateTime(t.year, t.month, t.day);
   final diffDays = today.difference(that).inDays;
   if (diffDays == 0) return 'Today';
