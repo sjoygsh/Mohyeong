@@ -152,25 +152,37 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   Future<void> _refreshMangaFromSource(Manga manga,
       {bool silent = false}) async {
     if (_refreshingDetails) return;
-    if (!silent) {
-      setState(() => _refreshingDetails = true);
-    } else {
-      _refreshingDetails = true;
-    }
+    // Both paths setState: the flag drives the app-bar spinner AND the
+    // chapters-area loading row, and the first-open auto-fetch used to give
+    // no feedback at all — the screen sat on "No chapters" looking frozen
+    // until the source answered. [silent] only suppresses the snackbars.
+    setState(() => _refreshingDetails = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final extRepo = ref.read(extensionRepositoryProvider);
       final mangaRepo = ref.read(mangaRepositoryProvider);
       final chapterRepo = ref.read(chapterRepositoryProvider);
       final source = await extRepo.getSource(manga.source.toString());
-      final details = await source.fetchMangaDetails(
-        SourceManga(url: manga.url, title: manga.title),
-      );
-      await mangaRepo.applySourceDetails(manga.id, details);
-      final fetched = await source.fetchChapterList(
-        SourceManga(url: manga.url, title: manga.title),
-      );
-      final added = await chapterRepo.syncChaptersWithSource(manga.id, fetched);
+      final sourceManga = SourceManga(url: manga.url, title: manga.title);
+      // Details and the chapter list fetch+persist CONCURRENTLY — 1:1 with
+      // Mihon's fetchAllFromSource (async details / async chapters,
+      // awaitAll); running them serially doubled the first-open wait on
+      // slow sources. Extensions that fetch the same series URL for both
+      // still hit the network once via serviceHttp's in-flight coalescing.
+      // eagerError stays false so one side failing doesn't drop the other
+      // side's persisted result; the first error still reaches the catch.
+      var added = const <Chapter>[];
+      await Future.wait([
+        () async {
+          final details = await source.fetchMangaDetails(sourceManga);
+          await mangaRepo.applySourceDetails(manga.id, details);
+        }(),
+        () async {
+          final fetched = await source.fetchChapterList(sourceManga);
+          added =
+              await chapterRepo.syncChaptersWithSource(manga.id, fetched);
+        }(),
+      ]);
       final updater = ref.read(libraryUpdaterProvider);
       await updater.recomputeFetchInterval(
         manga,
@@ -187,10 +199,10 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
       if (!mounted || silent) return;
       messenger.showSnackBar(SnackBar(content: Text('Refresh failed: $e')));
     } finally {
-      if (silent) {
-        _refreshingDetails = false;
-      } else if (mounted) {
+      if (mounted) {
         setState(() => _refreshingDetails = false);
+      } else {
+        _refreshingDetails = false;
       }
     }
   }
@@ -520,6 +532,18 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                   if (chapSnap.hasError)
                     SliverToBoxAdapter(child: _Error(error: chapSnap.error!))
                   else if (!chapSnap.hasData)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    )
+                  else if (chapters.isEmpty &&
+                      (_refreshingDetails ||
+                          (!_autoFetchTried && !manga.initialized)))
+                    // Nothing local yet and a source fetch is in flight (or
+                    // the on-open auto-fetch is about to fire post-frame):
+                    // show the loading row, not a premature "No chapters".
                     const SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.all(24),
