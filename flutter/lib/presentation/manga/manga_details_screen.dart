@@ -101,6 +101,24 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   /// appears one frame after the transition settles.
   bool _routeSettled = false;
 
+  /// Memoised header sliver children + next-unread resolution. Every
+  /// chapter-selection tap setStates this whole State; identical cached
+  /// widget instances make Element.updateChild skip the header subtrees
+  /// (cover + blur backdrop, action row, tracker bar, description/tags,
+  /// notes), and the next-unread filter+sort over the full chapter list
+  /// reruns only on a new chapters emission. Keys are instance identities:
+  /// each drift emission delivers fresh Manga/List objects.
+  Manga? _headerManga;
+  Widget? _infoBox;
+  Widget? _actionRow;
+  Widget? _trackerBar;
+  Widget? _descriptionAndTags;
+  Widget? _notesPreview;
+  List<Chapter>? _nextUnreadChapters;
+  Manga? _nextUnreadManga;
+  Chapter? _nextUnread;
+  bool _anyRead = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -336,7 +354,29 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
             stream: _chaptersStream,
             builder: (context, chapSnap) {
               final chapters = chapSnap.data ?? const <Chapter>[];
-              final nextUnread = _pickNextUnread(chapters, manga);
+              if (!identical(_headerManga, manga)) {
+                _headerManga = manga;
+                _infoBox = _MangaInfoBox(manga: manga);
+                _actionRow = _MangaActionRow(
+                  manga: manga,
+                  onAddToLibrary: () => _toggleFavorite(context, ref, manga),
+                  onEditInterval: () =>
+                      _editFetchInterval(context, ref, manga),
+                  onTracking: () => _openTrackingSheet(context, manga),
+                  onOpenInBrowser: () => _openInBrowser(context, ref, manga),
+                );
+                _trackerBar = _TrackerPreviewBar(manga: manga);
+                _descriptionAndTags = _DescriptionAndTags(manga: manga);
+                _notesPreview = _NotesPreview(manga: manga);
+              }
+              if (!identical(_nextUnreadChapters, chapters) ||
+                  !identical(_nextUnreadManga, manga)) {
+                _nextUnreadChapters = chapters;
+                _nextUnreadManga = manga;
+                _nextUnread = _pickNextUnread(chapters, manga);
+                _anyRead = chapters.any((c) => c.read);
+              }
+              final nextUnread = _nextUnread;
               return PopScope(
                 canPop: !_selecting,
                 onPopInvokedWithResult: (didPop, _) {
@@ -348,7 +388,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                       : _ContinueReadingFab(
                           manga: manga,
                           chapter: nextUnread,
-                          anyRead: chapters.any((c) => c.read),
+                          anyRead: _anyRead,
                         ),
                   bottomNavigationBar: _selecting
                       ? _ChapterSelectionBar(
@@ -459,17 +499,8 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                         ),
                       ],
                     ),
-                  SliverToBoxAdapter(child: _MangaInfoBox(manga: manga)),
-                  SliverToBoxAdapter(
-                    child: _MangaActionRow(
-                      manga: manga,
-                      onAddToLibrary: () => _toggleFavorite(context, ref, manga),
-                      onEditInterval: () =>
-                          _editFetchInterval(context, ref, manga),
-                      onTracking: () => _openTrackingSheet(context, manga),
-                      onOpenInBrowser: () => _openInBrowser(context, ref, manga),
-                    ),
-                  ),
+                  SliverToBoxAdapter(child: _infoBox!),
+                  SliverToBoxAdapter(child: _actionRow!),
                   if (!_routeSettled)
                     // Entrance transition still running — hold the heavy
                     // content back behind the same spinner row the
@@ -482,10 +513,10 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                     )
                   else ...[
                   if (manga.favorite)
-                    SliverToBoxAdapter(child: _TrackerPreviewBar(manga: manga)),
-                  SliverToBoxAdapter(child: _DescriptionAndTags(manga: manga)),
+                    SliverToBoxAdapter(child: _trackerBar!),
+                  SliverToBoxAdapter(child: _descriptionAndTags!),
                   if (manga.favorite && manga.notes.trim().isNotEmpty)
-                    SliverToBoxAdapter(child: _NotesPreview(manga: manga)),
+                    SliverToBoxAdapter(child: _notesPreview!),
                   if (chapSnap.hasError)
                     SliverToBoxAdapter(child: _Error(error: chapSnap.error!))
                   else if (!chapSnap.hasData)
