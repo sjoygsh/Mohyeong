@@ -776,7 +776,7 @@ Future<void> _resumeNextUnread(
   );
 }
 
-class _LibraryBody extends ConsumerWidget {
+class _LibraryBody extends ConsumerStatefulWidget {
   const _LibraryBody({
     required this.items,
     required this.categories,
@@ -815,25 +815,63 @@ class _LibraryBody extends ConsumerWidget {
   final ValueChanged<List<int>> onVisibleIdsResolved;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_LibraryBody> createState() => _LibraryBodyState();
+}
+
+class _LibraryBodyState extends ConsumerState<_LibraryBody> {
+  // Memoised derived state (same idea as the details screen's _renderKey):
+  // the parent setStates on every selection tap / search keystroke / update
+  // spinner tick, and re-filtering + re-sorting the whole library per
+  // rebuild was the dominant per-frame cost. Keys compare the input
+  // lists/sets by identity (drift emits a fresh list per change; the async
+  // filter sets are memoised in the parent) and the scalar knobs by value.
+  Object? _bucketsKey;
+  List<Category> _visibleCategories = const [];
+  List<int> _tabIds = const [];
+  Map<int, int>? _categoryCounts;
+
+  Object? _pipelineKey;
+  List<LibraryItem> _sorted = const [];
+  List<int> _visibleIds = const [];
+
+  List<LibraryItem>? _topReadItems;
+  List<LibraryItem> _topRead = const [];
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items;
+    final categories = widget.categories;
+    final query = widget.query;
+    final sort = widget.sort;
+    final filters = widget.filters;
+
     // Determine which categories actually contain at least one item; we
     // only show tabs when there's something to switch between.
-    final usedIds = <int>{};
-    for (final item in items) {
-      usedIds.addAll(item.categoryIds);
+    final bucketsKey = (items, categories);
+    if (bucketsKey != _bucketsKey) {
+      final usedIds = <int>{};
+      for (final item in items) {
+        usedIds.addAll(item.categoryIds);
+      }
+      // Filter the user-defined categories down to those with items. The
+      // system "uncategorized" (id=0) is included implicitly if any item is
+      // there.
+      final visibleCategories = [
+        for (final c in categories)
+          if (usedIds.contains(c.id)) c,
+      ]..sort((a, b) => a.order.compareTo(b.order));
+      final hasUncategorized = usedIds.contains(Category.uncategorizedId);
+      _visibleCategories = visibleCategories;
+      _tabIds = <int>[
+        if (hasUncategorized) Category.uncategorizedId,
+        ...visibleCategories.map((c) => c.id),
+      ];
+      _categoryCounts = null;
+      _bucketsKey = bucketsKey;
     }
-    // Filter the user-defined categories down to those with items. The
-    // system "uncategorized" (id=0) is included implicitly if any item is
-    // there.
-    final visibleCategories = [
-      for (final c in categories)
-        if (usedIds.contains(c.id)) c,
-    ]..sort((a, b) => a.order.compareTo(b.order));
-    final hasUncategorized = usedIds.contains(Category.uncategorizedId);
-    final tabIds = <int>[
-      if (hasUncategorized) Category.uncategorizedId,
-      ...visibleCategories.map((c) => c.id),
-    ];
+    final tabIds = _tabIds;
+    final visibleCategories = _visibleCategories;
+
     // Tabs follow Mihon's `showPageTabs`: shown when the "Show category tabs"
     // pref is on OR a search is active — but still hidden when there's only
     // one effective bucket to switch between. The per-tab count follows the
@@ -847,44 +885,71 @@ class _LibraryBody extends ConsumerWidget {
 
     // Pick the active id. Default to the first available tab if the
     // currently-selected one disappeared.
-    final activeId = showTabs && !tabIds.contains(selectedCategoryId)
+    final activeId = showTabs && !tabIds.contains(widget.selectedCategoryId)
         ? tabIds.first
-        : selectedCategoryId;
-
-    final filteredByCategory = showTabs
-        ? items.where((it) => it.inCategory(activeId)).toList(growable: false)
-        : items;
-
-    final qLower = query.toLowerCase();
-    final filteredByQuery = qLower.isEmpty
-        ? filteredByCategory
-        : filteredByCategory
-            .where((it) => it.manga.title.toLowerCase().contains(qLower))
-            .toList(growable: false);
-
-    final filtered = filters.isActive
-        ? filteredByQuery
-            .where((it) => filters.matches(
-                  it,
-                  downloadedKeys: downloadedKeys,
-                  trackedMangaIds: trackedMangaIds,
-                ))
-            .toList(growable: false)
-        : filteredByQuery;
+        : widget.selectedCategoryId;
 
     // Random sort shuffles deterministically against the persisted seed
     // (regenerated whenever the user re-picks Random); every other axis uses
-    // the comparator.
-    final sorted = sort.axis == LibrarySortAxis.random
-        ? ([...filtered]..shuffle(math.Random(ref.watch(randomSortSeedProvider))))
-        : ([...filtered]..sort(_compare(sort)));
+    // the comparator. The seed is only watched while Random is active so
+    // re-picks elsewhere don't invalidate the memo.
+    final randomSeed = sort.axis == LibrarySortAxis.random
+        ? ref.watch(randomSortSeedProvider)
+        : 0;
+
+    final pipelineKey = (
+      items,
+      query,
+      sort.axis,
+      sort.direction,
+      randomSeed,
+      filters.unread,
+      filters.started,
+      filters.bookmarked,
+      filters.completed,
+      filters.downloaded,
+      filters.tracked,
+      widget.downloadedKeys,
+      widget.trackedMangaIds,
+      showTabs ? activeId : null,
+    );
+    if (pipelineKey != _pipelineKey) {
+      final filteredByCategory = showTabs
+          ? items
+              .where((it) => it.inCategory(activeId))
+              .toList(growable: false)
+          : items;
+
+      final qLower = query.toLowerCase();
+      final filteredByQuery = qLower.isEmpty
+          ? filteredByCategory
+          : filteredByCategory
+              .where((it) => it.manga.title.toLowerCase().contains(qLower))
+              .toList(growable: false);
+
+      final filtered = filters.isActive
+          ? filteredByQuery
+              .where((it) => filters.matches(
+                    it,
+                    downloadedKeys: widget.downloadedKeys,
+                    trackedMangaIds: widget.trackedMangaIds,
+                  ))
+              .toList(growable: false)
+          : filteredByQuery;
+
+      _sorted = sort.axis == LibrarySortAxis.random
+          ? ([...filtered]..shuffle(math.Random(randomSeed)))
+          : ([...filtered]..sort(_compare(sort)));
+      _visibleIds =
+          _sorted.map((it) => it.manga.id).toList(growable: false);
+      _pipelineKey = pipelineKey;
+    }
+    final sorted = _sorted;
 
     // Surface the visible ids so the toolbar's Select-all / Invert act on the
     // displayed set. Pure assignment in the parent (no setState), so it's safe
     // to call during build.
-    onVisibleIdsResolved(
-      sorted.map((it) => it.manga.id).toList(growable: false),
-    );
+    widget.onVisibleIdsResolved(_visibleIds);
 
     // "Most read" carousel — top 5 favourites by completion ratio
     // (`readCount / totalCount`), only entries the user has actually
@@ -894,18 +959,20 @@ class _LibraryBody extends ConsumerWidget {
     // through" affordance.
     final showCarousel = ref.watch(showMostReadCarouselProvider);
     final showCarouselNow = showCarousel && query.isEmpty;
-    final topRead = showCarouselNow
-        ? (items
-                .where((it) => it.totalCount > 0 && it.readCount > 0)
-                .toList(growable: false)
-              ..sort((a, b) {
-                final aRatio = a.readCount / a.totalCount;
-                final bRatio = b.readCount / b.totalCount;
-                return bRatio.compareTo(aRatio);
-              }))
-            .take(5)
-            .toList(growable: false)
-        : const <LibraryItem>[];
+    if (showCarouselNow && !identical(_topReadItems, items)) {
+      _topReadItems = items;
+      _topRead = (items
+              .where((it) => it.totalCount > 0 && it.readCount > 0)
+              .toList(growable: false)
+            ..sort((a, b) {
+              final aRatio = a.readCount / a.totalCount;
+              final bRatio = b.readCount / b.totalCount;
+              return bRatio.compareTo(aRatio);
+            }))
+          .take(5)
+          .toList(growable: false);
+    }
+    final topRead = showCarouselNow ? _topRead : const <LibraryItem>[];
 
     return Column(
       children: [
@@ -917,18 +984,23 @@ class _LibraryBody extends ConsumerWidget {
             categories: visibleCategories,
             activeId: activeId,
             showCount: showCount,
-            countFor: (id) =>
-                items.where((it) => it.inCategory(id)).length,
-            onTabSelected: onCategoryChanged,
+            // Counted once per items emission (lazily, only while tabs show
+            // counts) instead of a where().length walk per tab per rebuild.
+            countFor: (id) => (_categoryCounts ??= {
+              for (final tabId in tabIds)
+                tabId: items.where((it) => it.inCategory(tabId)).length,
+            })[id] ??
+                0,
+            onTabSelected: widget.onCategoryChanged,
           ),
         Expanded(
           child: sorted.isEmpty
               ? _EmptyMatches(query: query)
               : RefreshIndicator(
-                  onRefresh: onRefresh,
+                  onRefresh: widget.onRefresh,
                   child: _LibraryGrid(
                     items: sorted,
-                    displayMode: displayMode,
+                    displayMode: widget.displayMode,
                     // orientationOf, not MediaQuery.of: the latter
                     // subscribes to every media-query aspect, so the whole
                     // grid rebuilt per frame of the keyboard-inset animation
@@ -937,9 +1009,9 @@ class _LibraryBody extends ConsumerWidget {
                             Orientation.landscape
                         ? ref.watch(landscapeColumnsProvider)
                         : ref.watch(portraitColumnsProvider),
-                    selected: selected,
-                    selecting: selecting,
-                    onToggleSelected: onToggleSelected,
+                    selected: widget.selected,
+                    selecting: widget.selecting,
+                    onToggleSelected: widget.onToggleSelected,
                   ),
                 ),
         ),
