@@ -113,6 +113,39 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// only when it actually changes.
   ReaderOrientation? _appliedOrientation;
 
+  /// False while the entrance route transition is still running. The
+  /// viewport waits for it behind the same spinner the data load shows:
+  /// for downloaded/cached chapters the data future resolves in tens of
+  /// milliseconds, so the viewport's first build — plus the first page's
+  /// full-resolution decode and texture upload, and the per-manga
+  /// orientation lock (a whole-screen relayout) — used to land inside the
+  /// 300ms shared-axis animation and drop its frames. Same scheduling
+  /// trick as the details screen's `_routeSettled`; content appears one
+  /// frame after the transition settles, when a heavy frame is invisible.
+  bool _routeSettled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_routeSettled) return;
+    final anim = ModalRoute.of(context)?.animation;
+    if (anim == null || anim.isCompleted) {
+      _routeSettled = true;
+      return;
+    }
+    late final AnimationStatusListener listener;
+    listener = (status) {
+      if (status == AnimationStatus.completed ||
+          status == AnimationStatus.dismissed) {
+        anim.removeStatusListener(listener);
+        if (mounted && !_routeSettled) {
+          setState(() => _routeSettled = true);
+        }
+      }
+    };
+    anim.addStatusListener(listener);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -331,7 +364,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           if (snap.hasError) {
             return _ReaderError(error: snap.error!);
           }
-          if (!snap.hasData) {
+          if (!snap.hasData || !_routeSettled) {
             return Center(
               child: CircularProgressIndicator(
                 color: background.resolveOnColor(brightness),
