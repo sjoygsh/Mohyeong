@@ -114,113 +114,159 @@ class DownloadRepository {
     return _chapterDirSync(await _root(), sourceId, mangaId, chapterId);
   }
 
-  Future<bool> isDownloaded(int sourceId, int mangaId, int chapterId) async {
-    final dir = await _chapterDir(sourceId, mangaId, chapterId);
-    final marker = File(p.join(dir.path, '.done'));
-    return marker.exists();
+  // ---- Downloaded-chapters index ------------------------------------
+  //
+  // In-memory view of every fully-downloaded chapter, keyed by
+  // [encodeMangaKey] with the set of downloaded chapter ids as the value.
+  // Built from ONE walk of the downloads tree on first use, then maintained
+  // incrementally by the mutators in this class (the only writers of `.done`
+  // markers). Before this, every consumer re-walked directories with a
+  // `.done` stat per chapter: the library badges provider after each
+  // completion burst, the details screen on every open, the library filter
+  // per resolve, bulk enqueue per chapter.
+  //
+  // Blind spot (documented, matches where the old event-driven refreshes
+  // were already blind): the scheduled background update runs in its own
+  // engine isolate with its own repository, so its auto-downloads don't flow
+  // through these mutators. [invalidateDownloadedIndex] is called on app
+  // resume to pick those up; reading pages stays correct regardless because
+  // [localPagePaths] checks the real filesystem.
+  Map<String, Set<int>>? _downloadedIdx;
+  Future<Map<String, Set<int>>>? _downloadedIdxBuild;
+  int _downloadedIdxGen = 0;
+
+  Future<Map<String, Set<int>>> _downloadedIndex() {
+    final idx = _downloadedIdx;
+    if (idx != null) return Future.value(idx);
+    final gen = _downloadedIdxGen;
+    return _downloadedIdxBuild ??= () async {
+      final built = await _walkDownloadedIndex();
+      if (gen != _downloadedIdxGen) {
+        // Invalidated while walking — the snapshot may miss out-of-band
+        // changes; rebuild on the current generation.
+        return _downloadedIndex();
+      }
+      _downloadedIdx = built;
+      _downloadedIdxBuild = null;
+      return built;
+    }();
   }
 
-  /// Number of fully-downloaded chapters for [mangaId]. Walks the
-  /// `<root>/<sourceId>/<mangaId>/` directory and counts subdirectories
-  /// that carry a `.done` marker. Returns 0 if the manga has no
-  /// downloads directory at all.
-  Future<int> countDownloadedForManga(int sourceId, int mangaId) async {
+  Future<Map<String, Set<int>>> _walkDownloadedIndex() async {
     final root = await _root();
-    final mangaDir = Directory(
-      p.join(root.path, sourceId.toString(), mangaId.toString()),
-    );
-    if (!await mangaDir.exists()) return 0;
-    var count = 0;
-    await for (final entity in mangaDir.list()) {
-      if (entity is Directory) {
-        final marker = File(p.join(entity.path, '.done'));
-        if (await marker.exists()) count++;
+    final out = <String, Set<int>>{};
+    if (!await root.exists()) return out;
+    await for (final sourceDir in root.list()) {
+      if (sourceDir is! Directory) continue;
+      final sourceId = int.tryParse(p.basename(sourceDir.path));
+      if (sourceId == null) continue;
+      await for (final mangaDir in sourceDir.list()) {
+        if (mangaDir is! Directory) continue;
+        final mangaId = int.tryParse(p.basename(mangaDir.path));
+        if (mangaId == null) continue;
+        final ids = <int>{};
+        await for (final chapterDir in mangaDir.list()) {
+          if (chapterDir is! Directory) continue;
+          final chapterId = int.tryParse(p.basename(chapterDir.path));
+          if (chapterId == null) continue;
+          final marker = File(p.join(chapterDir.path, '.done'));
+          if (await marker.exists()) ids.add(chapterId);
+        }
+        if (ids.isNotEmpty) out[encodeMangaKey(sourceId, mangaId)] = ids;
       }
     }
-    return count;
+    return out;
+  }
+
+  /// Applies [mutate] to the index: immediately when it's built, after the
+  /// in-flight build when one is running (the walk may or may not have seen
+  /// the filesystem change — applying on top is correct either way for the
+  /// idempotent add/remove mutations this class does), and not at all when
+  /// no one has requested the index yet (the eventual first walk reads the
+  /// post-mutation filesystem).
+  void _updateDownloadedIndex(
+    void Function(Map<String, Set<int>> index) mutate,
+  ) {
+    final idx = _downloadedIdx;
+    if (idx != null) {
+      mutate(idx);
+      return;
+    }
+    final building = _downloadedIdxBuild;
+    if (building != null) {
+      building.then((_) {
+        final built = _downloadedIdx;
+        if (built != null) mutate(built);
+      });
+    }
+  }
+
+  void _indexAdd(int sourceId, int mangaId, int chapterId) {
+    _updateDownloadedIndex(
+      (idx) =>
+          (idx[encodeMangaKey(sourceId, mangaId)] ??= <int>{}).add(chapterId),
+    );
+  }
+
+  void _indexRemove(int sourceId, int mangaId, int chapterId) {
+    _updateDownloadedIndex((idx) {
+      final key = encodeMangaKey(sourceId, mangaId);
+      final ids = idx[key];
+      if (ids != null && ids.remove(chapterId) && ids.isEmpty) {
+        idx.remove(key);
+      }
+    });
+  }
+
+  /// Drops the in-memory index so the next reader rebuilds it from the
+  /// filesystem. Call when downloads may have changed outside this isolate
+  /// (the scheduled background update's engine isolate owns a separate
+  /// repository instance) — the home shell calls this on app resume.
+  void invalidateDownloadedIndex() {
+    _downloadedIdxGen++;
+    _downloadedIdx = null;
+    _downloadedIdxBuild = null;
+  }
+
+  Future<bool> isDownloaded(int sourceId, int mangaId, int chapterId) async {
+    final idx = await _downloadedIndex();
+    return idx[encodeMangaKey(sourceId, mangaId)]?.contains(chapterId) ??
+        false;
+  }
+
+  /// Number of fully-downloaded chapters for [mangaId]. Returns 0 if the
+  /// manga has no downloads at all.
+  Future<int> countDownloadedForManga(int sourceId, int mangaId) async {
+    final idx = await _downloadedIndex();
+    return idx[encodeMangaKey(sourceId, mangaId)]?.length ?? 0;
   }
 
   /// Total number of fully-downloaded chapters across every source/manga.
-  /// Walks the whole downloads tree counting `.done` markers. Mirrors
-  /// Mihon's `DownloadManager.getDownloadCount()` (used by the Statistics
-  /// screen). Returns 0 when nothing has been downloaded yet.
+  /// Mirrors Mihon's `DownloadManager.getDownloadCount()` (used by the
+  /// Statistics screen). Returns 0 when nothing has been downloaded yet.
   Future<int> totalDownloadedCount() async {
-    final root = await _root();
-    if (!await root.exists()) return 0;
+    final idx = await _downloadedIndex();
     var count = 0;
-    await for (final sourceDir in root.list()) {
-      if (sourceDir is! Directory) continue;
-      await for (final mangaDir in sourceDir.list()) {
-        if (mangaDir is! Directory) continue;
-        await for (final chapterDir in mangaDir.list()) {
-          if (chapterDir is! Directory) continue;
-          final marker = File(p.join(chapterDir.path, '.done'));
-          if (await marker.exists()) count++;
-        }
-      }
+    for (final ids in idx.values) {
+      count += ids.length;
     }
     return count;
   }
 
   /// Set of `(sourceId, mangaId)` pairs that have at least one fully
-  /// downloaded chapter. Walks the downloads root once so the library
-  /// filter sheet can apply a Downloaded axis without an N-call probe.
-  /// Returns each pair as a `"source/manga"` string key ([encodeMangaKey]).
+  /// downloaded chapter, so the library filter sheet can apply a Downloaded
+  /// axis without an N-call probe. Returns each pair as a `"source/manga"`
+  /// string key ([encodeMangaKey]).
   Future<Set<String>> listMangaWithAnyDownload() async {
-    final root = await _root();
-    if (!await root.exists()) return const <String>{};
-    final out = <String>{};
-    await for (final sourceDir in root.list()) {
-      if (sourceDir is! Directory) continue;
-      final sourceId = int.tryParse(p.basename(sourceDir.path));
-      if (sourceId == null) continue;
-      await for (final mangaDir in sourceDir.list()) {
-        if (mangaDir is! Directory) continue;
-        final mangaId = int.tryParse(p.basename(mangaDir.path));
-        if (mangaId == null) continue;
-        // First .done marker wins; bail out for this manga as soon as
-        // any chapter qualifies.
-        var hasOne = false;
-        await for (final chapterDir in mangaDir.list()) {
-          if (chapterDir is! Directory) continue;
-          final marker = File(p.join(chapterDir.path, '.done'));
-          if (await marker.exists()) {
-            hasOne = true;
-            break;
-          }
-        }
-        if (hasOne) out.add(encodeMangaKey(sourceId, mangaId));
-      }
-    }
-    return out;
+    final idx = await _downloadedIndex();
+    return idx.keys.toSet();
   }
 
-  /// Downloaded-chapter counts for EVERY manga, from one walk of the
-  /// downloads tree (key = [encodeMangaKey]). Feeds the library's
-  /// downloaded badges — the per-card `countDownloadedForManga` probe
-  /// re-walked a directory every time a card scrolled into view.
+  /// Downloaded-chapter counts for EVERY manga (key = [encodeMangaKey]).
+  /// Feeds the library's downloaded badges.
   Future<Map<String, int>> downloadedCountsByManga() async {
-    final root = await _root();
-    if (!await root.exists()) return const <String, int>{};
-    final out = <String, int>{};
-    await for (final sourceDir in root.list()) {
-      if (sourceDir is! Directory) continue;
-      final sourceId = int.tryParse(p.basename(sourceDir.path));
-      if (sourceId == null) continue;
-      await for (final mangaDir in sourceDir.list()) {
-        if (mangaDir is! Directory) continue;
-        final mangaId = int.tryParse(p.basename(mangaDir.path));
-        if (mangaId == null) continue;
-        var count = 0;
-        await for (final chapterDir in mangaDir.list()) {
-          if (chapterDir is! Directory) continue;
-          final marker = File(p.join(chapterDir.path, '.done'));
-          if (await marker.exists()) count++;
-        }
-        if (count > 0) out[encodeMangaKey(sourceId, mangaId)] = count;
-      }
-    }
-    return out;
+    final idx = await _downloadedIndex();
+    return {for (final e in idx.entries) e.key: e.value.length};
   }
 
   /// Composite `(sourceId, mangaId)` key shared with
@@ -233,25 +279,14 @@ class DownloadRepository {
 
   /// Set of chapter ids that are fully downloaded for [mangaId]. Cheaper
   /// than calling [isDownloaded] per chapter when filtering a chapter
-  /// list, since it walks the manga directory once.
+  /// list. Returns a copy — callers mutate it as their own live state.
   Future<Set<int>> listDownloadedChapterIds(
     int sourceId,
     int mangaId,
   ) async {
-    final root = await _root();
-    final mangaDir = Directory(
-      p.join(root.path, sourceId.toString(), mangaId.toString()),
-    );
-    if (!await mangaDir.exists()) return const <int>{};
-    final ids = <int>{};
-    await for (final entity in mangaDir.list()) {
-      if (entity is! Directory) continue;
-      final marker = File(p.join(entity.path, '.done'));
-      if (!await marker.exists()) continue;
-      final parsed = int.tryParse(p.basename(entity.path));
-      if (parsed != null) ids.add(parsed);
-    }
-    return ids;
+    final idx = await _downloadedIndex();
+    final ids = idx[encodeMangaKey(sourceId, mangaId)];
+    return ids == null ? const <int>{} : {...ids};
   }
 
   /// Returns the list of locally-cached page paths for a downloaded chapter,
@@ -298,6 +333,7 @@ class DownloadRepository {
     if (await dir.exists()) {
       await dir.delete(recursive: true);
     }
+    _indexRemove(sourceId, mangaId, chapterId);
     _events.add(
       DownloadEvent(chapterId: chapterId, state: DownloadState.deleted),
     );
@@ -326,6 +362,9 @@ class DownloadRepository {
       }
     }
     await mangaDir.delete(recursive: true);
+    _updateDownloadedIndex(
+      (idx) => idx.remove(encodeMangaKey(sourceId, mangaId)),
+    );
     return count;
   }
 
@@ -552,6 +591,7 @@ class DownloadRepository {
       } else {
         await File(p.join(dir.path, '.done')).create();
       }
+      _indexAdd(manga.source, manga.id, chapter.id);
       _events.add(
         DownloadEvent(chapterId: chapter.id, state: DownloadState.completed),
       );
@@ -562,6 +602,7 @@ class DownloadRepository {
         // flagged errored).
         final dir = await _chapterDir(manga.source, manga.id, chapter.id);
         if (await dir.exists()) await dir.delete(recursive: true);
+        _indexRemove(manga.source, manga.id, chapter.id);
         _events.add(
           DownloadEvent(chapterId: chapter.id, state: DownloadState.deleted),
         );

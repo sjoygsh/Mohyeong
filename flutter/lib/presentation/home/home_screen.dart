@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/base/base_preferences.dart';
+import '../../data/download/download_repository.dart';
 import '../../data/library/library_update_preference.dart';
 import '../../data/source/extension_updates.dart';
 import '../../data/source/incognito_preferences.dart';
@@ -100,13 +101,37 @@ Widget _badged(int tabIndex, Icon icon, int updatesBadge, int extBadge) {
   return Badge(label: Text('$count'), child: icon);
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   /// Whether the bottom navigation bar is currently shown. It hides while the
   /// active tab is scrolled toward its content and reappears when scrolling
   /// back toward the top — a 1:1 port of Kotlin HomeScreen's
   /// `hideOnScrollConnection` driving an `AnimatedVisibility` with
   /// `expandVertically()` / `shrinkVertically()`.
   bool _bottomNavVisible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The scheduled background update runs in its own engine isolate with
+    // its own DownloadRepository, so chapters it auto-downloaded while the
+    // app was backgrounded never pass through this isolate's index
+    // mutators. Re-walk on the next read after coming back to the front.
+    if (state == AppLifecycleState.resumed) {
+      ref.read(downloadRepositoryProvider).invalidateDownloadedIndex();
+    }
+  }
 
   /// Mirrors the Kotlin `onPreScroll` thresholds (±1px): scrolling toward the
   /// end of the list hides the nav, scrolling back toward the top reveals it.
