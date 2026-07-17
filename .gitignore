@@ -18,7 +18,9 @@ local.properties
 app/google-services.json
 
 # JS source extensions live locally only (user decision 2026-07-04) — backed up
-# in extensions_backup/ (also untracked).
-flutter/_ext_*.js
+# in extensions_backup/ (also untracked). The underscore prefix is the local
+# scratch convention (device pulls, dev dumps, generated manifests) — none of
+# it belongs in git.
+flutter/_*
 flutter/.tmp_manifests/
 extensions_backup/
