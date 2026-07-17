@@ -13,16 +13,16 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # State management
+  # State management (providers are hand-written; the riverpod codegen stack
+  # was declared but never used and has been removed).
   flutter_riverpod: ^2.5.1
-  riverpod_annotation: ^2.3.5
 
   # Database (Drift = type-safe SQL, closest analog to existing SQLDelight).
   # drift_flutter is capped below 0.2.7 because 0.2.7 introduced the
-  # `isolateDebugLog` parameter that requires drift 2.28+. Bumping drift
-  # past 2.27 cascades into drift_dev >=2.28 needing build ^3.0.0, which
-  # conflicts with riverpod_generator 2.x's `build ^2.0.0` pin. Staying on
-  # drift 2.21 + drift_flutter 0.2.6 sidesteps both transitive conflicts.
+  # `isolateDebugLog` parameter that requires drift 2.28+. (A second reason —
+  # riverpod_generator's `build ^2.0.0` pin conflicting with drift_dev
+  # >=2.28 — went away when that unused dep was removed; the cap stays for
+  # stability until a deliberate drift upgrade.)
   drift: ^2.21.0
   drift_flutter: ">=0.2.0 <0.2.7"
   sqlite3_flutter_libs: ^0.5.24
@@ -74,9 +74,6 @@ dependencies:
   # materialSharedAxisX screen transitions (Navigator.kt).
   animations: ^2.0.11
 
-  # Cupertino icons (iOS-style)
-  cupertino_icons: ^1.0.8
-
   # Runtime access to the version: from pubspec (versionName/versionCode)
   # for the About screen.
   package_info_plus: ^8.0.0
@@ -114,11 +111,6 @@ dev_dependencies:
   # drift_dev's minor version must track drift's minor version exactly.
   drift_dev: ^2.21.0
   build_runner: ^2.4.0
-
-  # Riverpod code generation
-  riverpod_generator: ^2.4.0
-  custom_lint: ^0.6.0
-  riverpod_lint: ^2.3.10
 
 flutter:
   uses-material-design: true
