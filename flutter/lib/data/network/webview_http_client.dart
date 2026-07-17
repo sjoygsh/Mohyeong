@@ -116,9 +116,28 @@ class WebViewHttpClient {
   final Map<int, Completer<Map<String, dynamic>>> _imgPending = {};
   int _imgId = 0;
 
-  /// Small cache of WebView-fetched cover bytes (covers are tiny) so repeated
-  /// rebuilds / scroll recycling don't re-extract the same image.
+  /// Small cache of WebView-fetched image bytes so repeated rebuilds /
+  /// scroll recycling don't re-extract the same image. Keyed by
+  /// resolution-variant ('c:' cover-sized / 'f:' full-resolution — the same
+  /// URL must not satisfy both). Byte-budgeted: full-resolution reader pages
+  /// run to megabytes, so a count cap alone could pin hundreds of MB.
   final Map<String, Uint8List> _imgCache = {};
+  int _imgCacheBytes = 0;
+  static const int _imgCacheMaxEntryBytes = 4 * 1024 * 1024;
+  static const int _imgCacheBudgetBytes = 32 * 1024 * 1024;
+
+  void _imgCacheStore(String cacheKey, Uint8List bytes) {
+    if (bytes.isEmpty || bytes.length > _imgCacheMaxEntryBytes) return;
+    final prev = _imgCache.remove(cacheKey);
+    if (prev != null) _imgCacheBytes -= prev.length;
+    _imgCache[cacheKey] = bytes;
+    _imgCacheBytes += bytes.length;
+    while (_imgCache.length > 256 || _imgCacheBytes > _imgCacheBudgetBytes) {
+      final oldest = _imgCache.keys.first;
+      _imgCacheBytes -= _imgCache[oldest]!.length;
+      _imgCache.remove(oldest);
+    }
+  }
 
   /// Negative cache (url -> expiry epoch ms): a cover that failed isn't retried
   /// for a while, so a broken tile recycling into view doesn't re-drive the
@@ -256,16 +275,24 @@ class WebViewHttpClient {
 
   /// Fetches a cover/image's bytes through the browser, for sources whose CDN
   /// 403s non-browser clients (the plain HTTP image path can't pass the fingerprint
-  /// wall). Parks the WebView on the image's own origin (so the in-page <img>
-  /// is same-origin and the canvas isn't tainted, and Cloudflare is passed by
-  /// the browser fingerprint), then draws it to a canvas and reads the bytes.
+  /// wall). Parks the WebView on the image's own origin (so the in-page fetch
+  /// is same-origin and an <img> canvas isn't tainted, and Cloudflare is passed
+  /// by the browser fingerprint), then reads the bytes.
+  ///
+  /// [fullResolution] returns the image's ORIGINAL bytes (in-page `fetch`,
+  /// falling back to a natural-size canvas re-encode) — reader pages need
+  /// this. When false (covers/thumbnails), the image is downscaled to a
+  /// 480px grid-cover size before crossing the JS channel, which is far
+  /// cheaper for a scrolling grid but unusable for a full-screen page.
   /// Returns null when unavailable/failed so the caller shows its error box.
   Future<Uint8List?> fetchImageBytes(
     String url, {
     Duration timeout = const Duration(seconds: 30),
+    bool fullResolution = false,
   }) {
     if (!isAvailable || _giveUp) return Future.value(null);
-    final cached = _imgCache[url];
+    final cacheKey = fullResolution ? 'f:$url' : 'c:$url';
+    final cached = _imgCache[cacheKey];
     if (cached != null) return Future.value(cached);
     final failedUntil = _imgFailed[url];
     if (failedUntil != null) {
@@ -274,15 +301,15 @@ class WebViewHttpClient {
       }
       _imgFailed.remove(url);
     }
-    final inflight = _imgInflight[url];
+    final inflight = _imgInflight[cacheKey];
     if (inflight != null) return inflight; // share one fetch for duplicate URLs
     _noteBusy();
     activate.value = true;
     final completer = Completer<Uint8List?>();
-    _imgInflight[url] = completer.future;
+    _imgInflight[cacheKey] = completer.future;
     _lock = _lock.then((_) async {
       try {
-        final bytes = await _runImg(url, timeout)
+        final bytes = await _runImg(url, timeout, fullResolution, cacheKey)
             .timeout(timeout + const Duration(seconds: 10), onTimeout: () => null);
         if (bytes == null) _noteImgFailure(url);
         completer.complete(bytes);
@@ -290,7 +317,7 @@ class WebViewHttpClient {
         _noteImgFailure(url);
         completer.complete(null);
       } finally {
-        _imgInflight.remove(url);
+        _imgInflight.remove(cacheKey);
         _noteDone();
       }
     });
@@ -303,7 +330,12 @@ class WebViewHttpClient {
     if (_imgFailed.length > 256) _imgFailed.remove(_imgFailed.keys.first);
   }
 
-  Future<Uint8List?> _runImg(String url, Duration timeout) async {
+  Future<Uint8List?> _runImg(
+    String url,
+    Duration timeout,
+    bool fullResolution,
+    String cacheKey,
+  ) async {
     if (_controller == null) {
       await _ready.future.timeout(const Duration(seconds: 6), onTimeout: () {});
       if (_controller == null) {
@@ -325,7 +357,7 @@ class WebViewHttpClient {
     final completer = Completer<Map<String, dynamic>>();
     _imgPending[id] = completer;
     try {
-      await controller.runJavaScript(_buildImgJs(id, url))
+      await controller.runJavaScript(_buildImgJs(id, url, fullResolution))
           .timeout(const Duration(seconds: 10));
     } catch (_) {
       _imgPending.remove(id);
@@ -341,17 +373,49 @@ class WebViewHttpClient {
     if (comma < 0) return null;
     try {
       final bytes = base64Decode(data.substring(comma + 1));
-      if (bytes.isNotEmpty && bytes.length <= 4 * 1024 * 1024) {
-        _imgCache[url] = bytes;
-        if (_imgCache.length > 256) _imgCache.remove(_imgCache.keys.first);
-      }
-      return bytes;
+      if (bytes.isNotEmpty) _imgCacheStore(cacheKey, bytes);
+      return bytes.isEmpty ? null : bytes;
     } catch (_) {
       return null;
     }
   }
 
-  String _buildImgJs(int id, String url) {
+  String _buildImgJs(int id, String url, bool fullResolution) {
+    final u = jsonEncode(url);
+    if (fullResolution) {
+      // Reader pages: the ORIGINAL bytes, byte-exact — an in-page fetch is
+      // same-origin (the WebView is parked on the image's origin), sends the
+      // browser TLS/cookies that pass the wall, and skips the lossy canvas
+      // re-encode. Falls back to a natural-size canvas (jpeg 0.92) for the
+      // rare response fetch() can't read (e.g. a cross-origin redirect).
+      return '''
+(function(){
+  function viaCanvas(){
+    var im = new Image();
+    im.onload = function(){
+      try{
+        var c = document.createElement('canvas');
+        c.width = im.naturalWidth || 1; c.height = im.naturalHeight || 1;
+        c.getContext('2d').drawImage(im, 0, 0);
+        CFImg.postMessage(JSON.stringify({id:$id, ok:true, data:c.toDataURL('image/jpeg',0.92)}));
+      }catch(e){ CFImg.postMessage(JSON.stringify({id:$id, ok:false, error:String(e)})); }
+    };
+    im.onerror = function(){ CFImg.postMessage(JSON.stringify({id:$id, ok:false, error:'load'})); };
+    im.src = $u;
+  }
+  fetch($u, {credentials:'include'}).then(function(r){
+    if(!r.ok) throw new Error('http '+r.status);
+    return r.arrayBuffer();
+  }).then(function(buf){
+    var b = new Uint8Array(buf), s = '', CH = 0x8000;
+    for (var i = 0; i < b.length; i += CH) {
+      s += String.fromCharCode.apply(null, b.subarray(i, Math.min(i + CH, b.length)));
+    }
+    CFImg.postMessage(JSON.stringify({id:$id, ok:true, data:'base64,' + btoa(s)}));
+  }).catch(function(){ viaCanvas(); });
+})();
+''';
+    }
     return '''
 (function(){
   var im = new Image();
@@ -369,7 +433,7 @@ class WebViewHttpClient {
     }catch(e){ CFImg.postMessage(JSON.stringify({id:$id, ok:false, error:String(e)})); }
   };
   im.onerror = function(){ CFImg.postMessage(JSON.stringify({id:$id, ok:false, error:'load'})); };
-  im.src = ${jsonEncode(url)};
+  im.src = $u;
 })();
 ''';
   }

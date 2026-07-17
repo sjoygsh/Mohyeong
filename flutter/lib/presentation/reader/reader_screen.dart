@@ -824,7 +824,12 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       throw StateError("This page isn't ready yet.");
     }
     final ref0 = refs[page];
-    final provider = SourceImage.providerFor(ref0.url, headers: ref0.headers);
+    final provider = SourceImage.providerFor(
+      ref0.url,
+      headers: ref0.headers,
+      cacheWidth: _readerPageCacheWidth(context),
+      fullResolution: true,
+    );
     final bytes = await encodeImageProviderToPng(provider);
     if (bytes == null || bytes.isEmpty) {
       throw StateError('image encode produced no bytes');
@@ -1036,10 +1041,15 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     final refs = _pageRefs;
     if (refs == null) return;
     final crop = ref.read(readerCropBordersProvider);
+    final cacheWidth = _readerPageCacheWidth(context);
     for (var i = page + 1; i <= page + 4 && i < refs.length; i++) {
       final r = refs[i];
-      ImageProvider provider =
-          SourceImage.providerFor(r.url, headers: r.headers);
+      ImageProvider provider = SourceImage.providerFor(
+        r.url,
+        headers: r.headers,
+        cacheWidth: cacheWidth,
+        fullResolution: true,
+      );
       if (crop) provider = CropBordersImageProvider(provider);
       unawaited(precacheImage(provider, context));
     }
@@ -2311,13 +2321,15 @@ class _PageListState extends State<_PageList> {
           pageHeadersOf: (i) => pages[i].headers,
           zoomRegistry: widget.zoomRegistry,
           fit: widget.fit,
-          itemBuilder: (_, i) {
+          itemBuilder: (ctx, i) {
             final page = pages[i];
             final imageUrl = page.imageUrl ?? page.url;
             return SourceImage(
               url: imageUrl,
               fit: widget.fit,
               headers: page.headers,
+              cacheWidth: _readerPageCacheWidth(ctx),
+              fullResolution: true,
               // ReaderPageImageView sets crossfade(false): pages appear at
               // full opacity, exempt from the global cover fade.
               fadeIn: false,
@@ -2403,9 +2415,11 @@ class _LocalPageList extends StatelessWidget {
       pageHeadersOf: (_) => null,
       zoomRegistry: zoomRegistry,
       fit: fit,
-      itemBuilder: (_, i) => SourceImage(
+      itemBuilder: (ctx, i) => SourceImage(
         url: paths[i],
         fit: fit,
+        cacheWidth: _readerPageCacheWidth(ctx),
+        fullResolution: true,
         // ReaderPageImageView sets crossfade(false) — same for local pages.
         fadeIn: false,
         cropBorders: cropBorders,
@@ -2514,6 +2528,26 @@ class _ZoomRegistry {
   _ZoomablePageState? operator [](int index) => _handles[index];
 }
 
+/// Decode-width cap for reader pages, in physical pixels: 2x the screen's
+/// physical short side. Mihon renders pages through SSIV, whose base layer
+/// subsamples the bitmap to under ~2x the view and sharpens zoom with
+/// full-res TILES; Flutter has no tile layer, so this is the honest
+/// equivalent of the base layer. Typical pages (<=2160px wide here) decode
+/// at full size — only oversized scans get capped, and those were exactly
+/// the multi-frame texture uploads that janked page turns. Rotation-stable
+/// (shortestSide is orientation-invariant), so decodes aren't redone — and
+/// pages don't re-key — when the reader flips orientation.
+///
+/// Every reader consumer of a page provider MUST pass this same value (and
+/// `fullResolution: true`) to [SourceImage] / [SourceImage.providerFor]:
+/// both are part of the ImageCache key, and one mismatched site decodes
+/// every page a second time.
+int _readerPageCacheWidth(BuildContext context) {
+  final size = MediaQuery.sizeOf(context);
+  final dpr = MediaQuery.devicePixelRatioOf(context);
+  return (size.shortestSide * dpr * 2).round();
+}
+
 /// Decoded width/height ratio per page locator, shared across viewers.
 /// Populated as pages decode; lets webtoon items reserve their real extent
 /// on revisit (no layout shift), powers offset↔index math for progress and
@@ -2533,10 +2567,13 @@ void _cachePageAspect(String url, double aspect) {
 
 /// Resolve [url]'s decoded aspect into [_pageAspectCache], then [onReady].
 /// Piggybacks on the image cache — by the time this runs for a visible page
-/// the decode is shared with the displayed image.
+/// the decode is shared with the displayed image, PROVIDED [cacheWidth]
+/// matches what the displaying widget passed (it's part of the cache key).
+/// The capped decode preserves aspect, so the ratio is unaffected.
 void _resolvePageAspect(
   String url,
   Map<String, String>? headers,
+  int? cacheWidth,
   void Function(double aspect) onReady,
 ) {
   final cached = _pageAspectCache[url];
@@ -2544,8 +2581,12 @@ void _resolvePageAspect(
     onReady(cached);
     return;
   }
-  final stream = SourceImage.providerFor(url, headers: headers)
-      .resolve(ImageConfiguration.empty);
+  final stream = SourceImage.providerFor(
+    url,
+    headers: headers,
+    cacheWidth: cacheWidth,
+    fullResolution: true,
+  ).resolve(ImageConfiguration.empty);
   late final ImageStreamListener listener;
   listener = ImageStreamListener(
     (info, _) {
@@ -2628,7 +2669,9 @@ class _PagesViewState extends ConsumerState<_PagesView> {
         // full fetch+decode of the ENTIRE chapter the moment split was
         // enabled. The window keeps pace as _lastReported advances.
         if (aspect == null && url != null && (i - _lastReported).abs() <= 3) {
-          _resolvePageAspect(url, widget.pageHeadersOf?.call(i), (a) {
+          _resolvePageAspect(
+              url, widget.pageHeadersOf?.call(i), _readerPageCacheWidth(context),
+              (a) {
             if (mounted && a > 1) setState(() {});
           });
         }
@@ -2981,6 +3024,8 @@ class _PagesViewState extends ConsumerState<_PagesView> {
                         SourceImage.providerFor(
                           url,
                           headers: widget.pageHeadersOf?.call(i),
+                          cacheWidth: _readerPageCacheWidth(ctx),
+                          fullResolution: true,
                         ),
                         leftHalf: leftHalf,
                       ),
@@ -3126,10 +3171,15 @@ class _WebtoonPageSlot extends StatefulWidget {
 
 class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
   double? _aspect;
+  bool _probed = false;
 
+  // First probe runs from didChangeDependencies, not initState: the probe
+  // provider carries the reader decode cap, which needs MediaQuery.
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_probed) return;
+    _probed = true;
     _resolve();
   }
 
@@ -3150,7 +3200,8 @@ class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
       _aspect = cached;
       return;
     }
-    _resolvePageAspect(url, widget.headers, (aspect) {
+    _resolvePageAspect(url, widget.headers, _readerPageCacheWidth(context),
+        (aspect) {
       if (mounted && _aspect != aspect) setState(() => _aspect = aspect);
     });
   }
@@ -3207,12 +3258,24 @@ class _ZoomablePageState extends ConsumerState<_ZoomablePage>
   Animation<Matrix4>? _animation;
   bool _initialZoomApplied = false;
 
+  bool _zoomProbeStarted = false;
+
   @override
   void initState() {
     super.initState();
     if (widget.index != null) {
       widget.registry?.register(widget.index!, this);
     }
+  }
+
+  // The landscape-zoom aspect probe runs from didChangeDependencies, not
+  // initState: the probe provider carries the reader decode cap, which
+  // needs MediaQuery.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_zoomProbeStarted) return;
+    _zoomProbeStarted = true;
     final url = widget.url;
     if (url == null) return;
     if (!ref.read(readerLandscapeZoomProvider)) return;
@@ -3220,7 +3283,8 @@ class _ZoomablePageState extends ConsumerState<_ZoomablePage>
         ReaderImageScaleType.fitScreen) {
       return;
     }
-    _resolvePageAspect(url, widget.headers, (aspect) {
+    _resolvePageAspect(url, widget.headers, _readerPageCacheWidth(context),
+        (aspect) {
       if (!mounted || _initialZoomApplied) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _maybeApplyInitialZoom(aspect);

@@ -40,6 +40,7 @@ class SourceImage extends StatelessWidget {
     this.cacheWidth,
     this.fadeIn = true,
     this.opacity,
+    this.fullResolution = false,
   });
 
   final String url;
@@ -66,6 +67,13 @@ class SourceImage extends StatelessWidget {
   /// cache and are a major jank source. Leave null for reader pages, which
   /// legitimately need full resolution for zoom.
   final int? cacheWidth;
+
+  /// When the network fetch falls back to the offscreen WebView (fingerprint-
+  /// walled CDNs), pull the image's ORIGINAL bytes instead of the 480px
+  /// cover-sized re-encode. Reader page lists set this — a cover-sized page
+  /// upscaled to a full screen is visibly pixelated. Orthogonal to
+  /// [cacheWidth], which caps the DECODE of whatever bytes arrive.
+  final bool fullResolution;
   final Map<String, String>? headers;
   final WidgetBuilder? placeholder;
   final Widget Function(BuildContext, Object error)? errorWidget;
@@ -85,12 +93,24 @@ class SourceImage extends StatelessWidget {
   /// on. Mihon's `dualPageRotateToFitInvert`.
   final bool rotateInvert;
 
-  /// The undecorated backend [ImageProvider] for [url] (same detection rules
-  /// as the widget), exposed so non-widget callers — e.g. the reader's
-  /// "Set as cover" action — can resolve a page's bytes through the same
-  /// network/file/archive/SAF pipeline the viewer uses.
-  static ImageProvider providerFor(String url, {Map<String, String>? headers}) {
-    return SourceImage(url: url, headers: headers)._backendProvider();
+  /// The [ImageProvider] for [url] (same detection rules as the widget),
+  /// exposed so non-widget callers — the reader's precache / aspect probe /
+  /// split-half / "Set as cover" pipelines — can resolve a page's bytes
+  /// through the same pipeline the viewer uses. Pass the SAME [cacheWidth]
+  /// and [fullResolution] the displaying widget uses: they are part of the
+  /// [ImageCache] key, and a mismatch decodes the page twice.
+  static ImageProvider providerFor(
+    String url, {
+    Map<String, String>? headers,
+    int? cacheWidth,
+    bool fullResolution = false,
+  }) {
+    return SourceImage(
+      url: url,
+      headers: headers,
+      cacheWidth: cacheWidth,
+      fullResolution: fullResolution,
+    )._displayProvider();
   }
 
   bool get _isArchive => isArchivePageUrl(url);
@@ -123,17 +143,29 @@ class SourceImage extends StatelessWidget {
     if (_isArchive) return _ArchiveImageProvider(url);
     if (_isContent) return _SafImageProvider(url);
     if (_isLocal) return FileImage(File(_localPath));
-    return _NetworkImageWithWebViewFallback(url, headers);
+    return _NetworkImageWithWebViewFallback(url, headers, fullResolution);
+  }
+
+  /// [_backendProvider] with the [cacheWidth] decode cap applied — the ONE
+  /// provider (and [ImageCache] key) every consumer of this url+config must
+  /// share: the display branches, the crop/rotate decorators' probes, and
+  /// [providerFor] (reader precache/aspect/split/set-as-cover). Any site
+  /// resolving the backend without the cap would decode the page a second
+  /// time at full size.
+  ImageProvider _displayProvider() {
+    final backend = _backendProvider();
+    final cw = cacheWidth;
+    return cw == null ? backend : _ValueResizeImage(backend, width: cw);
   }
 
   @override
   Widget build(BuildContext context) {
     final img = _buildImage(context);
     if (!rotateToFit) return img;
-    // Probe the undecorated source bytes for orientation and rotate only the
-    // wide (double-spread) pages, leaving normal portrait pages untouched.
+    // Probe the displayed decode for orientation and rotate only the wide
+    // (double-spread) pages, leaving normal portrait pages untouched.
     return _RotateToFitIfWide(
-      provider: _backendProvider(),
+      provider: _displayProvider(),
       invert: rotateInvert,
       child: img,
     );
@@ -160,7 +192,7 @@ class SourceImage extends StatelessWidget {
   Widget _buildImage(BuildContext context) {
     if (cropBorders) {
       return Image(
-        image: CropBordersImageProvider(_backendProvider()),
+        image: CropBordersImageProvider(_displayProvider()),
         fit: fit,
         opacity: opacity,
         frameBuilder: _frameBuilder(),
@@ -168,35 +200,10 @@ class SourceImage extends StatelessWidget {
             errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
       );
     }
-    if (_isArchive) {
+    if (_isArchive || _isContent || _isLocal) {
       return Image(
-        image: cacheWidth == null
-            ? _ArchiveImageProvider(url)
-            : ResizeImage(_ArchiveImageProvider(url), width: cacheWidth),
+        image: _displayProvider(),
         fit: fit,
-        opacity: opacity,
-        frameBuilder: _frameBuilder(),
-        errorBuilder: (ctx, error, _) =>
-            errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
-      );
-    }
-    if (_isContent) {
-      return Image(
-        image: cacheWidth == null
-            ? _SafImageProvider(url)
-            : ResizeImage(_SafImageProvider(url), width: cacheWidth),
-        fit: fit,
-        opacity: opacity,
-        frameBuilder: _frameBuilder(),
-        errorBuilder: (ctx, error, _) =>
-            errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
-      );
-    }
-    if (_isLocal) {
-      return Image.file(
-        File(_localPath),
-        fit: fit,
-        cacheWidth: cacheWidth,
         opacity: opacity,
         frameBuilder: _frameBuilder(),
         errorBuilder: (ctx, error, _) =>
@@ -204,14 +211,11 @@ class SourceImage extends StatelessWidget {
       );
     }
     // Same provider (and therefore the same ImageCache key) as
-    // [_backendProvider], so the reader's precache / aspect-probe /
+    // [providerFor], so the reader's precache / aspect-probe /
     // crop-and-rotate pipelines and this widget all share ONE decode per URL.
     // The WebView fingerprint-wall fallback lives inside the provider.
-    final network = _NetworkImageWithWebViewFallback(url, headers);
     return Image(
-      image: cacheWidth == null
-          ? network
-          : ResizeImage(network, width: cacheWidth),
+      image: _displayProvider(),
       fit: fit,
       opacity: opacity,
       gaplessPlayback: true,
@@ -220,6 +224,25 @@ class SourceImage extends StatelessWidget {
           errorWidget?.call(ctx, error) ?? const _DefaultErrorBox(),
     );
   }
+}
+
+/// [ResizeImage] with value equality. [ResizeImage] itself compares by
+/// identity, which is fine for the [ImageCache] (its obtainKey emits a
+/// value-equal key) but breaks the decorator providers that key on their
+/// INNER provider's equality — [CropBordersImageProvider] and
+/// [HalfPageImageProvider] would see a brand-new inner every rebuild, re-
+/// running the crop and missing the content-rect memo each time.
+class _ValueResizeImage extends ResizeImage {
+  const _ValueResizeImage(super.imageProvider, {super.width});
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ValueResizeImage &&
+      other.imageProvider == imageProvider &&
+      other.width == width;
+
+  @override
+  int get hashCode => Object.hash(imageProvider, width);
 }
 
 /// [ImageProvider] that loads its bytes from a SAF `content://` document URI
@@ -323,10 +346,23 @@ class _ArchiveImageProvider extends ImageProvider<_ArchiveImageProvider> {
 /// giving up.
 class _NetworkImageWithWebViewFallback
     extends ImageProvider<_NetworkImageWithWebViewFallback> {
-  const _NetworkImageWithWebViewFallback(this.url, this.headers);
+  const _NetworkImageWithWebViewFallback(
+    this.url,
+    this.headers, [
+    this.fullResolution = false,
+  ]);
 
   final String url;
   final Map<String, String>? headers;
+
+  /// Ask the WebView fallback for the image's original bytes instead of the
+  /// 480px cover-sized re-encode (reader pages). Part of the cache key.
+  final bool fullResolution;
+
+  /// URLs whose ORIGIN image is genuinely cover-sized (≤480px both axes),
+  /// confirmed by a fresh fetch — so the poisoned-cache probe in [_loadAsync]
+  /// doesn't re-fetch them on every load. Session-lived, bounded.
+  static final Set<String> _confirmedSmall = <String>{};
 
   @override
   Future<_NetworkImageWithWebViewFallback> obtainKey(
@@ -351,6 +387,7 @@ class _NetworkImageWithWebViewFallback
     ImageDecoderCallback decode,
   ) async {
     Uint8List bytes;
+    var fromDiskCache = false;
     try {
       // Read-through to the legacy default store first on a miss: upgraded
       // installs have their whole cover library cached there, and without
@@ -362,36 +399,101 @@ class _NetworkImageWithWebViewFallback
         if (legacy != null) {
           bytes = await legacy.file.readAsBytes();
           unawaited(appImageCacheManager.putFile(key.url, bytes));
-          final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-          return decode(buffer);
+          fromDiskCache = true;
+        } else {
+          file = await appImageCacheManager.getSingleFile(
+            key.url,
+            headers: key.headers ?? const {},
+          );
+          bytes = await file.readAsBytes();
         }
-        file = await appImageCacheManager.getSingleFile(
-          key.url,
-          headers: key.headers ?? const {},
-        );
+      } else {
+        bytes = await file.readAsBytes();
+        fromDiskCache = true;
       }
-      bytes = await file.readAsBytes();
     } catch (_) {
-      final fallback =
-          await WebViewHttpClient.instance.fetchImageBytes(key.url);
+      final fallback = await WebViewHttpClient.instance
+          .fetchImageBytes(key.url, fullResolution: key.fullResolution);
       if (fallback == null || fallback.isEmpty) rethrow;
       bytes = fallback;
       // Persist so the next cold load is a disk hit instead of a doomed
       // HTTP attempt plus a serialized WebView round trip.
       unawaited(appImageCacheManager.putFile(key.url, fallback));
     }
+    if (key.fullResolution &&
+        fromDiskCache &&
+        !_confirmedSmall.contains(key.url) &&
+        await _isCoverSized(bytes)) {
+      // Poisoned cache entry: before full-resolution fetches existed, the
+      // WebView fallback persisted 480px cover-sized bytes under the page's
+      // URL — a full-screen page rendered from them is visibly pixelated.
+      // Replace with origin bytes; if the origin image is GENUINELY that
+      // small, remember it so this doesn't re-fetch on every load. On
+      // refetch failure keep serving the small bytes (better than an error
+      // box) and stay unmarked so a later load retries.
+      final fresh = await _refetchOriginal(key);
+      if (fresh != null && fresh.isNotEmpty) {
+        bytes = fresh;
+        if (await _isCoverSized(fresh)) {
+          if (_confirmedSmall.length >= 512) {
+            _confirmedSmall.remove(_confirmedSmall.first);
+          }
+          _confirmedSmall.add(key.url);
+        }
+      }
+    }
     final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
     return decode(buffer);
+  }
+
+  /// Whether [bytes] decode to at most the old WebView fallback's 480px
+  /// cover cap on both axes. Header-only parse — no full decode.
+  static Future<bool> _isCoverSized(Uint8List bytes) async {
+    ui.ImmutableBuffer? buffer;
+    try {
+      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final small = descriptor.width <= 480 && descriptor.height <= 480;
+      descriptor.dispose();
+      return small;
+    } catch (_) {
+      return false;
+    } finally {
+      buffer?.dispose();
+    }
+  }
+
+  /// Force-fetch the origin bytes past the (poisoned) disk cache: fresh HTTP
+  /// download first (it also replaces the cache entry), the full-resolution
+  /// WebView path when the CDN blocks plain HTTP. Null when both fail.
+  Future<Uint8List?> _refetchOriginal(
+    _NetworkImageWithWebViewFallback key,
+  ) async {
+    try {
+      final downloaded = await appImageCacheManager.downloadFile(
+        key.url,
+        authHeaders: key.headers,
+      );
+      return await downloaded.file.readAsBytes();
+    } catch (_) {
+      final viaWebView = await WebViewHttpClient.instance
+          .fetchImageBytes(key.url, fullResolution: true);
+      if (viaWebView != null && viaWebView.isNotEmpty) {
+        unawaited(appImageCacheManager.putFile(key.url, viaWebView));
+      }
+      return viaWebView;
+    }
   }
 
   @override
   bool operator ==(Object other) =>
       other is _NetworkImageWithWebViewFallback &&
       other.url == url &&
+      other.fullResolution == fullResolution &&
       mapEquals(other.headers, headers);
 
   @override
-  int get hashCode => url.hashCode;
+  int get hashCode => Object.hash(url, fullResolution);
 }
 
 /// Rotates [child] a quarter turn when [provider]'s image is wider than it
