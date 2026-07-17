@@ -854,11 +854,12 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
         usedIds.addAll(item.categoryIds);
       }
       // Filter the user-defined categories down to those with items. The
-      // system "uncategorized" (id=0) is included implicitly if any item is
-      // there.
+      // system "uncategorized" (id=0) is added as its own tab below, so it
+      // must be excluded here — the DB seeds a real id-0 row (Mihon's system
+      // category) and keeping it produced a duplicate "Default" tab.
       final visibleCategories = [
         for (final c in categories)
-          if (usedIds.contains(c.id)) c,
+          if (!c.isSystemCategory && usedIds.contains(c.id)) c,
       ]..sort((a, b) => a.order.compareTo(b.order));
       final hasUncategorized = usedIds.contains(Category.uncategorizedId);
       _visibleCategories = visibleCategories;
