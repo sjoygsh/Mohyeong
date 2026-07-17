@@ -138,9 +138,22 @@ class DownloadRepository {
   Future<Map<String, Set<int>>> _downloadedIndex() {
     final idx = _downloadedIdx;
     if (idx != null) return Future.value(idx);
+    final building = _downloadedIdxBuild;
+    if (building != null) return building;
     final gen = _downloadedIdxGen;
-    return _downloadedIdxBuild ??= () async {
-      final built = await _walkDownloadedIndex();
+    late final Future<Map<String, Set<int>>> future;
+    future = () async {
+      final Map<String, Set<int>> built;
+      try {
+        built = await _walkDownloadedIndex();
+      } catch (_) {
+        // A failed walk must not stay memoised — every later lookup would
+        // replay the same error until the next invalidation. Clear so the
+        // next reader retries. (The walk itself tolerates directories
+        // vanishing under it; this guards whatever else can throw.)
+        if (identical(_downloadedIdxBuild, future)) _downloadedIdxBuild = null;
+        rethrow;
+      }
       if (gen != _downloadedIdxGen) {
         // Invalidated while walking — the snapshot may miss out-of-band
         // changes; rebuild on the current generation.
@@ -150,22 +163,36 @@ class DownloadRepository {
       _downloadedIdxBuild = null;
       return built;
     }();
+    return _downloadedIdxBuild = future;
+  }
+
+  /// Lists [dir], treating a directory that vanished (or turned unreadable)
+  /// between discovery and listing as empty. The downloads tree is mutated
+  /// concurrently with the walk — a chapter/manga delete recursively removes
+  /// directories the walk may already hold — and the mutators re-apply their
+  /// change on top of the built index anyway.
+  Stream<FileSystemEntity> _listSafe(Directory dir) async* {
+    try {
+      yield* dir.list();
+    } on FileSystemException {
+      // Skip what disappeared mid-walk.
+    }
   }
 
   Future<Map<String, Set<int>>> _walkDownloadedIndex() async {
     final root = await _root();
     final out = <String, Set<int>>{};
     if (!await root.exists()) return out;
-    await for (final sourceDir in root.list()) {
+    await for (final sourceDir in _listSafe(root)) {
       if (sourceDir is! Directory) continue;
       final sourceId = int.tryParse(p.basename(sourceDir.path));
       if (sourceId == null) continue;
-      await for (final mangaDir in sourceDir.list()) {
+      await for (final mangaDir in _listSafe(sourceDir)) {
         if (mangaDir is! Directory) continue;
         final mangaId = int.tryParse(p.basename(mangaDir.path));
         if (mangaId == null) continue;
         final ids = <int>{};
-        await for (final chapterDir in mangaDir.list()) {
+        await for (final chapterDir in _listSafe(mangaDir)) {
           if (chapterDir is! Directory) continue;
           final chapterId = int.tryParse(p.basename(chapterDir.path));
           if (chapterId == null) continue;
@@ -197,6 +224,10 @@ class DownloadRepository {
       building.then((_) {
         final built = _downloadedIdx;
         if (built != null) mutate(built);
+      }, onError: (_) {
+        // Build failed — nothing to patch; the walk that eventually
+        // succeeds reads the post-mutation filesystem. Without this
+        // handler the derived future's error is unhandled.
       });
     }
   }
