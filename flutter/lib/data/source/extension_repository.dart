@@ -192,10 +192,12 @@ class ExtensionRepository {
   /// changes on install/uninstall, which clears the memo in [_emitChanges]
   /// (so a fallback recorded before an extension was installed re-resolves).
   final Map<String, String> _slugCache = {};
+  int _slugCacheGen = 0;
 
   Future<String> _resolveSlug(String id) async {
     final hit = _slugCache[id];
     if (hit != null) return hit;
+    final gen = _slugCacheGen;
     final resolved = await () async {
       if (id == LocalSource.sourceId) return id;
       if (_loaded.containsKey(id)) return id;
@@ -211,7 +213,13 @@ class ExtensionRepository {
       }
       return id;
     }();
-    return _slugCache[id] = resolved;
+    // Memoise only if no install/uninstall cleared the cache while this
+    // resolution was in flight: it was computed from the OLD installed
+    // list, and writing it back after the clear would pin a stale answer
+    // (e.g. a numeric id's not-found fallback recorded just as that very
+    // extension finished installing) until the next change event.
+    if (gen == _slugCacheGen) _slugCache[id] = resolved;
+    return resolved;
   }
 
   /// The installed-extension slug that owns [sourceId], or null when no
@@ -346,8 +354,10 @@ class ExtensionRepository {
   Future<void> _emitChanges() async {
     // The on-disk set just changed — drop the caches before re-reading so
     // the emission (and every later listInstalled / slug resolution)
-    // reflects it.
+    // reflects it. The generation bump keeps in-flight resolutions from
+    // re-caching answers computed against the old list.
     _installedCache = null;
+    _slugCacheGen++;
     _slugCache.clear();
     _changes.add(await listInstalled());
   }
