@@ -516,9 +516,12 @@ class _MangaGrid extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hideInLibrary = ref.watch(hideInLibraryItemsProvider);
-    final sourceIdInt = sourceNumericId(sourceId);
     List<SourceManga> items = this.items;
     if (hideInLibrary) {
+      // Only needed for the favorites lookup below; computing it up front ran
+      // sourceNumericId (an MD5 for non-numeric slugs) on every rebuild even
+      // when the pref is off — the default.
+      final sourceIdInt = sourceNumericId(sourceId);
       final favoritedUrls = ref
           .watch(favoritedUrlsForSourceProvider(sourceIdInt))
           .valueOrNull;

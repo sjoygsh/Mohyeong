@@ -325,8 +325,11 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
                   );
                 }
                 var items = snap.data!.mangas;
-                final sourceIdInt = sourceNumericId(widget.sourceId);
                 if (ref.watch(hideInLibraryItemsProvider)) {
+                  // Only needed for the favorites lookup: keep the
+                  // sourceNumericId (an MD5 for non-numeric slugs) out of the
+                  // hot path when the pref is off.
+                  final sourceIdInt = sourceNumericId(widget.sourceId);
                   final favoritedUrls = ref
                       .watch(favoritedUrlsForSourceProvider(sourceIdInt))
                       .valueOrNull;
