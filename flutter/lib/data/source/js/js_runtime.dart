@@ -900,12 +900,30 @@ var mh = (function () {
       }
       return out;
     }
+    // Three chapter-list strategies, picked by config.chapterMode:
+    //   'inline'   (default) the series page ships the list in the HTML.
+    //   'ajaxPost'  POST {mangaUrl}/ajax/chapters/ — the stock Madara endpoint,
+    //               correct on non-CF sites (the tight cluster uses it).
+    //   'webview'   force the series page through the JS-running WebView proxy
+    //               and parse the list it renders. Needed where the site's own
+    //               admin-ajax action requires a POST+nonce (which cannot ride
+    //               the proxy) AND a plain GET returns an un-rendered shell.
+    // `ajaxChapters: true` is kept as the legacy alias for 'ajaxPost'.
+    var CHAPTER_MODE = config.chapterMode ||
+      (config.ajaxChapters ? 'ajaxPost' : 'inline');
     function chapters(manga) {
-      if (!config.ajaxChapters) {
-        return getHtml(abs(manga.url)).then(parseChapters);
+      if (CHAPTER_MODE === 'ajaxPost') {
+        var u = abs(manga.url).replace(/\/+$/, '') + '/ajax/chapters/';
+        return postHtml(u, '').then(parseChapters);
       }
-      var u = abs(manga.url).replace(/\/+$/, '') + '/ajax/chapters/';
-      return postHtml(u, '').then(parseChapters);
+      if (CHAPTER_MODE === 'webview') {
+        return getHtml(abs(manga.url), {
+          webview_force: true,
+          webview_settle_ms: config.chapterSettleMs || 8000,
+          webview_ready_js: "document.querySelectorAll('.wp-manga-chapter').length>0",
+        }).then(parseChapters);
+      }
+      return getHtml(abs(manga.url)).then(parseChapters);
     }
 
     // ---- pages ----
@@ -945,6 +963,11 @@ var mh = (function () {
       },
       popular: popular, latest: latest, search: search,
       details: details, chapters: chapters, pages: pages, chapterUrl: chapterUrl,
+      // Helper bag for stubs that keep the theme but override ONE method (e.g.
+      // harimanga's JSON chapter API). Overrides call these instead of
+      // re-inlining the fetch/normalise logic; the host ignores extra keys.
+      _h: { abs: abs, getHtml: getHtml, postHtml: postHtml,
+            parseList: parseList, parseChapters: parseChapters },
     };
   }
 
