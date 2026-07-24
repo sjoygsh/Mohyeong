@@ -346,6 +346,7 @@ class _InProcessEngine implements _JsEngine {
       return null;
     });
     _runtime.evaluate(_preamble);
+    _runtime.evaluate(_mhThemeLib);
   }
 
   @override
@@ -543,6 +544,7 @@ Future<void> _jsWorkerEntry(_WorkerBootstrap boot) async {
   });
 
   runtime.evaluate(_preamble);
+  runtime.evaluate(_mhThemeLib);
 
   // Hand the main isolate our command + http-reply ports.
   boot.ready.send([command.sendPort, httpReply.sendPort]);
@@ -638,4 +640,315 @@ var console = {
   warn:  function(){ sendMessage('log', JSON.stringify({level:'warn',  message: Array.prototype.join.call(arguments, ' ')})); },
   error: function(){ sendMessage('log', JSON.stringify({level:'error', message: Array.prototype.join.call(arguments, ' ')})); },
 };
+''';
+
+/// Shared Mihon-theme factory library, evaluated after [_preamble] in both
+/// the main-isolate and worker-isolate runtimes. See the JS header for the
+/// contract; kept in sync with scratchpad mh_std.js via the parity harness.
+const String _mhThemeLib = r'''
+// Shared Mihon-theme library injected after the preamble. Factory-based
+// extensions register as e.g. `__extension = mh.themes.Madara({base,id,name})`
+// instead of copy-pasting the whole theme body. Standalone extensions that
+// don't reference `mh` are unaffected. Helper/theme bodies are the same code
+// the standalone Madara clones ran, lifted verbatim (proven byte-identical by
+// the parity/replay harness).
+var mh = (function () {
+  // Shared UA — byte-identical across all 26 files today.
+  var UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
+
+  // ---- BASE-independent shared helpers (identical across ~25 files today) --
+  var _attrRe = {};
+  function attr(tag, name) {
+    if (!tag) return null;
+    var re = _attrRe[name];
+    if (!re) {
+      re = _attrRe[name] = [
+        new RegExp('(?:^|[^-\\w])' + name + '\\s*=\\s*"([^"]*)"'),
+        new RegExp('(?:^|[^-\\w])' + name + "\\s*=\\s*'([^']*)'"),
+      ];
+    }
+    var m = re[0].exec(tag);
+    if (m) return m[1];
+    m = re[1].exec(tag);
+    return m ? m[1] : null;
+  }
+  function pickCover(s) {
+    if (!s) return null;
+    var cands = [attr(s, 'data-src'), attr(s, 'data-lazy-src'),
+                 attr(s, 'src'), attr(s, 'data-backup')];
+    var fallback = null;
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      if (!c) continue;
+      c = c.replace(/^\s+|\s+$/g, '').split(/\s+/)[0];
+      if (!c || /placeholder|blank|lazy|spinner|loading|^data:image/i.test(c)) continue;
+      if (fallback == null) fallback = c;
+      if (/^https?:\/\//.test(c)) return c;
+    }
+    return fallback;
+  }
+  var ENTITIES = {
+    '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#039;': "'",
+    '&#39;': "'", '&apos;': "'", '&nbsp;': ' ', '&rsquo;': '’', '&lsquo;': '‘',
+    '&hellip;': '…', '&mdash;': '—', '&ndash;': '–',
+  };
+  function decode(s) {
+    if (!s) return s;
+    return s.replace(/&[a-z#0-9]+;/gi, function (e) {
+      if (ENTITIES[e] != null) return ENTITIES[e];
+      var m = /^&#(\d+);$/.exec(e);
+      var cp = m ? parseInt(m[1], 10)
+        : ((m = /^&#x([0-9a-f]+);$/i.exec(e)) ? parseInt(m[1], 16) : -1);
+      if (cp < 0) return e;
+      return String.fromCodePoint ? String.fromCodePoint(cp) : String.fromCharCode(cp);
+    });
+  }
+  function stripTags(s) {
+    return s ? s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() : s;
+  }
+
+  // ---- Madara theme factory (mirrors Mihon's abstract Madara.kt) -----------
+  // config: { base, id, name, lang, mangaPath?, cardPathRe?, ajaxChapters? }
+  function Madara(config) {
+    var BASE = config.base;
+    var MPATH = config.mangaPath || 'manga';
+    // Card-anchor path alternation. Default 'manga' == the narrow tight-cluster
+    // regex; looser clones pass e.g. 'manga|manhua|manhwa|comics?|series'.
+    var CARD = config.cardPathRe || 'manga';
+    var cardRe = new RegExp('<a\\s+[^>]*href="([^"]*\\/(?:' + CARD + ')\\/[^"]+)"[^>]*>');
+
+    function abs(url) {
+      if (!url) return url;
+      if (url.indexOf('//') === 0) return 'https:' + url;
+      if (url.indexOf('http') === 0) return url;
+      if (url.charAt(0) === '/') return BASE + url;
+      return BASE + '/' + url;
+    }
+    function getHtml(url, opts) {
+      var o = opts || {};
+      o.headers = o.headers || {};
+      if (!o.headers.Referer) o.headers.Referer = BASE + '/';
+      return http.get(url, o).then(function (r) {
+        if (!r || r.ok === false) throw new Error('network error: ' + (r && r.error));
+        if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status + ' for ' + url);
+        return r.body || '';
+      });
+    }
+    function postHtml(url, body) {
+      return http.post(url, {
+        headers: {
+          Referer: BASE + '/',
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: body,
+      }).then(function (r) {
+        if (!r || r.ok === false) throw new Error('network error: ' + (r && r.error));
+        if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status);
+        return r.body || '';
+      });
+    }
+
+    function parseList(html) {
+      var out = [];
+      var blocks = html.split('page-item-detail');
+      for (var i = 1; i < blocks.length; i++) {
+        var b = blocks[i];
+        var aM = cardRe.exec(b);
+        if (!aM) continue;
+        var url = aM[1];
+        var imgM = /<img\b[^>]*>/.exec(b);
+        var imgTag = imgM ? imgM[0] : null;
+        var cover = pickCover(imgTag);
+        var title = null;
+        var tM = /post-title[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/.exec(b);
+        if (tM) title = stripTags(tM[1]);
+        if (!title) title = attr(aM[0], 'title') || '';
+        out.push({ url: abs(url), title: decode(title), thumbnail_url: cover ? abs(cover) : null });
+      }
+      return out;
+    }
+    function parseSearch(html) {
+      var out = [];
+      var blocks = html.split(/class="[^"]*c-tabs-item__content/);
+      for (var i = 1; i < blocks.length; i++) {
+        var b = blocks[i];
+        var aM = /<a\s+[^>]*href="([^"]+)"[^>]*>/.exec(b);
+        if (!aM) continue;
+        var imgM = /<img\b[^>]*>/.exec(b);
+        var imgTag = imgM ? imgM[0] : null;
+        var cover = pickCover(imgTag);
+        var tM = /post-title[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/.exec(b);
+        var title = tM ? stripTags(tM[1]) : (attr(aM[0], 'title') || '');
+        out.push({ url: abs(aM[1]), title: decode(title), thumbnail_url: cover ? abs(cover) : null });
+      }
+      return out;
+    }
+    function hasNext(html, page) {
+      return (/class="[^"]*nav-previous|wp-pagenavi|class="[^"]*next page-numbers|m_orderby=[^"]*&(amp;)?page=|\/page\/(\d+)/i.test(html) &&
+        html.indexOf('/page/' + (page + 1)) !== -1) || /next page-numbers|nav-previous/i.test(html);
+    }
+    function listUrl(orderby, page) {
+      return page <= 1
+        ? BASE + '/' + MPATH + '/?m_orderby=' + orderby
+        : BASE + '/' + MPATH + '/page/' + page + '/?m_orderby=' + orderby;
+    }
+    function popular(page) {
+      return getHtml(listUrl('views', page)).then(function (html) {
+        return { mangas: parseList(html), has_next_page: hasNext(html, page) };
+      });
+    }
+    function latest(page) {
+      return getHtml(listUrl('latest', page)).then(function (html) {
+        return { mangas: parseList(html), has_next_page: hasNext(html, page) };
+      });
+    }
+    function search(query, page) {
+      var q = encodeURIComponent(query || '');
+      var url = (page <= 1 ? BASE + '/?s=' : BASE + '/page/' + page + '/?s=') +
+        q + '&post_type=wp-manga';
+      return getHtml(url).then(function (html) {
+        var mangas = parseSearch(html);
+        if (mangas.length === 0) mangas = parseList(html);
+        return { mangas: mangas, has_next_page: hasNext(html, page) };
+      });
+    }
+
+    // ---- details ----
+    function mapStatus(s) {
+      s = (s || '').toLowerCase();
+      if (s.indexOf('ongoing') >= 0 || s.indexOf('publishing') >= 0) return 1;
+      if (s.indexOf('completed') >= 0 || s.indexOf('finished') >= 0) return 2;
+      if (s.indexOf('hiatus') >= 0 || s.indexOf('on hold') >= 0) return 6;
+      if (s.indexOf('cancel') >= 0 || s.indexOf('drop') >= 0) return 5;
+      return 0;
+    }
+    function linksText(block) {
+      var out = [];
+      if (!block) return out;
+      var re = /<a[^>]*>([\s\S]*?)<\/a>/g, m;
+      while ((m = re.exec(block)) !== null) {
+        var t = stripTags(m[1]);
+        if (t) out.push(decode(t));
+      }
+      return out;
+    }
+    function section(html, cls) {
+      var m = new RegExp('class="' + cls + '"[^>]*>([\\s\\S]*?)</div>').exec(html);
+      return m ? m[1] : null;
+    }
+    function details(manga) {
+      return getHtml(abs(manga.url)).then(function (html) {
+        var titleM = /<div class="post-title">[\s\S]*?<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/.exec(html);
+        var title = titleM ? decode(stripTags(titleM[1])) : (manga.title || '');
+        var picM = /class="summary_image"[\s\S]*?<img\b([^>]*)>/.exec(html);
+        var cover = picM ? pickCover(picM[1]) : null;
+        var author = linksText(section(html, 'author-content')).join(', ') || null;
+        var artist = linksText(section(html, 'artist-content')).join(', ') || null;
+        var genres = linksText(section(html, 'genres-content'));
+        var status = 0;
+        var stM = /<div class="summary-heading">\s*<h5[^>]*>\s*Status[\s\S]*?<div class="summary-content">([\s\S]*?)<\/div>/i.exec(html);
+        if (stM) status = mapStatus(stripTags(stM[1]));
+        var description = null;
+        var dM = /class="(?:summary__content|description-summary)"[^>]*>([\s\S]*?)<\/div>/.exec(html);
+        if (dM) description = decode(stripTags(dM[1].replace(/<h[0-9][\s\S]*?<\/h[0-9]>/g, '')));
+        return {
+          url: manga.url, title: title, author: author, artist: artist,
+          description: description, genre: genres.length ? genres.join(', ') : null,
+          status: status,
+          thumbnail_url: cover ? abs(cover) : (manga.thumbnail_url || null),
+          initialized: true,
+        };
+      });
+    }
+
+    // ---- chapters ----
+    function parseRelativeDate(text) {
+      text = text || '';
+      var MS = { second: 1e3, minute: 6e4, hour: 36e5, day: 864e5, week: 6048e5,
+        month: 2629746e3, year: 31556952e3 };
+      var m = /(\d+)\s*(second|minute|hour|day|week|month|year)/i.exec(text);
+      if (m) return Date.now() - parseInt(m[1], 10) * (MS[m[2].toLowerCase()] || 0);
+      m = /\b(?:last|an?)\s+(second|minute|hour|day|week|month|year)\b/i.exec(text);
+      if (m) return Date.now() - (MS[m[1].toLowerCase()] || 0);
+      if (/\byesterday\b/i.test(text)) return Date.now() - 864e5;
+      if (/\b(?:just now|today)\b/i.test(text)) return Date.now();
+      return 0;
+    }
+    function parseChapters(html) {
+      var out = [];
+      var seen = {};
+      var blocks = html.split(/<li[^>]*class="[^"]*wp-manga-chapter/);
+      for (var i = 1; i < blocks.length; i++) {
+        var b = blocks[i];
+        var aM = /<a\s+[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/.exec(b);
+        if (!aM) continue;
+        var url = aM[1];
+        if (!/^https?:|^\//.test(url) || seen[url]) continue;
+        seen[url] = true;
+        var name = stripTags(aM[2]);
+        var dM = /chapter-release-date[\s\S]*?>([\s\S]*?)<\/(?:i|a|span)>/.exec(b);
+        var date = 0;
+        if (dM) {
+          var t = stripTags(dM[1]);
+          var parsed = Date.parse(t);
+          if (!isNaN(parsed)) date = parsed;
+          else date = parseRelativeDate(t);
+        }
+        out.push({ url: abs(url), name: decode(name) || url, date_upload: date, chapter_number: -1 });
+      }
+      return out;
+    }
+    function chapters(manga) {
+      if (!config.ajaxChapters) {
+        return getHtml(abs(manga.url)).then(parseChapters);
+      }
+      var u = abs(manga.url).replace(/\/+$/, '') + '/ajax/chapters/';
+      return postHtml(u, '').then(parseChapters);
+    }
+
+    // ---- pages ----
+    function pages(chapter) {
+      return getHtml(abs(chapter.url)).then(function (html) {
+        var start = html.indexOf('reading-content');
+        var region = start >= 0 ? html.substring(start) : html;
+        var out = [];
+        var seen = {};
+        var re = /<img\b([^>]*)>/g, m, idx = 0;
+        while ((m = re.exec(region)) !== null) {
+          var tag = m[1];
+          var src = attr(tag, 'data-src') || attr(tag, 'src');
+          if (!src) continue;
+          src = src.replace(/^\s+|\s+$/g, '');
+          if (src.indexOf('//') === 0) src = 'https:' + src;
+          if (src.indexOf('http') !== 0) continue;
+          if (/\/themes\/|logo|loading|dflazy|avatar|gravatar/i.test(src)) continue;
+          if (seen[src]) continue;
+          seen[src] = true;
+          out.push({
+            index: idx++, url: src, image_url: src,
+            headers: { Referer: BASE + '/', 'User-Agent': UA },
+          });
+        }
+        return out;
+      });
+    }
+    function chapterUrl(chapter) { return abs(chapter.url); }
+
+    return {
+      manifest: {
+        id: config.id, name: config.name, lang: config.lang || 'en',
+        base_url: BASE,
+        version_code: config.versionCode || 1,
+        supports_latest: config.supportsLatest !== false,
+      },
+      popular: popular, latest: latest, search: search,
+      details: details, chapters: chapters, pages: pages, chapterUrl: chapterUrl,
+    };
+  }
+
+  return { attr: attr, pickCover: pickCover, decode: decode, stripTags: stripTags,
+           themes: { Madara: Madara } };
+})();
 ''';
