@@ -53,6 +53,12 @@ class LocalSource extends MangaSource {
 
   static const String sourceId = '0';
 
+  /// Numeric form of [sourceId], matching Mihon's `LocalSource.ID = 0L`. Lets
+  /// hot paths that hold a manga's int `source` test for the local source
+  /// without a per-call `source.toString()` allocation (the library grid/list
+  /// cell builders do this per cell, per rebuild, during scroll).
+  static const int numericId = 0;
+
   /// Image extensions we accept as pages. Lowercase comparison.
   static const Set<String> _imageExts = {
     '.jpg',

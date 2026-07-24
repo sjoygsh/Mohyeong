@@ -1205,7 +1205,7 @@ class _MangaListTile extends ConsumerWidget {
     final showLocalBadge = ref.watch(displayLocalBadgeProvider);
     final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
     final showContinueReading = ref.watch(showContinueReadingButtonProvider);
-    final isLocal = manga.source.toString() == LocalSource.sourceId;
+    final isLocal = manga.source == LocalSource.numericId;
     final sourceLangs = showLanguageBadge
         ? ref.watch(installedSourceLangsProvider).valueOrNull
         : null;
@@ -1392,7 +1392,7 @@ class _MangaCard extends ConsumerWidget {
     final showLocalBadge = ref.watch(displayLocalBadgeProvider);
     final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
     final showContinueReading = ref.watch(showContinueReadingButtonProvider);
-    final isLocal = manga.source.toString() == LocalSource.sourceId;
+    final isLocal = manga.source == LocalSource.numericId;
     final sourceLangs = showLanguageBadge
         ? ref.watch(installedSourceLangsProvider).valueOrNull
         : null;
