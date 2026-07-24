@@ -948,7 +948,461 @@ var mh = (function () {
     };
   }
 
+  // ---- MangaThemesia (WPMangaStream) factory ------------------------------
+  // config: { base, id, name, lang?, dir?, versionCode?, supportsLatest? }
+  // `dir` is the browse sub-directory (rizzfables /series, thunderscans
+  // /comics, toongod /manga). Body lifted verbatim from the standalone clones;
+  // their extra `&#58;`/`&#038;` ENTITIES fast-paths are dropped because the
+  // shared decode() resolves both through its generic numeric branch to the
+  // same characters (parity-verified on live HTML).
+  function MangaThemesia(config) {
+    var BASE = config.base;
+    var DIR = config.dir || 'manga';
+
+    function abs(url) {
+      if (!url) return url;
+      if (url.indexOf('//') === 0) return 'https:' + url;
+      if (url.indexOf('http') === 0) return url;
+      if (url.charAt(0) === '/') return BASE + url;
+      return BASE + '/' + url;
+    }
+    function getHtml(url) {
+      return http.get(url, { headers: { Referer: BASE + '/' } }).then(function (r) {
+        if (!r || r.ok === false) throw new Error('network error: ' + (r && r.error));
+        if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status + ' for ' + url);
+        return r.body || '';
+      });
+    }
+
+    // Card: div.bsx > a[href][title] + img.ts-post-image[src|data-src].
+    function parseList(html) {
+      var out = [];
+      var seen = {};
+      var blocks = html.split(/class="bsx[^"]*"/);
+      for (var i = 1; i < blocks.length; i++) {
+        var b = blocks[i];
+        var aM = /<a\s+[^>]*href="([^"]+)"[^>]*>/.exec(b);
+        if (!aM) continue;
+        var url = aM[1];
+        if (url.indexOf('/series/') < 0 && url.indexOf('/manga/') < 0 &&
+            url.indexOf('/komik/') < 0 && url.indexOf('/comics/') < 0) {
+          continue;
+        }
+        if (seen[url]) continue;
+        seen[url] = true;
+        var imgM = /<img\b[^>]*>/.exec(b);
+        var imgTag = imgM ? imgM[0] : null;
+        var cover = attr(imgTag, 'data-src') || attr(imgTag, 'data-lazy-src') || attr(imgTag, 'src');
+        var title = attr(aM[0], 'title');
+        if (!title && imgTag) title = attr(imgTag, 'title') || attr(imgTag, 'alt');
+        out.push({ url: abs(url), title: decode(title || ''), thumbnail_url: cover ? abs(cover) : null });
+      }
+      return out;
+    }
+    function hasNext(html, page) {
+      return /class="[^"]*r"[^>]*>\s*<a[^>]*href[^>]*>\s*Next|hpage|<a class="next page-numbers"|\/page\/(\d+)/i.test(html) ||
+        html.indexOf('page=' + (page + 1)) !== -1;
+    }
+    function popular(page) {
+      return getHtml(BASE + '/' + DIR + '/?page=' + page + '&order=popular').then(function (html) {
+        return { mangas: parseList(html), has_next_page: hasNext(html, page) };
+      });
+    }
+    function latest(page) {
+      return getHtml(BASE + '/' + DIR + '/?page=' + page + '&order=update').then(function (html) {
+        return { mangas: parseList(html), has_next_page: hasNext(html, page) };
+      });
+    }
+    function search(query, page) {
+      // Page 1 uses the canonical root ?s= URL (the /page/1/ hop can drop the
+      // query on some WP sites).
+      var url = (page <= 1 ? BASE + '/?s=' : BASE + '/page/' + page + '/?s=') +
+        encodeURIComponent(query || '');
+      return getHtml(url).then(function (html) {
+        return { mangas: parseList(html), has_next_page: hasNext(html, page) };
+      });
+    }
+
+    function mapStatus(s) {
+      s = (s || '').toLowerCase();
+      if (s.indexOf('ongoing') >= 0 || s.indexOf('publishing') >= 0) return 1;
+      if (s.indexOf('completed') >= 0 || s.indexOf('finished') >= 0) return 2;
+      if (s.indexOf('hiatus') >= 0) return 6;
+      if (s.indexOf('cancel') >= 0 || s.indexOf('drop') >= 0) return 5;
+      return 0;
+    }
+    function details(manga) {
+      return getHtml(abs(manga.url)).then(function (html) {
+        var title = '';
+        var ogt = /<meta property="og:title" content="([^"]*)"/.exec(html);
+        if (ogt) title = ogt[1].replace(/\s*[-|–]\s*[^-|–]+$/, '');
+        if (!title) {
+          var h1 = /<h1[^>]*class="entry-title"[^>]*>([\s\S]*?)<\/h1>/.exec(html);
+          title = h1 ? stripTags(h1[1]) : (manga.title || '');
+        }
+        var picM = /class="thumb"[\s\S]*?<img\b([^>]*)>/.exec(html);
+        var cover = picM ? (attr(picM[1], 'data-src') || attr(picM[1], 'src')) : null;
+
+        var genres = [];
+        var gM = /class="mgen"[^>]*>([\s\S]*?)<\/span>/.exec(html) ||
+          /class="seriestugenre"[^>]*>([\s\S]*?)<\/span>/.exec(html);
+        if (gM) {
+          var gre = /<a[^>]*>([\s\S]*?)<\/a>/g, gm;
+          while ((gm = gre.exec(gM[1])) !== null) {
+            var g = stripTags(gm[1]); if (g) genres.push(decode(g));
+          }
+        }
+
+        // "Status" label followed by the value in an i/a/span (covers the
+        // .imptdt and .tsinfo variants across MangaThemesia sites).
+        var status = 0;
+        var stM = /Status[\s\S]{0,40}?<(?:i|a|span)[^>]*>([^<]+)</i.exec(html);
+        if (stM) status = mapStatus(stM[1]);
+
+        // Author: a block whose class contains "author" (its first link/value),
+        // or an "Author" label followed by the value.
+        var author = null;
+        var auM = /class="[^"]*author[^"]*"[\s\S]{0,80}?<(?:a|i|span)[^>]*>([^<]+)<\/(?:a|i|span)>/i.exec(html) ||
+          /Author[\s\S]{0,40}?<(?:i|a|span)[^>]*>([^<]+)</i.exec(html);
+        if (auM) {
+          var au = decode(auM[1].trim());
+          if (au && au.toLowerCase() !== 'author' && au !== '-') author = au;
+        }
+
+        var description = null;
+        var dM = /itemprop="description"[^>]*>([\s\S]*?)<\/div>/.exec(html) ||
+          /class="entry-content[^"]*"[^>]*>([\s\S]*?)<\/div>/.exec(html);
+        if (dM) description = decode(stripTags(dM[1]));
+
+        return {
+          url: manga.url,
+          title: decode(title),
+          author: author,
+          artist: null,
+          description: description,
+          genre: genres.length ? genres.join(', ') : null,
+          status: status,
+          thumbnail_url: cover ? abs(cover) : (manga.thumbnail_url || null),
+          initialized: true,
+        };
+      });
+    }
+
+    // div#chapterlist li > a[href] (+ .chapternum name, .chapterdate date).
+    // Skip the hidden template entry (data-num="{{number}}" / href with {{ #).
+    function chapters(manga) {
+      return getHtml(abs(manga.url)).then(function (html) {
+        var start = html.indexOf('id="chapterlist"');
+        var region = start >= 0 ? html.substring(start) : html;
+        var out = [];
+        var seen = {};
+        var lis = region.split('<li');
+        for (var i = 1; i < lis.length; i++) {
+          var b = lis[i];
+          var aM = /<a\s+[^>]*href="([^"]+)"[^>]*>/.exec(b);
+          if (!aM) continue;
+          var url = aM[1];
+          if (url.indexOf('{{') >= 0 || url.charAt(0) === '#' || !/^https?:|^\//.test(url)) continue;
+          if (seen[url]) continue;
+          seen[url] = true;
+          var nM = /class="chapternum"[^>]*>([\s\S]*?)<\/span>/.exec(b);
+          var name = nM ? stripTags(nM[1]) : '';
+          var dM = /class="chapterdate"[^>]*>([\s\S]*?)<\/span>/.exec(b);
+          var date = 0;
+          if (dM) { var p = Date.parse(stripTags(dM[1])); if (!isNaN(p)) date = p; }
+          out.push({ url: abs(url), name: decode(name) || url, date_upload: date, chapter_number: -1 });
+        }
+        return out;
+      });
+    }
+
+    // div#readerarea img[src|data-src]; fall back to the ts_reader.run({…})
+    // JSON some MangaThemesia sites use instead of inline images.
+    function pages(chapter) {
+      return getHtml(abs(chapter.url)).then(function (html) {
+        var out = [];
+        var seen = {};
+        var idx = 0;
+        var start = html.indexOf('id="readerarea"');
+        if (start >= 0) {
+          var region = html.substring(start);
+          var end = region.indexOf('</div>\n');
+          var re = /<img\b([^>]*)>/g, m;
+          while ((m = re.exec(region)) !== null) {
+            if (end > 0 && m.index > end + 2000) break;
+            var src = attr(m[1], 'data-src') || attr(m[1], 'src');
+            if (!src) continue;
+            src = src.replace(/^\s+|\s+$/g, '');
+            if (src.indexOf('//') === 0) src = 'https:' + src;
+            if (src.indexOf('http') !== 0) continue;
+            if (/\/themes\/|logo|loading|avatar|gravatar/i.test(src)) continue;
+            if (seen[src]) continue; seen[src] = true;
+            out.push({ index: idx++, url: src, image_url: src, headers: { Referer: BASE + '/', 'User-Agent': UA } });
+          }
+        }
+        if (out.length === 0) {
+          var tr = /ts_reader\.run\((\{[\s\S]*?\})\);/.exec(html);
+          if (tr) {
+            try {
+              var data = JSON.parse(tr[1]);
+              var imgs = (data.sources && data.sources[0] && data.sources[0].images) || [];
+              for (var j = 0; j < imgs.length; j++) {
+                out.push({ index: j, url: imgs[j], image_url: imgs[j], headers: { Referer: BASE + '/', 'User-Agent': UA } });
+              }
+            } catch (e) { /* ignore */ }
+          }
+        }
+        return out;
+      });
+    }
+    function chapterUrl(chapter) { return abs(chapter.url); }
+
+    return {
+      manifest: {
+        id: config.id, name: config.name, lang: config.lang || 'en',
+        base_url: BASE,
+        version_code: config.versionCode || 1,
+        supports_latest: config.supportsLatest !== false,
+      },
+      popular: popular, latest: latest, search: search,
+      details: details, chapters: chapters, pages: pages, chapterUrl: chapterUrl,
+    };
+  }
+
+  // ---- "Toon" Astro-SSR platform factory (hivetoons / vortexscans) --------
+  // config: { base, api, id, name, lang?, perPage?, versionCode?, supportsLatest? }
+  // Listings come from the JSON query API; the chapter list is read out of an
+  // Astro hydration island because the SSR page renders only a recent window.
+  // NOTE: this platform's stripTags collapses tags to a SPACE (not ''), so it
+  // keeps its own local copy rather than the shared mh.stripTags.
+  function Toon(config) {
+    var BASE = config.base;
+    var API = config.api;
+    var NAME = config.name;
+    var PER_PAGE = config.perPage || 18;
+
+    function stripTags(s) {
+      return s ? s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : s;
+    }
+    function abs(url) {
+      if (!url) return url;
+      if (url.indexOf('//') === 0) return 'https:' + url;
+      if (url.indexOf('http') === 0) return url;
+      if (url.charAt(0) === '/') return BASE + url;
+      return BASE + '/' + url;
+    }
+    function getHtml(url) {
+      return http.get(url, { headers: { Referer: BASE + '/' } }).then(function (r) {
+        if (!r || r.ok === false) throw new Error('network error: ' + (r && r.error));
+        if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status + ' for ' + url);
+        return r.body || '';
+      });
+    }
+    function getJson(url) {
+      return getHtml(url).then(function (body) {
+        try { return JSON.parse(body); }
+        catch (e) { throw new Error('bad JSON from ' + url + ': ' + e); }
+      });
+    }
+    function meta(html, sel, prop) {
+      var m = new RegExp('<meta[^>]+' + sel + '="' + prop + '"[^>]+content="([^"]*)"', 'i').exec(html);
+      if (m) return m[1];
+      m = new RegExp('<meta[^>]+content="([^"]*)"[^>]+' + sel + '="' + prop + '"', 'i').exec(html);
+      return m ? m[1] : null;
+    }
+
+    function listing(params, page) {
+      var url = API + '?perPage=' + PER_PAGE + '&page=' + page + params;
+      return getJson(url).then(function (data) {
+        var posts = (data && data.posts) || [];
+        var mangas = [];
+        for (var i = 0; i < posts.length; i++) {
+          var p = posts[i];
+          if (!p || !p.slug) continue;
+          mangas.push({
+            url: BASE + '/series/' + p.slug,
+            title: p.postTitle || p.slug,
+            thumbnail_url: p.featuredImage || null,
+          });
+        }
+        var total = data && data.totalCount;
+        var hasNext = typeof total === 'number'
+          ? page * PER_PAGE < total
+          : mangas.length >= PER_PAGE;
+        return { mangas: mangas, has_next_page: hasNext };
+      });
+    }
+    function popular(page) { return listing('&orderBy=totalViews', page); }
+    function latest(page) { return listing('&orderBy=updatedAt', page); }
+    function search(query, page) {
+      return listing('&searchTerm=' + encodeURIComponent(query || ''), page);
+    }
+
+    function mapStatus(s) {
+      s = (s || '').toLowerCase();
+      if (s.indexOf('ongoing') >= 0) return 1;
+      if (s.indexOf('completed') >= 0 || s.indexOf('finished') >= 0) return 2;
+      if (s.indexOf('hiatus') >= 0 || s.indexOf('paused') >= 0) return 6;
+      if (s.indexOf('cancel') >= 0 || s.indexOf('drop') >= 0) return 5;
+      return 0;
+    }
+    function details(manga) {
+      return getHtml(abs(manga.url)).then(function (html) {
+        var h1 = /<h1[^>]*>([^<]+)<\/h1>/.exec(html);
+        var title = h1 ? stripTags(h1[1]) : (manga.title || '');
+
+        var description = meta(html, 'name', 'description') ||
+          meta(html, 'property', 'og:description');
+        if (description) description = decode(stripTags(description));
+
+        var status = 0;
+        var stM = /Status<\/h1>[\s\S]{0,300}?>\s*(ONGOING|COMPLETED|FINISHED|HIATUS|PAUSED|DROPPED|CANCEL\w*)\s*</i.exec(html);
+        if (stM) status = mapStatus(stM[1]);
+
+        // Genres are serialized in an astro-island's entity-escaped props JSON:
+        //   genres&quot;:[1,[[0,{…name&quot;:[0,&quot;Drama&quot;]…
+        var genres = [];
+        var gBlock = /genres&quot;:\[1,\[([\s\S]{0,3000}?)\]\]/.exec(html);
+        if (gBlock) {
+          var gre = /name&quot;:\[0,&quot;([^&]+)&quot;/g, gm;
+          while ((gm = gre.exec(gBlock[1])) !== null) {
+            if (genres.indexOf(gm[1]) < 0) genres.push(gm[1]);
+          }
+        }
+
+        var cover = meta(html, 'property', 'og:image');
+
+        return {
+          url: manga.url,
+          title: decode(title || ''),
+          author: null,
+          artist: null,
+          description: description,
+          genre: genres.length ? genres.join(', ') : null,
+          status: status,
+          thumbnail_url: cover ? abs(cover) : (manga.thumbnail_url || null),
+          initialized: true,
+        };
+      });
+    }
+
+    // Astro escapes island props as an HTML attribute and wraps every value in
+    // a [type,value] pair ([0,x]=value, [1,[…]]=array); undo both.
+    function unescapeEntities(s) {
+      return s.replace(/&(#x[0-9a-f]+|#\d+|quot|amp|lt|gt|apos|#39);/gi, function (e) {
+        var l = e.toLowerCase();
+        if (l === '&quot;') return '"';
+        if (l === '&amp;') return '&';
+        if (l === '&lt;') return '<';
+        if (l === '&gt;') return '>';
+        if (l === '&apos;' || l === '&#39;') return "'";
+        var m = /^&#x([0-9a-f]+);$/i.exec(e);
+        if (m) return String.fromCharCode(parseInt(m[1], 16));
+        m = /^&#(\d+);$/.exec(e);
+        if (m) return String.fromCharCode(parseInt(m[1], 10));
+        return e;
+      });
+    }
+    function undoAstro(v) {
+      if (v instanceof Array) {
+        if (v.length === 2 && (v[0] === 0 || v[0] === 1)) {
+          if (v[0] === 0) return undoAstro(v[1]);
+          var arr = v[1], a = [];
+          for (var i = 0; i < arr.length; i++) a.push(undoAstro(arr[i]));
+          return a;
+        }
+        var b = [];
+        for (var j = 0; j < v.length; j++) b.push(undoAstro(v[j]));
+        return b;
+      }
+      if (v && typeof v === 'object') {
+        var o = {};
+        for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) o[k] = undoAstro(v[k]);
+        return o;
+      }
+      return v;
+    }
+    function chapterIsland(html) {
+      var re = /<astro-island\b[^>]*\bprops="([^"]*)"/g, m;
+      while ((m = re.exec(html)) !== null) {
+        if (m[1].indexOf('initialChap') < 0) continue;
+        try {
+          var data = undoAstro(JSON.parse(unescapeEntities(m[1])));
+          if (data && data.initialChap && data.initialChap.length) return data.initialChap;
+        } catch (e) { /* try the next island */ }
+      }
+      return null;
+    }
+    function chapters(manga) {
+      var slug = (/\/series\/([^\/?#]+)/.exec(manga.url) || [])[1];
+      if (!slug) throw new Error('cannot derive series slug from ' + manga.url);
+      return getHtml(abs(manga.url)).then(function (html) {
+        var list = chapterIsland(html);
+        if (!list) throw new Error('chapter list island not found on ' + manga.url);
+        var out = [];
+        var seenSlug = {};
+        for (var i = 0; i < list.length; i++) {
+          var c = list[i];
+          if (!c || !c.slug || seenSlug[c.slug]) continue;
+          seenSlug[c.slug] = true;
+          // Coin-/time-locked (timed paywall) chapters can't be read — skip.
+          if (c.isAccessible === false) continue;
+          var num = typeof c.number === 'number' ? c.number : parseFloat(c.number);
+          var name = 'Chapter ' + (isNaN(num) ? c.slug.replace(/^chapter-/, '') : num);
+          if (c.title) name += ': ' + decode(String(c.title));
+          var d = c.createdAt ? Date.parse(c.createdAt) : NaN;
+          out.push({
+            url: BASE + '/series/' + slug + '/' + c.slug,
+            name: decode(name),
+            date_upload: isNaN(d) ? 0 : d,
+            chapter_number: isNaN(num) ? -1 : num,
+          });
+        }
+        out.sort(function (a, b) { return b.chapter_number - a.chapter_number; });
+        return out;
+      });
+    }
+
+    function pages(chapter) {
+      return getHtml(abs(chapter.url)).then(function (html) {
+        var out = [];
+        var seen = {};
+        var idx = 0;
+        var re = /<img\b([^>]*)>/g, m;
+        while ((m = re.exec(html)) !== null) {
+          var src = attr(m[1], 'data-src') || attr(m[1], 'src');
+          if (!src) continue;
+          src = src.replace(/^\s+|\s+$/g, '');
+          if (src.indexOf('//') === 0) src = 'https:' + src;
+          if (src.indexOf('http') !== 0) continue;
+          // Page images live under …/upload/series/<slug>/…; series covers use
+          // /upload/series/featured/ and chapter thumbs /upload/chapter/.
+          if (src.indexOf('/upload/series/') < 0) continue;
+          if (src.indexOf('/featured/') >= 0) continue;
+          if (seen[src]) continue; seen[src] = true;
+          out.push({ index: idx++, url: src, image_url: src, headers: { Referer: BASE + '/', 'User-Agent': UA } });
+        }
+        if (!out.length && /Unlock this chapter|isLockedByCoins&quot;:\[0,true\]/.test(html)) {
+          throw new Error('Chapter is coin-locked on ' + NAME);
+        }
+        return out;
+      });
+    }
+    function chapterUrl(chapter) { return abs(chapter.url); }
+
+    return {
+      manifest: {
+        id: config.id, name: NAME, lang: config.lang || 'en',
+        base_url: BASE,
+        version_code: config.versionCode || 1,
+        supports_latest: config.supportsLatest !== false,
+      },
+      popular: popular, latest: latest, search: search,
+      details: details, chapters: chapters, pages: pages, chapterUrl: chapterUrl,
+    };
+  }
+
   return { attr: attr, pickCover: pickCover, decode: decode, stripTags: stripTags,
-           themes: { Madara: Madara } };
+           themes: { Madara: Madara, MangaThemesia: MangaThemesia, Toon: Toon } };
 })();
 ''';
