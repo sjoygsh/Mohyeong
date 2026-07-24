@@ -472,7 +472,7 @@ class LocalSource extends MangaSource {
   /// `Chapter 12.5`, `c012`, `12 - title`. Falls back to -1 if nothing
   /// numeric can be found.
   double _parseChapterNumber(String name) {
-    final match = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(name);
+    final match = _chapterNumberToken.firstMatch(name);
     if (match == null) return -1;
     return double.tryParse(match.group(1)!) ?? -1;
   }
@@ -480,9 +480,8 @@ class LocalSource extends MangaSource {
   /// Sorts strings so embedded numbers compare as numbers — e.g.
   /// `page2` < `page10`. Standard "human-friendly" sort.
   int _naturalCompare(String a, String b) {
-    final reg = RegExp(r'(\d+)|(\D+)');
-    final aParts = reg.allMatches(a).toList();
-    final bParts = reg.allMatches(b).toList();
+    final aParts = _naturalToken.allMatches(a).toList();
+    final bParts = _naturalToken.allMatches(b).toList();
     final n = aParts.length < bParts.length ? aParts.length : bParts.length;
     for (var i = 0; i < n; i++) {
       final ap = aParts[i].group(0)!;
@@ -503,3 +502,9 @@ class LocalSource extends MangaSource {
   @override
   Future<void> dispose() async {}
 }
+
+/// Compiled once, not per call: [_naturalCompare] runs O(n log n) times per
+/// sort and [_parseChapterNumber] once per name, and Dart's `RegExp(...)`
+/// recompiles on every construction.
+final _naturalToken = RegExp(r'(\d+)|(\D+)');
+final _chapterNumberToken = RegExp(r'(\d+(?:\.\d+)?)');
