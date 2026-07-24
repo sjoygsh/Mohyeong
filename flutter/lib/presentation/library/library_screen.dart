@@ -1234,7 +1234,7 @@ class _MangaListTile extends ConsumerWidget {
               height: 56,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
-                child: _Cover(manga: manga),
+                child: _Cover(manga: manga, cacheWidth: 180),
               ),
             ),
             const SizedBox(width: 12),
@@ -1746,9 +1746,15 @@ class _BulkCategorySheetState extends State<_BulkCategorySheet> {
 }
 
 class _Cover extends ConsumerWidget {
-  const _Cover({required this.manga});
+  const _Cover({required this.manga, this.cacheWidth = 480});
 
   final Manga manga;
+
+  /// Physical-pixel decode cap. Defaults to the grid cell's 480; the list
+  /// tile's 40dp cover overrides it to 180 (the app's list-thumbnail width,
+  /// same as Updates/History) so the shared widget doesn't decode and cache a
+  /// list thumbnail at ~7× the pixels it can show.
+  final int cacheWidth;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1767,7 +1773,7 @@ class _Cover extends ConsumerWidget {
         .watch(installedSourceImageHeadersProvider)
         .valueOrNull?[manga.source];
     return SourceImage(
-      cacheWidth: 480,
+      cacheWidth: cacheWidth,
       url: url,
       headers: headers,
       fit: BoxFit.cover,
