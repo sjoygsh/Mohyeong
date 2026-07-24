@@ -417,7 +417,14 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                               _bulkDeleteDownloads(manga, chapters),
                         )
                       : null,
-                  body: CustomScrollView(
+                  body: RefreshIndicator(
+                    // Pull-to-refresh (Mihon parity): re-fetch details +
+                    // chapters from the source, same action as the app-bar
+                    // refresh button. AlwaysScrollable so the gesture works even
+                    // when the chapter list is short enough to not fill the view.
+                    onRefresh: () => _refreshMangaFromSource(manga),
+                    child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
                   if (_selecting)
                     SliverAppBar(
@@ -574,7 +581,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                     ),
                   ],
                 ],
-              ),
+              )),
             ),
               );
             },
