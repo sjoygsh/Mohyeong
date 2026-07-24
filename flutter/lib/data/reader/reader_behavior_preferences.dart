@@ -107,6 +107,15 @@ final readerCropBordersProvider = boolPref('crop_borders', false);
 final readerCropBordersWebtoonProvider =
     boolPref('crop_borders_webtoon', false);
 
+/// DEVICE-UNVERIFIED SCAFFOLD (2026-07-24): true continuous webtoon. When on,
+/// the continuous (webtoon) viewer appends the NEXT chapter's pages onto the
+/// same scroll so you read across chapter boundaries without the transition-
+/// page button (Mihon WebtoonViewer). Default OFF so the shipped single-chapter
+/// behaviour is unchanged until this is validated on-device. Remote sources
+/// only for now (downloaded/local still single-chapter).
+final readerContinuousWebtoonProvider =
+    boolPref('continuous_webtoon', false);
+
 /// "Show content in cutout area" (Mihon `drawUnderCutout`, key
 /// `cutout_short`, default true): while the reader is fullscreen the
 /// window draws beneath the display notch (`SHORT_EDGES`) instead of

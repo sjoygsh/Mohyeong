@@ -715,6 +715,13 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   // (Kotlin's `assistUrl`). Gates the top-bar overflow actions.
   String? _chapterUrl;
 
+  // DEVICE-UNVERIFIED SCAFFOLD: the chapter currently under the continuous
+  // webtoon viewer (updates as it appends across boundaries). Recorded so
+  // nothing regresses; wiring the chrome title / progress to it is next-session
+  // work (see _ContinuousWebtoon's header).
+  // ignore: unused_field
+  int? _continuousActiveChapterId;
+
   @override
   void initState() {
     super.initState();
@@ -1556,7 +1563,27 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       });
     }
 
-    Widget viewport = _ReaderViewport(
+    // DEVICE-UNVERIFIED SCAFFOLD (opt-in, default OFF): route REMOTE webtoon
+    // reading to the continuous viewer that appends the next chapter onto the
+    // same scroll. Paged mode, local pages and downloaded chapters keep the
+    // single-chapter _ReaderViewport path unchanged. See _ContinuousWebtoon.
+    final continuousWebtoon = !widget.mode.isPaged &&
+        data.source != null &&
+        data.localPagePaths == null &&
+        ref.watch(readerContinuousWebtoonProvider);
+    Widget viewport = continuousWebtoon
+        ? _ContinuousWebtoon(
+            source: data.source!,
+            manga: data.manga,
+            initialChapter: data.chapter,
+            siblings: data.siblings,
+            incognito: data.incognito,
+            fit: fit,
+            sidePaddingFraction: sidePaddingPct / 100,
+            cropBorders: cropEnabled,
+            onActiveChapter: (ch) => _continuousActiveChapterId = ch.id,
+          )
+        : _ReaderViewport(
       data: data,
       mode: widget.mode,
       fit: fit,
@@ -2355,6 +2382,276 @@ class _PageListState extends State<_PageList> {
           },
         );
       },
+    );
+  }
+}
+
+// ===========================================================================
+// DEVICE-UNVERIFIED SCAFFOLD (2026-07-24) — true continuous webtoon.
+//
+// Opt-in via `readerContinuousWebtoonProvider` (default OFF): when on, REMOTE
+// webtoon/continuous reading appends the NEXT chapter's pages onto the same
+// scroll instead of stopping at the transition-page button — Mihon's
+// WebtoonViewer behaviour ("scroll into the next chapter"). Paged mode, local
+// pages and downloaded chapters are untouched (they keep the single-chapter
+// _PageList / _LocalPageList). Self-contained: fetches each chapter on demand
+// and marks a chapter read when the reader scrolls past its end.
+//
+// DONE here: continuous fetch + append across chapter boundaries, boundary
+// headers, mark-read on advance, active-chapter reporting for the chrome.
+// TODO next session (needs on-device iteration): precise per-page progress +
+// resume-to-page across chapters, prepend PREVIOUS chapter on scroll-up,
+// history writes, download/precache-ahead, e-ink flash, and chrome title sync.
+// Do NOT enable the pref by default until those land and are read on a device.
+// ===========================================================================
+
+class _LoadedChapter {
+  _LoadedChapter(this.chapter, this.pages);
+  final Chapter chapter;
+  final List<SourcePage> pages;
+}
+
+/// One row in the flattened continuous strip: either a chapter-boundary header
+/// or a page (identified by its loaded-chapter index + page index).
+class _StripItem {
+  const _StripItem.header(this.chapterIdx)
+      : pageIdx = -1,
+        isHeader = true;
+  const _StripItem.page(this.chapterIdx, this.pageIdx) : isHeader = false;
+  final int chapterIdx;
+  final int pageIdx;
+  final bool isHeader;
+}
+
+class _ContinuousWebtoon extends ConsumerStatefulWidget {
+  const _ContinuousWebtoon({
+    required this.source,
+    required this.manga,
+    required this.initialChapter,
+    required this.siblings,
+    required this.incognito,
+    required this.fit,
+    required this.sidePaddingFraction,
+    required this.cropBorders,
+    required this.onActiveChapter,
+  });
+
+  final MangaSource source;
+  final Manga manga;
+  final Chapter initialChapter;
+  final List<Chapter> siblings;
+  final bool incognito;
+  final BoxFit fit;
+  final double sidePaddingFraction;
+  final bool cropBorders;
+
+  /// Reports the chapter now under the reader as the strip appends across
+  /// boundaries so the chrome can follow. Progress + mark-read are persisted
+  /// internally (see the scaffold header for what's still TODO).
+  final ValueChanged<Chapter> onActiveChapter;
+
+  @override
+  ConsumerState<_ContinuousWebtoon> createState() =>
+      _ContinuousWebtoonState();
+}
+
+class _ContinuousWebtoonState extends ConsumerState<_ContinuousWebtoon> {
+  final List<_LoadedChapter> _loaded = <_LoadedChapter>[];
+  final ScrollController _controller = ScrollController();
+  bool _loadingNext = false;
+  bool _fetchingInitial = true;
+  Object? _initError;
+  final Set<int> _markedRead = <int>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitial();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Chapter? _nextAfter(Chapter c) {
+    final i = widget.siblings.indexWhere((s) => s.id == c.id);
+    if (i < 0 || i >= widget.siblings.length - 1) return null;
+    return widget.siblings[i + 1];
+  }
+
+  Future<void> _loadInitial() async {
+    try {
+      final pages = await widget.source.fetchPageList(
+        SourceChapter(
+            url: widget.initialChapter.url,
+            name: widget.initialChapter.name),
+      );
+      if (!mounted) return;
+      setState(() {
+        _loaded.add(_LoadedChapter(widget.initialChapter, pages));
+        _fetchingInitial = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _initError = e);
+    }
+  }
+
+  /// Scrolled to the end of the loaded strip → the last chapter is finished:
+  /// mark it read (Mihon marks a chapter read on reaching its last page) and
+  /// append the next chapter so scrolling continues into it.
+  Future<void> _appendNext() async {
+    if (_loadingNext || _loaded.isEmpty) return;
+    final finished = _loaded.last.chapter;
+    final next = _nextAfter(finished);
+    if (next == null) return;
+    _loadingNext = true;
+    if (!widget.incognito && _markedRead.add(finished.id)) {
+      unawaited(
+          ref.read(chapterRepositoryProvider).setRead(finished.id, true));
+    }
+    widget.onActiveChapter(next);
+    try {
+      final pages = await widget.source.fetchPageList(
+        SourceChapter(url: next.url, name: next.name),
+      );
+      if (mounted) {
+        setState(() => _loaded.add(_LoadedChapter(next, pages)));
+      }
+    } catch (_) {
+      // Leave the boundary in place; scrolling again retries the append.
+    } finally {
+      _loadingNext = false;
+    }
+  }
+
+  bool _onScroll(ScrollNotification n) {
+    if (!_controller.hasClients) return false;
+    final pos = _controller.position;
+    // Within ~1 viewport of the bottom → pull in the next chapter early so the
+    // scroll flows into it rather than hitting a hard stop.
+    if (pos.pixels >= pos.maxScrollExtent - pos.viewportDimension) {
+      unawaited(_appendNext());
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_initError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Failed to load pages: $_initError',
+            style: const TextStyle(color: Colors.white70),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    if (_fetchingInitial) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+    final items = <_StripItem>[];
+    for (var ci = 0; ci < _loaded.length; ci++) {
+      items.add(_StripItem.header(ci));
+      for (var pi = 0; pi < _loaded[ci].pages.length; pi++) {
+        items.add(_StripItem.page(ci, pi));
+      }
+    }
+    final hasMore = _nextAfter(_loaded.last.chapter) != null;
+    final sidePad = widget.sidePaddingFraction <= 0
+        ? EdgeInsets.zero
+        : EdgeInsets.symmetric(
+            horizontal: MediaQuery.sizeOf(context).width *
+                widget.sidePaddingFraction,
+          );
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onScroll,
+      child: ListView.builder(
+        controller: _controller,
+        padding: sidePad,
+        // Read-ahead like the single-chapter webtoon viewer (decode pages
+        // before they scroll on-screen).
+        scrollCacheExtent: const ScrollCacheExtent.viewport(3),
+        itemCount: items.length + (hasMore ? 1 : 0),
+        itemBuilder: (ctx, i) {
+          if (i >= items.length) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              ),
+            );
+          }
+          final item = items[i];
+          if (item.isHeader) {
+            final ch = _loaded[item.chapterIdx].chapter;
+            return _ContinuousChapterHeader(
+              label: ch.name.isEmpty ? 'Chapter ${ch.chapterNumber}' : ch.name,
+              first: item.chapterIdx == 0,
+            );
+          }
+          final lc = _loaded[item.chapterIdx];
+          final page = lc.pages[item.pageIdx];
+          final url = page.imageUrl ?? page.url;
+          return _WebtoonPageSlot(
+            url: url,
+            headers: page.headers,
+            child: SourceImage(
+              url: url,
+              fit: widget.fit,
+              headers: page.headers,
+              cacheWidth: _readerPageCacheWidth(ctx),
+              fullResolution: true,
+              fadeIn: false,
+              cropBorders: widget.cropBorders,
+              placeholder: (_) => const SizedBox(
+                height: 400,
+                child: Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+              ),
+              errorWidget: (_, error) => SizedBox(
+                height: 400,
+                child: Center(
+                  child: Text(
+                    'Page failed: $error',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Between-chapter separator in the continuous strip (Mihon shows a small
+/// header at each chapter boundary).
+class _ContinuousChapterHeader extends StatelessWidget {
+  const _ContinuousChapterHeader({required this.label, required this.first});
+
+  final String label;
+  final bool first;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.only(top: first ? 8 : 28, bottom: 8),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: Colors.white54, fontSize: 13),
+      ),
     );
   }
 }
