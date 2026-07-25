@@ -26,6 +26,7 @@ import '../../data/source/incognito_preferences.dart';
 import '../../data/track/track_preferences.dart';
 import '../../data/track/track_updater.dart';
 import '../../domain/chapter/model/chapter.dart';
+import '../../domain/chapter/service/missing_chapters.dart';
 import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
@@ -415,13 +416,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   .setViewerFlags(data.manga.id, newFlags);
               _reload();
             },
-            onPageChanged: (page) {
+            onPageChanged: (chapterId, page) {
               // Skip persisting progress in incognito (Mihon
               // `updateChapterProgress` is gated on `!incognitoMode`).
               if (_incognito) return;
-              _queueProgress(data.chapter.id, page);
+              _queueProgress(chapterId, page);
             },
-            onReachedEnd: () {
+            // The continuous strip crossed into another chapter. Bank the
+            // outgoing chapter's progress + read time and start timing the
+            // new one, exactly as a chapter jump would (Kotlin reaches the
+            // same place through `loadNewChapter`).
+            onActiveChapterChanged: (chapter) {
+              _flushProgress();
+              _flushReadTime();
+              // Kotlin's loadNewChapter makes the scrolled-into chapter the
+              // reader's current one. Without this the reader stays anchored
+              // to the chapter it was OPENED on, and anything that reloads it
+              // (a reading-mode or orientation change) snaps back there
+              // mid-read.
+              _chapterId = chapter.id;
+              if (!_incognito) _startHistorySession(chapter.id);
+            },
+            onReachedEnd: (chapter) {
               // Auto-mark on reaching the last page. Silent (no snackbar) and
               // fire-and-forget — mirrors Mihon marking the chapter read once
               // the final page is shown, plus the tracker last-read push.
@@ -432,7 +448,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               unawaited(
                 ref
                     .read(chapterRepositoryProvider)
-                    .setRead(data.chapter.id, true),
+                    .setRead(chapter.id, true),
               );
               // "Mark duplicate read chapter as read → After reading a
               // chapter" (Kotlin MARK_DUPLICATE_CHAPTER_READ_EXISTING):
@@ -443,10 +459,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   .contains(MarkDuplicateRead.readExisting)) {
                 final repo = ref.read(chapterRepositoryProvider);
                 for (final sibling in data.siblings) {
-                  if (sibling.id != data.chapter.id &&
+                  if (sibling.id != chapter.id &&
                       !sibling.read &&
                       sibling.chapterNumber >= 0 &&
-                      sibling.chapterNumber == data.chapter.chapterNumber) {
+                      sibling.chapterNumber == chapter.chapterNumber) {
                     unawaited(repo.setRead(sibling.id, true));
                   }
                 }
@@ -457,9 +473,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               if (ref.read(autoUpdateTrackProvider)) {
                 unawaited(
                   ref.read(trackUpdaterProvider).setLastChapterRead(
-                        mangaId: data.chapter.mangaId,
-                        chapterNumber: data.chapter.chapterNumber,
-                        volumeNumber: data.chapter.volumeNumber,
+                        mangaId: chapter.mangaId,
+                        chapterNumber: chapter.chapterNumber,
+                        volumeNumber: chapter.volumeNumber,
                       ),
                 );
               }
@@ -470,7 +486,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 ref.read(setReadStatusProvider).deleteReadChapterSlot(
                       manga: data.manga,
                       orderedChapters: data.siblings,
-                      current: data.chapter,
+                      current: chapter,
                     ),
               );
             },
@@ -631,6 +647,7 @@ class _ReaderBody extends ConsumerStatefulWidget {
     required this.onChangeOrientation,
     required this.onPageChanged,
     required this.onReachedEnd,
+    required this.onActiveChapterChanged,
   });
 
   final _ReaderData data;
@@ -643,8 +660,21 @@ class _ReaderBody extends ConsumerStatefulWidget {
   final ValueChanged<int> onJumpToChapter;
   final ValueChanged<ReadingMode> onChangeMode;
   final ValueChanged<ReaderOrientation?> onChangeOrientation;
-  final ValueChanged<int> onPageChanged;
-  final VoidCallback onReachedEnd;
+
+  /// Reading-progress report. The chapter is named explicitly rather than
+  /// implied by [data]: the continuous strip scrolls from one chapter into
+  /// the next WITHOUT reloading the reader (Mihon's WebtoonViewer keeps the
+  /// neighbouring chapters in the same list), so the chapter being read is
+  /// not always `data.chapter`.
+  final void Function(int chapterId, int page) onPageChanged;
+
+  /// The reader reached the last page of this chapter — Mihon marks read
+  /// there. Also fires for each chapter the strip scrolls past.
+  final ValueChanged<Chapter> onReachedEnd;
+
+  /// The strip scrolled into a different chapter: re-point the reading-time
+  /// history record at it (Kotlin re-runs its history upsert per chapter).
+  final ValueChanged<Chapter> onActiveChapterChanged;
 
   @override
   ConsumerState<_ReaderBody> createState() => _ReaderBodyState();
@@ -715,12 +745,16 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   // (Kotlin's `assistUrl`). Gates the top-bar overflow actions.
   String? _chapterUrl;
 
-  // DEVICE-UNVERIFIED SCAFFOLD: the chapter currently under the continuous
-  // webtoon viewer (updates as it appends across boundaries). Recorded so
-  // nothing regresses; wiring the chrome title / progress to it is next-session
-  // work (see _ContinuousWebtoon's header).
-  // ignore: unused_field
-  int? _continuousActiveChapterId;
+  // The chapter the continuous strip is currently showing, and whether its
+  // pages came off disk. Non-null only while the strip is the viewer; it
+  // moves ahead of `widget.data.chapter` as the strip scrolls across chapter
+  // boundaries (which happens without reloading the reader), so everything
+  // chapter-scoped in the chrome reads [_chapter] instead.
+  Chapter? _stripChapter;
+  bool _stripChapterLocal = false;
+
+  /// The chapter under the reader right now.
+  Chapter get _chapter => _stripChapter ?? widget.data.chapter;
 
   @override
   void initState() {
@@ -771,6 +805,10 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       _currentPage.value = 0;
       _totalPages = 0;
       _pageRefs = null;
+      // A jump rebuilds the strip from the new chapter (it is keyed by the
+      // loaded chapter), so drop the stale active-chapter override first.
+      _stripChapter = null;
+      _stripChapterLocal = false;
       _flashReadingMode();
       _resolveChapterUrl();
     } else if (widget.mode != old.mode) {
@@ -854,10 +892,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     if (source != null) {
       try {
         url = await source.getChapterUrl(
-          SourceChapter(
-            url: widget.data.chapter.url,
-            name: widget.data.chapter.name,
-          ),
+          SourceChapter(url: _chapter.url, name: _chapter.name),
         );
       } catch (_) {
         url = null;
@@ -872,7 +907,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   /// filename-sanitised.
   String _pageFilename() {
     final base = ReaderImageActions.buildValidFilename(
-      '${widget.data.manga.title} - ${widget.data.chapter.name}',
+      '${widget.data.manga.title} - ${_chapter.name}',
     );
     return '$base - ${_currentPage.value + 1}';
   }
@@ -936,7 +971,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       await ReaderImageActions.share(
         bytes,
         filename: '${_pageFilename()}.png',
-        message: '${widget.data.manga.title}: ${widget.data.chapter.name}, '
+        message: '${widget.data.manga.title}: ${_chapter.name}, '
             'page ${_currentPage.value + 1}',
       );
     } catch (e) {
@@ -1070,7 +1105,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     // The transition page reports index == _totalPages; progress persists
     // the last REAL page (Kotlin doesn't store transitions either).
     final lastReal = _totalPages > 0 ? _totalPages - 1 : 0;
-    widget.onPageChanged(page.clamp(0, lastReal));
+    widget.onPageChanged(_chapter.id, page.clamp(0, lastReal));
     _precacheAhead(page);
     _maybeDownloadAhead(page);
   }
@@ -1083,8 +1118,44 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   void _onReachedLastSlot() {
     if (!_autoMarkedRead && _totalPages > 0) {
       _autoMarkedRead = true;
-      widget.onReachedEnd();
+      widget.onReachedEnd(_chapter);
     }
+  }
+
+  /// The strip reports the chapter under the reader as it scrolls across
+  /// boundaries. [pageCount] re-points the page indicator at the new
+  /// chapter, and [local] tells the download-ahead pass whether the chapter
+  /// now being read came off disk (Kotlin gates it on a DownloadPageLoader).
+  void _onStripChapter(Chapter chapter, int pageCount, bool local) {
+    if (chapter.id != _chapter.id) {
+      widget.onActiveChapterChanged(chapter);
+      // Fresh chapter: re-arm the per-chapter one-shots.
+      _downloadedAhead = false;
+      _resolveChapterUrl();
+    }
+    setState(() {
+      _stripChapter = chapter;
+      _stripChapterLocal = local;
+      _totalPages = pageCount;
+    });
+  }
+
+  /// Per-page report from the strip; [page] is already chapter-relative.
+  void _onStripPage(int page) {
+    if (page != _currentPage.value) {
+      _currentPage.value = page;
+      _maybeFlash();
+    }
+    widget.onPageChanged(_chapter.id, page);
+    _maybeDownloadAhead(page);
+  }
+
+  /// Immediate next chapter in reading order after the one being read.
+  Chapter? get _nextOfActive {
+    final siblings = widget.data.siblings;
+    final i = siblings.indexWhere((c) => c.id == _chapter.id);
+    if (i < 0 || i >= siblings.length - 1) return null;
+    return siblings[i + 1];
   }
 
   // Whether this reader instance has already triggered a download-ahead pass
@@ -1104,9 +1175,14 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     if (!widget.data.manga.favorite) return;
     if (_totalPages <= 0) return;
     if ((page + 1) / _totalPages <= 0.25) return;
-    // Current chapter must itself be downloaded.
-    if (widget.data.localPagePaths == null) return;
-    final next = widget.data.nextChapter;
+    // Current chapter must itself be downloaded. In the strip the chapter
+    // being read is not necessarily the one the reader was opened on, so
+    // ask the strip which copy it rendered.
+    final currentDownloaded = _stripChapter != null
+        ? _stripChapterLocal
+        : widget.data.localPagePaths != null;
+    if (!currentDownloaded) return;
+    final next = _nextOfActive;
     if (next == null) return;
     _downloadedAhead = true;
     unawaited(_downloadAhead(next, amount));
@@ -1441,19 +1517,28 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     required bool skipDupe,
     required bool skipFiltered,
   }) {
-    final immediate = forward ? data.nextChapter : data.previousChapter;
+    // Walked from the chapter being READ — in the strip that runs ahead of
+    // the chapter the reader was opened on.
+    final siblings = data.siblings;
+    final currentIdx = siblings.indexWhere((c) => c.id == _chapter.id);
+    final Chapter? immediate;
+    if (currentIdx < 0) {
+      immediate = forward ? data.nextChapter : data.previousChapter;
+    } else if (forward) {
+      immediate =
+          currentIdx < siblings.length - 1 ? siblings[currentIdx + 1] : null;
+    } else {
+      immediate = currentIdx > 0 ? siblings[currentIdx - 1] : null;
+    }
     if (immediate == null || (!skipRead && !skipDupe && !skipFiltered)) {
       return immediate;
     }
-    final siblings = data.siblings;
-    final currentIdx = siblings.indexWhere((c) => c.id == data.chapter.id);
     if (currentIdx < 0) return immediate;
     final step = forward ? 1 : -1;
     for (var i = currentIdx + step; i >= 0 && i < siblings.length; i += step) {
       final candidate = siblings[i];
       if (skipRead && candidate.read) continue;
-      if (skipDupe &&
-          candidate.chapterNumber == data.chapter.chapterNumber) {
+      if (skipDupe && candidate.chapterNumber == _chapter.chapterNumber) {
         continue;
       }
       if (skipFiltered && !_passesChapterFilter(data.manga, candidate)) {
@@ -1510,11 +1595,12 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     // `always_show_chapter_transition`): an info page after the last page —
     // "Finished" + what's next — that swiping/tapping forward from triggers
     // the chapter jump.
-    final transitionPage = ref.watch(readerAlwaysShowTransitionProvider)
+    final alwaysShowTransition = ref.watch(readerAlwaysShowTransitionProvider);
+    final transitionPage = alwaysShowTransition
         ? _ChapterTransitionPage(
-            finishedTitle: data.chapter.name.isEmpty
-                ? 'Chapter ${data.chapter.chapterNumber}'
-                : data.chapter.name,
+            finishedTitle: _chapter.name.isEmpty
+                ? 'Chapter ${_chapter.chapterNumber}'
+                : _chapter.name,
             nextTitle: next == null
                 ? null
                 : (next.name.isEmpty
@@ -1563,25 +1649,39 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       });
     }
 
-    // DEVICE-UNVERIFIED SCAFFOLD (opt-in, default OFF): route REMOTE webtoon
-    // reading to the continuous viewer that appends the next chapter onto the
-    // same scroll. Paged mode, local pages and downloaded chapters keep the
-    // single-chapter _ReaderViewport path unchanged. See _ContinuousWebtoon.
-    final continuousWebtoon = !widget.mode.isPaged &&
-        data.source != null &&
-        data.localPagePaths == null &&
-        ref.watch(readerContinuousWebtoonProvider);
-    Widget viewport = continuousWebtoon
-        ? _ContinuousWebtoon(
-            source: data.source!,
-            manga: data.manga,
-            initialChapter: data.chapter,
-            siblings: data.siblings,
-            incognito: data.incognito,
+    // Long-strip reading runs THROUGH chapter boundaries: Kotlin's
+    // WebtoonViewer keeps the neighbouring chapters in the same RecyclerView
+    // and re-centres as you scroll into them, so the strip never dead-ends on
+    // a transition page. Every continuous mode takes that path, downloaded or
+    // not (Kotlin picks a page loader per chapter and the viewer neither
+    // knows nor cares). Paged modes stay on the single-chapter viewport.
+    final continuous = !widget.mode.isPaged &&
+        (data.source != null || data.localPagePaths != null);
+    Widget viewport = continuous
+        ? _ContinuousStrip(
+            // Re-key on the loaded chapter so an explicit chapter jump
+            // (navigator arrows, chapter sheet) restarts the strip there
+            // instead of scrolling within the old one.
+            key: ValueKey('strip-${data.chapter.id}'),
+            data: data,
+            mode: widget.mode,
             fit: fit,
             sidePaddingFraction: sidePaddingPct / 100,
             cropBorders: cropEnabled,
-            onActiveChapter: (ch) => _continuousActiveChapterId = ch.id,
+            seekRequest: _ViewportSeekRequest(
+              requestId: _seekRequestId,
+              target: _seekTarget,
+              animate: _seekAnimate,
+              scrollTick: _scrollTick,
+              scrollForward: _scrollForward,
+            ),
+            alwaysShowTransition: alwaysShowTransition,
+            textColor:
+                widget.background.resolveOnColor(Theme.of(context).brightness),
+            onActiveChapter: _onStripChapter,
+            onPageChanged: _onStripPage,
+            onPagesResolved: _onPagesResolved,
+            onChapterFinished: widget.onReachedEnd,
           )
         : _ReaderViewport(
       data: data,
@@ -1665,7 +1765,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                   color: barColor,
                   child: _ReaderHeader(
                     manga: data.manga,
-                    chapter: data.chapter,
+                    chapter: _chapter,
                     chapterUrl: _chapterUrl,
                   ),
                 ),
@@ -2387,270 +2487,555 @@ class _PageListState extends State<_PageList> {
 }
 
 // ===========================================================================
-// DEVICE-UNVERIFIED SCAFFOLD (2026-07-24) — true continuous webtoon.
+// Continuous (long-strip) viewer.
 //
-// Opt-in via `readerContinuousWebtoonProvider` (default OFF): when on, REMOTE
-// webtoon/continuous reading appends the NEXT chapter's pages onto the same
-// scroll instead of stopping at the transition-page button — Mihon's
-// WebtoonViewer behaviour ("scroll into the next chapter"). Paged mode, local
-// pages and downloaded chapters are untouched (they keep the single-chapter
-// _PageList / _LocalPageList). Self-contained: fetches each chapter on demand
-// and marks a chapter read when the reader scrolls past its end.
+// Kotlin's WebtoonViewer never dead-ends on a chapter boundary: WebtoonAdapter
+// keeps [prev pages][prev transition][curr pages][next transition][next pages]
+// in ONE RecyclerView, and scrolling into the next chapter's pages promotes it
+// to the current chapter (`ReaderViewModel.onPageSelected` -> `loadNewChapter`).
+// This is that list. Chapters are appended onto the same scroll as the reader
+// nears the end of the loaded ones, taken from the downloaded copy when there
+// is one and from the source otherwise (Kotlin chooses a page loader per
+// chapter; the viewer neither knows nor cares which).
 //
-// DONE here: continuous fetch + append across chapter boundaries, boundary
-// headers, mark-read on advance, active-chapter reporting for the chrome.
-// TODO next session (needs on-device iteration): precise per-page progress +
-// resume-to-page across chapters, prepend PREVIOUS chapter on scroll-up,
-// history writes, download/precache-ahead, e-ink flash, and chrome title sync.
-// Do NOT enable the pref by default until those land and are read on a device.
+// Rendering, zoom, resume and the offset<->index mapping are NOT reimplemented
+// here: the strip flattens its chapters into a single index space and hands
+// that to the shared [_PagesView], so long-strip reading behaves within a
+// chapter exactly as it did when the viewer only ever held one.
+//
+// Deliberately NOT here, both Kotlin behaviours this doesn't reach for yet:
+// the PREVIOUS chapter's pages above the opening one (scrolling up stops at
+// the top of the chapter the reader was opened on), and the paged viewer's
+// page precaching.
 // ===========================================================================
 
+/// One chapter's pages inside the strip.
 class _LoadedChapter {
-  _LoadedChapter(this.chapter, this.pages);
+  _LoadedChapter(this.chapter, this.pages, {required this.local});
   final Chapter chapter;
-  final List<SourcePage> pages;
+  final List<_StripPage> pages;
+
+  /// Pages came off disk rather than the source (Kotlin's DownloadPageLoader
+  /// vs HttpPageLoader) — the download-ahead pass is gated on it.
+  final bool local;
 }
 
-/// One row in the flattened continuous strip: either a chapter-boundary header
-/// or a page (identified by its loaded-chapter index + page index).
+/// One image in the strip: a URL for a source page, a file path for a
+/// downloaded one — [SourceImage] resolves both.
+class _StripPage {
+  const _StripPage(this.url, this.headers);
+  final String url;
+  final Map<String, String>? headers;
+}
+
+/// One row of the flattened strip: a page, or the boundary block that
+/// introduces [chapterIdx].
 class _StripItem {
-  const _StripItem.header(this.chapterIdx)
-      : pageIdx = -1,
-        isHeader = true;
-  const _StripItem.page(this.chapterIdx, this.pageIdx) : isHeader = false;
+  const _StripItem.page(this.chapterIdx, this.pageIdx);
+  const _StripItem.boundary(this.chapterIdx) : pageIdx = -1;
   final int chapterIdx;
   final int pageIdx;
-  final bool isHeader;
+  bool get isBoundary => pageIdx < 0;
 }
 
-class _ContinuousWebtoon extends ConsumerStatefulWidget {
-  const _ContinuousWebtoon({
-    required this.source,
-    required this.manga,
-    required this.initialChapter,
-    required this.siblings,
-    required this.incognito,
+/// What a boundary block occupies, so the strip can tell [_PagesView] the
+/// real cost of a non-page row instead of letting it bill a whole page.
+const double _stripBoundaryExtent = 168;
+
+/// Kotlin preloads the next chapter "once we're within the last 5 pages of
+/// the current chapter" (WebtoonViewer.onPageSelected).
+const int _stripPreloadWithin = 5;
+
+class _ContinuousStrip extends ConsumerStatefulWidget {
+  const _ContinuousStrip({
+    super.key,
+    required this.data,
+    required this.mode,
     required this.fit,
     required this.sidePaddingFraction,
     required this.cropBorders,
+    required this.seekRequest,
+    required this.alwaysShowTransition,
+    required this.textColor,
     required this.onActiveChapter,
+    required this.onPageChanged,
+    required this.onPagesResolved,
+    required this.onChapterFinished,
   });
 
-  final MangaSource source;
-  final Manga manga;
-  final Chapter initialChapter;
-  final List<Chapter> siblings;
-  final bool incognito;
+  final _ReaderData data;
+  final ReadingMode mode;
   final BoxFit fit;
   final double sidePaddingFraction;
   final bool cropBorders;
+  final _ViewportSeekRequest seekRequest;
 
-  /// Reports the chapter now under the reader as the strip appends across
-  /// boundaries so the chrome can follow. Progress + mark-read are persisted
-  /// internally (see the scaffold header for what's still TODO).
-  final ValueChanged<Chapter> onActiveChapter;
+  /// Kotlin `always_show_chapter_transition`. With it off, a boundary whose
+  /// next chapter is already loaded draws nothing at all and the pages simply
+  /// run on — `WebtoonAdapter.setChapters` adds the transition item only when
+  /// it is forced or chapters are missing.
+  final bool alwaysShowTransition;
+
+  /// Reader-background contrast colour for the boundary + tail blocks.
+  final Color textColor;
+
+  /// (chapter, its page count, whether it came off disk) each time the strip
+  /// settles on a different chapter.
+  final void Function(Chapter chapter, int pageCount, bool local)
+      onActiveChapter;
+
+  /// Page index WITHIN the active chapter.
+  final ValueChanged<int> onPageChanged;
+  final ValueChanged<List<_PageRef>> onPagesResolved;
+
+  /// The reader reached the last page of this chapter.
+  final ValueChanged<Chapter> onChapterFinished;
 
   @override
-  ConsumerState<_ContinuousWebtoon> createState() =>
-      _ContinuousWebtoonState();
+  ConsumerState<_ContinuousStrip> createState() => _ContinuousStripState();
 }
 
-class _ContinuousWebtoonState extends ConsumerState<_ContinuousWebtoon> {
+class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
   final List<_LoadedChapter> _loaded = <_LoadedChapter>[];
-  final ScrollController _controller = ScrollController();
+  List<_StripItem> _items = const <_StripItem>[];
+
+  /// Chapters already reported finished, so scrolling back and forth over a
+  /// boundary doesn't re-fire mark-read and the tracker push.
+  final Set<int> _finished = <int>{};
+  int _activeIdx = 0;
   bool _loadingNext = false;
-  bool _fetchingInitial = true;
+  bool _loadingInitial = true;
   Object? _initError;
-  final Set<int> _markedRead = <int>{};
+  Object? _appendError;
 
   @override
   void initState() {
     super.initState();
-    _loadInitial();
+    unawaited(_loadInitial());
   }
 
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  void didUpdateWidget(covariant _ContinuousStrip old) {
+    super.didUpdateWidget(old);
+    // Toggling the transition pref adds/removes boundary rows.
+    if (widget.alwaysShowTransition != old.alwaysShowTransition) {
+      setState(_rebuildItems);
+    }
   }
 
-  Chapter? _nextAfter(Chapter c) {
-    final i = widget.siblings.indexWhere((s) => s.id == c.id);
-    if (i < 0 || i >= widget.siblings.length - 1) return null;
-    return widget.siblings[i + 1];
+  static String _title(Chapter c) =>
+      c.name.isEmpty ? 'Chapter ${c.chapterNumber}' : c.name;
+
+  /// Resolve a chapter's pages, preferring the downloaded copy exactly as the
+  /// single-chapter path does.
+  Future<_LoadedChapter> _load(Chapter chapter) async {
+    final manga = widget.data.manga;
+    final local = await ref
+        .read(downloadRepositoryProvider)
+        .localPagePaths(manga.source, manga.id, chapter.id);
+    if (local != null && local.isNotEmpty) {
+      return _LoadedChapter(
+        chapter,
+        [for (final path in local) _StripPage(path, null)],
+        local: true,
+      );
+    }
+    final source = widget.data.source;
+    if (source == null) throw StateError('Source not installed');
+    final pages = await source.fetchPageList(
+      SourceChapter(url: chapter.url, name: chapter.name),
+    );
+    if (pages.isEmpty) throw StateError('No pages');
+    return _LoadedChapter(
+      chapter,
+      [for (final p in pages) _StripPage(p.imageUrl ?? p.url, p.headers)],
+      local: false,
+    );
   }
 
   Future<void> _loadInitial() async {
     try {
-      final pages = await widget.source.fetchPageList(
-        SourceChapter(
-            url: widget.initialChapter.url,
-            name: widget.initialChapter.name),
-      );
+      final first = await _load(widget.data.chapter);
       if (!mounted) return;
       setState(() {
-        _loaded.add(_LoadedChapter(widget.initialChapter, pages));
-        _fetchingInitial = false;
+        _loaded.add(first);
+        _loadingInitial = false;
+        _rebuildItems();
       });
+      _setActive(0);
     } catch (e) {
-      if (mounted) setState(() => _initError = e);
+      if (mounted) {
+        setState(() {
+          _initError = e;
+          _loadingInitial = false;
+        });
+      }
     }
   }
 
-  /// Scrolled to the end of the loaded strip → the last chapter is finished:
-  /// mark it read (Mihon marks a chapter read on reaching its last page) and
-  /// append the next chapter so scrolling continues into it.
-  Future<void> _appendNext() async {
-    if (_loadingNext || _loaded.isEmpty) return;
-    final finished = _loaded.last.chapter;
-    final next = _nextAfter(finished);
+  /// The chapter that would come after the last loaded one, in reading order.
+  Chapter? get _pendingChapter {
+    if (_loaded.isEmpty) return null;
+    final siblings = widget.data.siblings;
+    final i = siblings.indexWhere((c) => c.id == _loaded.last.chapter.id);
+    if (i < 0 || i >= siblings.length - 1) return null;
+    return siblings[i + 1];
+  }
+
+  Future<void> _appendNext({bool retry = false}) async {
+    if (_loadingNext || _loadingInitial) return;
+    // A failed append waits for the tail's Retry instead of hammering the
+    // source every time the scroll settles at the bottom.
+    if (_appendError != null && !retry) return;
+    final next = _pendingChapter;
     if (next == null) return;
     _loadingNext = true;
-    if (!widget.incognito && _markedRead.add(finished.id)) {
-      unawaited(
-          ref.read(chapterRepositoryProvider).setRead(finished.id, true));
-    }
-    widget.onActiveChapter(next);
+    if (_appendError != null) setState(() => _appendError = null);
     try {
-      final pages = await widget.source.fetchPageList(
-        SourceChapter(url: next.url, name: next.name),
-      );
-      if (mounted) {
-        setState(() => _loaded.add(_LoadedChapter(next, pages)));
-      }
-    } catch (_) {
-      // Leave the boundary in place; scrolling again retries the append.
+      final loaded = await _load(next);
+      if (!mounted) return;
+      setState(() {
+        _loaded.add(loaded);
+        _rebuildItems();
+      });
+    } catch (e) {
+      if (mounted) setState(() => _appendError = e);
     } finally {
       _loadingNext = false;
     }
   }
 
-  bool _onScroll(ScrollNotification n) {
-    if (!_controller.hasClients) return false;
-    final pos = _controller.position;
-    // Within ~1 viewport of the bottom → pull in the next chapter early so the
-    // scroll flows into it rather than hitting a hard stop.
-    if (pos.pixels >= pos.maxScrollExtent - pos.viewportDimension) {
+  void _rebuildItems() {
+    final items = <_StripItem>[];
+    for (var ci = 0; ci < _loaded.length; ci++) {
+      if (_boundaryBefore(ci) != null) items.add(_StripItem.boundary(ci));
+      for (var pi = 0; pi < _loaded[ci].pages.length; pi++) {
+        items.add(_StripItem.page(ci, pi));
+      }
+    }
+    _items = items;
+  }
+
+  /// The boundary block to draw above chapter [ci], or null to run straight
+  /// on into it.
+  ({String finished, String next, int missing})? _boundaryBefore(int ci) {
+    if (ci <= 0 || ci >= _loaded.length) return null;
+    final prev = _loaded[ci - 1].chapter;
+    final cur = _loaded[ci].chapter;
+    final missing = calculateChapterGap(cur, prev);
+    if (missing <= 0 && !widget.alwaysShowTransition) return null;
+    return (
+      finished: _title(prev),
+      next: _title(cur),
+      missing: missing < 0 ? 0 : missing,
+    );
+  }
+
+  _StripPage _pageOf(int i) {
+    final item = _items[i];
+    return _loaded[item.chapterIdx].pages[item.pageIdx];
+  }
+
+  /// Resume point: the stored page of the chapter the reader was opened on,
+  /// which (having no boundary above it) is also its strip index.
+  int get _initialItem {
+    if (_loaded.isEmpty || _loaded.first.pages.isEmpty) return 0;
+    return widget.data.chapter.lastPageRead
+        .clamp(0, _loaded.first.pages.length - 1);
+  }
+
+  void _setActive(int idx) {
+    _activeIdx = idx;
+    final lc = _loaded[idx];
+    widget.onActiveChapter(lc.chapter, lc.pages.length, lc.local);
+    widget.onPagesResolved(
+      [for (final p in lc.pages) _PageRef(p.url, p.headers)],
+    );
+  }
+
+  void _markFinished(int idx) {
+    if (idx < 0 || idx >= _loaded.length) return;
+    final chapter = _loaded[idx].chapter;
+    if (!_finished.add(chapter.id)) return;
+    widget.onChapterFinished(chapter);
+  }
+
+  /// [i] indexes the flattened strip (pages + boundary rows).
+  void _onItem(int i) {
+    // Past the last page: the trailing block, which is not a page.
+    if (i < 0 || i >= _items.length) return;
+    final item = _items[i];
+    // Kotlin routes transitions through onTransitionSelected, which touches
+    // neither progress nor the active chapter.
+    if (item.isBoundary) return;
+    final ci = item.chapterIdx;
+    final pi = item.pageIdx;
+    if (ci != _activeIdx) {
+      // Everything between where we were and here has been read past.
+      for (var k = _activeIdx; k < ci; k++) {
+        _markFinished(k);
+      }
+      _setActive(ci);
+    }
+    widget.onPageChanged(pi);
+    if (pi >= _loaded[ci].pages.length - 1) _markFinished(ci);
+    if (ci == _loaded.length - 1 &&
+        _loaded[ci].pages.length - pi <= _stripPreloadWithin) {
       unawaited(_appendNext());
     }
-    return false;
+  }
+
+  /// Pull the next chapter in once the scroll is within ~1.5 screens of the
+  /// bottom, or immediately for a chapter too short to scroll at all.
+  ///
+  /// Deliberately measured in PIXELS, not page indices. The index comes from
+  /// [_PagesViewState]'s prefix sum over ESTIMATED page extents, which is
+  /// only as good as what has been decoded — resume mid-chapter and every
+  /// page above the resume point is still a guess, so the reported index can
+  /// sit ~10 pages behind reality. An index-driven trigger inherits that
+  /// error and strands the reader on the last page of a chapter, which is
+  /// exactly the dead end this viewer exists to remove.
+  void _onMetrics(ScrollMetrics m) {
+    if (!m.hasContentDimensions) return;
+    if (m.pixels >= m.maxScrollExtent - m.viewportDimension * 1.5) {
+      unawaited(_appendNext());
+    }
+  }
+
+  Widget _centered(Widget child) => Center(
+        child: Padding(padding: const EdgeInsets.all(24), child: child),
+      );
+
+  /// Trailing block past the last loaded page: Kotlin's Next transition,
+  /// which shows the destination while it loads and says so when there is
+  /// none.
+  Widget _tail(BuildContext context) {
+    final dim = widget.textColor.withValues(alpha: 0.7);
+    final next = _pendingChapter;
+    if (next == null) {
+      return _ChapterTransitionPage(
+        finishedTitle: _loaded.isEmpty ? '' : _title(_loaded.last.chapter),
+        nextTitle: null,
+        textColor: widget.textColor,
+        onNextChapter: null,
+      );
+    }
+    final error = _appendError;
+    return SizedBox(
+      height: 280,
+      child: _centered(
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Next:', style: TextStyle(color: dim, fontSize: 14)),
+            const SizedBox(height: 4),
+            Text(
+              _title(next),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: widget.textColor,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            if (error == null)
+              CircularProgressIndicator(color: widget.textColor)
+            else ...[
+              Text(
+                'Failed to load pages: $error',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: dim, fontSize: 14),
+              ),
+              TextButton(
+                onPressed: () => _appendNext(retry: true),
+                child: const Text('Retry'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildItem(BuildContext ctx, int i) {
+    final item = _items[i];
+    if (item.isBoundary) {
+      final boundary = _boundaryBefore(item.chapterIdx);
+      if (boundary == null) return const SizedBox.shrink();
+      return _ChapterBoundary(
+        finishedTitle: boundary.finished,
+        nextTitle: boundary.next,
+        missingCount: boundary.missing,
+        textColor: widget.textColor,
+      );
+    }
+    final page = _pageOf(i);
+    return SourceImage(
+      url: page.url,
+      fit: widget.fit,
+      headers: page.headers,
+      cacheWidth: _readerPageCacheWidth(ctx),
+      fullResolution: true,
+      // ReaderPageImageView sets crossfade(false): pages appear at full
+      // opacity, exempt from the global cover fade.
+      fadeIn: false,
+      cropBorders: widget.cropBorders,
+      placeholder: (_) => const SizedBox(
+        height: 400,
+        child: Center(child: CircularProgressIndicator(color: Colors.white)),
+      ),
+      errorWidget: (_, error) => SizedBox(
+        height: 400,
+        child: Center(
+          child: Text(
+            'Page ${item.pageIdx + 1} failed: $error',
+            style: const TextStyle(color: Colors.white70),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     if (_initError != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'Failed to load pages: $_initError',
-            style: const TextStyle(color: Colors.white70),
-            textAlign: TextAlign.center,
-          ),
+      return _centered(
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white54, size: 64),
+            const SizedBox(height: 12),
+            Text(
+              'Failed to load pages: $_initError',
+              style: const TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _initError = null;
+                  _loadingInitial = true;
+                });
+                unawaited(_loadInitial());
+              },
+              child: const Text('Retry'),
+            ),
+          ],
         ),
       );
     }
-    if (_fetchingInitial) {
+    if (_loadingInitial) {
+      return const Center(child: CircularProgressIndicator(color: Colors.white));
+    }
+    if (_items.isEmpty) {
       return const Center(
-        child: CircularProgressIndicator(color: Colors.white),
+        child: Text('No pages.', style: TextStyle(color: Colors.white70)),
       );
     }
-    final items = <_StripItem>[];
-    for (var ci = 0; ci < _loaded.length; ci++) {
-      items.add(_StripItem.header(ci));
-      for (var pi = 0; pi < _loaded[ci].pages.length; pi++) {
-        items.add(_StripItem.page(ci, pi));
-      }
-    }
-    final hasMore = _nextAfter(_loaded.last.chapter) != null;
-    final sidePad = widget.sidePaddingFraction <= 0
-        ? EdgeInsets.zero
-        : EdgeInsets.symmetric(
-            horizontal: MediaQuery.sizeOf(context).width *
-                widget.sidePaddingFraction,
-          );
-    return NotificationListener<ScrollNotification>(
-      onNotification: _onScroll,
-      child: ListView.builder(
-        controller: _controller,
-        padding: sidePad,
-        // Read-ahead like the single-chapter webtoon viewer (decode pages
-        // before they scroll on-screen).
-        scrollCacheExtent: const ScrollCacheExtent.viewport(3),
-        itemCount: items.length + (hasMore ? 1 : 0),
-        itemBuilder: (ctx, i) {
-          if (i >= items.length) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
-              child: Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              ),
-            );
-          }
-          final item = items[i];
-          if (item.isHeader) {
-            final ch = _loaded[item.chapterIdx].chapter;
-            return _ContinuousChapterHeader(
-              label: ch.name.isEmpty ? 'Chapter ${ch.chapterNumber}' : ch.name,
-              first: item.chapterIdx == 0,
-            );
-          }
-          final lc = _loaded[item.chapterIdx];
-          final page = lc.pages[item.pageIdx];
-          final url = page.imageUrl ?? page.url;
-          return _WebtoonPageSlot(
-            url: url,
-            headers: page.headers,
-            child: SourceImage(
-              url: url,
-              fit: widget.fit,
-              headers: page.headers,
-              cacheWidth: _readerPageCacheWidth(ctx),
-              fullResolution: true,
-              fadeIn: false,
-              cropBorders: widget.cropBorders,
-              placeholder: (_) => const SizedBox(
-                height: 400,
-                child: Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-              ),
-              errorWidget: (_, error) => SizedBox(
-                height: 400,
-                child: Center(
-                  child: Text(
-                    'Page failed: $error',
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                ),
-              ),
-            ),
-          );
+    return NotificationListener<ScrollMetricsNotification>(
+      // Fires when the content itself changes size — catches a chapter that
+      // fits on one screen, which never produces a scroll notification.
+      onNotification: (n) {
+        _onMetrics(n.metrics);
+        return false;
+      },
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (n) {
+          _onMetrics(n.metrics);
+          return false;
         },
+        child: _PagesView(
+          count: _items.length,
+          mode: widget.mode,
+          sidePaddingFraction: widget.sidePaddingFraction,
+          initialPage: _initialItem,
+          onPageChanged: _onItem,
+          seekRequest: widget.seekRequest,
+          transition: _tail(context),
+          pageUrlOf: (i) =>
+              i < _items.length && !_items[i].isBoundary ? _pageOf(i).url : null,
+          pageHeadersOf: (i) => i < _items.length && !_items[i].isBoundary
+              ? _pageOf(i).headers
+              : null,
+          itemExtentOf: (i) => i < _items.length && _items[i].isBoundary
+              ? _stripBoundaryExtent
+              : null,
+          // Zoom handles and the last-slot hook are paged-mode plumbing; the
+          // strip marks chapters read itself, per chapter rather than per
+          // viewer session.
+            fit: widget.fit,
+            itemBuilder: _buildItem,
+        ),
       ),
     );
   }
 }
 
-/// Between-chapter separator in the continuous strip (Mihon shows a small
-/// header at each chapter boundary).
-class _ContinuousChapterHeader extends StatelessWidget {
-  const _ContinuousChapterHeader({required this.label, required this.first});
+/// Between-chapter block in the strip (Kotlin's WebtoonTransitionHolder):
+/// what just finished, what follows, and any chapters skipped over.
+class _ChapterBoundary extends StatelessWidget {
+  const _ChapterBoundary({
+    required this.finishedTitle,
+    required this.nextTitle,
+    required this.missingCount,
+    required this.textColor,
+  });
 
-  final String label;
-  final bool first;
+  final String finishedTitle;
+  final String nextTitle;
+  final int missingCount;
+  final Color textColor;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.only(top: first ? 8 : 28, bottom: 8),
-      alignment: Alignment.center,
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: const TextStyle(color: Colors.white54, fontSize: 13),
+    final dim = textColor.withValues(alpha: 0.7);
+    final strong = TextStyle(
+      color: textColor,
+      fontSize: 16,
+      fontWeight: FontWeight.w600,
+    );
+    return SizedBox(
+      height: _stripBoundaryExtent,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Verbatim Mihon strings transition_finished / transition_next.
+            Text('Finished:', style: TextStyle(color: dim, fontSize: 13)),
+            Text(
+              finishedTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: strong,
+            ),
+            const SizedBox(height: 12),
+            Text('Next:', style: TextStyle(color: dim, fontSize: 13)),
+            Text(
+              nextTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: strong,
+            ),
+            if (missingCount > 0) ...[
+              const SizedBox(height: 8),
+              // Mihon plural missing_chapters_warning.
+              Text(
+                missingCount == 1
+                    ? 'Skipping 1 chapter, either the source is missing it or '
+                        'it has been filtered out'
+                    : 'Skipping $missingCount chapters, either the source is '
+                        'missing them or they have been filtered out',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: dim, fontSize: 12),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -2753,6 +3138,7 @@ class _PagesView extends ConsumerStatefulWidget {
     this.transition,
     this.pageUrlOf,
     this.pageHeadersOf,
+    this.itemExtentOf,
     this.zoomRegistry,
     this.fit = BoxFit.contain,
   });
@@ -2779,6 +3165,12 @@ class _PagesView extends ConsumerStatefulWidget {
   /// Per-page HTTP headers, needed when the dual-page splitter builds the
   /// half-page images itself (bypassing [itemBuilder]).
   final Map<String, String>? Function(int index)? pageHeadersOf;
+
+  /// Known layout height for items that are not page images (the strip's
+  /// chapter-boundary blocks). Returning null falls back to the aspect-ratio
+  /// estimate, so the continuous offset↔index mapping stays honest instead
+  /// of charging every boundary a full page's worth of scroll.
+  final double? Function(int index)? itemExtentOf;
 
   /// Scale-type fit, so split halves render like whole pages do.
   final BoxFit fit;
@@ -2985,10 +3377,30 @@ class _PagesViewState extends ConsumerState<_PagesView> {
   /// extent once its aspect is known (cache hit), a generic placeholder
   /// height before first decode. Powers offset↔index mapping so progress
   /// and resume track actual pages instead of a scroll-ratio guess.
-  double _estimatedHeight(int i, double contentWidth) {
+  double _estimatedHeight(int i, double contentWidth, double fallback) {
+    final fixed = widget.itemExtentOf?.call(i);
+    if (fixed != null) return fixed;
     final url = widget.pageUrlOf?.call(i);
     final aspect = url == null ? null : _pageAspectCache[url];
-    return aspect == null ? 400.0 : contentWidth / aspect;
+    return aspect == null ? fallback : contentWidth / aspect;
+  }
+
+  /// Stand-in extent for pages that haven't been decoded yet: the mean of the
+  /// ones that have. A flat guess drifts badly the moment the reader resumes
+  /// mid-chapter — every page ABOVE the resume point stays undecoded, so the
+  /// prefix sum runs short by the difference on each of them and the reported
+  /// page ends up many pages behind the one actually on screen.
+  double _fallbackExtent(double contentWidth) {
+    var sum = 0.0;
+    var known = 0;
+    for (var i = 0; i < widget.count; i++) {
+      final url = widget.pageUrlOf?.call(i);
+      final aspect = url == null ? null : _pageAspectCache[url];
+      if (aspect == null || aspect <= 0) continue;
+      sum += contentWidth / aspect;
+      known++;
+    }
+    return known == 0 ? 400.0 : sum / known;
   }
 
   double _webtoonContentWidth() {
@@ -2998,18 +3410,20 @@ class _PagesViewState extends ConsumerState<_PagesView> {
 
   double _offsetForIndex(int index) {
     final w = _webtoonContentWidth();
+    final fallback = _fallbackExtent(w);
     var offset = 0.0;
     for (var i = 0; i < index && i < widget.count; i++) {
-      offset += _estimatedHeight(i, w);
+      offset += _estimatedHeight(i, w, fallback);
     }
     return offset;
   }
 
   int _indexForOffset(double pixels) {
     final w = _webtoonContentWidth();
+    final fallback = _fallbackExtent(w);
     var cumulative = 0.0;
     for (var i = 0; i < widget.count; i++) {
-      cumulative += _estimatedHeight(i, w);
+      cumulative += _estimatedHeight(i, w, fallback);
       if (pixels < cumulative) return i;
     }
     return widget.count - 1;
@@ -3169,10 +3583,13 @@ class _PagesViewState extends ConsumerState<_PagesView> {
             final pos = _scrollController!.position;
             // Index of the page crossing the viewport's vertical centre,
             // from the prefix sums of (estimated) item extents — tracks
-            // real pages instead of the old scroll-ratio guess.
-            final idx = _indexForOffset(
-              pos.pixels + pos.viewportDimension / 2,
-            );
+            // real pages instead of the old scroll-ratio guess. Resting at
+            // the very bottom is the one position the estimate can't be
+            // allowed to get wrong (it decides mark-read), so it is read off
+            // the scroll extent directly.
+            final idx = pos.pixels >= pos.maxScrollExtent - 1
+                ? widget.count - 1
+                : _indexForOffset(pos.pixels + pos.viewportDimension / 2);
             _report(idx);
             if (idx >= widget.count - 1) {
               widget.zoomRegistry?.onReachedLastSlot?.call();

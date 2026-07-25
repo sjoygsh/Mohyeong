@@ -390,18 +390,6 @@ class ReaderSettingsScreen extends ConsumerWidget {
             onChanged: (v) =>
                 ref.read(readerWebtoonSidePaddingProvider.notifier).set(v),
           ),
-          // Unfinished scaffold (see _ContinuousWebtoon in reader_screen.dart):
-          // resume-to-page across chapters, previous-chapter prepend and
-          // history writes are still missing, so this stays opt-in and is
-          // labelled experimental until it has been iterated on-device.
-          PrefSwitch(
-            title: 'Continuous chapters',
-            subtitle:
-                'Experimental — scroll straight into the next chapter '
-                'instead of stopping at the transition page. Online sources '
-                'only; reading position is not restored across chapters.',
-            provider: readerContinuousWebtoonProvider,
-          ),
           const PrefSectionHeader('Navigation'),
           PrefSwitch(
             title: 'Tap to navigate',
