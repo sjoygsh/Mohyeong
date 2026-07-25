@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
@@ -36,6 +37,7 @@ import '../../domain/source/model/source_chapter.dart';
 import '../common/crop_borders_image.dart';
 import '../common/source_image.dart';
 import '../common/webview_screen.dart';
+import '../tide/tide.dart';
 import 'reader_settings_sheet.dart';
 
 /// Reader screen — fetches the chapter's page list from the manga's source
@@ -1750,6 +1752,25 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
           ),
           // (Colour filter is applied to the viewport above via
           // ColorFiltered so it blends per-pixel with the page art.)
+          // Position through the chapter, as a lit hairline along the top
+          // edge. Deliberately outside the chrome's show/hide: it is the one
+          // piece of status worth keeping while the chrome is away, and at 2px
+          // it costs the page nothing.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: ValueListenableBuilder<int>(
+                valueListenable: _currentPage,
+                builder: (context, page, _) => _ReaderProgressHairline(
+                  progress: _totalPages <= 1
+                      ? 0
+                      : (page / (_totalPages - 1)).clamp(0.0, 1.0),
+                ),
+              ),
+            ),
+          ),
           // Top chrome.
           Positioned(
             top: 0,
@@ -1761,12 +1782,31 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 150),
                 opacity: _chromeVisible ? 1 : 0,
-                child: Material(
-                  color: barColor,
-                  child: _ReaderHeader(
-                    manga: data.manga,
-                    chapter: _chapter,
-                    chapterUrl: _chapterUrl,
+                // Tide's top chrome is a fade rather than a bar: the page runs
+                // under it and darkens into legibility, instead of being cut
+                // off by a slab. Blurred so text stays readable over busy art.
+                child: ClipRect(
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            barColor.withValues(alpha: 0.82),
+                            barColor.withValues(alpha: 0.28),
+                            barColor.withValues(alpha: 0.0),
+                          ],
+                          stops: const [0.0, 0.7, 1.0],
+                        ),
+                      ),
+                      child: _ReaderHeader(
+                        manga: data.manga,
+                        chapter: _chapter,
+                        chapterUrl: _chapterUrl,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -1827,39 +1867,53 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Material(
-                      color: barColor,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                    // Tide's action card: one inset pane of glass floating
+                    // over the page rather than a bar welded to the edge.
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        14,
+                        0,
+                        14,
+                        MediaQuery.paddingOf(context).bottom + 12,
+                      ),
+                      child: TideGlass(
+                        radius: 26,
+                        blur: true,
+                        tintTop: 0.13,
+                        tintBottom: 0.045,
+                        highlight: 0.26,
+                        border: 0.15,
+                        saturation: 1.9,
+                        shadows: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            blurRadius: 48,
+                            offset: const Offset(0, 20),
+                          ),
+                        ],
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            IconButton(
-                              tooltip: 'Reading mode',
-                              icon: Icon(readingModeIcon(widget.mode)),
-                              onPressed: _showReadingModeSelect,
+                            _ReaderAction(
+                              icon: readingModeIcon(widget.mode),
+                              label: 'Mode',
+                              onTap: _showReadingModeSelect,
                             ),
-                            IconButton(
-                              tooltip: 'Rotation',
-                              icon: Icon(
-                                readerOrientationIcon(widget.orientation),
-                              ),
-                              onPressed: _showOrientationSelect,
+                            _ReaderAction(
+                              icon: readerOrientationIcon(widget.orientation),
+                              label: 'Rotate',
+                              onTap: _showOrientationSelect,
                             ),
-                            IconButton(
-                              tooltip: 'Crop borders',
-                              icon: Icon(
-                                Icons.crop,
-                                color: cropEnabled
-                                    ? Theme.of(context).colorScheme.primary
-                                    : null,
-                              ),
-                              onPressed: _toggleCropBorders,
+                            _ReaderAction(
+                              icon: Icons.crop,
+                              label: 'Crop',
+                              active: cropEnabled,
+                              onTap: _toggleCropBorders,
                             ),
-                            IconButton(
-                              tooltip: 'Settings',
-                              icon: const Icon(Icons.settings_outlined),
-                              onPressed: _showSettingsSheet,
+                            _ReaderAction(
+                              icon: Icons.tune,
+                              label: 'Display',
+                              onTap: _showSettingsSheet,
                             ),
                           ],
                         ),
@@ -1929,6 +1983,88 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
 /// paged chapter opens, illustrating which screen third turns the page
 /// forward, which goes back, and which toggles the menu. Mirrors Mihon's
 /// `ReaderNavigationOverlayView`. Tapping anywhere dismisses it.
+/// One action in the reader's glass card: icon over a small tracked label, so
+/// the control says what it does instead of relying on a long-press tooltip.
+class _ReaderAction extends StatelessWidget {
+  const _ReaderAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  /// Lit when the setting it toggles is currently on.
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? TideColors.accent : TideColors.textAt(0.72);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 13),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(height: 5),
+            Text(
+              label.toUpperCase(),
+              style: TideText.kicker(
+                size: 9.5,
+                color: active ? TideColors.accent : TideColors.textAt(0.4),
+              ).copyWith(letterSpacing: 0.95),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tide's reading-position hairline: 2px along the very top of the reader,
+/// accent-lit and glowing, widening with progress through the chapter.
+class _ReaderProgressHairline extends StatelessWidget {
+  const _ReaderProgressHairline({required this.progress});
+
+  /// 0–1.
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 2,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: FractionallySizedBox(
+          widthFactor: progress.clamp(0.0, 1.0),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  TideColors.accent.withValues(alpha: 0.35),
+                  TideColors.accentLight,
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: TideColors.accent.withValues(alpha: 0.9),
+                  blurRadius: 12,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _NavZoneOverlay extends StatelessWidget {
   const _NavZoneOverlay({
     required this.mode,
@@ -2821,35 +2957,81 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
       );
     }
     final error = _appendError;
+    final finished = _loaded.isEmpty ? null : _loaded.last.chapter;
+    // Tide's chapter break: what you just finished, stated quietly, then the
+    // next chapter as a glass pill while it loads. The strip scrolls straight
+    // on through this — it marks the seam rather than gating it.
     return SizedBox(
-      height: 280,
+      height: 300,
       child: _centered(
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Next:', style: TextStyle(color: dim, fontSize: 14)),
-            const SizedBox(height: 4),
-            Text(
-              _title(next),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: widget.textColor,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+            if (finished != null)
+              Text(
+                'END OF ${_title(finished).toUpperCase()}',
+                textAlign: TextAlign.center,
+                style: TideText.kicker(
+                  color: widget.textColor.withValues(alpha: 0.34),
+                ).copyWith(letterSpacing: 2.64),
+              ),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 56,
+              width: 280,
+              child: TideGlass(
+                radius: 28,
+                blur: true,
+                tintTop: 0.12,
+                tintBottom: 0.04,
+                highlight: 0.22,
+                border: 0.34,
+                onTap: error == null ? null : () => _appendNext(retry: true),
+                child: Center(
+                  child: error == null
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                _title(next),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TideText.title(size: 14.5).copyWith(
+                                  color: widget.textColor,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 9),
+                            const Icon(Icons.chevron_right,
+                                size: 16, color: TideColors.accent),
+                          ],
+                        )
+                      : Text(
+                          'Retry',
+                          style: TideText.title(size: 14.5)
+                              .copyWith(color: TideColors.accent),
+                        ),
+                ),
               ),
             ),
-            const SizedBox(height: 20),
-            if (error == null)
-              CircularProgressIndicator(color: widget.textColor)
-            else ...[
+            if (error != null) ...[
+              const SizedBox(height: 12),
               Text(
-                'Failed to load pages: $error',
+                '$error',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: dim, fontSize: 14),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: dim, fontSize: 12),
               ),
-              TextButton(
-                onPressed: () => _appendNext(retry: true),
-                child: const Text('Retry'),
+            ] else ...[
+              const SizedBox(height: 20),
+              Text(
+                'Sleep well.',
+                style: TextStyle(
+                  color: widget.textColor.withValues(alpha: 0.3),
+                  fontSize: 12,
+                ),
               ),
             ],
           ],
