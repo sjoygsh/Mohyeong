@@ -74,14 +74,97 @@ class AppTheme {
         pageTransitionsTheme: _pageTransitions,
       );
 
-  static ThemeData dark(Color seed) => ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.dark,
+  static ThemeData dark(Color seed) {
+    final base = ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: seed,
+        brightness: Brightness.dark,
+      ),
+      pageTransitionsTheme: _pageTransitions,
+    );
+    return _tide(base);
+  }
+
+  /// Pull a dark theme onto Tide's ground so the screens that are still plain
+  /// Material — Updates, History, Browse, More, every settings page — sit on
+  /// the same near-black blue as Tide's own surfaces instead of Material's
+  /// default violet-grey, and pick up the blurple accent.
+  ///
+  /// This is deliberately a theme pass rather than a rewrite: it makes the
+  /// whole app coherent in one place, and each screen can then be taken over
+  /// properly without the app looking like two apps in the meantime.
+  static ThemeData _tide(ThemeData base) {
+    const ground = Color(0xFF0D1019);
+    const raised = Color(0xFF161A26);
+    const accent = Color(0xFFB5ABFC);
+    const text = Color(0xFFE9E9ED);
+    final scheme = base.colorScheme.copyWith(
+      primary: accent,
+      onPrimary: ground,
+      secondary: accent,
+      onSecondary: ground,
+      surface: ground,
+      onSurface: text,
+      surfaceContainerLowest: ground,
+      surfaceContainerLow: const Color(0xFF12151F),
+      surfaceContainer: raised,
+      surfaceContainerHigh: const Color(0xFF1B2030),
+      surfaceContainerHighest: const Color(0xFF20263A),
+      outline: const Color(0xFF3F4457),
+      outlineVariant: const Color(0xFF2A2F3E),
+    );
+    return base.copyWith(
+      colorScheme: scheme,
+      scaffoldBackgroundColor: ground,
+      canvasColor: ground,
+      dividerColor: text.withValues(alpha: 0.10),
+      // Headings never bolder than 500, hierarchy from size and space —
+      // Nocturne's rule, applied to the Material type ramp too.
+      textTheme: base.textTheme.apply(
+        bodyColor: text,
+        displayColor: text,
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: ground,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: text,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        titleTextStyle: base.textTheme.titleLarge?.copyWith(
+          color: text,
+          fontWeight: FontWeight.w500,
+          letterSpacing: -0.3,
         ),
-        pageTransitionsTheme: _pageTransitions,
-      );
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: raised,
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: accent.withValues(alpha: 0.18),
+        elevation: 0,
+      ),
+      cardTheme: base.cardTheme.copyWith(
+        color: raised,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+      ),
+      dialogTheme: base.dialogTheme.copyWith(
+        backgroundColor: raised,
+        surfaceTintColor: Colors.transparent,
+      ),
+      bottomSheetTheme: base.bottomSheetTheme.copyWith(
+        backgroundColor: raised,
+        surfaceTintColor: Colors.transparent,
+      ),
+      listTileTheme: const ListTileThemeData(iconColor: Color(0xFF9397AB)),
+      snackBarTheme: base.snackBarTheme.copyWith(
+        backgroundColor: raised,
+        contentTextStyle: TextStyle(color: text),
+      ),
+      switchTheme: base.switchTheme,
+      progressIndicatorTheme: const ProgressIndicatorThemeData(color: accent),
+    );
+  }
 
   /// Pure-black dark variant for OLED screens. Same seed-derived accent
   /// colours as [dark], but surfaces/background collapse to black so dark

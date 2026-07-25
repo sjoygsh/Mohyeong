@@ -111,50 +111,60 @@ class _TideSeriesScreenState extends ConsumerState<TideSeriesScreen> {
     return TideRise(
       child: Stack(
         children: [
-          // Artwork runs off the top of the page; everything else sits over it.
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 520,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                TideCover(manga: manga, cacheWidth: 900),
-                const TideScrim(),
-              ],
-            ),
-          ),
           Positioned.fill(
             child: ListView(
               padding: const EdgeInsets.only(bottom: 108),
               children: [
-                const SizedBox(height: 300),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                // The cover is the page's head and scrolls WITH it. It used to
+                // be pinned behind a separately-scrolling list, which meant
+                // that the moment you scrolled, the stats and chapter rows sat
+                // on top of bright artwork and became unreadable. The scrim
+                // ends fully opaque so the handoff to the ground is seamless.
+                SizedBox(
+                  height: 520,
+                  child: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      if ((manga.author ?? '').trim().isNotEmpty)
-                        Text(
-                          manga.author!.trim().toUpperCase(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TideText.kicker(color: TideColors.accent)
-                              .copyWith(letterSpacing: 2.2),
-                        ),
-                      const SizedBox(height: 10),
-                      Text(manga.title, style: TideText.display(40)),
-                      if (manga.genre?.isNotEmpty ?? false) ...[
-                        const SizedBox(height: 14),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
+                      TideCover(manga: manga, cacheWidth: 900),
+                      const TideScrim(opaqueTail: true),
+                      Positioned(
+                        left: 20,
+                        right: 20,
+                        bottom: 18,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            for (final g in manga.genre!.take(6)) TideTag(g),
+                            if ((manga.author ?? '').trim().isNotEmpty)
+                              Text(
+                                manga.author!.trim().toUpperCase(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TideText.kicker(
+                                  color: TideColors.accent,
+                                ).copyWith(letterSpacing: 2.2),
+                              ),
+                            const SizedBox(height: 10),
+                            Text(
+                              manga.title,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: TideText.display(36),
+                            ),
+                            if (manga.genre?.isNotEmpty ?? false) ...[
+                              const SizedBox(height: 14),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  for (final g in manga.genre!.take(4))
+                                    TideTag(g),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),
