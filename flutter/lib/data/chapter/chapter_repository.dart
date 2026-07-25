@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/chapter/model/chapter.dart';
+import '../../domain/chapter/model/no_chapters_exception.dart';
 import '../../domain/source/model/source_chapter.dart';
 import '../database/app_database.dart' as db;
 import '../database/database_provider.dart';
@@ -139,11 +140,18 @@ class ChapterRepository {
   /// - dateFetch is stamped now() on newly inserted chapters only.
   /// - sourceOrder is reassigned by index in the fetched list (so the order
   ///   the source returns wins).
+  /// - an empty fetch from a non-local source throws [NoChaptersException]
+  ///   rather than reporting a successful no-op ([isLocalSource] opts a local
+  ///   manga out, as Kotlin's `!source.isLocal()` does).
   Future<List<Chapter>> syncChaptersWithSource(
     int mangaId,
-    List<SourceChapter> fetched,
-  ) async {
-    if (fetched.isEmpty) return const [];
+    List<SourceChapter> fetched, {
+    bool isLocalSource = false,
+  }) async {
+    if (fetched.isEmpty) {
+      if (isLocalSource) return const [];
+      throw const NoChaptersException();
+    }
     // One transaction around the prune + insert + update writes: without it
     // drift query streams emit each intermediate state (the open details
     // screen flickers mid-sync), and a failure after the prune permanently

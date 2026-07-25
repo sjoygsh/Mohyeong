@@ -3,6 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mohyeong/data/chapter/chapter_repository.dart';
 import 'package:mohyeong/data/database/app_database.dart';
+import 'package:mohyeong/domain/chapter/model/no_chapters_exception.dart';
 import 'package:mohyeong/domain/source/model/source_chapter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -136,5 +137,32 @@ void main() {
     final stored = await repo.getByMangaId(mangaId);
     // It was still inserted, and inserted as read.
     expect(stored.firstWhere((c) => c.url == 'c/5-dup').read, isTrue);
+  });
+
+  test('an empty fetch from a remote source throws instead of reporting a no-op',
+      () async {
+    repo = ChapterRepository(db);
+    final mangaId = await seedManga();
+    await repo.syncChaptersWithSource(mangaId, [ch('c/1', 'Chapter 1', number: 1)]);
+
+    // Kotlin SyncChaptersWithSource raises NoChaptersException here. Silently
+    // succeeding is what let a source whose parsing had broken (stale URL) look
+    // exactly like "no new chapters" on every refresh for weeks.
+    await expectLater(
+      repo.syncChaptersWithSource(mangaId, const []),
+      throwsA(isA<NoChaptersException>()),
+    );
+    // ...and it throws BEFORE touching the existing rows.
+    expect((await repo.getByMangaId(mangaId)).map((c) => c.url), ['c/1']);
+  });
+
+  test('an empty fetch from the local source stays a no-op', () async {
+    repo = ChapterRepository(db);
+    final mangaId = await seedManga();
+
+    final added = await repo
+        .syncChaptersWithSource(mangaId, const [], isLocalSource: true);
+
+    expect(added, isEmpty);
   });
 }

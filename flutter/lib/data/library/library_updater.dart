@@ -14,6 +14,7 @@ import '../chapter/chapter_repository.dart';
 import '../download/download_repository.dart';
 import '../manga/manga_repository.dart';
 import '../source/extension_repository.dart';
+import '../source/local_source.dart';
 import 'library_update_preference.dart';
 
 /// Domain service that fetches the latest chapter list for every manga in
@@ -256,7 +257,11 @@ class LibraryUpdater {
     final fetched = await source.fetchChapterList(
       SourceManga(url: manga.url, title: manga.title),
     );
-    final added = await _chapters.syncChaptersWithSource(manga.id, fetched);
+    final added = await _chapters.syncChaptersWithSource(
+      manga.id,
+      fetched,
+      isLocalSource: manga.source == LocalSource.numericId,
+    );
     await recomputeFetchInterval(
       manga,
       hasNewChapters: added.isNotEmpty,

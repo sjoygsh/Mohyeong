@@ -17,12 +17,14 @@ import '../../data/library/library_updater.dart';
 import '../../data/manga/excluded_scanlators_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/source/extension_repository.dart';
+import '../../data/source/local_source.dart';
 import '../../data/source/source_repository.dart';
 import '../../data/track/track_repository.dart';
 import '../../data/track/track_updater.dart';
 import '../../data/track/tracker_registry.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
+import '../../domain/chapter/model/no_chapters_exception.dart';
 import '../../domain/chapter/service/missing_chapters.dart';
 import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/manga/model/manga.dart';
@@ -179,8 +181,11 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
         }(),
         () async {
           final fetched = await source.fetchChapterList(sourceManga);
-          added =
-              await chapterRepo.syncChaptersWithSource(manga.id, fetched);
+          added = await chapterRepo.syncChaptersWithSource(
+            manga.id,
+            fetched,
+            isLocalSource: manga.source == LocalSource.numericId,
+          );
         }(),
       ]);
       final updater = ref.read(libraryUpdaterProvider);
@@ -197,7 +202,11 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
       messenger.showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
       if (!mounted || silent) return;
-      messenger.showSnackBar(SnackBar(content: Text('Refresh failed: $e')));
+      // Kotlin MangaScreenModel maps NoChaptersException to its own copy
+      // ("No chapters found") instead of the generic failure message.
+      final msg =
+          e is NoChaptersException ? 'No chapters found' : 'Refresh failed: $e';
+      messenger.showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) {
         setState(() => _refreshingDetails = false);

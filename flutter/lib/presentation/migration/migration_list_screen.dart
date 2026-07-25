@@ -6,6 +6,7 @@ import '../../data/migration/migration_service.dart';
 import '../../data/migration/smart_search_engine.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/source/extension_repository.dart';
+import '../../data/source/local_source.dart';
 import '../../data/source/source_preferences.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/source/model/manga_source.dart';
@@ -196,9 +197,11 @@ class _MigrationListScreenState extends ConsumerState<MigrationListScreen> {
         final fetched = await source.fetchChapterList(
           SourceManga(url: target.url, title: target.title),
         );
-        await ref
-            .read(chapterRepositoryProvider)
-            .syncChaptersWithSource(target.id, fetched);
+        await ref.read(chapterRepositoryProvider).syncChaptersWithSource(
+              target.id,
+              fetched,
+              isLocalSource: sourceId == LocalSource.numericId,
+            );
       } catch (_) {
         // Chapter fetch failure shouldn't drop the match entirely.
       }
