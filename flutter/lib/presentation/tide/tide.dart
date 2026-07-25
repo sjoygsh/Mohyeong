@@ -343,17 +343,24 @@ class _AuroraBlobState extends State<_AuroraBlob>
       // multi-stop radial IS that blur, and costs a shader instead of a
       // full-screen filter on every frame of a continuously-running
       // animation — which on a phone is the difference between free and not.
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              widget.color,
-              widget.color.withValues(alpha: 0.55),
-              widget.color.withValues(alpha: 0.18),
-              widget.color.withValues(alpha: 0.0),
-            ],
-            stops: const [0.0, 0.35, 0.62, 1.0],
+      //
+      // The RepaintBoundary is load-bearing: it gives the gradient its own
+      // layer, so the transform above re-composites a cached raster each
+      // frame instead of re-running a screen-sized shader. Without it three
+      // of these animating at once cost real frames on a mid-range phone.
+      child: RepaintBoundary(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: [
+                widget.color,
+                widget.color.withValues(alpha: 0.55),
+                widget.color.withValues(alpha: 0.18),
+                widget.color.withValues(alpha: 0.0),
+              ],
+              stops: const [0.0, 0.35, 0.62, 1.0],
+            ),
           ),
         ),
       ),
@@ -640,7 +647,11 @@ class TideIconButton extends StatelessWidget {
       height: size,
       child: TideGlass(
         radius: size / 2,
-        blur: true,
+        // No real blur: these sit over the aurora, which is diffuse colour —
+        // blurring it looks identical to tinting it, and a BackdropFilter over
+        // a continuously-animating background has to re-run its blur EVERY
+        // frame. Blur is reserved for glass over actual artwork.
+        blur: false,
         tintTop: 0.09,
         tintBottom: 0.03,
         highlight: 0.16,
@@ -716,9 +727,18 @@ class TideCover extends ConsumerWidget {
 /// every title that sits on a cover, so text stays legible without a slab
 /// behind it.
 class TideScrim extends StatelessWidget {
-  const TideScrim({super.key, this.ground = TideColors.ground});
+  const TideScrim({
+    super.key,
+    this.ground = TideColors.ground,
+    this.opaqueTail = false,
+  });
 
   final Color ground;
+
+  /// End at the ground colour outright rather than at 94%. Set where the
+  /// artwork has to hand off to page content: anything short of opaque leaves
+  /// the join visible and text sitting on a ghost of the cover.
+  final bool opaqueTail;
 
   @override
   Widget build(BuildContext context) {
@@ -729,12 +749,12 @@ class TideScrim extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              ground.withValues(alpha: 0.35),
-              ground.withValues(alpha: 0.0),
-              ground.withValues(alpha: 0.72),
-              ground.withValues(alpha: 0.94),
+              ground.withValues(alpha: opaqueTail ? 0.55 : 0.35),
+              ground.withValues(alpha: opaqueTail ? 0.05 : 0.0),
+              ground.withValues(alpha: opaqueTail ? 0.80 : 0.72),
+              opaqueTail ? ground : ground.withValues(alpha: 0.94),
             ],
-            stops: const [0.0, 0.34, 0.78, 1.0],
+            stops: const [0.0, 0.30, 0.74, 1.0],
           ),
         ),
       ),

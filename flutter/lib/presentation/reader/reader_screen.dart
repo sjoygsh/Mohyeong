@@ -1152,6 +1152,28 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     _maybeDownloadAhead(page);
   }
 
+  /// Chrome follows the scroll in continuous modes: reading downward puts it
+  /// away, scrolling back up brings it out. Tap-to-toggle still works and
+  /// still wins — this only removes the need to tap at all while reading.
+  /// Mirrors Kotlin's WebtoonViewer, which hides the menu past a scroll
+  /// threshold.
+  bool _onChromeScroll(ScrollNotification n) {
+    if (widget.mode.isPaged) return false;
+    if (n is! ScrollUpdateNotification) return false;
+    if (n.metrics.axis != Axis.vertical) return false;
+    final delta = n.scrollDelta ?? 0;
+    // Past the very top only, so the first nudge into a chapter doesn't
+    // snatch the chrome away before it has been read.
+    if (delta > 5 && n.metrics.pixels > 40 && _chromeVisible) {
+      setState(() => _chromeVisible = false);
+      _autoHideTimer?.cancel();
+    } else if (delta < -5 && !_chromeVisible) {
+      setState(() => _chromeVisible = true);
+      _armAutoHide();
+    }
+    return false;
+  }
+
   /// Immediate next chapter in reading order after the one being read.
   Chapter? get _nextOfActive {
     final siblings = widget.data.siblings;
@@ -1747,7 +1769,10 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
               onLongPress: ref.watch(readerLongTapProvider)
                   ? () => _showPageActions(context)
                   : null,
-              child: viewport,
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _onChromeScroll,
+                child: viewport,
+              ),
             ),
           ),
           // (Colour filter is applied to the viewport above via

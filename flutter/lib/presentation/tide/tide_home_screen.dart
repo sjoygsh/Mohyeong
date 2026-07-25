@@ -72,6 +72,31 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
   int _hero = 0;
   Timer? _rotate;
 
+  /// Whether the floating bar is showing. It gets out of the way while you
+  /// read down the feed and comes back the moment you scroll up — the same
+  /// rule the Material nav follows, kept because a bar that permanently
+  /// covers the last row of content is worse than no bar.
+  bool _barVisible = true;
+
+  bool _onScroll(ScrollNotification n) {
+    // Horizontal rails (the Continue carousel) must not move the bar.
+    if (n.metrics.axis != Axis.vertical) return false;
+    final double delta;
+    if (n is ScrollUpdateNotification) {
+      delta = n.scrollDelta ?? 0;
+    } else if (n is OverscrollNotification) {
+      delta = n.overscroll;
+    } else {
+      return false;
+    }
+    if (delta > 1 && _barVisible) {
+      setState(() => _barVisible = false);
+    } else if (delta < -1 && !_barVisible) {
+      setState(() => _barVisible = true);
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -188,7 +213,9 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
         children: [
           const Positioned.fill(child: TideAurora()),
           Positioned.fill(
-            child: StreamBuilder<List<LibraryItem>>(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onScroll,
+              child: StreamBuilder<List<LibraryItem>>(
               stream: _library,
               builder: (context, librarySnap) {
                 final items = librarySnap.data ?? const <LibraryItem>[];
@@ -208,8 +235,22 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
                 );
               },
             ),
+            ),
           ),
-          const Positioned(left: 56, right: 56, bottom: 26, child: _TideTabBar()),
+          // Slides clear of the content rather than fading in place: the bar
+          // is an object, so it should leave the way an object would.
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 260),
+            curve: tideEase,
+            left: 40,
+            right: 40,
+            bottom: _barVisible ? 26 : -80,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 200),
+              opacity: _barVisible ? 1 : 0,
+              child: const _TideTabBar(),
+            ),
+          ),
         ],
       ),
     );
@@ -421,9 +462,12 @@ class _Hero extends StatelessWidget {
                           ).copyWith(letterSpacing: 2.2),
                         ),
                         const SizedBox(height: 8),
+                        // Two lines, not three: at 34px a third line runs the
+                        // title into the tag row and the Read button below it.
+                        // Long titles ellipse rather than reflow the cluster.
                         Text(
                           current.manga.title,
-                          maxLines: 3,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TideText.display(34),
                         ),
@@ -531,7 +575,9 @@ class _ReadButton extends StatelessWidget {
       height: 42,
       child: TideGlass(
         radius: 21,
-        blur: true,
+        // Sits on the hero's own scrim, which is already a flat wash — see
+        // TideIconButton for why that means no BackdropFilter.
+        blur: false,
         tintTop: 0.16,
         tintBottom: 0.06,
         highlight: 0.30,
@@ -872,8 +918,12 @@ class _EmptyLibraryCard extends StatelessWidget {
   }
 }
 
-/// The floating glass bar. Four destinations, matching the design: this
-/// screen, the full library grid, search, and everything else.
+/// The floating glass bar.
+///
+/// Icon SHAPES are the app's existing ones, not the design's generic
+/// home/book/search/person set — these destinations do specific things, and a
+/// magnifier standing in for Browse or a person for More reads wrong the
+/// moment you tap it. The glass is the design; the glyphs are the app's.
 class _TideTabBar extends ConsumerWidget {
   const _TideTabBar();
 
@@ -883,6 +933,9 @@ class _TideTabBar extends ConsumerWidget {
       height: 58,
       child: TideGlass(
         radius: 29,
+        // The one BackdropFilter left on this screen: the bar genuinely
+        // floats over scrolling covers, so there is something behind it worth
+        // blurring.
         blur: true,
         tintTop: 0.13,
         tintBottom: 0.05,
@@ -899,9 +952,9 @@ class _TideTabBar extends ConsumerWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            const _TabIcon(icon: Icons.home_rounded, active: true),
+            const _TabIcon(icon: Icons.home, active: true),
             _TabIcon(
-              icon: Icons.auto_stories_outlined,
+              icon: Icons.collections_bookmark_outlined,
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const _LibraryGridRoute(),
@@ -909,11 +962,15 @@ class _TideTabBar extends ConsumerWidget {
               ),
             ),
             _TabIcon(
-              icon: Icons.search,
+              icon: Icons.history_outlined,
+              onTap: () => ref.read(homeTabIndexProvider.notifier).set(2),
+            ),
+            _TabIcon(
+              icon: Icons.explore_outlined,
               onTap: () => ref.read(homeTabIndexProvider.notifier).set(3),
             ),
             _TabIcon(
-              icon: Icons.person_outline,
+              icon: Icons.more_horiz,
               onTap: () => ref.read(homeTabIndexProvider.notifier).set(4),
             ),
           ],
@@ -936,7 +993,7 @@ class _TabIcon extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        width: 56,
+        width: 52,
         height: 58,
         child: Icon(
           icon,
