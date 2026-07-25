@@ -3,11 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/base/base_preferences.dart';
 import '../../data/download/download_repository.dart';
-import '../../data/library/library_update_preference.dart';
 import '../../data/source/extension_updates.dart';
 import '../../data/source/incognito_preferences.dart';
 import '../tide/tide_home_screen.dart';
-import '../updates/updates_screen.dart';
 import '../history/history_screen.dart';
 import '../browse/browse_screen.dart';
 import '../more/more_screen.dart';
@@ -43,8 +41,9 @@ class HomeReselect extends Notifier<HomeReselectSignal> {
 final homeReselectProvider =
     NotifierProvider<HomeReselect, HomeReselectSignal>(HomeReselect.new);
 
-/// The five top-level destinations match the Kotlin app's [HomeScreen.Tab]:
-/// Library, Updates, History, Browse, More.
+/// Four top-level destinations: Home, History, Browse, More. Updates is gone
+/// — new chapters surface on the home feed's Tonight section, so a whole tab
+/// that answered the same question was one place too many to look.
 ///
 /// Each tab is kept alive across switches via [IndexedStack] so list scroll
 /// positions and ongoing requests survive a tap on a different tab -- same
@@ -60,12 +59,6 @@ class HomeScreen extends ConsumerStatefulWidget {
       icon: Icons.home_outlined,
       selectedIcon: Icons.home,
       child: TideHomeScreen(),
-    ),
-    _HomeTab(
-      label: 'Updates',
-      icon: Icons.new_releases_outlined,
-      selectedIcon: Icons.new_releases,
-      child: UpdatesScreen(),
     ),
     _HomeTab(
       label: 'History',
@@ -91,14 +84,11 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-/// Wraps a nav icon in its tab's badge: Updates (1) = unseen new chapters,
-/// Browse (3) = available extension updates. Other tabs pass through.
-Widget _badged(int tabIndex, Icon icon, int updatesBadge, int extBadge) {
-  final count = switch (tabIndex) {
-    1 => updatesBadge,
-    3 => extBadge,
-    _ => 0,
-  };
+/// Wraps a nav icon in its tab's badge. Browse (2) = available extension
+/// updates; it is the only badge left now that new chapters surface on the
+/// home feed rather than in a tab of their own.
+Widget _badged(int tabIndex, Icon icon, int extBadge) {
+  final count = tabIndex == 2 ? extBadge : 0;
   if (count <= 0) return icon;
   return Badge(label: Text('$count'), child: icon);
 }
@@ -166,19 +156,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final incognito = ref.watch(incognitoModeProvider);
     final downloadedOnly = ref.watch(downloadedOnlyProvider);
     final index = ref.watch(homeTabIndexProvider);
-    // Updates-tab badge: unseen new-chapter count, gated by the
-    // "Show unread count on Updates icon" pref (Kotlin HomeScreen's
-    // BadgedBox over UpdatesTab). Cleared whenever the tab is opened.
-    final updatesBadge = ref.watch(newShowUpdatesCountProvider)
-        ? ref.watch(newUpdatesCountProvider)
-        : 0;
     // Browse badge: extensions with an available update (Kotlin
     // extensionUpdatesCount). Not gated by a pref — Kotlin has none.
     final extensionsBadge = ref.watch(extUpdatesCountProvider);
-    ref.listen<int>(homeTabIndexProvider, (_, next) {
-      if (next == 1 && ref.read(newUpdatesCountProvider) != 0) {
-        ref.read(newUpdatesCountProvider.notifier).set(0);
-      }
+    ref.listen<int>(homeTabIndexProvider, (_, _) {
       // Re-show the nav on any tab switch. The only way to change tabs while
       // the bar is hidden is the back-to-Library PopScope below, and the new
       // tab may have nothing to scroll (Compose can't get stuck here — drags
@@ -276,18 +257,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   // Updates (tab 1) carries the unseen-new-chapters badge;
                   // Browse (tab 3) the extension-updates badge (Kotlin
                   // HomeScreen's BadgedBox pair).
-                  icon: _badged(
-                    i,
-                    Icon(tab.icon),
-                    updatesBadge,
-                    extensionsBadge,
-                  ),
-                  selectedIcon: _badged(
-                    i,
-                    Icon(tab.selectedIcon),
-                    updatesBadge,
-                    extensionsBadge,
-                  ),
+                  icon: _badged(i, Icon(tab.icon), extensionsBadge),
+                  selectedIcon:
+                      _badged(i, Icon(tab.selectedIcon), extensionsBadge),
                   label: tab.label,
                 ),
             ],

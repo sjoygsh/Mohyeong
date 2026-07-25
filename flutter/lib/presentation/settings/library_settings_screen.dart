@@ -38,7 +38,6 @@ class LibrarySettingsScreen extends ConsumerWidget {
         ref.read(libraryUpdatePreferenceProvider.notifier);
     final categoryCount =
         ref.watch(userCategoriesProvider).valueOrNull?.length ?? 0;
-    final showCarousel = ref.watch(showMostReadCarouselProvider);
     final showUnreadBadge = ref.watch(displayUnreadBadgeProvider);
     final showDownloadBadge = ref.watch(displayDownloadBadgeProvider);
     final showLocalBadge = ref.watch(displayLocalBadgeProvider);
@@ -138,15 +137,6 @@ class LibrarySettingsScreen extends ConsumerWidget {
 
           // ── Display (Mohyeong-specific) ─────────────────────────────
           const PrefSectionHeader('Display'),
-          SwitchListTile(
-            title: const Text('Show "Most read" carousel'),
-            subtitle: const Text(
-              'Highlights the favourites you are furthest through.',
-            ),
-            value: showCarousel,
-            onChanged:
-                ref.read(showMostReadCarouselProvider.notifier).setEnabled,
-          ),
           SwitchListTile(
             title: const Text('Show continue reading button'),
             subtitle: const Text(

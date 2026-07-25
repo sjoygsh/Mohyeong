@@ -16,15 +16,15 @@ class ShortcutService {
 
   // Verbatim Mihon shortcut ids (see shortcuts.xml).
   static const typeLibrary = 'show_library';
-  static const typeUpdates = 'show_recently_updated';
   static const typeHistory = 'show_recently_read';
   static const typeBrowse = 'show_catalogues';
 
-  // Home-tab indices (match HomeScreen's tab order).
-  static const _tabLibrary = 0;
-  static const _tabUpdates = 1;
-  static const _tabHistory = 2;
-  static const _tabBrowse = 3;
+  // Home-tab indices (match HomeScreen's tab order). The recently-updated
+  // shortcut is gone with the Updates tab: new chapters are on the home feed,
+  // which is where the library shortcut already lands.
+  static const _tabHome = 0;
+  static const _tabHistory = 1;
+  static const _tabBrowse = 2;
 
   final QuickActions _quickActions = const QuickActions();
 
@@ -37,8 +37,7 @@ class ShortcutService {
       if (index != null) onSelectTab(index);
     });
     await _quickActions.setShortcutItems(const [
-      ShortcutItem(type: typeLibrary, localizedTitle: 'Library'),
-      ShortcutItem(type: typeUpdates, localizedTitle: 'Updates'),
+      ShortcutItem(type: typeLibrary, localizedTitle: 'Home'),
       ShortcutItem(type: typeHistory, localizedTitle: 'History'),
       ShortcutItem(type: typeBrowse, localizedTitle: 'Browse'),
     ]);
@@ -47,9 +46,7 @@ class ShortcutService {
   int? _tabIndexFor(String type) {
     switch (type) {
       case typeLibrary:
-        return _tabLibrary;
-      case typeUpdates:
-        return _tabUpdates;
+        return _tabHome;
       case typeHistory:
         return _tabHistory;
       case typeBrowse:

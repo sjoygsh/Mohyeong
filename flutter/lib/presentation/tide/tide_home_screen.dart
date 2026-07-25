@@ -296,7 +296,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
           _SectionHeader(
             label: 'Continue',
             trailing: resuming.isEmpty ? null : '${resuming.length}',
-            onTap: () => ref.read(homeTabIndexProvider.notifier).set(2),
+            onTap: () => ref.read(homeTabIndexProvider.notifier).set(1),
           ),
           if (resuming.isEmpty)
             const _SectionEmpty('Nothing part-read right now.')
@@ -309,7 +309,6 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
           _SectionHeader(
             label: 'Tonight',
             trailing: tonight.isEmpty ? null : '${tonight.length}',
-            onTap: () => ref.read(homeTabIndexProvider.notifier).set(1),
           ),
           if (tonight.isEmpty)
             const _SectionEmpty('No new chapters waiting.')
@@ -341,15 +340,15 @@ class _Header extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(tideGreeting().toUpperCase(), style: TideText.kicker()),
-                const SizedBox(height: 1),
+                // No wordmark. The app does not need to introduce itself
+                // every time it opens; the greeting is the whole header.
                 Text(
-                  'Tide',
-                  style: TextStyle(
-                    fontSize: 22,
-                    height: 1.2,
+                  tideGreeting(),
+                  style: const TextStyle(
+                    fontSize: 26,
+                    height: 1.15,
                     fontWeight: FontWeight.w500,
-                    letterSpacing: -0.44,
+                    letterSpacing: -0.65,
                     color: TideColors.text,
                   ),
                 ),
@@ -358,14 +357,14 @@ class _Header extends ConsumerWidget {
           ),
           TideIconButton(
             icon: Icons.search,
-            onTap: () => ref.read(homeTabIndexProvider.notifier).set(3),
+            onTap: () => ref.read(homeTabIndexProvider.notifier).set(2),
           ),
           const SizedBox(width: 9),
           // The design's avatar chip. It leads to More, which is where every
           // account-shaped thing in the app already lives.
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => ref.read(homeTabIndexProvider.notifier).set(4),
+            onTap: () => ref.read(homeTabIndexProvider.notifier).set(3),
             child: Container(
               width: 40,
               height: 40,
@@ -903,7 +902,7 @@ class _EmptyLibraryCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 48),
         child: Column(
           children: [
-            Text('Nothing in the tide yet', style: TideText.display(24)),
+            Text('Nothing here yet', style: TideText.display(24)),
             const SizedBox(height: 10),
             Text(
               'Add a series to your library and it will surface here — what '
@@ -963,15 +962,15 @@ class _TideTabBar extends ConsumerWidget {
             ),
             _TabIcon(
               icon: Icons.history_outlined,
-              onTap: () => ref.read(homeTabIndexProvider.notifier).set(2),
+              onTap: () => ref.read(homeTabIndexProvider.notifier).set(1),
             ),
             _TabIcon(
               icon: Icons.explore_outlined,
-              onTap: () => ref.read(homeTabIndexProvider.notifier).set(3),
+              onTap: () => ref.read(homeTabIndexProvider.notifier).set(2),
             ),
             _TabIcon(
               icon: Icons.more_horiz,
-              onTap: () => ref.read(homeTabIndexProvider.notifier).set(4),
+              onTap: () => ref.read(homeTabIndexProvider.notifier).set(3),
             ),
           ],
         ),

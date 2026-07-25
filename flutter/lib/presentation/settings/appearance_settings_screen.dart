@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/preferences/appearance_preferences.dart';
-import '../../data/preferences/theme_preference.dart';
 import '../theme/app_theme.dart';
 import '../util/timestamp_format.dart';
 import 'pref_tiles.dart';
@@ -14,44 +13,20 @@ class AppearanceSettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final themeMode = ref.watch(themePreferenceProvider);
-    final themeNotifier = ref.read(themePreferenceProvider.notifier);
     final datePattern = ref.watch(dateFormatProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Appearance')),
       body: ListView(
         children: [
           const PrefSectionHeader('Theme'),
-          RadioGroup<ThemeMode>(
-            groupValue: themeMode,
-            onChanged: (m) {
-              if (m != null) themeNotifier.setMode(m);
-            },
-            child: const Column(
-              children: [
-                RadioListTile<ThemeMode>(
-                  value: ThemeMode.system,
-                  title: Text('Follow system'),
-                ),
-                RadioListTile<ThemeMode>(
-                  value: ThemeMode.light,
-                  title: Text('Light'),
-                ),
-                RadioListTile<ThemeMode>(
-                  value: ThemeMode.dark,
-                  title: Text('Dark'),
-                ),
-              ],
-            ),
-          ),
           _ThemeColorTile(
             current: AppColorTheme.fromKey(ref.watch(appThemeProvider)),
             onPicked: (t) => ref.read(appThemeProvider.notifier).set(t.key),
           ),
           PrefSwitch(
-            title: 'Pure black dark mode',
+            title: 'Pure black',
+            subtitle: 'Collapse surfaces to black on OLED screens.',
             provider: amoledProvider,
-            enabled: themeMode != ThemeMode.light,
           ),
           const PrefSectionHeader('Display'),
           PrefSwitch(

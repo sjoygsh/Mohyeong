@@ -834,8 +834,6 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
   List<LibraryItem> _sorted = const [];
   List<int> _visibleIds = const [];
 
-  List<LibraryItem>? _topReadItems;
-  List<LibraryItem> _topRead = const [];
 
   @override
   Widget build(BuildContext context) {
@@ -952,33 +950,10 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
     // to call during build.
     widget.onVisibleIdsResolved(_visibleIds);
 
-    // "Most read" carousel — top 5 favourites by completion ratio
-    // (`readCount / totalCount`), only entries the user has actually
-    // started. Hidden while searching and when the pref is off. Sourced
-    // from the unfiltered favourites list, not the category-restricted
-    // one, since the carousel is a global "what are you working
-    // through" affordance.
-    final showCarousel = ref.watch(showMostReadCarouselProvider);
-    final showCarouselNow = showCarousel && query.isEmpty;
-    if (showCarouselNow && !identical(_topReadItems, items)) {
-      _topReadItems = items;
-      _topRead = (items
-              .where((it) => it.totalCount > 0 && it.readCount > 0)
-              .toList(growable: false)
-            ..sort((a, b) {
-              final aRatio = a.readCount / a.totalCount;
-              final bRatio = b.readCount / b.totalCount;
-              return bRatio.compareTo(aRatio);
-            }))
-          .take(5)
-          .toList(growable: false);
-    }
-    final topRead = showCarouselNow ? _topRead : const <LibraryItem>[];
-
+    // The most-read banner lived here; it now leads the home feed, and one
+    // app should not answer "what are you working through" twice.
     return Column(
       children: [
-        if (showCarouselNow && topRead.isNotEmpty)
-          _MostReadCarousel(items: topRead),
         if (showTabs)
           _CategoryTabs(
             tabIds: tabIds,
@@ -2248,12 +2223,6 @@ class _DisplayTab extends ConsumerWidget {
               .read(showContinueReadingButtonProvider.notifier)
               .setEnabled(v),
         ),
-        _CheckboxRow(
-          label: 'Most-read carousel',
-          value: ref.watch(showMostReadCarouselProvider),
-          onChanged: (v) =>
-              ref.read(showMostReadCarouselProvider.notifier).setEnabled(v),
-        ),
         const _DisplayHeading('Tabs'),
         _CheckboxRow(
           label: 'Show category tabs',
@@ -2393,255 +2362,6 @@ class _RemoveLibraryDialogState extends State<_RemoveLibraryDialog> {
           child: const Text('OK'),
         ),
       ],
-    );
-  }
-}
-
-/// Auto-advancing horizontal pager of the user's top-progress favourites
-/// (full cover backdrop, gradient, title, progress bar). Mirrors
-/// Mihon's `LibraryMostReadCarousel` Compose widget. Tap a card → open
-/// the manga details. Uses a virtually-infinite PageView so swipe loops
-/// without snap; the dot indicator wraps to the real index.
-class _MostReadCarousel extends StatefulWidget {
-  const _MostReadCarousel({required this.items});
-
-  final List<LibraryItem> items;
-
-  @override
-  State<_MostReadCarousel> createState() => _MostReadCarouselState();
-}
-
-class _MostReadCarouselState extends State<_MostReadCarousel> {
-  static const Duration _autoAdvance = Duration(milliseconds: 4500);
-  static const int _loopPages = 10000;
-
-  late final int _startPage;
-  late final PageController _controller;
-  late int _currentPage;
-  bool _userTouching = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final count = widget.items.length;
-    // Round the midpoint down to a multiple of count so dot index 0
-    // matches items[0].
-    _startPage = (_loopPages ~/ 2) - ((_loopPages ~/ 2) % count.clamp(1, _loopPages));
-    _currentPage = _startPage;
-    _controller = PageController(viewportFraction: 0.92, initialPage: _startPage);
-    _scheduleAdvance();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _scheduleAdvance() {
-    Future.delayed(_autoAdvance, () async {
-      if (!mounted) return;
-      // Don't animate while the Library tab isn't visible — the home shell
-      // keeps all tabs alive in an IndexedStack, so without this gate the
-      // carousel kept scheduling frames + scroll physics forever while the
-      // user sat on Updates/History/Browse, preventing frame-idle.
-      final visible = TickerMode.valuesOf(context).enabled &&
-          (ModalRoute.of(context)?.isCurrent ?? true);
-      if (visible && !_userTouching && _controller.hasClients) {
-        await _controller.animateToPage(
-          _currentPage + 1,
-          duration: const Duration(milliseconds: 450),
-          curve: Curves.easeOutCubic,
-        );
-      }
-      _scheduleAdvance();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final count = widget.items.length;
-    final activeIndex = _currentPage % count;
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Text(
-              'Most read',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-          ),
-          SizedBox(
-            height: 200,
-            child: Listener(
-              onPointerDown: (_) => _userTouching = true,
-              onPointerUp: (_) => _userTouching = false,
-              onPointerCancel: (_) => _userTouching = false,
-              child: PageView.builder(
-                controller: _controller,
-                onPageChanged: (page) =>
-                    setState(() => _currentPage = page),
-                itemCount: _loopPages,
-                itemBuilder: (context, page) {
-                  final item = widget.items[page % count];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    child: _MostReadBannerCard(item: item),
-                  );
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (int i = 0; i < count; i++)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  width: i == activeIndex ? 18 : 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: i == activeIndex
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.25),
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MostReadBannerCard extends ConsumerWidget {
-  const _MostReadBannerCard({required this.item});
-
-  final LibraryItem item;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final total = item.totalCount <= 0 ? 1 : item.totalCount;
-    final ratio = (item.readCount / total).clamp(0.0, 1.0);
-    final percent = (ratio * 100).round();
-    final coverUrl = ref
-        .watch(coverCacheProvider)
-        .coverUrlFor(item.manga.id, item.manga.thumbnailUrl);
-    final coverHeaders = ref
-        .watch(installedSourceImageHeadersProvider)
-        .valueOrNull?[item.manga.source];
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => MangaDetailsScreen(mangaId: item.manga.id),
-            ),
-          );
-        },
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (coverUrl != null && coverUrl.isNotEmpty)
-                SourceImage(
-                  cacheWidth: 1080,
-                  url: coverUrl,
-                  headers: coverHeaders,
-                  fit: BoxFit.cover,
-                  errorWidget: (_, _) => ColoredBox(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest,
-                  ),
-                )
-              else
-                ColoredBox(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest,
-                ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: const [0.0, 0.45, 1.0],
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.55),
-                      Colors.black.withValues(alpha: 0.85),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: 14,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      item.manga.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(3),
-                            child: LinearProgressIndicator(
-                              value: ratio,
-                              minHeight: 5,
-                              color: Theme.of(context).colorScheme.primary,
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.25),
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 10),
-                          child: Text(
-                            '$percent%',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

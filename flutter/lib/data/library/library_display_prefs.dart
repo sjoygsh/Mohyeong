@@ -277,36 +277,6 @@ final randomSortSeedProvider = NotifierProvider<RandomSortSeedNotifier, int>(
   RandomSortSeedNotifier.new,
 );
 
-/// Toggles the "Most read" carousel on the Library screen. Mirrors
-/// Mihon's `show_most_read_carousel` boolean preference (default true).
-/// When false, the carousel is hidden regardless of how many items
-/// would qualify.
-class ShowMostReadCarouselNotifier extends Notifier<bool> {
-  static const _key = 'show_most_read_carousel';
-
-  @override
-  bool build() {
-    _loadFromDisk();
-    return true;
-  }
-
-  Future<void> _loadFromDisk() async {
-    final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getBool(_key);
-    if (stored != null && stored != state) state = stored;
-  }
-
-  Future<void> setEnabled(bool enabled) async {
-    state = enabled;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_key, enabled);
-  }
-}
-
-final showMostReadCarouselProvider =
-    NotifierProvider<ShowMostReadCarouselNotifier, bool>(
-  ShowMostReadCarouselNotifier.new,
-);
 
 /// Boolean Notifier persisted to SharedPreferences under [_key]. Used as
 /// the underlying type for every library-badge visibility toggle below —

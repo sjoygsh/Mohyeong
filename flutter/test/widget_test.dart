@@ -163,49 +163,41 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
 
-    // Tab 0 is Tide, in its empty state (the fake repos return nothing).
-    expect(find.text('Tide'), findsOneWidget);
-    expect(find.text('Nothing in the tide yet'), findsOneWidget);
-    // Its two section headers render even with nothing under them — they
-    // carry the only routes to History and Updates while Tide's own glass bar
-    // stands in for the Material one.
+    // Tab 0 is the home feed, in its empty state (fake repos return nothing).
+    // No wordmark: the greeting is the whole header.
+    expect(find.text('Nothing here yet'), findsOneWidget);
+    // Both section headers render even with nothing under them.
     expect(find.text('CONTINUE'), findsOneWidget);
     expect(find.text('TONIGHT'), findsOneWidget);
 
     // Tabs build lazily on first visit (the IndexedStack starts them as
-    // placeholders), so the Updates empty state must not exist yet…
-    expect(find.text('No recent updates'), findsNothing);
-    // …and materialises after the Tonight header routes to it, once the 200ms
-    // fade-through finishes.
-    // Explicit pumps rather than pumpAndSettle: Tide's aurora and sheen are
-    // continuous by design, so the frame queue never drains while it is
+    // placeholders), so History's empty state must not exist yet…
+    expect(find.text('Nothing read recently'), findsNothing);
+    // …and materialises once the Continue header routes to it.
+    // Explicit pumps rather than pumpAndSettle: the aurora and sheen are
+    // continuous by design, so the frame queue never drains while the feed is
     // mounted and pumpAndSettle would simply time out.
-    await tester.tap(find.text('TONIGHT'));
+    await tester.tap(find.text('CONTINUE'));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 60));
     }
-    expect(find.text('No recent updates'), findsOneWidget);
+    expect(find.text('Nothing read recently'), findsWidgets);
 
-    // Off Tide, the Material bar is back and carries every destination.
+    // Off the feed, the Material bar is back with the four destinations that
+    // remain — Updates is gone, folded into the feed's Tonight section.
     expect(find.text('Home'), findsOneWidget);
-    // Twice now: the nav label and the Updates screen's own app-bar title.
-    expect(find.text('Updates'), findsWidgets);
-    expect(find.text('History'), findsOneWidget);
+    expect(find.text('History'), findsWidgets);
     expect(find.text('Browse'), findsOneWidget);
     expect(find.text('More'), findsOneWidget);
+    expect(find.text('Updates'), findsNothing);
 
     // The remaining tabs pre-warm during post-launch idle (600ms after the
     // first frame, then one per ~250ms) so the first visit doesn't pay the
     // screen's first build inside the tab fade. Pump past the warm-up chain
-    // and the never-visited History tab should already be built offstage.
+    // and the never-visited Browse tab should already be built offstage.
     for (var i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 300));
     }
-    // skipOffstage: false — the pre-warmed tab is alive but offstage in the
-    // IndexedStack until actually selected.
-    expect(
-      find.text('Nothing read recently', skipOffstage: false),
-      findsOneWidget,
-    );
+    expect(find.text('Browse', skipOffstage: false), findsWidgets);
   });
 }

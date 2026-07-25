@@ -13,7 +13,6 @@ import 'data/network/app_http_client.dart';
 import 'data/network/webview_http_client.dart';
 import 'data/notification/notification_service.dart';
 import 'data/preferences/appearance_preferences.dart';
-import 'data/preferences/theme_preference.dart';
 import 'data/shortcuts/shortcut_service.dart';
 import 'data/source/extension_repository.dart';
 import 'data/source/incognito_preferences.dart';
@@ -126,7 +125,6 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
 
   @override
   Widget build(BuildContext context) {
-    final themeMode = ref.watch(themePreferenceProvider);
     final amoled = ref.watch(amoledProvider);
     final seed = AppColorTheme.fromKey(ref.watch(appThemeProvider)).seed;
     // Keep the periodic task in sync with the preference.
@@ -165,9 +163,14 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
     return MaterialApp(
       title: 'Mohyeong',
       navigatorKey: ref.watch(trackerNavigatorKeyProvider),
-      theme: AppTheme.light(seed),
+      // Dark only. The home feed, the series page and the reader are built
+      // out of glass over a near-black ground — a light mode would not be the
+      // same app with paler colours, it would be a different design. Handing
+      // Material a light theme just made every screen the new UI has not
+      // reached yet flash white, which is exactly the seam this removes.
+      theme: amoled ? AppTheme.darkAmoled(seed) : AppTheme.dark(seed),
       darkTheme: amoled ? AppTheme.darkAmoled(seed) : AppTheme.dark(seed),
-      themeMode: themeMode,
+      themeMode: ThemeMode.dark,
       home: const AuthGate(
         child: OnboardingGate(child: HomeScreen()),
       ),
