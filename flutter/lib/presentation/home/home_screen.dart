@@ -6,7 +6,7 @@ import '../../data/download/download_repository.dart';
 import '../../data/library/library_update_preference.dart';
 import '../../data/source/extension_updates.dart';
 import '../../data/source/incognito_preferences.dart';
-import '../library/library_screen.dart';
+import '../tide/tide_home_screen.dart';
 import '../updates/updates_screen.dart';
 import '../history/history_screen.dart';
 import '../browse/browse_screen.dart';
@@ -53,11 +53,13 @@ class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   static const _tabs = <_HomeTab>[
+    // Tab 0 is Tide: a reading queue rather than a shelf. The full library
+    // grid is still one tap away, from Tide's own glass bar.
     _HomeTab(
-      label: 'Library',
-      icon: Icons.collections_bookmark_outlined,
-      selectedIcon: Icons.collections_bookmark,
-      child: LibraryScreen(),
+      label: 'Home',
+      icon: Icons.home_outlined,
+      selectedIcon: Icons.home,
+      child: TideHomeScreen(),
     ),
     _HomeTab(
       label: 'Updates',
@@ -238,8 +240,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         // shrinkTowards = Bottom: collapse the bar toward the screen edge while
         // freeing its layout space (so content expands up), matching Kotlin's
         // shrinkVertically(). The bar widget itself is built once and clipped.
+        // Tide (tab 0) carries its own floating glass bar, so the Material one
+        // collapses there rather than stacking two navigations on one screen.
+        // Every destination stays reachable: Tide's bar covers the library
+        // grid, search and More, and its Continue / Tonight headers open
+        // History and Updates.
         bottomNavigationBar: TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 1, end: _bottomNavVisible ? 1 : 0),
+          tween: Tween<double>(
+            begin: 1,
+            end: _bottomNavVisible && index != 0 ? 1 : 0,
+          ),
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeInOut,
           builder: (context, factor, child) => ClipRect(

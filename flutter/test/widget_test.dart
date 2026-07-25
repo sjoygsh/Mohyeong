@@ -127,7 +127,7 @@ class _FakeExtensionRepository implements ExtensionRepository {
 }
 
 void main() {
-  testWidgets('Home shell renders all five top-level tabs',
+  testWidgets('Home shell opens on Tide and reaches the other tabs',
       (WidgetTester tester) async {
     // The home shell sits behind AuthGate + OnboardingGate, which both read
     // these flags from disk before revealing their child. Seed them so the
@@ -163,25 +163,36 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
 
-    // AppBar title for the default (Library) tab.
-    expect(find.text('Library'), findsWidgets);
-    // The other four tab labels should be present in the NavigationBar.
-    expect(find.text('Updates'), findsOneWidget);
-    expect(find.text('History'), findsOneWidget);
-    expect(find.text('Browse'), findsOneWidget);
-    expect(find.text('More'), findsOneWidget);
-
-    // The library should be in its empty state since the fake repo returns [].
-    expect(find.text('Your library is empty.'), findsOneWidget);
+    // Tab 0 is Tide, in its empty state (the fake repos return nothing).
+    expect(find.text('Tide'), findsOneWidget);
+    expect(find.text('Nothing in the tide yet'), findsOneWidget);
+    // Its two section headers render even with nothing under them — they
+    // carry the only routes to History and Updates while Tide's own glass bar
+    // stands in for the Material one.
+    expect(find.text('CONTINUE'), findsOneWidget);
+    expect(find.text('TONIGHT'), findsOneWidget);
 
     // Tabs build lazily on first visit (the IndexedStack starts them as
     // placeholders), so the Updates empty state must not exist yet…
     expect(find.text('No recent updates'), findsNothing);
-    // …and materialise after tapping the destination, once the 200ms
+    // …and materialises after the Tonight header routes to it, once the 200ms
     // fade-through finishes.
-    await tester.tap(find.text('Updates'));
-    await tester.pumpAndSettle();
+    // Explicit pumps rather than pumpAndSettle: Tide's aurora and sheen are
+    // continuous by design, so the frame queue never drains while it is
+    // mounted and pumpAndSettle would simply time out.
+    await tester.tap(find.text('TONIGHT'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
     expect(find.text('No recent updates'), findsOneWidget);
+
+    // Off Tide, the Material bar is back and carries every destination.
+    expect(find.text('Home'), findsOneWidget);
+    // Twice now: the nav label and the Updates screen's own app-bar title.
+    expect(find.text('Updates'), findsWidgets);
+    expect(find.text('History'), findsOneWidget);
+    expect(find.text('Browse'), findsOneWidget);
+    expect(find.text('More'), findsOneWidget);
 
     // The remaining tabs pre-warm during post-launch idle (600ms after the
     // first frame, then one per ~250ms) so the first visit doesn't pay the
