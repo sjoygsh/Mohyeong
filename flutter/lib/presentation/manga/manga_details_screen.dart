@@ -3175,8 +3175,18 @@ class _MissingManga extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(),
-      body: const Center(child: Text('Manga not found.')),
+      backgroundColor: TideColors.ground,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const TideHeader(title: ''),
+          Expanded(
+            child: Center(
+              child: Text('Manga not found.', style: TideText.body()),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3186,9 +3196,9 @@ class _NoChapters extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(24),
-      child: Center(child: Text('No chapters yet.')),
+    return Padding(
+      padding: const EdgeInsets.all(28),
+      child: Center(child: Text('No chapters yet.', style: TideText.body())),
     );
   }
 }
@@ -3201,8 +3211,14 @@ class _Error extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Center(child: Text('Error: $error')),
+      padding: const EdgeInsets.all(28),
+      child: Center(
+        child: Text(
+          '$error',
+          textAlign: TextAlign.center,
+          style: TideText.body(),
+        ),
+      ),
     );
   }
 }
