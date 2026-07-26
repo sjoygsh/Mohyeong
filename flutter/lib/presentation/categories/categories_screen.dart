@@ -1,8 +1,19 @@
+// ===========================================================================
+// Tide categories.
+//
+// A tree, drawn as a tree: depth is indent plus a lit tick on the spine, so a
+// child reads as belonging to the row above it rather than as a row that
+// happens to start further right. Everything that used to be an AlertDialog —
+// create, rename, reparent, delete — is a sheet, and the name sheets keep the
+// inline validation that stops you making a duplicate.
+// ===========================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/category/category_repository.dart';
 import '../../domain/category/model/category.dart';
+import '../tide/tide.dart';
 
 /// Manage the user-defined library categories. The implicit system
 /// category (id=0, "Uncategorized") is hidden -- the SQL trigger blocks
@@ -19,74 +30,86 @@ class CategoriesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(categoryRepositoryProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Edit categories')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _promptCreate(context, repo),
-        icon: const Icon(Icons.add),
-        label: const Text('Add'),
-      ),
-      body: StreamBuilder<List<Category>>(
-        stream: repo.watchAll(),
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return _Message(text: 'Failed to load categories: ${snap.error}');
-          }
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final categories = snap.data!
-              .where((c) => !c.isSystemCategory)
-              .toList(growable: false);
-          if (categories.isEmpty) {
-            return const _Message(
-              text: 'You have no categories. Tap the plus button to create '
-                  'one for organizing your library.',
-            );
-          }
-          final flattened = _flattenHierarchy(categories);
-          return ReorderableListView.builder(
-            buildDefaultDragHandles: false,
-            itemCount: flattened.length,
-            onReorderItem: (oldIndex, newIndex) =>
-                _onReorder(repo, flattened, oldIndex, newIndex),
-            itemBuilder: (context, i) {
-              final entry = flattened[i];
-              final c = entry.category;
-              return Padding(
-                key: ValueKey(c.id),
-                padding: EdgeInsets.only(left: entry.depth * 16.0),
-                child: ListTile(
-                  title: Text(c.name),
-                  leading: ReorderableDragStartListener(
-                    index: i,
-                    child: const Icon(Icons.drag_handle),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.account_tree_outlined),
-                        tooltip: 'Set parent category',
-                        onPressed: () =>
-                            _promptSetParent(context, repo, c, categories),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        tooltip: 'Rename category',
-                        onPressed: () => _promptRename(context, repo, c),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        tooltip: 'Delete',
-                        onPressed: () => _confirmDelete(context, repo, c),
-                      ),
-                    ],
-                  ),
+      backgroundColor: TideColors.ground,
+      body: TideRise(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TideHeader(
+              title: 'Categories',
+              actions: [
+                TideIconButton(
+                  icon: Icons.add,
+                  onTap: () => _promptCreate(context, repo),
                 ),
-              );
-            },
-          );
-        },
+              ],
+            ),
+            Expanded(
+              child: StreamBuilder<List<Category>>(
+                stream: repo.watchAll(),
+                builder: (context, snap) {
+                  if (snap.hasError) {
+                    return _Message(
+                      text: 'Failed to load categories: ${snap.error}',
+                    );
+                  }
+                  if (!snap.hasData) {
+                    return const Center(
+                      child:
+                          CircularProgressIndicator(color: TideColors.accent),
+                    );
+                  }
+                  final categories = snap.data!
+                      .where((c) => !c.isSystemCategory)
+                      .toList(growable: false);
+                  if (categories.isEmpty) {
+                    return const _Message(
+                      text: 'You have no categories. Add one to organise your '
+                          'library into shelves.',
+                    );
+                  }
+                  final flattened = _flattenHierarchy(categories);
+                  return ReorderableListView.builder(
+                    buildDefaultDragHandles: false,
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+                    itemCount: flattened.length,
+                    onReorderItem: (oldIndex, newIndex) =>
+                        _onReorder(repo, flattened, oldIndex, newIndex),
+                    // The default proxy wraps the dragged row in an elevated
+                    // Material slab, which on glass reads as a different
+                    // widget picking itself up. Lift it instead.
+                    proxyDecorator: (child, index, animation) =>
+                        _LiftedRow(animation: animation, child: child),
+                    itemBuilder: (context, i) {
+                      final entry = flattened[i];
+                      return Padding(
+                        key: ValueKey(entry.category.id),
+                        padding: EdgeInsets.only(
+                          left: entry.depth * 18.0,
+                          bottom: 8,
+                        ),
+                        child: _CategoryRow(
+                          index: i,
+                          entry: entry,
+                          onSetParent: () => _promptSetParent(
+                            context,
+                            repo,
+                            entry.category,
+                            categories,
+                          ),
+                          onRename: () =>
+                              _promptRename(context, repo, entry.category),
+                          onDelete: () =>
+                              _confirmDelete(context, repo, entry.category),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -178,7 +201,7 @@ class CategoriesScreen extends ConsumerWidget {
     final name = await _promptForName(
       context,
       title: 'Rename category',
-      confirmLabel: 'OK',
+      confirmLabel: 'Rename',
       initialValue: category.name,
       takenNames: taken,
     );
@@ -191,21 +214,13 @@ class CategoriesScreen extends ConsumerWidget {
     CategoryRepository repo,
     Category category,
   ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete category'),
-        content: Text('Do you wish to delete the category "${category.name}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('OK'),
-          ),
-        ],
+    final confirmed = await showTideSheet<bool>(
+      context,
+      (_) => TideConfirmSheet(
+        title: 'Delete category',
+        message: 'Do you wish to delete the category "${category.name}"? '
+            'The entries in it stay in your library.',
+        confirmLabel: 'Delete',
       ),
     );
     if (confirmed == true) {
@@ -220,12 +235,9 @@ class CategoriesScreen extends ConsumerWidget {
     Category category,
     List<Category> allCategories,
   ) async {
-    final result = await showDialog<_ParentPickResult>(
-      context: context,
-      builder: (ctx) => _ParentPickerDialog(
-        target: category,
-        allCategories: allCategories,
-      ),
+    final result = await showTideSheet<_ParentPickResult>(
+      context,
+      (_) => _ParentSheet(target: category, allCategories: allCategories),
     );
     if (result == null) return; // dismissed
     if (!context.mounted) return;
@@ -241,8 +253,7 @@ class CategoriesScreen extends ConsumerWidget {
     int? parentId,
   ) async {
     if (category.isSystemCategory) return; // InvalidTarget
-    final sanitized =
-        parentId == Category.uncategorizedId ? null : parentId;
+    final sanitized = parentId == Category.uncategorizedId ? null : parentId;
     if (sanitized == category.id) {
       _showCycleError(context);
       return;
@@ -282,14 +293,136 @@ class CategoriesScreen extends ConsumerWidget {
     String initialValue = '',
     Set<String> takenNames = const {},
   }) {
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => _NameDialog(
+    return showTideSheet<String>(
+      context,
+      (_) => _NameSheet(
         title: title,
         confirmLabel: confirmLabel,
         initialValue: initialValue,
         takenNames: takenNames,
       ),
+    );
+  }
+}
+
+/// One category: drag handle, depth tick, name, and its three actions.
+class _CategoryRow extends StatelessWidget {
+  const _CategoryRow({
+    required this.index,
+    required this.entry,
+    required this.onSetParent,
+    required this.onRename,
+    required this.onDelete,
+  });
+
+  final int index;
+  final _CategoryWithDepth entry;
+  final VoidCallback onSetParent;
+  final VoidCallback onRename;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final nested = entry.depth > 0;
+    return TideGlass(
+      radius: 16,
+      tintTop: nested ? 0.055 : 0.075,
+      tintBottom: nested ? 0.02 : 0.026,
+      highlight: nested ? 0.11 : 0.14,
+      border: nested ? 0.07 : 0.09,
+      padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+      child: Row(
+        children: [
+          ReorderableDragStartListener(
+            index: index,
+            child: SizedBox(
+              width: 34,
+              height: 38,
+              child: Icon(
+                Icons.drag_handle,
+                size: 18,
+                color: TideColors.textAt(0.32),
+              ),
+            ),
+          ),
+          if (nested)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Icon(
+                Icons.subdirectory_arrow_right,
+                size: 15,
+                color: TideColors.accent.withValues(alpha: 0.65),
+              ),
+            ),
+          Expanded(
+            child: Text(
+              entry.category.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TideText.title(
+                color: nested ? TideColors.textAt(0.82) : TideColors.text,
+              ),
+            ),
+          ),
+          _RowAction(icon: Icons.account_tree_outlined, onTap: onSetParent),
+          _RowAction(icon: Icons.edit_outlined, onTap: onRename),
+          _RowAction(icon: Icons.delete_outline, onTap: onDelete),
+        ],
+      ),
+    );
+  }
+}
+
+class _RowAction extends StatelessWidget {
+  const _RowAction({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 34,
+        height: 38,
+        child: Icon(icon, size: 16, color: TideColors.textAt(0.42)),
+      ),
+    );
+  }
+}
+
+/// The dragged row, lifted off the ground rather than turned into a slab.
+class _LiftedRow extends StatelessWidget {
+  const _LiftedRow({required this.animation, required this.child});
+
+  final Animation<double> animation;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        final t = Curves.easeInOut.transform(animation.value);
+        return Transform.scale(
+          scale: 1 + 0.02 * t,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5 * t),
+                  blurRadius: 30 * t,
+                  offset: Offset(0, 12 * t),
+                ),
+              ],
+            ),
+            child: Material(color: Colors.transparent, child: child),
+          ),
+        );
+      },
     );
   }
 }
@@ -345,29 +478,26 @@ List<_CategoryWithDepth> _flattenHierarchy(List<Category> categories) {
 }
 
 /// Result of the parent picker: wraps the chosen parent id (null == top level)
-/// so a `null` dialog return can be distinguished from "No parent" selected.
+/// so a `null` sheet return can be distinguished from "No parent" selected.
 class _ParentPickResult {
   const _ParentPickResult(this.parentId);
   final int? parentId;
 }
 
-/// Radio picker for a category's parent. Excludes the target and all of its
+/// Picker for a category's parent. Excludes the target and all of its
 /// descendants (choosing one would create a cycle) and indents candidates by
 /// hierarchy depth. Mirrors Kotlin's `CategoryParentPickerDialog`.
-class _ParentPickerDialog extends StatefulWidget {
-  const _ParentPickerDialog({
-    required this.target,
-    required this.allCategories,
-  });
+class _ParentSheet extends StatefulWidget {
+  const _ParentSheet({required this.target, required this.allCategories});
 
   final Category target;
   final List<Category> allCategories;
 
   @override
-  State<_ParentPickerDialog> createState() => _ParentPickerDialogState();
+  State<_ParentSheet> createState() => _ParentSheetState();
 }
 
-class _ParentPickerDialogState extends State<_ParentPickerDialog> {
+class _ParentSheetState extends State<_ParentSheet> {
   late int? _selected = widget.target.parentId;
 
   /// The target plus every category reachable beneath it.
@@ -395,65 +525,130 @@ class _ParentPickerDialogState extends State<_ParentPickerDialog> {
           .where((c) => !excluded.contains(c.id))
           .toList(growable: false),
     );
-    return AlertDialog(
-      title: const Text('Set parent category'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 400),
-          child: RadioGroup<int?>(
-            groupValue: _selected,
-            onChanged: (v) => setState(() => _selected = v),
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                const RadioListTile<int?>(
-                  value: null,
-                  title: Text('(No parent — top level)'),
-                ),
-                for (final entry in candidates)
-                  Padding(
-                    padding: EdgeInsets.only(left: entry.depth * 16.0),
-                    child: RadioListTile<int?>(
-                      value: entry.category.id,
-                      title: Row(
-                        children: [
-                          if (entry.depth > 0)
-                            const Padding(
-                              padding: EdgeInsets.only(right: 4),
-                              child: Icon(Icons.subdirectory_arrow_right,
-                                  size: 18),
-                            ),
-                          Flexible(child: Text(entry.category.name)),
-                        ],
-                      ),
-                    ),
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Set parent', style: TideText.display(21)),
+          const SizedBox(height: 4),
+          Text(
+            'Where "${widget.target.name}" sits in the tree.',
+            style: TideText.caption(size: 12.5, opacity: 0.45),
+          ),
+          const SizedBox(height: 16),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ParentOption(
+                    label: 'No parent — top level',
+                    depth: 0,
+                    selected: _selected == null,
+                    onTap: () => setState(() => _selected = null),
                   ),
-              ],
+                  for (final entry in candidates) ...[
+                    const SizedBox(height: 7),
+                    _ParentOption(
+                      label: entry.category.name,
+                      depth: entry.depth,
+                      selected: _selected == entry.category.id,
+                      onTap: () =>
+                          setState(() => _selected = entry.category.id),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
-        ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TideButton(
+                  label: 'Set',
+                  primary: true,
+                  onTap: () => Navigator.of(context)
+                      .pop(_ParentPickResult(_selected)),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () =>
-              Navigator.of(context).pop(_ParentPickResult(_selected)),
-          child: const Text('OK'),
-        ),
-      ],
     );
   }
 }
 
-/// Create/rename dialog with the same inline validation as Kotlin's
-/// CategoryCreateDialog/CategoryRenameDialog: the confirm button stays
-/// disabled until the name is non-empty, changed (rename) and unique.
-class _NameDialog extends StatefulWidget {
-  const _NameDialog({
+class _ParentOption extends StatelessWidget {
+  const _ParentOption({
+    required this.label,
+    required this.depth,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final int depth;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(left: depth * 16.0),
+      child: TideGlass(
+        radius: 14,
+        tintTop: selected ? 0.13 : 0.06,
+        tintBottom: selected ? 0.05 : 0.02,
+        highlight: selected ? 0.20 : 0.12,
+        border: selected ? 0.20 : 0.08,
+        onTap: onTap,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            if (depth > 0) ...[
+              Icon(
+                Icons.subdirectory_arrow_right,
+                size: 14,
+                color: TideColors.accent.withValues(alpha: 0.6),
+              ),
+              const SizedBox(width: 7),
+            ],
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TideText.title(
+                  size: 13.5,
+                  color: selected ? TideColors.textBright : TideColors.text,
+                ),
+              ),
+            ),
+            if (selected)
+              const Icon(Icons.check_rounded,
+                  size: 17, color: TideColors.accent),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Create/rename sheet with the same inline validation as Kotlin's
+/// CategoryCreateDialog/CategoryRenameDialog: the confirm stays inert until
+/// the name is non-empty, changed (rename) and unique.
+class _NameSheet extends StatefulWidget {
+  const _NameSheet({
     required this.title,
     required this.confirmLabel,
     required this.initialValue,
@@ -466,10 +661,10 @@ class _NameDialog extends StatefulWidget {
   final Set<String> takenNames;
 
   @override
-  State<_NameDialog> createState() => _NameDialogState();
+  State<_NameSheet> createState() => _NameSheetState();
 }
 
-class _NameDialogState extends State<_NameDialog> {
+class _NameSheetState extends State<_NameSheet> {
   late final TextEditingController _controller =
       TextEditingController(text: widget.initialValue);
 
@@ -488,8 +683,7 @@ class _NameDialogState extends State<_NameDialog> {
       _name.isNotEmpty && !_isDuplicate && _name != widget.initialValue;
 
   String? get _supportText {
-    if (_name.isEmpty) return '*required';
-    if (_isDuplicate) return 'A category with this name already exists!';
+    if (_isDuplicate) return 'A category with this name already exists';
     return null;
   }
 
@@ -499,28 +693,79 @@ class _NameDialogState extends State<_NameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        decoration: InputDecoration(
-          labelText: 'Name',
-          errorText: _supportText,
-        ),
-        onChanged: (_) => setState(() {}),
-        onSubmitted: (_) => _submit(),
+    final error = _supportText;
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(widget.title, style: TideText.display(21)),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 44,
+            child: TideGlass(
+              radius: 22,
+              tintTop: 0.09,
+              tintBottom: 0.03,
+              highlight: 0.16,
+              // The field itself carries the error, in the accent's warning
+              // register rather than as a line of red text below it.
+              border: error == null ? 0.11 : 0.0,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Center(
+                child: TextField(
+                  controller: _controller,
+                  autofocus: true,
+                  cursorColor: TideColors.accent,
+                  style: TideText.title(size: 14.5),
+                  textInputAction: TextInputAction.done,
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) => _submit(),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    hintText: 'Name',
+                    hintStyle: TideText.title(
+                      size: 14.5,
+                      color: TideColors.textAt(0.33),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              error,
+              style: TideText.caption(size: 12, opacity: 0.9)
+                  .copyWith(color: const Color(0xFFE8837F)),
+            ),
+          ],
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Opacity(
+                  opacity: _canConfirm ? 1 : 0.4,
+                  child: TideButton(
+                    label: widget.confirmLabel,
+                    primary: true,
+                    onTap: _submit,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: _canConfirm ? _submit : null,
-          child: Text(widget.confirmLabel),
-        ),
-      ],
     );
   }
 }
@@ -533,8 +778,12 @@ class _Message extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(text, textAlign: TextAlign.center),
+        padding: const EdgeInsets.all(28),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TideText.body(),
+        ),
       ),
     );
   }
