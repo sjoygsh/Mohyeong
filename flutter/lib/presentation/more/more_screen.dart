@@ -1,8 +1,22 @@
+// ===========================================================================
+// Tide more.
+//
+// The hub holds two different kinds of thing, and the old screen drew them
+// identically: two global MODES that are on or off right now, and a list of
+// DESTINATIONS that go somewhere. So the modes come first, as cards that light
+// up when they are active — a mode you have forgotten you left on is the whole
+// failure case here — and the destinations follow in named groups.
+//
+// Nothing separates the groups but their own labels. A divider says "these are
+// different"; a label says what they are.
+// ===========================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/base/base_preferences.dart';
+import '../../data/download/download_repository.dart';
 import '../../data/source/incognito_preferences.dart';
 import '../about/about_screen.dart';
 import '../dev/dev_page_source_screen.dart';
@@ -12,152 +26,254 @@ import '../home/home_screen.dart';
 import '../settings/data_storage_settings_screen.dart';
 import '../settings/settings_screen.dart';
 import '../stats/stats_screen.dart';
+import '../tide/tide.dart';
 
-/// "More" hub -- equivalent to the Kotlin MoreScreen. Routes to Settings,
-/// Categories, Data and storage, About, etc. Also hosts the global
-/// incognito toggle and the app logo header, mirroring Mihon's MoreScreen.
-class MoreScreen extends ConsumerWidget {
+/// "More" hub — equivalent to the Kotlin MoreScreen. Routes to Settings,
+/// Categories, Data and storage, About, etc, and hosts the two global mode
+/// toggles.
+class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
 
   /// Verbatim Kotlin `Constants.URL_HELP`.
   static const _urlHelp = 'https://sjoygsh.github.io/Mohyeong/help.html';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final incognito = ref.watch(incognitoModeProvider);
-    // Mirrors Kotlin MoreTab.onReselect: tapping the already-selected More
-    // bottom-nav destination (index 4) opens the Settings screen.
-    ref.listen<HomeReselectSignal>(homeReselectProvider, (prev, next) {
-      if (next.tab == 4 && next.tick != (prev?.tick ?? 0)) {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-        );
-      }
-    });
+  ConsumerState<MoreScreen> createState() => _MoreScreenState();
+}
 
-    // Kotlin MoreScreen has no app bar; the list starts with a centred logo.
-    return Scaffold(
-      body: ListView(
+class _MoreScreenState extends ConsumerState<MoreScreen> {
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Mirrors Kotlin MoreTab.onReselect: tapping the already-selected More
+    // destination opens Settings. The index is 3, not 4 — this went dead when
+    // the Updates tab was removed and every tab after it shifted down one.
+    ref.listenManual<HomeReselectSignal>(homeReselectProvider, (prev, next) {
+      if (next.tab != 3 || !mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _push(Widget screen) => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => screen),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = ref.watch(homeTabIndexProvider) == 3;
+    final downloadedOnly = ref.watch(downloadedOnlyProvider);
+    final incognito = ref.watch(incognitoModeProvider);
+
+    return TickerMode(
+      enabled: visible,
+      child: Scaffold(
+        backgroundColor: TideColors.ground,
+        body: Stack(
+          children: [
+            const Positioned.fill(child: TideAurora(opacity: 0.3)),
+            Positioned.fill(
+              child: TideRise(
+                child: ListView(
+                  controller: _scroll,
+                  padding: EdgeInsets.only(
+                    top: MediaQuery.paddingOf(context).top + 14,
+                    bottom: 28,
+                  ),
+                  children: [
+                    // No logo slab. The app does not need to introduce itself
+                    // on a settings hub any more than it did on the home feed;
+                    // its identity lives on the About screen.
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
+                      child: Text(
+                        'More',
+                        style: TextStyle(
+                          fontSize: 26,
+                          height: 1.15,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: -0.65,
+                          color: TideColors.text,
+                        ),
+                      ),
+                    ),
+                    const TideSectionHeader(
+                      label: 'Modes',
+                      padding: EdgeInsets.fromLTRB(20, 22, 20, 12),
+                    ),
+                    _group([
+                      // Verbatim Mihon strings label_downloaded_only /
+                      // _summary.
+                      TideRow(
+                        icon: Icons.cloud_off_outlined,
+                        title: 'Downloaded only',
+                        subtitle: 'Filters all entries in your library',
+                        lit: downloadedOnly,
+                        onTap: () => ref
+                            .read(downloadedOnlyProvider.notifier)
+                            .set(!downloadedOnly),
+                        trailing: TideSwitch(
+                          value: downloadedOnly,
+                          onChanged:
+                              ref.read(downloadedOnlyProvider.notifier).set,
+                        ),
+                      ),
+                      // Verbatim Mihon strings pref_incognito_mode / _summary.
+                      TideRow(
+                        icon: Icons.no_encryption_gmailerrorred_outlined,
+                        title: 'Incognito mode',
+                        subtitle: 'Pauses reading history',
+                        lit: incognito,
+                        onTap: () => ref
+                            .read(incognitoModeProvider.notifier)
+                            .set(!incognito),
+                        trailing: TideSwitch(
+                          value: incognito,
+                          onChanged: ref.read(incognitoModeProvider.notifier).set,
+                        ),
+                      ),
+                    ]),
+                    const TideSectionHeader(label: 'Library'),
+                    _group([
+                      TideRow(
+                        icon: Icons.get_app,
+                        title: 'Download queue',
+                        // The one row on this screen with live state behind it:
+                        // whether anything is downloading right now is worth
+                        // knowing before you tap.
+                        trailing: const _QueueCount(),
+                        onTap: () => _push(const DownloadQueueScreen()),
+                      ),
+                      TideRow(
+                        icon: Icons.label_outlined,
+                        title: 'Categories',
+                        trailing: const TideChevron(),
+                        onTap: () => _push(const CategoriesScreen()),
+                      ),
+                      TideRow(
+                        icon: Icons.query_stats,
+                        title: 'Statistics',
+                        trailing: const TideChevron(),
+                        onTap: () => _push(const StatsScreen()),
+                      ),
+                    ]),
+                    const TideSectionHeader(label: 'App'),
+                    _group([
+                      TideRow(
+                        icon: Icons.storage,
+                        title: 'Data and storage',
+                        trailing: const TideChevron(),
+                        onTap: () => _push(const DataStorageSettingsScreen()),
+                      ),
+                      TideRow(
+                        icon: Icons.settings_outlined,
+                        title: 'Settings',
+                        trailing: const TideChevron(),
+                        onTap: () => _push(const SettingsScreen()),
+                      ),
+                      TideRow(
+                        icon: Icons.info_outline,
+                        title: 'About',
+                        trailing: const TideChevron(),
+                        onTap: () => _push(const AboutScreen()),
+                      ),
+                      TideRow(
+                        icon: Icons.help_outline,
+                        title: 'Help',
+                        trailing: Icon(
+                          Icons.open_in_new,
+                          size: 15,
+                          color: TideColors.textAt(0.3),
+                        ),
+                        onTap: () => launchUrl(
+                          Uri.parse(MoreScreen._urlHelp),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                      ),
+                    ]),
+                    // TEMP developer tool for authoring source extensions —
+                    // remove before release. Dumps a Cloudflare-cleared,
+                    // JS-rendered page's DOM to a file for off-device
+                    // inspection.
+                    const TideSectionHeader(label: 'Developer'),
+                    _group([
+                      TideRow(
+                        icon: Icons.bug_report_outlined,
+                        title: 'Dev: page source',
+                        trailing: const TideChevron(),
+                        onTap: () => _push(const DevPageSourceScreen()),
+                      ),
+                    ]),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Rows sit apart rather than fused into one slab: each is its own pane of
+  /// glass, which is what makes a lit one readable as lit.
+  Widget _group(List<Widget> rows) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
         children: [
-          const _LogoHeader(),
-          // Verbatim Mihon strings label_downloaded_only / _summary.
-          SwitchListTile(
-            secondary: const Icon(Icons.cloud_off_outlined),
-            title: const Text('Downloaded only'),
-            subtitle: const Text('Filters all entries in your library'),
-            value: ref.watch(downloadedOnlyProvider),
-            onChanged: ref.read(downloadedOnlyProvider.notifier).set,
-          ),
-          // Verbatim Mihon strings pref_incognito_mode / _summary.
-          SwitchListTile(
-            secondary: const Icon(Icons.no_encryption_gmailerrorred_outlined),
-            title: const Text('Incognito mode'),
-            subtitle: const Text('Pauses reading history'),
-            value: incognito,
-            onChanged: ref.read(incognitoModeProvider.notifier).set,
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.get_app),
-            title: const Text('Download queue'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const DownloadQueueScreen(),
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.label_outlined),
-            title: const Text('Categories'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const CategoriesScreen()),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.query_stats),
-            title: const Text('Statistics'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const StatsScreen()),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.storage),
-            title: const Text('Data and storage'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const DataStorageSettingsScreen(),
-              ),
-            ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.settings_outlined),
-            title: const Text('Settings'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('About'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const AboutScreen()),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.help_outline),
-            title: const Text('Help'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => launchUrl(
-              Uri.parse(_urlHelp),
-              mode: LaunchMode.externalApplication,
-            ),
-          ),
-          // TEMP developer tool for authoring source extensions — remove
-          // before release. Dumps a Cloudflare-cleared, JS-rendered page's
-          // DOM to a file for off-device inspection.
-          ListTile(
-            leading: const Icon(Icons.bug_report_outlined),
-            title: const Text('Dev: page source'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const DevPageSourceScreen(),
-              ),
-            ),
-          ),
+          for (final (i, row) in rows.indexed) ...[
+            if (i > 0) const SizedBox(height: 8),
+            row,
+          ],
         ],
       ),
     );
   }
 }
 
-/// Mirrors Kotlin `LogoHeader`: a centred, `onSurface`-tinted app logo
-/// (64dp) padded 32dp vertically, with a divider beneath it.
-class _LogoHeader extends StatelessWidget {
-  const _LogoHeader();
+/// Live count of everything queued or running, or a chevron when the queue is
+/// empty. Structural download events are what change it, so it rides the
+/// repository's own event stream rather than polling.
+///
+/// Resolved only while More is the visible tab. The shell pre-warms every tab
+/// during post-launch idle, and touching the download repository builds the
+/// whole download stack — a connectivity subscription and an HTTP client — to
+/// render a number nobody is looking at. Off-tab it stays a plain chevron.
+class _QueueCount extends ConsumerStatefulWidget {
+  const _QueueCount();
 
   @override
+  ConsumerState<_QueueCount> createState() => _QueueCountState();
+}
+
+class _QueueCountState extends ConsumerState<_QueueCount> {
+  @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 32),
-          child: Image.asset(
-            'assets/ic_mihon.png',
-            width: 64,
-            height: 64,
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-        const Divider(height: 1),
-      ],
+    if (ref.watch(homeTabIndexProvider) != 3) return const TideChevron();
+    final repo = ref.watch(downloadRepositoryProvider);
+    return StreamBuilder<DownloadEvent>(
+      stream: repo.events,
+      builder: (context, _) {
+        final count = repo.snapshot().length;
+        if (count == 0) return const TideChevron();
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TideBadge('$count'),
+            const SizedBox(width: 8),
+            const TideChevron(),
+          ],
+        );
+      },
     );
   }
 }

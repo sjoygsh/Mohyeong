@@ -182,7 +182,7 @@ class _TideSeriesScreenState extends ConsumerState<TideSeriesScreen> {
                       () => _descriptionExpanded = !_descriptionExpanded,
                     ),
                   ),
-                _ChaptersHeader(count: ordered.length),
+                const TideSectionHeader(label: 'Chapters', trailing: 'Newest'),
                 _ChapterList(
                   chapters: ordered,
                   resumeId: resume?.id,
@@ -339,32 +339,6 @@ class _Description extends StatelessWidget {
             style: TideText.body(),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ChaptersHeader extends StatelessWidget {
-  const _ChaptersHeader({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 30, 20, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          Text(
-            'CHAPTERS',
-            style: TideText.kicker(size: 13, color: TideColors.textAt(0.5))
-                .copyWith(letterSpacing: 1.82),
-          ),
-          const Spacer(),
-          Text('Newest', style: TideText.caption(size: 12, opacity: 0.35)),
-        ],
       ),
     );
   }

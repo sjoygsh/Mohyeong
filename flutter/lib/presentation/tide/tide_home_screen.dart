@@ -293,7 +293,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
           // to History and Updates now that Tide's glass bar has replaced the
           // Material one here, and a route that appears only when it happens
           // to have contents is a route the reader cannot rely on.
-          _SectionHeader(
+          TideSectionHeader(
             label: 'Continue',
             trailing: resuming.isEmpty ? null : '${resuming.length}',
             onTap: () => ref.read(homeTabIndexProvider.notifier).set(1),
@@ -306,7 +306,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
               onTap: (mangaId) => _resume(mangaId),
               onLongPress: (mangaId) => _openSeries(mangaId),
             ),
-          _SectionHeader(
+          TideSectionHeader(
             label: 'Tonight',
             trailing: tonight.isEmpty ? null : '${tonight.length}',
           ),
@@ -607,48 +607,6 @@ class _ReadButton extends StatelessWidget {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
-    required this.label,
-    this.trailing,
-    this.onTap,
-  });
-
-  final String label;
-  final String? trailing;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 30, 20, 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(
-              label.toUpperCase(),
-              style: TideText.kicker(size: 13, color: TideColors.textAt(0.5))
-                  .copyWith(letterSpacing: 1.82),
-            ),
-            const Spacer(),
-            if (trailing != null)
-              Text(trailing!, style: TideText.caption(size: 12, opacity: 0.35)),
-            if (onTap != null) ...[
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right,
-                  size: 16, color: TideColors.textAt(0.35)),
-            ],
-          ],
         ),
       ),
     );

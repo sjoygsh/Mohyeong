@@ -527,24 +527,10 @@ class _DayHeader extends StatelessWidget {
     final time = _durationLabel(day.timeReadMs);
     final chapters =
         day.chapters == 1 ? '1 chapter' : '${day.chapters} chapters';
-    return Padding(
+    return TideSectionHeader(
+      label: day.label,
+      trailing: time.isEmpty ? chapters : '$chapters · $time',
       padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          Text(
-            day.label.toUpperCase(),
-            style: TideText.kicker(size: 13, color: TideColors.textAt(0.5))
-                .copyWith(letterSpacing: 1.82),
-          ),
-          const Spacer(),
-          Text(
-            time.isEmpty ? chapters : '$chapters · $time',
-            style: TideText.caption(size: 12, opacity: 0.35),
-          ),
-        ],
-      ),
     );
   }
 }

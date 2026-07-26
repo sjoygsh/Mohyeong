@@ -665,6 +665,220 @@ class TideIconButton extends StatelessWidget {
   }
 }
 
+/// The kicker that heads a section: uppercase, widely tracked, quiet, with an
+/// optional fact on the right and an optional destination behind the whole
+/// strip. Tide separates groups with one of these rather than with a rule —
+/// a divider says "these are different", a label says what they are.
+class TideSectionHeader extends StatelessWidget {
+  const TideSectionHeader({
+    super.key,
+    required this.label,
+    this.trailing,
+    this.onTap,
+    this.padding = const EdgeInsets.fromLTRB(20, 30, 20, 12),
+  });
+
+  final String label;
+  final String? trailing;
+  final VoidCallback? onTap;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: padding,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              label.toUpperCase(),
+              style: TideText.kicker(size: 13, color: TideColors.textAt(0.5))
+                  .copyWith(letterSpacing: 1.82),
+            ),
+            const Spacer(),
+            if (trailing != null)
+              Text(trailing!, style: TideText.caption(size: 12, opacity: 0.35)),
+            if (onTap != null) ...[
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right,
+                  size: 16, color: TideColors.textAt(0.35)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One glass row: a destination, or a setting with its control on the right.
+///
+/// [lit] is for a row whose state is ON — the icon and the pane's edge take
+/// the accent, so an active mode is visible from across the screen without
+/// reading a single label.
+class TideRow extends StatelessWidget {
+  const TideRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+    this.onTap,
+    this.lit = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context) {
+    return TideGlass(
+      radius: 16,
+      tintTop: lit ? 0.13 : 0.075,
+      tintBottom: lit ? 0.05 : 0.026,
+      highlight: lit ? 0.20 : 0.14,
+      border: lit ? 0.20 : 0.09,
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(11, 11, 14, 11),
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: tideEase,
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: lit
+                  ? TideColors.accent.withValues(alpha: 0.16)
+                  : Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(
+                color: lit
+                    ? TideColors.accent.withValues(alpha: 0.32)
+                    : Colors.white.withValues(alpha: 0.08),
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: 18,
+              color: lit ? TideColors.accent : TideColors.textAt(0.7),
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TideText.title(),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.caption(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (trailing != null) ...[
+            const SizedBox(width: 10),
+            trailing!,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The chevron that marks a [TideRow] as leading somewhere.
+class TideChevron extends StatelessWidget {
+  const TideChevron({super.key});
+
+  @override
+  Widget build(BuildContext context) => Icon(
+        Icons.chevron_right,
+        size: 18,
+        color: TideColors.textAt(0.3),
+      );
+}
+
+/// Tide's switch: a track that fills with the accent and lights when on.
+///
+/// Material's Switch carries its own colour scheme and ripple, both of which
+/// fight the glass. This is the same control drawn in the design's terms —
+/// and the accent filling a 46px track is small enough to stay a mark rather
+/// than becoming a flood.
+class TideSwitch extends StatelessWidget {
+  const TideSwitch({super.key, required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onChanged(!value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: tideEase,
+        width: 46,
+        height: 27,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: value
+              ? TideColors.accent
+              : Colors.white.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: value
+                ? TideColors.accent
+                : Colors.white.withValues(alpha: 0.16),
+          ),
+          boxShadow: value
+              ? [
+                  BoxShadow(
+                    color: TideColors.accent.withValues(alpha: 0.45),
+                    blurRadius: 16,
+                  ),
+                ]
+              : null,
+        ),
+        child: AnimatedAlign(
+          duration: const Duration(milliseconds: 220),
+          curve: tideEase,
+          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            width: 21,
+            height: 21,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: value
+                  ? TideColors.ground
+                  : Colors.white.withValues(alpha: 0.6),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A manga cover, resolved through the same custom-cover / cache / per-source
 /// header pipeline the rest of the app uses.
 ///
