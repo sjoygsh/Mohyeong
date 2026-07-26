@@ -1,13 +1,21 @@
+// ===========================================================================
+// Tide upcoming.
+//
+// A calendar of predicted releases. The month grid is the screen's subject, so
+// it sits on glass with the accent doing what the accent does: a lit ring
+// marks today, and a lit dot under a date means something lands then. Tapping
+// a marked day jumps the list beneath to it.
+// ===========================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../data/cover/cover_cache.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
-import '../common/source_image.dart';
-import '../manga/manga_details_screen.dart';
+import '../tide/tide.dart';
+import '../tide/tide_series_screen.dart';
 
 /// Library manga whose next chapter is expected on/after today, soonest
 /// first. Mirrors Mihon's `GetUpcomingManga`.
@@ -53,12 +61,12 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
   }
 
   void _scrollToDate(DateTime date) {
-    final key = _headerKeys[date];
-    final ctx = key?.currentContext;
+    final ctx = _headerKeys[date]?.currentContext;
     if (ctx != null) {
       Scrollable.ensureVisible(
         ctx,
         duration: const Duration(milliseconds: 300),
+        curve: tideEase,
         alignment: 0,
       );
     }
@@ -70,86 +78,113 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(upcomingMangaProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Upcoming'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.help_outline),
-            tooltip: 'Upcoming Guide',
-            onPressed: () => launchUrl(
-              Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html'),
-              mode: LaunchMode.externalApplication,
+      backgroundColor: TideColors.ground,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: 0.3)),
+          Positioned.fill(
+            child: TideRise(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TideHeader(
+                    title: 'Upcoming',
+                    actions: [
+                      TideIconButton(
+                        icon: Icons.help_outline,
+                        onTap: () => launchUrl(
+                          Uri.parse(
+                            'https://sjoygsh.github.io/Mohyeong/help.html',
+                          ),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Expanded(
+                    child: async.when(
+                      loading: () => const Center(
+                        child: CircularProgressIndicator(
+                          color: TideColors.accent,
+                        ),
+                      ),
+                      error: (e, _) => _Note('Failed to load: $e'),
+                      data: _body,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
       ),
-      body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text('Failed to load: $e', textAlign: TextAlign.center),
+    );
+  }
+
+  Widget _body(List<Manga> manga) {
+    // Count of releases per calendar day, for the calendar dots.
+    final eventsByDay = <DateTime, int>{};
+    for (final m in manga) {
+      final d = _dateOnly(m.nextUpdate);
+      eventsByDay[d] = (eventsByDay[d] ?? 0) + 1;
+    }
+    _headerKeys
+      ..clear()
+      ..addEntries(eventsByDay.keys.map((d) => MapEntry(d, GlobalKey())));
+
+    // Flatten into headered rows (manga is already next_update-asc).
+    final rows = <Widget>[];
+    DateTime? lastHeader;
+    for (final m in manga) {
+      final d = _dateOnly(m.nextUpdate);
+      if (lastHeader == null || d != lastHeader) {
+        lastHeader = d;
+        rows.add(
+          _DateHeader(
+            key: _headerKeys[d],
+            date: d,
+            mangaCount: eventsByDay[d] ?? 0,
           ),
+        );
+      }
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: _UpcomingTile(manga: m),
         ),
-        data: (manga) {
-          if (manga.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'No upcoming releases.\nLibrary manga get a predicted next-update '
-                  'date after a library update.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          // Count of releases per calendar day, for the calendar dots.
-          final eventsByDay = <DateTime, int>{};
-          for (final m in manga) {
-            final d = _dateOnly(m.nextUpdate);
-            eventsByDay[d] = (eventsByDay[d] ?? 0) + 1;
-          }
-          _headerKeys
-            ..clear()
-            ..addEntries(
-              eventsByDay.keys.map((d) => MapEntry(d, GlobalKey())),
-            );
+      );
+    }
 
-          // Flatten into headered rows (manga is already next_update-asc).
-          final rows = <Widget>[];
-          DateTime? lastHeader;
-          for (final m in manga) {
-            final d = _dateOnly(m.nextUpdate);
-            if (lastHeader == null || d != lastHeader) {
-              lastHeader = d;
-              rows.add(_DateHeader(
-                key: _headerKeys[d],
-                date: d,
-                mangaCount: eventsByDay[d] ?? 0,
-              ));
-            }
-            rows.add(_UpcomingTile(manga: m));
-          }
-
-          return ListView(
-            controller: _scroll,
-            children: [
-              _MonthCalendar(
-                month: _visibleMonth,
-                eventsByDay: eventsByDay,
-                onPrev: () => _shiftMonth(-1),
-                onNext: () => _shiftMonth(1),
-                onDayTap: (d) {
-                  if (eventsByDay.containsKey(d)) _scrollToDate(d);
-                },
+    return ListView(
+      controller: _scroll,
+      padding: const EdgeInsets.only(bottom: 28),
+      children: [
+        _MonthCalendar(
+          month: _visibleMonth,
+          eventsByDay: eventsByDay,
+          onPrev: () => _shiftMonth(-1),
+          onNext: () => _shiftMonth(1),
+          onDayTap: (d) {
+            if (eventsByDay.containsKey(d)) _scrollToDate(d);
+          },
+        ),
+        if (manga.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(28, 34, 28, 0),
+            child: Text(
+              'No upcoming releases. Library entries get a predicted '
+              'next-update date after a library update runs.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.62,
+                color: Color(0x8AE9E9ED),
               ),
-              const Divider(height: 1),
-              ...rows,
-            ],
-          );
-        },
-      ),
+            ),
+          )
+        else
+          ...rows,
+      ],
     );
   }
 }
@@ -171,7 +206,6 @@ class _MonthCalendar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
     final firstOfMonth = DateTime(month.year, month.month);
@@ -185,96 +219,148 @@ class _MonthCalendar extends StatelessWidget {
     }
     for (var day = 1; day <= daysInMonth; day++) {
       final date = DateTime(month.year, month.month, day);
-      final count = eventsByDay[date] ?? 0;
-      final isToday = date == todayOnly;
       cells.add(
-        InkWell(
-          onTap: count > 0 ? () => onDayTap(date) : null,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  alignment: Alignment.center,
-                  decoration: isToday
-                      ? BoxDecoration(
-                          color: scheme.primary,
-                          shape: BoxShape.circle,
-                        )
-                      : null,
-                  child: Text(
-                    '$day',
-                    style: TextStyle(
-                      color: isToday ? scheme.onPrimary : scheme.onSurface,
-                      fontWeight:
-                          count > 0 ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Container(
-                  width: 5,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: count > 0 ? scheme.primary : Colors.transparent,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
-            ),
-          ),
+        _DayCell(
+          day: day,
+          count: eventsByDay[date] ?? 0,
+          isToday: date == todayOnly,
+          onTap: () => onDayTap(date),
         ),
       );
     }
 
     const weekdayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left),
-                onPressed: onPrev,
-              ),
-              Expanded(
-                child: Text(
-                  DateFormat('MMMM yyyy').format(month),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right),
-                onPressed: onNext,
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              for (final l in weekdayLabels)
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+      child: TideGlass(
+        radius: 22,
+        tintTop: 0.085,
+        tintBottom: 0.03,
+        highlight: 0.15,
+        border: 0.10,
+        padding: const EdgeInsets.fromLTRB(10, 12, 10, 14),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                _MonthArrow(icon: Icons.chevron_left, onTap: onPrev),
                 Expanded(
-                  child: Center(
-                    child: Text(
-                      l,
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
+                  child: Text(
+                    DateFormat('MMMM yyyy').format(month),
+                    textAlign: TextAlign.center,
+                    style: TideText.title(size: 15)
+                        .copyWith(color: TideColors.textBright),
                   ),
                 ),
-            ],
+                _MonthArrow(icon: Icons.chevron_right, onTap: onNext),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                for (final l in weekdayLabels)
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        l,
+                        style: TideText.kicker(size: 10)
+                            .copyWith(letterSpacing: 0.5),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            GridView.count(
+              crossAxisCount: 7,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              childAspectRatio: 0.78,
+              children: cells,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One date. Today wears a lit ring; a day with releases carries a lit dot and
+/// brighter type, and is the only kind of cell that is tappable.
+class _DayCell extends StatelessWidget {
+  const _DayCell({
+    required this.day,
+    required this.count,
+    required this.isToday,
+    required this.onTap,
+  });
+
+  final int day;
+  final int count;
+  final bool isToday;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final has = count > 0;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: has ? onTap : null,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: isToday
+                ? BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: TideColors.accent.withValues(alpha: 0.8),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: TideColors.accent.withValues(alpha: 0.28),
+                        blurRadius: 12,
+                      ),
+                    ],
+                  )
+                : null,
+            child: Text(
+              '$day',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1,
+                fontWeight: FontWeight.w500,
+                color: isToday
+                    ? TideColors.accentLight
+                    : has
+                        ? TideColors.text
+                        : TideColors.textAt(0.35),
+              ),
+            ),
           ),
-          const SizedBox(height: 4),
-          GridView.count(
-            crossAxisCount: 7,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 0.74,
-            children: cells,
+          const SizedBox(height: 3),
+          SizedBox(
+            height: 5,
+            child: has
+                ? Container(
+                    width: 5,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: TideColors.accent,
+                      boxShadow: [
+                        BoxShadow(
+                          color: TideColors.accent.withValues(alpha: 0.7),
+                          blurRadius: 7,
+                        ),
+                      ],
+                    ),
+                  )
+                : null,
           ),
         ],
       ),
@@ -282,12 +368,28 @@ class _MonthCalendar extends StatelessWidget {
   }
 }
 
+class _MonthArrow extends StatelessWidget {
+  const _MonthArrow({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 40,
+        height: 34,
+        child: Icon(icon, size: 20, color: TideColors.textAt(0.55)),
+      ),
+    );
+  }
+}
+
 class _DateHeader extends StatelessWidget {
-  const _DateHeader({
-    super.key,
-    required this.date,
-    required this.mangaCount,
-  });
+  const _DateHeader({super.key, required this.date, required this.mangaCount});
 
   final DateTime date;
   final int mangaCount;
@@ -312,32 +414,61 @@ class _DateHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+    return TideSectionHeader(
+      label: _relativeText(),
+      trailing: mangaCount == 1 ? '1 entry' : '$mangaCount entries',
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 12),
+    );
+  }
+}
+
+class _UpcomingTile extends StatelessWidget {
+  const _UpcomingTile({required this.manga});
+
+  final Manga manga;
+
+  @override
+  Widget build(BuildContext context) {
+    return TideGlass(
+      radius: 16,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => TideSeriesScreen(mangaId: manga.id),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(11, 11, 14, 11),
       child: Row(
         children: [
-          Text(
-            _relativeText(),
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: scheme.primary,
+          SizedBox(
+            width: 44,
+            height: 58,
+            child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
+              child: TideCover(manga: manga, cacheWidth: 240),
             ),
-            child: Text(
-              '$mangaCount',
-              style: TextStyle(
-                color: scheme.onPrimary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  manga.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TideText.title(),
+                ),
+                if ((manga.author ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    manga.author!.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.caption(),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -346,45 +477,20 @@ class _DateHeader extends StatelessWidget {
   }
 }
 
-class _UpcomingTile extends ConsumerWidget {
-  const _UpcomingTile({required this.manga});
+class _Note extends StatelessWidget {
+  const _Note(this.text);
 
-  final Manga manga;
+  final String text;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final fallback = Container(
-      width: 40,
-      height: 56,
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      alignment: Alignment.center,
-      child: const Icon(Icons.menu_book, size: 20),
-    );
-    final url =
-        ref.watch(coverCacheProvider).coverUrlFor(manga.id, manga.thumbnailUrl);
-    return ListTile(
-      leading: SizedBox(
-        width: 40,
-        height: 56,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: url == null || url.isEmpty
-              ? fallback
-              : SourceImage(
-                  cacheWidth: 240,
-                  url: url,
-                  fit: BoxFit.cover,
-                  placeholder: (_) => fallback,
-                  errorWidget: (_, _) => fallback,
-                ),
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TideText.body(),
+          ),
         ),
-      ),
-      title: Text(manga.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => MangaDetailsScreen(mangaId: manga.id),
-        ),
-      ),
-    );
-  }
+      );
 }
