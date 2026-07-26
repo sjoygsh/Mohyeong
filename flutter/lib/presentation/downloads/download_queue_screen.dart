@@ -1,13 +1,27 @@
+// ===========================================================================
+// Tide download queue.
+//
+// A queue is a thing in motion, so the one row actually moving gets the light:
+// the running chapter is a lit pane with its progress drawn as an accent line
+// across the bottom of the card. Errors light too, in the same way, because
+// they are the other thing you came here to find. Everything else waits
+// quietly under its series.
+//
+// Two menus become one Tide sheet each, and the pause/resume FAB becomes a
+// floating bar — the same persistent-action shape the series screen uses.
+// ===========================================================================
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/download/download_repository.dart';
+import '../tide/tide.dart';
 
 /// Mihon's "Download queue" screen. Lists the currently-running download
-/// (if any) followed by everything still queued, with a per-row cancel
-/// button for queued items and a "Clear queue" action in the app bar.
+/// (if any) followed by everything still queued, with per-row cancel and a
+/// "Cancel all" action.
 ///
 /// Progress is surfaced via the repository's broadcast event stream.
 /// Structural events (enqueue / completion / pause / …) rebuild the
@@ -32,6 +46,10 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
   // chapter means it just went queued -> running (row pins to the top),
   // which IS a structural change worth one rebuild.
   final Set<int> _running = <int>{};
+
+  /// Series headers the user has collapsed. Expanded is the default, so this
+  /// holds the exceptions rather than the rule.
+  final Set<int> _collapsed = <int>{};
 
   @override
   void initState() {
@@ -84,104 +102,112 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     final repo = ref.watch(downloadRepositoryProvider);
     final items = repo.snapshot();
     return Scaffold(
-      appBar: AppBar(
-        // Title carries a count pill of the queued chapters, mirroring
-        // Kotlin's DownloadQueueScreen.
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
+      backgroundColor: TideColors.ground,
+      body: TideRise(
+        child: Stack(
           children: [
-            const Flexible(
-              child: Text(
-                'Download queue',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            Positioned.fill(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TideHeader(
+                    title: 'Download queue',
+                    actions: [
+                      if (items.isNotEmpty) ...[
+                        TideIconButton(
+                          icon: Icons.sort,
+                          onTap: () => _openSort(repo),
+                        ),
+                        const SizedBox(width: 9),
+                        TideIconButton(
+                          icon: Icons.delete_sweep_outlined,
+                          onTap: () => _confirmClearQueue(context, repo),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (items.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                      child: Row(
+                        children: [
+                          Text(
+                            items.length == 1
+                                ? '1 chapter queued'
+                                : '${items.length} chapters queued',
+                            style:
+                                TideText.caption(size: 12.5, opacity: 0.42),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (repo.isPaused)
+                    const _QueueBanner(
+                      icon: Icons.pause_circle_outline,
+                      text: 'Queue paused — the running chapter will finish, '
+                          'but no further jobs will start.',
+                    )
+                  else if (repo.isWaitingForNetwork)
+                    const _QueueBanner(
+                      icon: Icons.wifi_off,
+                      text: 'Waiting for an allowed network — downloads only '
+                          'run over Wi-Fi while that setting is on.',
+                    ),
+                  Expanded(
+                    child: items.isEmpty
+                        ? const _EmptyQueue()
+                        : _list(repo, items),
+                  ),
+                ],
               ),
             ),
             if (items.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(left: 6),
-                child: _CountPill(count: items.length),
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 24,
+                child: _PauseBar(
+                  paused: repo.isPaused,
+                  onTap: () {
+                    if (repo.isPaused) {
+                      repo.resumeQueue();
+                    } else {
+                      repo.pauseQueue();
+                    }
+                  },
+                ),
               ),
           ],
         ),
-        actions: [
-          if (items.isNotEmpty)
-            PopupMenuButton<_QueueSort>(
-              icon: const Icon(Icons.sort),
-              tooltip: 'Sort',
-              onSelected: (s) => _applySort(repo, s),
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: _QueueSort.dateNewest,
-                  child: Text('By upload date · Newest'),
-                ),
-                PopupMenuItem(
-                  value: _QueueSort.dateOldest,
-                  child: Text('By upload date · Oldest'),
-                ),
-                PopupMenuItem(
-                  value: _QueueSort.numberAsc,
-                  child: Text('By chapter number · Ascending'),
-                ),
-                PopupMenuItem(
-                  value: _QueueSort.numberDesc,
-                  child: Text('By chapter number · Descending'),
-                ),
-              ],
-            ),
-          if (items.isNotEmpty)
-            PopupMenuButton<String>(
-              onSelected: (_) => _confirmClearQueue(context, repo),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'cancel_all', child: Text('Cancel all')),
-              ],
-            ),
-        ],
       ),
-      floatingActionButton: items.isEmpty
-          ? null
-          : FloatingActionButton.extended(
-              icon: Icon(repo.isPaused ? Icons.play_arrow : Icons.pause),
-              label: Text(repo.isPaused ? 'Resume' : 'Pause'),
-              onPressed: () {
-                if (repo.isPaused) {
-                  repo.resumeQueue();
-                } else {
-                  repo.pauseQueue();
-                }
-              },
-            ),
-      body: items.isEmpty
-          ? const _EmptyQueue()
-          : Column(
-              children: [
-                if (repo.isPaused)
-                  _QueueBanner(
-                    icon: Icons.pause_circle_outline,
-                    text: 'Queue paused — the running chapter will finish, '
-                        'but no further jobs will start.',
-                  )
-                else if (repo.isWaitingForNetwork)
-                  _QueueBanner(
-                    icon: Icons.wifi_off,
-                    text: 'Waiting for an allowed network — downloads only '
-                        'run over Wi-Fi while that setting is on.',
-                  ),
-                Expanded(child: _buildBody(context, repo, items)),
-              ],
-            ),
     );
   }
 
-  void _applySort(DownloadRepository repo, _QueueSort sort) {
-    switch (sort) {
-      case _QueueSort.dateNewest:
+  /// Kotlin's Sort menu, as a sheet.
+  Future<void> _openSort(DownloadRepository repo) async {
+    final picked = await showTideSheet<String>(
+      context,
+      (_) => const TideOptionSheet(
+        title: 'Sort queue',
+        options: [
+          ('dateNewest', 'Upload date · Newest'),
+          ('dateOldest', 'Upload date · Oldest'),
+          ('numberAsc', 'Chapter number · Ascending'),
+          ('numberDesc', 'Chapter number · Descending'),
+        ],
+        // The queue has no persisted sort — each pick is a one-shot reorder,
+        // so nothing is ever pre-selected.
+        selected: '',
+      ),
+    );
+    switch (picked) {
+      case 'dateNewest':
         repo.sortQueue((a, b) => b.dateUpload.compareTo(a.dateUpload));
-      case _QueueSort.dateOldest:
+      case 'dateOldest':
         repo.sortQueue((a, b) => a.dateUpload.compareTo(b.dateUpload));
-      case _QueueSort.numberAsc:
+      case 'numberAsc':
         repo.sortQueue((a, b) => a.chapterNumber.compareTo(b.chapterNumber));
-      case _QueueSort.numberDesc:
+      case 'numberDesc':
         repo.sortQueue((a, b) => b.chapterNumber.compareTo(a.chapterNumber));
     }
   }
@@ -190,24 +216,13 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     BuildContext context,
     DownloadRepository repo,
   ) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Clear download queue?'),
-        content: const Text(
-          'Queued chapters will be removed. The currently '
-          'downloading chapter will finish.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Clear'),
-          ),
-        ],
+    final ok = await showTideSheet<bool>(
+      context,
+      (_) => const TideConfirmSheet(
+        title: 'Clear download queue',
+        message: 'Queued chapters will be removed. The currently downloading '
+            'chapter will finish.',
+        confirmLabel: 'Clear',
       ),
     );
     if (ok == true) {
@@ -215,30 +230,25 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(removed == 1
-              ? 'Removed 1 chapter'
-              : 'Removed $removed chapters'),
+          content: Text(
+            removed == 1 ? 'Removed 1 chapter' : 'Removed $removed chapters',
+          ),
         ),
       );
     }
   }
 
-  Widget _buildBody(
-    BuildContext context,
-    DownloadRepository repo,
-    List<ActiveDownload> items,
-  ) {
+  Widget _list(DownloadRepository repo, List<ActiveDownload> items) {
     // Snapshot orders running, then errored, then queued. Pin the running
     // and errored rows at the top; the queued remainder renders grouped by
-    // manga (Kotlin's DownloadHeaderItem: an expandable series header with
+    // manga (Kotlin's DownloadHeaderItem: a collapsible series header with
     // its chapters beneath and series-level move-to-top / cancel actions —
     // replaces the old flat drag-to-reorder list; ordering is still
-    // available via the Sort menu + "Move series to top").
-    final pinned = items.where((i) => i.current || i.errored)
-        .toList(growable: false);
-    final queued = items
-        .where((i) => !i.current && !i.errored)
-        .toList(growable: false);
+    // available via Sort + "Move series to top").
+    final pinned =
+        items.where((i) => i.current || i.errored).toList(growable: false);
+    final queued =
+        items.where((i) => !i.current && !i.errored).toList(growable: false);
 
     // Bucket queued rows by manga in order of first appearance, preserving
     // each chapter's queue order within its group.
@@ -254,161 +264,282 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     }
 
     return ListView(
+      padding: EdgeInsets.fromLTRB(16, 8, 16, items.isEmpty ? 28 : 104),
       children: [
-        for (final item in pinned) _buildTile(item),
+        for (final item in pinned) ...[
+          _tile(repo, item),
+          const SizedBox(height: 8),
+        ],
         if (pinned.isNotEmpty && groupOrder.isNotEmpty)
-          const Divider(height: 1),
-        for (final mangaId in groupOrder)
-          _buildGroup(repo, groups[mangaId]!),
+          const TideSectionHeader(
+            label: 'Waiting',
+            padding: EdgeInsets.fromLTRB(4, 14, 4, 12),
+          ),
+        for (final mangaId in groupOrder) _group(repo, groups[mangaId]!),
       ],
     );
   }
 
-  /// One manga's queued chapters under an expandable series header.
-  Widget _buildGroup(DownloadRepository repo, List<ActiveDownload> group) {
+  /// One manga's queued chapters under a collapsible series header.
+  Widget _group(DownloadRepository repo, List<ActiveDownload> group) {
     final manga = group.first.manga;
     final n = group.length;
-    return ExpansionTile(
-      key: PageStorageKey<int>(manga.id),
-      initiallyExpanded: true,
-      shape: const Border(),
-      title: Text(
-        manga.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text('$n chapter${n == 1 ? '' : 's'}'),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
+    final collapsed = _collapsed.contains(manga.id);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
         children: [
-          PopupMenuButton<String>(
-            onSelected: (action) {
-              switch (action) {
-                case 'top':
-                  // Walk the group's chapters into the front of the queue,
-                  // preserving their relative order (Kotlin "Move series
-                  // to top").
-                  for (final (i, item) in group.indexed) {
-                    repo.reorderQueue(item.chapter.id, i);
-                  }
-                case 'cancel':
-                  for (final item in group) {
-                    repo.cancel(item.chapter.id);
-                  }
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'top', child: Text('Move series to top')),
-              PopupMenuItem(value: 'cancel', child: Text('Cancel all')),
-            ],
+          TideRow(
+            icon: collapsed ? Icons.chevron_right : Icons.expand_more,
+            title: manga.title,
+            subtitle: n == 1 ? '1 chapter' : '$n chapters',
+            onTap: () => setState(() {
+              if (!_collapsed.add(manga.id)) _collapsed.remove(manga.id);
+            }),
+            trailing: _RowAction(
+              icon: Icons.more_horiz,
+              onTap: () => _openGroupActions(repo, group),
+            ),
           ),
-          const Icon(Icons.expand_more),
+          if (!collapsed)
+            for (final item in group)
+              Padding(
+                // Indented under their series header, and led by the
+                // chapter rather than the manga title.
+                padding: const EdgeInsets.only(left: 22, top: 7),
+                child: _tile(repo, item, inGroup: true),
+              ),
         ],
       ),
-      children: [
-        for (final item in group) _buildTile(item, inGroup: true),
-      ],
     );
   }
 
-  Widget _buildTile(
+  Future<void> _openGroupActions(
+    DownloadRepository repo,
+    List<ActiveDownload> group,
+  ) async {
+    final picked = await showTideSheet<String>(
+      context,
+      (_) => TideOptionSheet(
+        title: group.first.manga.title,
+        options: const [
+          ('top', 'Move series to top'),
+          ('cancel', 'Cancel all in series'),
+        ],
+        selected: '',
+      ),
+    );
+    switch (picked) {
+      case 'top':
+        // Walk the group's chapters into the front of the queue, preserving
+        // their relative order (Kotlin "Move series to top").
+        for (final (i, item) in group.indexed) {
+          repo.reorderQueue(item.chapter.id, i);
+        }
+      case 'cancel':
+        for (final item in group) {
+          repo.cancel(item.chapter.id);
+        }
+    }
+  }
+
+  Widget _tile(
+    DownloadRepository repo,
     ActiveDownload item, {
     bool inGroup = false,
-    Key? key,
   }) {
-    final repo = ref.read(downloadRepositoryProvider);
     final chapterLabel = item.chapter.name.isEmpty
         ? 'Chapter ${item.chapter.chapterNumber}'
         : item.chapter.name;
-    return ListTile(
-      key: key,
-      // Grouped rows sit under their series header — indent and lead with
-      // the chapter, not the manga title.
-      contentPadding:
-          inGroup ? const EdgeInsetsDirectional.only(start: 32, end: 16) : null,
-      leading: item.errored
-          ? Icon(
-              Icons.error_outline,
-              color: Theme.of(context).colorScheme.error,
-            )
-          : item.current
-              ? const Icon(Icons.downloading)
-              : const Icon(Icons.hourglass_empty),
-      title: Text(
-        inGroup ? chapterLabel : item.manga.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!inGroup)
-            Text(
-              chapterLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          if (item.current)
-            ValueListenableBuilder<_TileProgress?>(
-              valueListenable: _tickFor(item.chapter.id),
-              builder: (context, tick, _) {
-                final progress = tick?.progress;
-                // Prefer the live event count; fall back to the snapshot's
-                // counts so a freshly opened screen still shows "x/y"
-                // before the next event.
-                final counts = tick?.counts ??
-                    (item.totalPages > 0
-                        ? (item.downloadedPages, item.totalPages)
-                        : null);
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 4),
-                    LinearProgressIndicator(value: progress),
-                    if (progress != null && counts != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        '${counts.$1}/${counts.$2}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ],
-                );
-              },
-            )
-          else if (item.errored) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Download error',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-            ),
-          ],
-        ],
-      ),
-      trailing: Row(
+    // The two rows worth finding at a glance: the one moving, and the one
+    // that failed.
+    final lit = item.current || item.errored;
+    return TideGlass(
+      radius: 16,
+      tintTop: lit ? 0.13 : 0.06,
+      tintBottom: lit ? 0.05 : 0.022,
+      highlight: lit ? 0.20 : 0.12,
+      border: lit ? 0.20 : 0.08,
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (item.errored)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Retry',
-              onPressed: () => repo.retry(item.chapter.id),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(13, 12, 8, 12),
+            child: Row(
+              children: [
+                Icon(
+                  item.errored
+                      ? Icons.error_outline
+                      : item.current
+                          ? Icons.downloading
+                          : Icons.hourglass_empty,
+                  size: 18,
+                  color: item.errored
+                      ? const Color(0xFFE8837F)
+                      : item.current
+                          ? TideColors.accent
+                          : TideColors.textAt(0.4),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        inGroup ? chapterLabel : item.manga.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TideText.title(size: inGroup ? 13.5 : 14.5),
+                      ),
+                      if (!inGroup) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          chapterLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TideText.caption(),
+                        ),
+                      ],
+                      if (item.errored) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Download error',
+                          style: TideText.caption(size: 11.5, opacity: 0.75)
+                              .copyWith(color: const Color(0xFFE8837F)),
+                        ),
+                      ] else if (item.current)
+                        _ProgressLabel(
+                          tick: _tickFor(item.chapter.id),
+                          item: item,
+                        ),
+                    ],
+                  ),
+                ),
+                if (item.errored)
+                  _RowAction(
+                    icon: Icons.refresh,
+                    onTap: () => repo.retry(item.chapter.id),
+                  ),
+                _RowAction(
+                  icon: Icons.close_rounded,
+                  onTap: () => repo.cancel(item.chapter.id),
+                ),
+              ],
             ),
-          IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: 'Cancel',
-            onPressed: () => repo.cancel(item.chapter.id),
           ),
+          // Progress as a line across the foot of the card — the accent
+          // doing the one job Nocturne gives it.
+          if (item.current)
+            _ProgressLine(tick: _tickFor(item.chapter.id), item: item),
         ],
       ),
     );
   }
 }
 
-/// Sort options for the download queue, mirroring Kotlin's Sort menu.
-enum _QueueSort { dateNewest, dateOldest, numberAsc, numberDesc }
+/// The "x/y" page counter under a running row's title.
+class _ProgressLabel extends StatelessWidget {
+  const _ProgressLabel({required this.tick, required this.item});
+
+  final ValueNotifier<_TileProgress?> tick;
+  final ActiveDownload item;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<_TileProgress?>(
+      valueListenable: tick,
+      builder: (context, value, _) {
+        // Prefer the live event count; fall back to the snapshot's counts so
+        // a freshly opened screen still shows "x/y" before the next event.
+        final counts = value?.counts ??
+            (item.totalPages > 0
+                ? (item.downloadedPages, item.totalPages)
+                : null);
+        if (counts == null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(
+            '${counts.$1} / ${counts.$2} pages',
+            style: TideText.caption(size: 11.5, opacity: 0.5),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A 3px accent line across the bottom of a running row.
+class _ProgressLine extends StatelessWidget {
+  const _ProgressLine({required this.tick, required this.item});
+
+  final ValueNotifier<_TileProgress?> tick;
+  final ActiveDownload item;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<_TileProgress?>(
+      valueListenable: tick,
+      builder: (context, value, _) {
+        final progress = value?.progress;
+        return SizedBox(
+          height: 3,
+          child: progress == null
+              // No progress reported yet: an indeterminate sliver rather
+              // than a full bar claiming completion.
+              ? const LinearProgressIndicator(
+                  minHeight: 3,
+                  backgroundColor: Colors.transparent,
+                  color: TideColors.accent,
+                )
+              : Row(
+                  children: [
+                    Expanded(
+                      flex: (progress.clamp(0.0, 1.0) * 1000).round(),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: TideColors.accent,
+                          boxShadow: [
+                            BoxShadow(
+                              color: TideColors.accent.withValues(alpha: 0.8),
+                              blurRadius: 9,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: ((1 - progress.clamp(0.0, 1.0)) * 1000).round(),
+                      child: const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
+
+/// Small quiet control at the end of a row.
+class _RowAction extends StatelessWidget {
+  const _RowAction({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 34,
+        height: 38,
+        child: Icon(icon, size: 16, color: TideColors.textAt(0.42)),
+      ),
+    );
+  }
+}
 
 /// Live progress payload for one queue row, pushed through its
 /// ValueNotifier by the screen's single event subscription. Either side
@@ -425,27 +556,80 @@ class _TileProgress {
   final (int, int)? counts;
 }
 
-/// Small rounded count badge shown next to the app-bar title (Kotlin's
-/// Pill).
-class _CountPill extends StatelessWidget {
-  const _CountPill({required this.count});
+/// Pause / resume, as a persistent bar rather than a FAB — same shape the
+/// series screen's Continue bar uses.
+class _PauseBar extends StatelessWidget {
+  const _PauseBar({required this.paused, required this.onTap});
 
-  final int count;
+  final bool paused;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: Theme.of(context)
-            .colorScheme
-            .onSurface
-            .withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        '$count',
-        style: Theme.of(context).textTheme.labelLarge,
+    return SizedBox(
+      height: 60,
+      child: TideGlass(
+        radius: 30,
+        blur: true,
+        tintTop: 0.14,
+        tintBottom: 0.05,
+        highlight: 0.28,
+        border: 0.16,
+        saturation: 1.9,
+        onTap: onTap,
+        shadows: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 44,
+            offset: const Offset(0, 18),
+          ),
+        ],
+        padding: const EdgeInsets.fromLTRB(22, 0, 8, 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'QUEUE',
+                    style: TideText.kicker(
+                      size: 10,
+                      color: TideColors.textAt(0.5),
+                    ).copyWith(letterSpacing: 1.6),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    paused ? 'Paused' : 'Running',
+                    style: TideText.title(size: 15)
+                        .copyWith(color: TideColors.textBright),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: TideColors.accent,
+                boxShadow: [
+                  BoxShadow(
+                    color: TideColors.accent.withValues(alpha: 0.55),
+                    blurRadius: 26,
+                  ),
+                ],
+              ),
+              child: Icon(
+                paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                size: 22,
+                color: const Color(0xFF12141F),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -459,18 +643,24 @@ class _QueueBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Theme.of(context).colorScheme.tertiaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: TideGlass(
+        radius: 16,
+        tintTop: 0.09,
+        tintBottom: 0.03,
+        highlight: 0.15,
+        border: 0.10,
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
         child: Row(
           children: [
-            Icon(icon, size: 20),
+            Icon(icon, size: 17, color: TideColors.accent),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 text,
-                style: Theme.of(context).textTheme.bodySmall,
+                style: TideText.caption(size: 12.5, opacity: 0.6)
+                    .copyWith(height: 1.45),
               ),
             ),
           ],
@@ -487,17 +677,18 @@ class _EmptyQueue extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.cloud_done_outlined,
-              size: 64,
-              color: Theme.of(context).colorScheme.outline,
+            Text('No downloads', style: TideText.display(23)),
+            const SizedBox(height: 10),
+            Text(
+              'Chapters you queue for offline reading appear here while they '
+              'download.',
+              textAlign: TextAlign.center,
+              style: TideText.body(),
             ),
-            const SizedBox(height: 12),
-            const Text('No downloads'),
           ],
         ),
       ),
