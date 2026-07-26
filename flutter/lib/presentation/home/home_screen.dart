@@ -5,6 +5,8 @@ import '../../data/base/base_preferences.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/source/extension_updates.dart';
 import '../../data/source/incognito_preferences.dart';
+import '../library/library_screen.dart';
+import '../tide/tide.dart';
 import '../tide/tide_home_screen.dart';
 import '../history/history_screen.dart';
 import '../browse/browse_screen.dart';
@@ -40,6 +42,11 @@ class HomeReselect extends Notifier<HomeReselectSignal> {
 
 final homeReselectProvider =
     NotifierProvider<HomeReselect, HomeReselectSignal>(HomeReselect.new);
+
+/// Set while a tab is showing its own floating bar — a multi-select, which
+/// puts bulk actions exactly where the navigation sits. Two glass bars stacked
+/// on one screen edge is worse than either alone.
+final tideBarSuppressedProvider = StateProvider<bool>((_) => false);
 
 /// Four top-level destinations: Home, History, Browse, More. Updates is gone
 /// — new chapters surface on the home feed's Tonight section, so a whole tab
@@ -82,15 +89,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
-}
-
-/// Wraps a nav icon in its tab's badge. Browse (2) = available extension
-/// updates; it is the only badge left now that new chapters surface on the
-/// home feed rather than in a tab of their own.
-Widget _badged(int tabIndex, Icon icon, int extBadge) {
-  final count = tabIndex == 2 ? extBadge : 0;
-  if (count <= 0) return icon;
-  return Badge(label: Text('$count'), child: icon);
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
@@ -159,6 +157,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // Browse badge: extensions with an available update (Kotlin
     // extensionUpdatesCount). Not gated by a pref — Kotlin has none.
     final extensionsBadge = ref.watch(extUpdatesCountProvider);
+    final barSuppressed = ref.watch(tideBarSuppressedProvider);
     ref.listen<int>(homeTabIndexProvider, (_, _) {
       // Re-show the nav on any tab switch. The only way to change tabs while
       // the bar is hidden is the back-to-Library PopScope below, and the new
@@ -177,7 +176,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         if (!didPop) ref.read(homeTabIndexProvider.notifier).set(0);
       },
       child: Scaffold(
-        body: Column(
+        backgroundColor: TideColors.ground,
+        body: Stack(children: [
+        Positioned.fill(child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Kotlin AppStateBanners: downloaded-only sits above incognito;
@@ -217,55 +218,85 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ),
           ],
-        ),
-        // shrinkTowards = Bottom: collapse the bar toward the screen edge while
-        // freeing its layout space (so content expands up), matching Kotlin's
-        // shrinkVertically(). The bar widget itself is built once and clipped.
-        // Tide (tab 0) carries its own floating glass bar, so the Material one
-        // collapses there rather than stacking two navigations on one screen.
-        // Every destination stays reachable: Tide's bar covers the library
-        // grid, search and More, and its Continue / Tonight headers open
-        // History and Updates.
-        bottomNavigationBar: TweenAnimationBuilder<double>(
-          tween: Tween<double>(
-            begin: 1,
-            end: _bottomNavVisible && index != 0 ? 1 : 0,
-          ),
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-          builder: (context, factor, child) => ClipRect(
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              heightFactor: factor,
-              child: child,
+        )),
+        // ONE navigation, floating over every tab. It used to be Tide's glass
+        // bar on tab 0 and a Material NavigationBar on the other three, which
+        // is the single loudest way an app can look like two apps.
+        //
+        // Slides clear of the content rather than fading in place: the bar is
+        // an object, so it should leave the way an object would.
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 260),
+          curve: tideEase,
+          left: 40,
+          right: 40,
+          bottom: _bottomNavVisible && !barSuppressed ? 26 : -80,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: _bottomNavVisible && !barSuppressed ? 1 : 0,
+            child: _badgedBar(
+              TideTabBar(
+                activeTab: index,
+                onSelect: (i) {
+                  // Tapping the already-selected destination is a "reselect" —
+                  // forward it to the tab instead of re-setting the same index.
+                  if (i == index) {
+                    ref.read(homeReselectProvider.notifier).signal(i);
+                  } else {
+                    ref.read(homeTabIndexProvider.notifier).set(i);
+                  }
+                },
+                onLibrary: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const LibraryScreen(),
+                  ),
+                ),
+              ),
+              extensionsBadge,
             ),
           ),
-          child: NavigationBar(
-            selectedIndex: index,
-            onDestinationSelected: (i) {
-              // Tapping the already-selected destination is a "reselect" —
-              // forward it to the tab instead of re-setting the same index.
-              if (i == index) {
-                ref.read(homeReselectProvider.notifier).signal(i);
-              } else {
-                ref.read(homeTabIndexProvider.notifier).set(i);
-              }
-            },
-            destinations: [
-              for (final (i, tab) in HomeScreen._tabs.indexed)
-                NavigationDestination(
-                  // Updates (tab 1) carries the unseen-new-chapters badge;
-                  // Browse (tab 3) the extension-updates badge (Kotlin
-                  // HomeScreen's BadgedBox pair).
-                  icon: _badged(i, Icon(tab.icon), extensionsBadge),
-                  selectedIcon:
-                      _badged(i, Icon(tab.selectedIcon), extensionsBadge),
-                  label: tab.label,
+        ),
+      ]),
+      ),
+    );
+  }
+
+  /// Extension-updates count, marked on the bar's Browse slot. The bar draws
+  /// its own icons, so the badge rides as an overlay dot rather than wrapping
+  /// a destination the way Kotlin's BadgedBox does.
+  Widget _badgedBar(Widget bar, int extBadge) {
+    if (extBadge <= 0) return bar;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        bar,
+        Positioned(
+          // Browse is the fourth of five evenly-spaced slots.
+          left: 0,
+          right: 0,
+          top: 12,
+          child: FractionallySizedBox(
+            widthFactor: 1,
+            child: Align(
+              alignment: const Alignment(0.52, 0),
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: TideColors.accent,
+                  boxShadow: [
+                    BoxShadow(
+                      color: TideColors.accent.withValues(alpha: 0.8),
+                      blurRadius: 8,
+                    ),
+                  ],
                 ),
-            ],
+              ),
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 }

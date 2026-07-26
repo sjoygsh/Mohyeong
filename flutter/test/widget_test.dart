@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +22,7 @@ import 'package:mohyeong/domain/library/model/library_item.dart';
 import 'package:mohyeong/domain/manga/model/manga.dart';
 import 'package:mohyeong/domain/source/model/manga_source.dart';
 import 'package:mohyeong/main.dart';
+import 'package:mohyeong/presentation/tide/tide.dart';
 
 class _FakeMangaRepository implements MangaRepository {
   @override
@@ -183,12 +185,17 @@ void main() {
     }
     expect(find.text('Nothing read recently'), findsWidgets);
 
-    // Off the feed, the Material bar is back with the four destinations that
-    // remain — Updates is gone, folded into the feed's Tonight section.
-    expect(find.text('Home'), findsOneWidget);
-    expect(find.text('History'), findsWidgets);
-    expect(find.text('Browse'), findsOneWidget);
-    expect(find.text('More'), findsOneWidget);
+    // ONE navigation, and it is Tide's — a floating glass bar carrying the
+    // app's own glyphs, over every tab. There is no Material NavigationBar
+    // left anywhere: having Tide's bar on home and a Material one on the
+    // other three was the app's loudest split personality.
+    expect(find.byType(TideTabBar), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byIcon(Icons.home), findsOneWidget);
+    expect(find.byIcon(Icons.collections_bookmark_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.explore_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.more_horiz), findsOneWidget);
+    // Updates is gone, folded into the feed's Tonight section.
     expect(find.text('Updates'), findsNothing);
 
     // The remaining tabs pre-warm during post-launch idle (600ms after the

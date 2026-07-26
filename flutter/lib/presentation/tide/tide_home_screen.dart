@@ -39,7 +39,6 @@ import '../../domain/library/model/library_item.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../common/source_image.dart';
 import '../home/home_screen.dart';
-import '../library/library_screen.dart';
 import '../reader/reader_screen.dart';
 import '../upcoming/upcoming_screen.dart';
 import 'tide.dart';
@@ -121,31 +120,6 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
   List<_FeedRow> _rows = const [];
 
   bool get _selecting => _selected.isNotEmpty;
-
-  /// Whether the floating bar is showing. It gets out of the way while you
-  /// read down the feed and comes back the moment you scroll up — the same
-  /// rule the Material nav follows, kept because a bar that permanently
-  /// covers the last row of content is worse than no bar.
-  bool _barVisible = true;
-
-  bool _onScroll(ScrollNotification n) {
-    // Horizontal rails (the Continue carousel) must not move the bar.
-    if (n.metrics.axis != Axis.vertical) return false;
-    final double delta;
-    if (n is ScrollUpdateNotification) {
-      delta = n.scrollDelta ?? 0;
-    } else if (n is OverscrollNotification) {
-      delta = n.overscroll;
-    } else {
-      return false;
-    }
-    if (delta > 1 && _barVisible) {
-      setState(() => _barVisible = false);
-    } else if (delta < -1 && !_barVisible) {
-      setState(() => _barVisible = true);
-    }
-    return false;
-  }
 
   @override
   void initState() {
@@ -243,11 +217,22 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
     setState(() {
       if (!_selected.add(chapterId)) _selected.remove(chapterId);
     });
+    _syncBarSuppression();
   }
 
   void _clearSelection() {
     if (_selected.isEmpty) return;
     setState(_selected.clear);
+    _syncBarSuppression();
+  }
+
+  /// The shell's navigation and this screen's bulk bar want the same strip of
+  /// glass at the bottom edge; only one of them may have it.
+  void _syncBarSuppression() {
+    final suppress = _selected.isNotEmpty;
+    if (ref.read(tideBarSuppressedProvider) != suppress) {
+      ref.read(tideBarSuppressedProvider.notifier).state = suppress;
+    }
   }
 
   void _selectAll() {
@@ -256,6 +241,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
         ..clear()
         ..addAll(_visible.map((u) => u.chapterId));
     });
+    _syncBarSuppression();
   }
 
   /// Toggles every visible row's membership — mirrors Kotlin
@@ -266,6 +252,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
         if (!_selected.add(u.chapterId)) _selected.remove(u.chapterId);
       }
     });
+    _syncBarSuppression();
   }
 
   Future<void> _bulkSetRead(bool read) async {
@@ -383,9 +370,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
         children: [
           const Positioned.fill(child: TideAurora()),
           Positioned.fill(
-            child: NotificationListener<ScrollNotification>(
-              onNotification: _onScroll,
-              child: StreamBuilder<List<LibraryItem>>(
+            child: StreamBuilder<List<LibraryItem>>(
                 stream: _library,
                 builder: (context, librarySnap) {
                   final items = librarySnap.data ?? const <LibraryItem>[];
@@ -404,34 +389,26 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
                     },
                   );
                 },
+          ),
+          ),
+          // The navigation itself lives in the shell now, over every tab.
+          // What stays here is the bulk bar, which takes its place while a
+          // selection is live.
+          if (_selecting)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 26,
+              child: _SelectionBar(
+                selected: _visible
+                    .where((u) => _selected.contains(u.chapterId))
+                    .toList(growable: false),
+                onBookmark: () => _bulkSetBookmark(true),
+                onUnbookmark: () => _bulkSetBookmark(false),
+                onMarkRead: () => _bulkSetRead(true),
+                onMarkUnread: () => _bulkSetRead(false),
               ),
             ),
-          ),
-          // Slides clear of the content rather than fading in place: the bar
-          // is an object, so it should leave the way an object would. In
-          // selection mode the bulk actions take its place.
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 260),
-            curve: tideEase,
-            left: _selecting ? 16 : 40,
-            right: _selecting ? 16 : 40,
-            bottom: _barVisible || _selecting ? 26 : -80,
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 200),
-              opacity: _barVisible || _selecting ? 1 : 0,
-              child: _selecting
-                  ? _SelectionBar(
-                      selected: _visible
-                          .where((u) => _selected.contains(u.chapterId))
-                          .toList(growable: false),
-                      onBookmark: () => _bulkSetBookmark(true),
-                      onUnbookmark: () => _bulkSetBookmark(false),
-                      onMarkRead: () => _bulkSetRead(true),
-                      onMarkUnread: () => _bulkSetRead(false),
-                    )
-                  : const _TideTabBar(),
-            ),
-          ),
         ],
       ),
     );
@@ -1679,98 +1656,3 @@ class _EmptyLibraryCard extends StatelessWidget {
   }
 }
 
-/// The floating glass bar.
-///
-/// Icon SHAPES are the app's existing ones, not the design's generic
-/// home/book/search/person set — these destinations do specific things, and a
-/// magnifier standing in for Browse or a person for More reads wrong the
-/// moment you tap it. The glass is the design; the glyphs are the app's.
-class _TideTabBar extends ConsumerWidget {
-  const _TideTabBar();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return SizedBox(
-      height: 58,
-      child: TideGlass(
-        radius: 29,
-        // The one BackdropFilter left on this screen: the bar genuinely
-        // floats over scrolling covers, so there is something behind it worth
-        // blurring.
-        blur: true,
-        tintTop: 0.13,
-        tintBottom: 0.05,
-        highlight: 0.26,
-        border: 0.15,
-        saturation: 1.9,
-        shadows: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.55),
-            blurRadius: 40,
-            offset: const Offset(0, 18),
-          ),
-        ],
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            const _TabIcon(icon: Icons.home, active: true),
-            _TabIcon(
-              icon: Icons.collections_bookmark_outlined,
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const _LibraryGridRoute(),
-                ),
-              ),
-            ),
-            _TabIcon(
-              icon: Icons.history_outlined,
-              onTap: () => ref.read(homeTabIndexProvider.notifier).set(1),
-            ),
-            _TabIcon(
-              icon: Icons.explore_outlined,
-              onTap: () => ref.read(homeTabIndexProvider.notifier).set(2),
-            ),
-            _TabIcon(
-              icon: Icons.more_horiz,
-              onTap: () => ref.read(homeTabIndexProvider.notifier).set(3),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TabIcon extends StatelessWidget {
-  const _TabIcon({required this.icon, this.active = false, this.onTap});
-
-  final IconData icon;
-  final bool active;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: SizedBox(
-        width: 52,
-        height: 58,
-        child: Icon(
-          icon,
-          size: 22,
-          color: active ? TideColors.accentLight : TideColors.textAt(0.5),
-        ),
-      ),
-    );
-  }
-}
-
-/// The existing library grid, reachable from the Tide bar. Tide's home is a
-/// reading queue; this is still where you go to browse the whole shelf.
-class _LibraryGridRoute extends StatelessWidget {
-  const _LibraryGridRoute();
-
-  @override
-  Widget build(BuildContext context) => const LibraryScreen();
-}

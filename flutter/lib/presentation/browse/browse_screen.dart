@@ -267,7 +267,7 @@ class _SourcesView extends ConsumerWidget {
         if (!pinnedIds.contains(e.id)) e,
     ];
     return ListView(
-      padding: const EdgeInsets.only(bottom: 28),
+      padding: const EdgeInsets.only(bottom: tideBarInset),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -491,7 +491,7 @@ class _ExtensionsViewState extends ConsumerState<_ExtensionsView> {
         if (!snap.hasData) return const _Spinner();
         final extensions = snap.data!;
         return ListView(
-          padding: const EdgeInsets.only(bottom: 28),
+          padding: const EdgeInsets.only(bottom: tideBarInset),
           children: [
             // The install affordance is a row rather than a floating button:
             // a FAB would sit on top of the shell's own navigation bar, and

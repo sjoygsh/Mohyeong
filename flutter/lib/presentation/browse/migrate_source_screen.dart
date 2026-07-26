@@ -151,7 +151,7 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
                 color: TideColors.accent,
                 backgroundColor: const Color(0xFF1A1E2C),
                 child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 28),
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, tideBarInset),
                   itemCount: sorted.length,
                   itemBuilder: (_, i) {
                     final e = sorted[i];

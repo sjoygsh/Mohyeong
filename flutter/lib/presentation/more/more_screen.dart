@@ -87,7 +87,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   controller: _scroll,
                   padding: EdgeInsets.only(
                     top: MediaQuery.paddingOf(context).top + 14,
-                    bottom: 28,
+                    bottom: tideBarInset,
                   ),
                   children: [
                     // No logo slab. The app does not need to introduce itself

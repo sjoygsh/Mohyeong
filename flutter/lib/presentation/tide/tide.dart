@@ -902,6 +902,116 @@ class TideChevron extends StatelessWidget {
       );
 }
 
+/// The app's navigation: one floating glass bar, over every tab.
+///
+/// It lives in the shell rather than on a screen, because a bar that appears
+/// on one page and is replaced by a Material one on the next is the single
+/// loudest way an app can look like two apps.
+///
+/// Icon SHAPES are the app's existing ones, not the design's generic
+/// home/book/search/person set — these destinations do specific things, and a
+/// magnifier standing in for Browse or a person for More reads wrong the
+/// moment you tap it. The glass is the design; the glyphs are the app's.
+class TideTabBar extends StatelessWidget {
+  const TideTabBar({
+    super.key,
+    required this.activeTab,
+    required this.onSelect,
+    required this.onLibrary,
+  });
+
+  /// 0 Home · 1 History · 2 Browse · 3 More.
+  final int activeTab;
+  final ValueChanged<int> onSelect;
+
+  /// The library grid is a pushed route rather than a tab, so its slot never
+  /// reads as active.
+  final VoidCallback onLibrary;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 58,
+      child: TideGlass(
+        radius: 29,
+        // The bar genuinely floats over scrolling covers, so there is
+        // something behind it worth blurring.
+        blur: true,
+        tintTop: 0.13,
+        tintBottom: 0.05,
+        highlight: 0.26,
+        border: 0.15,
+        saturation: 1.9,
+        shadows: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 40,
+            offset: const Offset(0, 18),
+          ),
+        ],
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _TabIcon(
+              icon: Icons.home,
+              active: activeTab == 0,
+              onTap: () => onSelect(0),
+            ),
+            _TabIcon(
+              icon: Icons.collections_bookmark_outlined,
+              onTap: onLibrary,
+            ),
+            _TabIcon(
+              icon: Icons.history_outlined,
+              active: activeTab == 1,
+              onTap: () => onSelect(1),
+            ),
+            _TabIcon(
+              icon: Icons.explore_outlined,
+              active: activeTab == 2,
+              onTap: () => onSelect(2),
+            ),
+            _TabIcon(
+              icon: Icons.more_horiz,
+              active: activeTab == 3,
+              onTap: () => onSelect(3),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TabIcon extends StatelessWidget {
+  const _TabIcon({required this.icon, this.active = false, this.onTap});
+
+  final IconData icon;
+  final bool active;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 52,
+        height: 58,
+        child: Icon(
+          icon,
+          size: 22,
+          color: active ? TideColors.accentLight : TideColors.textAt(0.5),
+        ),
+      ),
+    );
+  }
+}
+
+/// Height a tab's scrollable must leave clear at its foot so the floating bar
+/// never covers its last row.
+const double tideBarInset = 110;
+
 /// Switches between peer views: a glass pill with one lit segment that slides.
 ///
 /// Replaces a Material TabBar, whose underline-and-ripple belongs to a

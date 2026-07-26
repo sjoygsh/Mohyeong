@@ -18,6 +18,8 @@
 // under the header is the app's "total time read" stat, finally on screen.
 // ===========================================================================
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -183,7 +185,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             SliverFillRemaining(
               hasScrollBody: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 40, 16, 80),
+                padding: const EdgeInsets.fromLTRB(16, 40, 16, tideBarInset),
                 child: entries.isEmpty
                     ? const _EmptyCard(
                         title: 'Nothing read recently',
@@ -212,7 +214,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                   ),
               },
             ),
-          const SliverToBoxAdapter(child: SizedBox(height: 28)),
+          const SliverToBoxAdapter(child: SizedBox(height: tideBarInset)),
         ],
       ),
     );
@@ -562,6 +564,16 @@ class _EntryTile extends StatelessWidget {
   static const _leadHeight = 80.0;
   static const _followHeight = 34.0;
 
+  /// How long you stayed with a chapter, mapped to 0–1. A minute is nothing,
+  /// an hour is as bright as it gets; the curve is deliberately generous at
+  /// the short end so a ten-minute read still reads as lit rather than as
+  /// almost-dark.
+  static double _weightOf(int timeReadMs) {
+    final minutes = timeReadMs / 60000;
+    if (minutes <= 0) return 0;
+    return (math.sqrt(minutes / 60)).clamp(0.0, 1.0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final lead = row.lead;
@@ -584,6 +596,7 @@ class _EntryTile extends StatelessWidget {
                 below: row.lineBelow,
                 lead: lead,
                 nodeY: height / 2,
+                weight: _weightOf(row.entry.timeReadMs),
               ),
             ),
           ),
@@ -711,19 +724,48 @@ class _QuietX extends StatelessWidget {
   }
 }
 
-/// The thread, and this row's node on it.
+/// The thread, and this row's star on it.
+///
+/// Stars rather than dots, and white rather than accent: the thread is the
+/// accent's line, and a row of accent circles on an accent line reads as one
+/// object. A star reads as a moment.
+///
+/// Size and glow are driven by how long the chapter actually held you — a
+/// glance is a pinprick, an hour is a small bright thing — so the spine
+/// carries the shape of a night's reading rather than a uniform ladder.
 class _SpinePainter extends CustomPainter {
   const _SpinePainter({
     required this.above,
     required this.below,
     required this.lead,
     required this.nodeY,
+    required this.weight,
   });
 
   final bool above;
   final bool below;
   final bool lead;
   final double nodeY;
+
+  /// 0–1, from the chapter's read duration.
+  final double weight;
+
+  /// Four-pointed star with concave sides — a spark, not a sheriff's badge.
+  static Path _star(Offset c, double outer) {
+    final inner = outer * 0.30;
+    final path = Path();
+    for (var i = 0; i < 8; i++) {
+      final r = i.isEven ? outer : inner;
+      final a = -math.pi / 2 + i * math.pi / 4;
+      final p = Offset(c.dx + r * math.cos(a), c.dy + r * math.sin(a));
+      if (i == 0) {
+        path.moveTo(p.dx, p.dy);
+      } else {
+        path.lineTo(p.dx, p.dy);
+      }
+    }
+    return path..close();
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -734,26 +776,26 @@ class _SpinePainter extends CustomPainter {
     if (above) canvas.drawLine(Offset(x, 0), Offset(x, nodeY), line);
     if (below) canvas.drawLine(Offset(x, nodeY), Offset(x, size.height), line);
 
-    // A halo ring rather than a blur: a MaskFilter on every visible row of a
-    // long list is a real cost, and two flat circles read the same at 7px.
-    if (lead) {
-      canvas.drawCircle(
-        Offset(x, nodeY),
-        6.5,
-        Paint()..color = TideColors.accent.withValues(alpha: 0.16),
-      );
-      canvas.drawCircle(
-        Offset(x, nodeY),
-        3.2,
-        Paint()..color = TideColors.accent,
-      );
-    } else {
-      canvas.drawCircle(
-        Offset(x, nodeY),
-        2.2,
-        Paint()..color = TideColors.accent.withValues(alpha: 0.42),
-      );
-    }
+    final centre = Offset(x, nodeY);
+    // Lead rows sit a touch larger because they head a sitting; the duration
+    // does the rest of the work.
+    final base = lead ? 4.4 : 3.0;
+    final radius = base + (lead ? 3.2 : 2.0) * weight;
+    // Glow tracks size — the user's rule — and stays low: this is a spine of
+    // small lights, not a string of bulbs.
+    final glow = 0.10 + 0.26 * weight;
+
+    canvas.drawCircle(
+      centre,
+      radius * 2.6,
+      Paint()
+        ..color = Colors.white.withValues(alpha: glow * 0.5)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * 1.5),
+    );
+    canvas.drawPath(
+      _star(centre, radius),
+      Paint()..color = Colors.white.withValues(alpha: 0.55 + 0.45 * weight),
+    );
   }
 
   @override
@@ -761,7 +803,8 @@ class _SpinePainter extends CustomPainter {
       old.above != above ||
       old.below != below ||
       old.lead != lead ||
-      old.nodeY != nodeY;
+      old.nodeY != nodeY ||
+      old.weight != weight;
 }
 
 /// A history row's cover, resolved through the same custom-cover cache and
