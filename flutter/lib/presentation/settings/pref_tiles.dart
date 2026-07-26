@@ -469,3 +469,32 @@ class PrefCheckRaw extends StatelessWidget {
     return enabled ? row : Opacity(opacity: 0.45, child: row);
   }
 }
+
+
+/// A glass row whose content the caller supplies. For rows that carry more
+/// than a title and a subtitle — a language chip, a checkbox and a count on
+/// one line — but should still sit on the same pane as everything else.
+class PrefRowShell extends StatelessWidget {
+  const PrefRowShell({super.key, required this.child, this.onTap, this.lit = false});
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: TideGlass(
+        radius: 16,
+        tintTop: lit ? 0.13 : 0.075,
+        tintBottom: lit ? 0.05 : 0.026,
+        highlight: lit ? 0.20 : 0.14,
+        border: lit ? 0.20 : 0.09,
+        onTap: onTap,
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: child,
+      ),
+    );
+  }
+}

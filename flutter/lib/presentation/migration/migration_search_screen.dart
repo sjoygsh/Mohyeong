@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../tide/tide.dart';
+
 import '../../data/manga/manga_repository.dart';
 import '../../data/migration/migration_service.dart';
 import '../../data/source/extension_repository.dart';
@@ -105,27 +107,77 @@ class _MigrationSearchScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: TextField(
-          controller: _queryController,
-          autofocus: false,
-          textInputAction: TextInputAction.search,
-          onSubmitted: (_) => _submitQuery(),
-          decoration: const InputDecoration(
-            hintText: 'Search target source',
-            border: InputBorder.none,
-          ),
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: _submitQuery,
-          ),
-        ],
-      ),
+      backgroundColor: TideColors.ground,
       body: Column(
         children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              MediaQuery.paddingOf(context).top + 12,
+              16,
+              10,
+            ),
+            child: Row(
+              children: [
+                TideIconButton(
+                  icon: Icons.arrow_back_ios_new_rounded,
+                  iconSize: 15,
+                  onTap: () => Navigator.of(context).maybePop(),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: SizedBox(
+                    height: 42,
+                    child: TideGlass(
+                      radius: 21,
+                      tintTop: 0.09,
+                      tintBottom: 0.03,
+                      highlight: 0.16,
+                      border: 0.11,
+                      padding: const EdgeInsets.only(left: 16, right: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _queryController,
+                              textInputAction: TextInputAction.search,
+                              onSubmitted: (_) => _submitQuery(),
+                              cursorColor: TideColors.accent,
+                              style: TideText.title(size: 14.5),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                border: InputBorder.none,
+                                contentPadding:
+                                    const EdgeInsets.symmetric(vertical: 11),
+                                hintText: 'Search target source',
+                                hintStyle: TideText.title(
+                                  size: 14.5,
+                                  color: TideColors.textAt(0.33),
+                                ),
+                              ),
+                            ),
+                          ),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _submitQuery,
+                            child: SizedBox(
+                              width: 36,
+                              height: 42,
+                              child: Icon(
+                                Icons.search,
+                                size: 18,
+                                color: TideColors.textAt(0.6),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           _SourcePickerBar(
             future: _extsFuture,
             selected: _selectedExt,
@@ -150,9 +202,9 @@ class _MigrationSearchScreenState
     final ext = _selectedExt;
     if (ext == null) return;
     final messenger = ScaffoldMessenger.of(context);
-    final options = await showDialog<MigrationOptions>(
-      context: context,
-      builder: (_) => _MigrationConfirmDialog(
+    final options = await showTideSheet<MigrationOptions>(
+      context,
+      (_) => _MigrationConfirmDialog(
         sourceManga: widget.sourceManga,
         targetSource: ext,
         candidate: candidate,
@@ -316,37 +368,58 @@ class _ResultTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
-    final url = manga.thumbnailUrl;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: url == null || url.isEmpty
-                  ? Container(color: placeholder)
-                  : SourceImage(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.42),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Builder(
+                  builder: (context) {
+                    final url = manga.thumbnailUrl;
+                    final fallback = DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient:
+                            TideCover.fallbackGradient(manga.url.hashCode),
+                      ),
+                    );
+                    if (url == null || url.isEmpty) return fallback;
+                    return SourceImage(
                       cacheWidth: 360,
                       url: url,
                       fit: BoxFit.cover,
-                      placeholder: (_) => Container(color: placeholder),
-                      errorWidget: (_, _) => Container(color: placeholder),
-                    ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(6),
-              child: Text(
-                manga.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
+                      placeholder: (_) => fallback,
+                      errorWidget: (_, _) => fallback,
+                    );
+                  },
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 7),
+            child: Text(
+              manga.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TideText.caption(size: 11.5, opacity: 0.62),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -361,7 +434,7 @@ class _MigratingOverlay extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircularProgressIndicator(),
+          CircularProgressIndicator(color: TideColors.accent),
           SizedBox(height: 12),
           Text('Migrating...'),
         ],
@@ -391,81 +464,88 @@ class _MigrationConfirmDialogState extends State<_MigrationConfirmDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Migrate manga?'),
-      content: SizedBox(
-        width: 360,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${widget.sourceManga.title} -> '
-              '${widget.candidate.title} '
-              '(${widget.targetSource.name})',
-            ),
-            const SizedBox(height: 12),
-            _OptionTile(
-              label: 'Copy chapter read state',
-              value: _options.copyChapters,
-              onChanged: (v) => setState(
-                () => _options = MigrationOptions(
-                  copyChapters: v,
-                  copyCategories: _options.copyCategories,
-                  copyTracks: _options.copyTracks,
-                  deleteSourceManga: _options.deleteSourceManga,
-                ),
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Migrate this entry', style: TideText.display(21)),
+          const SizedBox(height: 8),
+          Text(
+            '${widget.sourceManga.title}  →  ${widget.candidate.title} '
+            '(${widget.targetSource.name})',
+            style: TideText.caption(size: 12.5),
+          ),
+          const SizedBox(height: 18),
+          _OptionTile(
+            label: 'Copy chapter read state',
+            value: _options.copyChapters,
+            onChanged: (v) => setState(
+              () => _options = MigrationOptions(
+                copyChapters: v,
+                copyCategories: _options.copyCategories,
+                copyTracks: _options.copyTracks,
+                deleteSourceManga: _options.deleteSourceManga,
               ),
             ),
-            _OptionTile(
-              label: 'Copy categories',
-              value: _options.copyCategories,
-              onChanged: (v) => setState(
-                () => _options = MigrationOptions(
-                  copyChapters: _options.copyChapters,
-                  copyCategories: v,
-                  copyTracks: _options.copyTracks,
-                  deleteSourceManga: _options.deleteSourceManga,
-                ),
+          ),
+          _OptionTile(
+            label: 'Copy categories',
+            value: _options.copyCategories,
+            onChanged: (v) => setState(
+              () => _options = MigrationOptions(
+                copyChapters: _options.copyChapters,
+                copyCategories: v,
+                copyTracks: _options.copyTracks,
+                deleteSourceManga: _options.deleteSourceManga,
               ),
             ),
-            _OptionTile(
-              label: 'Copy tracker entries',
-              value: _options.copyTracks,
-              onChanged: (v) => setState(
-                () => _options = MigrationOptions(
-                  copyChapters: _options.copyChapters,
-                  copyCategories: _options.copyCategories,
-                  copyTracks: v,
-                  deleteSourceManga: _options.deleteSourceManga,
-                ),
+          ),
+          _OptionTile(
+            label: 'Copy tracker entries',
+            value: _options.copyTracks,
+            onChanged: (v) => setState(
+              () => _options = MigrationOptions(
+                copyChapters: _options.copyChapters,
+                copyCategories: _options.copyCategories,
+                copyTracks: v,
+                deleteSourceManga: _options.deleteSourceManga,
               ),
             ),
-            _OptionTile(
-              label: 'Remove old manga from library',
-              value: _options.deleteSourceManga,
-              onChanged: (v) => setState(
-                () => _options = MigrationOptions(
-                  copyChapters: _options.copyChapters,
-                  copyCategories: _options.copyCategories,
-                  copyTracks: _options.copyTracks,
-                  deleteSourceManga: v,
-                ),
+          ),
+          _OptionTile(
+            label: 'Remove old entry from library',
+            value: _options.deleteSourceManga,
+            onChanged: (v) => setState(
+              () => _options = MigrationOptions(
+                copyChapters: _options.copyChapters,
+                copyCategories: _options.copyCategories,
+                copyTracks: _options.copyTracks,
+                deleteSourceManga: v,
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 22),
+          Row(
+            children: [
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TideButton(
+                  label: 'Migrate',
+                  primary: true,
+                  onTap: () => Navigator.of(context).pop(_options),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(_options),
-          child: const Text('Migrate'),
-        ),
-      ],
     );
   }
 }
@@ -483,13 +563,9 @@ class _OptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CheckboxListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      controlAffinity: ListTileControlAffinity.leading,
-      value: value,
-      onChanged: (v) => onChanged(v ?? value),
-      title: Text(label),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: TideCheck(label: label, value: value, onChanged: onChanged),
     );
   }
 }

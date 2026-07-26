@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../tide/tide.dart';
+
+import '../settings/pref_tiles.dart';
+
 import '../../data/source/extension_repository.dart';
 import '../../data/source/local_source.dart';
 import '../../data/source/source_id.dart';
@@ -212,48 +216,65 @@ class _MigrationConfigScreenState extends ConsumerState<MigrationConfigScreen> {
   Widget build(BuildContext context) {
     final sources = _sources;
     return Scaffold(
-      appBar: AppBar(
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.select_all),
-            tooltip: 'Select all',
-            onPressed: sources == null
-                ? null
-                : () => _applyConfig(_SelectionConfig.all),
-          ),
-          IconButton(
-            icon: const Icon(Icons.deselect),
-            tooltip: 'Select none',
-            onPressed: sources == null
-                ? null
-                : () => _applyConfig(_SelectionConfig.none),
-          ),
-          PopupMenuButton<_SelectionConfig>(
-            onSelected: _applyConfig,
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: _SelectionConfig.enabled,
-                child: Text('Select enabled sources'),
-              ),
-              PopupMenuItem(
-                value: _SelectionConfig.pinned,
-                child: Text('Select pinned sources'),
-              ),
-            ],
-          ),
-        ],
-      ),
-      floatingActionButton: sources == null
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _continue,
-              icon: const Icon(Icons.arrow_forward),
-              label: const Text('Continue'),
+      backgroundColor: TideColors.ground,
+      body: Stack(children: [
+        Positioned.fill(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TideHeader(
+              title: 'Choose sources',
+              actions: [
+                TideIconButton(
+                  icon: Icons.more_horiz,
+                  onTap: sources == null ? null : _openSelectionMenu,
+                ),
+              ],
             ),
-      body: sources == null
-          ? const Center(child: CircularProgressIndicator())
-          : _buildList(sources),
+            Expanded(child:
+      sources == null
+          ? const Center(
+              child: CircularProgressIndicator(color: TideColors.accent),
+            )
+          : _buildList(sources)),
+          ],
+        )),
+        if (sources != null)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 24,
+            child: _ContinueBar(onTap: _continue),
+          ),
+      ]),
     );
+  }
+
+  /// Select-all / none / enabled / pinned, in one sheet — three toolbar
+  /// controls for four variants of the same choice was three too many.
+  Future<void> _openSelectionMenu() async {
+    final picked = await showTideSheet<String>(
+      context,
+      (_) => const TideOptionSheet(
+        title: 'Select sources',
+        options: [
+          ('all', 'Select all'),
+          ('none', 'Select none'),
+          ('enabled', 'Select enabled sources'),
+          ('pinned', 'Select pinned sources'),
+        ],
+        selected: '',
+      ),
+    );
+    switch (picked) {
+      case 'all':
+        _applyConfig(_SelectionConfig.all);
+      case 'none':
+        _applyConfig(_SelectionConfig.none);
+      case 'enabled':
+        _applyConfig(_SelectionConfig.enabled);
+      case 'pinned':
+        _applyConfig(_SelectionConfig.pinned);
+    }
   }
 
   Widget _buildList(List<_MigSource> sources) {
@@ -326,41 +347,36 @@ class _SourceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    return PrefRowShell(
       onTap: onTap,
-      title: Row(
+      lit: source.isSelected,
+      child: Row(
         children: [
+          if (dragIndex != null) ...[
+            ReorderableDragStartListener(
+              index: dragIndex!,
+              child: Icon(
+                Icons.drag_handle,
+                size: 18,
+                color: TideColors.textAt(0.32),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
           Expanded(
             child: Text(
               source.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              style: TideText.title(),
             ),
           ),
-          if (showLanguage)
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  source.shortLanguage,
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              ),
-            ),
+          if (showLanguage) ...[
+            const SizedBox(width: 8),
+            TideTag(source.shortLanguage),
+          ],
         ],
       ),
-      trailing: dragIndex == null
-          ? null
-          : ReorderableDragStartListener(
-              index: dragIndex!,
-              child: const Icon(Icons.drag_handle),
-            ),
     );
   }
 }
@@ -537,6 +553,70 @@ class _MigrationConfigSheetState extends State<_MigrationConfigSheet> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+
+/// Hands the picked sources to the next step. Same persistent-action shape
+/// the series screen and the download queue use.
+class _ContinueBar extends StatelessWidget {
+  const _ContinueBar({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 60,
+      child: TideGlass(
+        radius: 30,
+        blur: true,
+        tintTop: 0.14,
+        tintBottom: 0.05,
+        highlight: 0.28,
+        border: 0.16,
+        saturation: 1.9,
+        onTap: onTap,
+        shadows: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 44,
+            offset: const Offset(0, 18),
+          ),
+        ],
+        padding: const EdgeInsets.fromLTRB(22, 0, 8, 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Continue',
+                style: TideText.title(size: 15)
+                    .copyWith(color: TideColors.textBright),
+              ),
+            ),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: TideColors.accent,
+                boxShadow: [
+                  BoxShadow(
+                    color: TideColors.accent.withValues(alpha: 0.55),
+                    blurRadius: 26,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.arrow_forward_rounded,
+                size: 21,
+                color: Color(0xFF12141F),
+              ),
+            ),
+          ],
         ),
       ),
     );

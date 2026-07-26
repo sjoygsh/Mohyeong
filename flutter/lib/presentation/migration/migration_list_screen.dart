@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../tide/tide.dart';
+
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/migration/migration_service.dart';
 import '../../data/migration/smart_search_engine.dart';
@@ -11,7 +13,6 @@ import '../../data/source/source_preferences.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_manga.dart';
-import '../common/source_image.dart';
 import 'migration_config_screen.dart';
 import 'migration_search_screen.dart';
 
@@ -286,52 +287,73 @@ class _MigrationListScreenState extends ConsumerState<MigrationListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _searching
-              ? 'Searching ($_finished/${_items.length})'
-              : 'Review matches',
-        ),
-      ),
-      body: !_initialized
-          ? const Center(child: CircularProgressIndicator())
+      backgroundColor: TideColors.ground,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TideHeader(
+            title: 'Review matches',
+            subtitle: _searching
+                ? 'Searching $_finished of ${_items.length}'
+                : null,
+          ),
+          Expanded(child: !_initialized
+          ? const Center(
+              child: CircularProgressIndicator(color: TideColors.accent),
+            )
           : _items.isEmpty
-              ? const Center(child: Text('No entries to migrate.'))
+              ? Center(
+                  child: Text(
+                    'No entries to migrate.',
+                    style: TideText.body(),
+                  ),
+                )
               : ListView.builder(
                   itemCount: _items.length,
                   itemBuilder: (_, i) => _ItemTile(
                     item: _items[i],
                     onTap: () => _pickManually(_items[i]),
                   ),
-                ),
-      bottomNavigationBar: !_initialized || _items.isEmpty
-          ? null
-          : SafeArea(
+                )),
+          if (_initialized && _items.isNotEmpty)
+            SafeArea(
+              top: false,
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                 child: Row(
                   children: [
                     Expanded(
-                      child: OutlinedButton(
-                        onPressed: _searching || !_anyFound
-                            ? null
-                            : () => _migrateAll(replace: false),
-                        child: const Text('Copy'),
+                      child: Opacity(
+                        opacity: _searching || !_anyFound ? 0.4 : 1,
+                        child: TideButton(
+                          label: 'Copy',
+                          onTap: () {
+                            if (_searching || !_anyFound) return;
+                            _migrateAll(replace: false);
+                          },
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: FilledButton(
-                        onPressed: _searching || !_anyFound
-                            ? null
-                            : () => _migrateAll(replace: true),
-                        child: const Text('Migrate'),
+                      child: Opacity(
+                        opacity: _searching || !_anyFound ? 0.4 : 1,
+                        child: TideButton(
+                          label: 'Migrate',
+                          primary: true,
+                          onTap: () {
+                            if (_searching || !_anyFound) return;
+                            _migrateAll(replace: true);
+                          },
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
             ),
+        ],
+      ),
     );
   }
 }
@@ -380,43 +402,52 @@ class _ItemTile extends StatelessWidget {
         trailing = Text('${item.targetChapterCount} ch');
     }
 
-    return ListTile(
-      onTap: item.status == _Status.searching ? null : onTap,
-      leading: SizedBox(
-        width: 40,
-        height: 56,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: item.manga.thumbnailUrl == null ||
-                  item.manga.thumbnailUrl!.isEmpty
-              ? Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: const Icon(Icons.menu_book, size: 20),
-                )
-              : SourceImage(
-                  cacheWidth: 360,
-                  url: item.manga.thumbnailUrl!,
-                  errorWidget: (_, _) => Container(
-                    color:
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
-                    child: const Icon(Icons.broken_image_outlined, size: 20),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: TideGlass(
+        radius: 16,
+        onTap: item.status == _Status.searching ? null : onTap,
+        padding: const EdgeInsets.fromLTRB(11, 11, 14, 11),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 44,
+              height: 58,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: TideCover(manga: item.manga, cacheWidth: 360),
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    item.manga.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.title(),
                   ),
-                ),
+                  if (item.status == _Status.found && item.target != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      '→ ${item.target!.title}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TideText.caption()
+                          .copyWith(color: TideColors.accent),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            trailing,
+          ],
         ),
       ),
-      title: Text(
-        item.manga.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: item.status == _Status.found && item.target != null
-          ? Text(
-              '→ ${item.target!.title}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            )
-          : null,
-      trailing: trailing,
     );
   }
 }
@@ -428,16 +459,65 @@ class _ProgressDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      content: ValueListenableBuilder<double>(
-        valueListenable: progress,
-        builder: (_, value, _) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            LinearProgressIndicator(value: value == 0 ? null : value),
-            const SizedBox(height: 16),
-            Text('Migrating… ${(value * 100).round()}%'),
-          ],
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: TideGlass(
+        radius: 26,
+        blur: true,
+        tintTop: 0.13,
+        tintBottom: 0.05,
+        highlight: 0.26,
+        border: 0.15,
+        saturation: 1.9,
+        padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+        child: ValueListenableBuilder<double>(
+          valueListenable: progress,
+          builder: (_, value, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Migrating', style: TideText.display(20)),
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 3,
+                child: value == 0
+                    ? const LinearProgressIndicator(
+                        minHeight: 3,
+                        backgroundColor: Colors.transparent,
+                        color: TideColors.accent,
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            flex: (value.clamp(0.0, 1.0) * 1000).round(),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: TideColors.accent,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: TideColors.accent
+                                        .withValues(alpha: 0.75),
+                                    blurRadius: 9,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            flex: ((1 - value.clamp(0.0, 1.0)) * 1000).round(),
+                            child: const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '${(value * 100).round()}%',
+                style: TideText.caption(size: 12.5),
+              ),
+            ],
+          ),
         ),
       ),
     );
