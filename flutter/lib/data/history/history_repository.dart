@@ -18,6 +18,7 @@ class HistoryWithContext {
     required this.chapterNumber,
     required this.readAt,
     required this.timeReadMs,
+    required this.source,
     required this.thumbnailUrl,
   });
 
@@ -29,6 +30,11 @@ class HistoryWithContext {
   final double chapterNumber;
   final DateTime? readAt;
   final int timeReadMs;
+
+  /// Owning source id. Carried so a row can resolve its cover through the
+  /// per-source image headers the rest of the app uses — several sources 403
+  /// a cover request that arrives without their referer.
+  final int source;
   final String? thumbnailUrl;
 }
 
@@ -116,6 +122,7 @@ class HistoryRepository {
         C.chapter_number,
         M._id AS manga_id,
         M.title AS manga_title,
+        M.source AS source,
         M.thumbnail_url
       FROM history H
       JOIN chapters C ON H.chapter_id = C._id
@@ -141,6 +148,7 @@ class HistoryRepository {
               ? null
               : DateTime.fromMillisecondsSinceEpoch(lastRead),
           timeReadMs: r.read<int>('time_read'),
+          source: r.read<int>('source'),
           thumbnailUrl: r.read<String?>('thumbnail_url'),
         );
       }).toList(growable: false);

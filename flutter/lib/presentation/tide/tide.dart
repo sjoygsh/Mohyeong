@@ -850,6 +850,226 @@ String tideChapterLabel(String name, double number) {
   return 'Chapter $n';
 }
 
+/// Presents [builder] as a Tide sheet: a glass panel that rises from the
+/// bottom edge over a dimmed screen.
+///
+/// Tide's answer to `showDialog`. A Material dialog is a lit slab dropped in
+/// the middle of the screen, which is the one gesture this design never makes;
+/// and a decision belongs within reach of the thumb that asked for it.
+Future<T?> showTideSheet<T>(
+  BuildContext context,
+  WidgetBuilder builder,
+) {
+  return showModalBottomSheet<T>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.62),
+    elevation: 0,
+    isScrollControlled: true,
+    builder: builder,
+  );
+}
+
+/// Confirm / cancel in a Tide sheet, with room for one extra control.
+///
+/// [extra] is handed the sheet's own `setState` so a caller can drive a
+/// checkbox from a variable it owns — the pattern the history delete needs,
+/// where the toggle changes which repository call runs.
+class TideConfirmSheet extends StatefulWidget {
+  const TideConfirmSheet({
+    super.key,
+    required this.title,
+    required this.message,
+    required this.confirmLabel,
+    this.cancelLabel = 'Cancel',
+    this.extra,
+  });
+
+  final String title;
+  final String message;
+  final String confirmLabel;
+  final String cancelLabel;
+  final Widget Function(void Function(VoidCallback) setState)? extra;
+
+  @override
+  State<TideConfirmSheet> createState() => _TideConfirmSheetState();
+}
+
+class _TideConfirmSheetState extends State<TideConfirmSheet> {
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        child: TideGlass(
+          radius: 26,
+          // Genuinely floats over the screen it was called from, so the blur
+          // has something to reveal.
+          blur: true,
+          tintTop: 0.13,
+          tintBottom: 0.05,
+          highlight: 0.26,
+          border: 0.15,
+          saturation: 1.9,
+          padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
+          shadows: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.6),
+              blurRadius: 44,
+              offset: const Offset(0, 18),
+            ),
+          ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(widget.title, style: TideText.display(21)),
+              const SizedBox(height: 10),
+              Text(widget.message, style: TideText.body()),
+              if (widget.extra != null) ...[
+                const SizedBox(height: 18),
+                widget.extra!(setState),
+              ],
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: _SheetButton(
+                      label: widget.cancelLabel,
+                      onTap: () => Navigator.of(context).pop(false),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _SheetButton(
+                      label: widget.confirmLabel,
+                      primary: true,
+                      onTap: () => Navigator.of(context).pop(true),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetButton extends StatelessWidget {
+  const _SheetButton({
+    required this.label,
+    required this.onTap,
+    this.primary = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    if (primary) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: 46,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: TideColors.accent,
+            borderRadius: BorderRadius.circular(23),
+            boxShadow: [
+              BoxShadow(
+                color: TideColors.accent.withValues(alpha: 0.45),
+                blurRadius: 24,
+              ),
+            ],
+          ),
+          child: Text(
+            label,
+            style: TideText.title(size: 14.5).copyWith(
+              color: TideColors.ground,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      height: 46,
+      child: TideGlass(
+        radius: 23,
+        tintTop: 0.09,
+        tintBottom: 0.03,
+        highlight: 0.16,
+        border: 0.11,
+        onTap: onTap,
+        child: Center(
+          child: Text(
+            label,
+            style: TideText.title(size: 14.5, color: TideColors.textAt(0.8)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tide's checkbox: a rounded square that fills with the accent when set.
+class TideCheck extends StatelessWidget {
+  const TideCheck({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onChanged(!value),
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: tideEase,
+            width: 21,
+            height: 21,
+            decoration: BoxDecoration(
+              color: value ? TideColors.accent : Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(
+                color: value
+                    ? TideColors.accent
+                    : Colors.white.withValues(alpha: 0.22),
+              ),
+            ),
+            child: value
+                ? const Icon(Icons.check_rounded,
+                    size: 14, color: TideColors.ground)
+                : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: TideText.caption(size: 13, opacity: 0.72),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Progress ring used on a chapter row that has been started but not finished.
 class TideProgressRing extends StatelessWidget {
   const TideProgressRing({super.key, required this.progress, this.size = 26});

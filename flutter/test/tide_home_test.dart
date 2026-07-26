@@ -131,6 +131,7 @@ void main() {
         chapterNumber: 42,
         readAt: DateTime(2026, 7, 25, 20),
         timeReadMs: 1000,
+        source: 1,
         thumbnailUrl: null,
       ),
       HistoryWithContext(
@@ -142,6 +143,7 @@ void main() {
         chapterNumber: 158,
         readAt: DateTime(2026, 7, 25, 18),
         timeReadMs: 1000,
+        source: 1,
         thumbnailUrl: null,
       ),
     ];
