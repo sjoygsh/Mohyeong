@@ -1,3 +1,12 @@
+// ===========================================================================
+// Tide global search.
+//
+// One query fanned out across every installed source in parallel, one rail per
+// source. The rails are the point: results arrive at wildly different speeds,
+// so each source owns its own row, its own spinner and its own retry, and a
+// slow source never holds up a fast one.
+// ===========================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,21 +19,20 @@ import '../../data/source/source_preferences.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
+import '../tide/tide.dart';
 import 'source_browse_screen.dart';
 
-/// Mihon's "Global search" screen: takes a query and fans it out across
-/// every installed source in parallel, showing one horizontal row per
-/// source with the first page of results. Mirrors `GlobalSearchScreen`
-/// in the Kotlin app — minus per-source pagination, which would need
-/// the user to drill in via the "more" affordance.
+/// Mihon's "Global search": takes a query and fans it out across every
+/// installed source, showing one horizontal rail per source with the first
+/// page of results. Mirrors `GlobalSearchScreen` in the Kotlin app — minus
+/// per-source pagination, which the "open source" affordance covers.
 class GlobalSearchScreen extends ConsumerStatefulWidget {
   const GlobalSearchScreen({super.key, this.initialQuery});
 
   final String? initialQuery;
 
   @override
-  ConsumerState<GlobalSearchScreen> createState() =>
-      _GlobalSearchScreenState();
+  ConsumerState<GlobalSearchScreen> createState() => _GlobalSearchScreenState();
 }
 
 class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
@@ -61,140 +69,178 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
   Widget build(BuildContext context) {
     final extRepo = ref.watch(extensionRepositoryProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: TextField(
-          controller: _controller,
-          autofocus: true,
-          textInputAction: TextInputAction.search,
-          onSubmitted: (_) => _submit(),
-          decoration: const InputDecoration(
-            hintText: 'Search every source',
-            border: InputBorder.none,
-          ),
-          style: Theme.of(context).textTheme.titleLarge,
+      backgroundColor: TideColors.ground,
+      body: TideRise(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _searchBar(),
+            _scopeChips(),
+            Expanded(
+              child: _activeQuery.isEmpty
+                  ? const _Note(
+                      'Type a query and search to look it up across every '
+                      'installed source at once.',
+                    )
+                  : _results(extRepo),
+            ),
+          ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: _submit,
+      ),
+    );
+  }
+
+  Widget _searchBar() {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        MediaQuery.paddingOf(context).top + 12,
+        16,
+        10,
+      ),
+      child: Row(
+        children: [
+          TideIconButton(
+            icon: Icons.arrow_back_ios_new_rounded,
+            iconSize: 15,
+            onTap: () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: SizedBox(
+              height: 42,
+              child: TideGlass(
+                radius: 21,
+                tintTop: 0.09,
+                tintBottom: 0.03,
+                highlight: 0.16,
+                border: 0.11,
+                padding: const EdgeInsets.only(left: 16, right: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        autofocus: true,
+                        cursorColor: TideColors.accent,
+                        style: TideText.title(size: 14.5),
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: (_) => _submit(),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 11),
+                          hintText: 'Search every source',
+                          hintStyle: TideText.title(
+                            size: 14.5,
+                            color: TideColors.textAt(0.33),
+                          ),
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _submit,
+                      child: SizedBox(
+                        width: 36,
+                        height: 42,
+                        child: Icon(
+                          Icons.search,
+                          size: 18,
+                          color: TideColors.textAt(0.6),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
-        // Kotlin GlobalSearchToolbar's filter chip row: Pinned / All source
-        // scope plus the "Has results" visibility toggle.
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  FilterChip(
-                    selected: _pinnedOnly,
-                    avatar: const Icon(Icons.push_pin_outlined, size: 18),
-                    label: const Text('Pinned'),
-                    onSelected: (_) => setState(() => _pinnedOnly = true),
-                  ),
-                  const SizedBox(width: 8),
-                  FilterChip(
-                    selected: !_pinnedOnly,
-                    avatar: const Icon(Icons.done_all, size: 18),
-                    label: const Text('All'),
-                    onSelected: (_) => setState(() => _pinnedOnly = false),
-                  ),
-                  const SizedBox(width: 8),
-                  const SizedBox(
-                    height: 24,
-                    child: VerticalDivider(width: 8),
-                  ),
-                  const SizedBox(width: 8),
-                  FilterChip(
-                    selected: _onlyShowHasResults,
-                    label: const Text('Has results'),
-                    onSelected: (v) =>
-                        setState(() => _onlyShowHasResults = v),
-                  ),
-                ],
-              ),
-            ),
+      ),
+    );
+  }
+
+  /// Kotlin GlobalSearchToolbar's chip row: Pinned / All source scope, plus
+  /// the "Has results" visibility toggle.
+  Widget _scopeChips() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Row(
+        children: [
+          TideChip(
+            label: 'Pinned',
+            icon: Icons.push_pin_outlined,
+            selected: _pinnedOnly,
+            onTap: () => setState(() => _pinnedOnly = true),
           ),
-        ),
+          const SizedBox(width: 8),
+          TideChip(
+            label: 'All',
+            icon: Icons.done_all,
+            selected: !_pinnedOnly,
+            onTap: () => setState(() => _pinnedOnly = false),
+          ),
+          const Spacer(),
+          TideChip(
+            label: 'Has results',
+            selected: _onlyShowHasResults,
+            onTap: () =>
+                setState(() => _onlyShowHasResults = !_onlyShowHasResults),
+          ),
+        ],
       ),
-      body: _activeQuery.isEmpty
-          ? const _IdleHint()
-          : FutureBuilder<List<InstalledExtension>>(
-              future: extRepo.listInstalled(),
-              builder: (context, snap) {
-                if (snap.hasError) {
-                  return Center(
-                    child: Text('Failed to enumerate sources: ${snap.error}'),
-                  );
-                }
-                if (!snap.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                var sources = snap.data!;
-                if (sources.isEmpty) {
-                  return const Center(
-                    child: Text('No installed sources to search.'),
-                  );
-                }
-                if (_pinnedOnly) {
-                  final pinned = ref
-                          .watch(sourcePreferencesProvider)
-                          .valueOrNull
-                          ?.getPinnedSources() ??
-                      const <String>{};
-                  sources = sources
-                      .where((s) => pinned.contains(s.id))
-                      .toList(growable: false);
-                  if (sources.isEmpty) {
-                    // Verbatim Mihon string no_pinned_sources.
-                    return const Center(
-                      child: Text('You have no pinned sources'),
-                    );
-                  }
-                }
-                return ListView.builder(
-                  itemCount: sources.length,
-                  itemBuilder: (_, i) => _SourceSection(
-                    key: ValueKey('${sources[i].id}|$_activeQuery'),
-                    sourceId: sources[i].id,
-                    sourceName: sources[i].name,
-                    query: _activeQuery,
-                    onlyShowHasResults: _onlyShowHasResults,
-                  ),
-                );
-              },
-            ),
+    );
+  }
+
+  Widget _results(ExtensionRepository extRepo) {
+    return FutureBuilder<List<InstalledExtension>>(
+      future: extRepo.listInstalled(),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return _Note('Failed to enumerate sources: ${snap.error}');
+        }
+        if (!snap.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: TideColors.accent),
+          );
+        }
+        var sources = snap.data!;
+        if (sources.isEmpty) {
+          return const _Note('No installed sources to search.');
+        }
+        if (_pinnedOnly) {
+          final pinned = ref
+                  .watch(sourcePreferencesProvider)
+                  .valueOrNull
+                  ?.getPinnedSources() ??
+              const <String>{};
+          sources =
+              sources.where((s) => pinned.contains(s.id)).toList(growable: false);
+          if (sources.isEmpty) {
+            // Verbatim Mihon string no_pinned_sources.
+            return const _Note('You have no pinned sources');
+          }
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.only(bottom: 28),
+          itemCount: sources.length,
+          itemBuilder: (_, i) => _SourceSection(
+            key: ValueKey('${sources[i].id}|$_activeQuery'),
+            sourceId: sources[i].id,
+            sourceName: sources[i].name,
+            query: _activeQuery,
+            onlyShowHasResults: _onlyShowHasResults,
+          ),
+        );
+      },
     );
   }
 }
 
-class _IdleHint extends StatelessWidget {
-  const _IdleHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          'Type a query and press search to look it up across every '
-          'installed source in parallel.',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.outline,
-              ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One row per source. Loads its own results lazily so a slow source
-/// doesn't block faster ones.
+/// One rail per source. Loads its own results so a slow source doesn't block
+/// faster ones.
 class _SourceSection extends ConsumerStatefulWidget {
   const _SourceSection({
     super.key,
@@ -255,111 +301,114 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     if (widget.onlyShowHasResults && _hasResults != true) {
       return const SizedBox.shrink();
     }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.sourceName,
-                  style: theme.textTheme.titleSmall,
-                ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Mirrors Kotlin: tapping the source header opens the source with the
+        // current query pre-filled.
+        TideSectionHeader(
+          label: widget.sourceName,
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 12),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => SourceBrowseScreen(
+                sourceId: widget.sourceId,
+                initialQuery: widget.query,
               ),
-              TextButton(
-                // Mirrors Kotlin: tapping the source header opens the source
-                // with the current query pre-filled.
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => SourceBrowseScreen(
-                        sourceId: widget.sourceId,
-                        initialQuery: widget.query,
-                      ),
-                    ),
-                  );
-                },
-                child: const Text('Open source'),
-              ),
-            ],
+            ),
           ),
-          SizedBox(
-            height: 200,
-            child: FutureBuilder<MangasPage>(
-              future: _future,
-              builder: (context, snap) {
-                if (snap.hasError) {
-                  return Row(
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Text(
-                            'Error: ${snap.error}',
-                            style: TextStyle(
-                              color: theme.colorScheme.error,
-                            ),
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => setState(_kick),
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  );
-                }
-                if (!snap.hasData) {
-                  return const Center(
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  );
-                }
-                var items = snap.data!.mangas;
-                if (ref.watch(hideInLibraryItemsProvider)) {
-                  // Only needed for the favorites lookup: keep the
-                  // sourceNumericId (an MD5 for non-numeric slugs) out of the
-                  // hot path when the pref is off.
-                  final sourceIdInt = sourceNumericId(widget.sourceId);
-                  final favoritedUrls = ref
-                      .watch(favoritedUrlsForSourceProvider(sourceIdInt))
-                      .valueOrNull;
-                  if (favoritedUrls != null) {
-                    items = items
-                        .where((m) => !favoritedUrls.contains(m.url))
-                        .toList(growable: false);
-                  }
-                }
-                if (items.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'No results found',
-                      style: TextStyle(color: theme.colorScheme.outline),
-                    ),
-                  );
-                }
-                return ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: items.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
-                  itemBuilder: (_, i) => SizedBox(
-                    width: 130,
-                    child: _ResultCard(
-                      manga: items[i],
-                      sourceId: widget.sourceId,
+        ),
+        SizedBox(
+          height: 196,
+          child: FutureBuilder<MangasPage>(
+            future: _future,
+            builder: (context, snap) {
+              if (snap.hasError) return _error(snap.error);
+              if (!snap.hasData) {
+                return const Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: TideColors.accent,
                     ),
                   ),
                 );
-              },
+              }
+              var items = snap.data!.mangas;
+              if (ref.watch(hideInLibraryItemsProvider)) {
+                // Only needed for the favorites lookup: keep the
+                // sourceNumericId (an MD5 for non-numeric slugs) out of the
+                // hot path when the pref is off.
+                final sourceIdInt = sourceNumericId(widget.sourceId);
+                final favoritedUrls = ref
+                    .watch(favoritedUrlsForSourceProvider(sourceIdInt))
+                    .valueOrNull;
+                if (favoritedUrls != null) {
+                  items = items
+                      .where((m) => !favoritedUrls.contains(m.url))
+                      .toList(growable: false);
+                }
+              }
+              if (items.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.only(left: 20),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'No results found',
+                      style: TideText.caption(size: 13, opacity: 0.35),
+                    ),
+                  ),
+                );
+              }
+              return ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: items.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (_, i) => SizedBox(
+                  width: 124,
+                  child: _ResultCard(
+                    manga: items[i],
+                    sourceId: widget.sourceId,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _error(Object? error) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '$error',
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TideText.caption(size: 12.5, opacity: 0.4),
+            ),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(_kick),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Text(
+                'Retry',
+                style: TideText.title(size: 13.5, color: TideColors.accent),
+              ),
             ),
           ),
         ],
@@ -376,7 +425,6 @@ class _ResultCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
     final url = manga.thumbnailUrl;
     final sourceIdInt = sourceNumericId(sourceId);
     final favoritedUrls = ref
@@ -384,93 +432,76 @@ class _ResultCard extends ConsumerWidget {
             .valueOrNull ??
         const <String>{};
     final inLibrary = favoritedUrls.contains(manga.url);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Mirrors Mihon: covers already in the library are dimmed. Painted
-          // via Image.opacity / a translucent fill rather than an Opacity
-          // widget, which saveLayered every dimmed cell each scrolled frame.
-          if (url == null || url.isEmpty)
-            Container(
-              color: inLibrary
-                  ? placeholder.withValues(alpha: 0.34)
-                  : placeholder,
-            )
-          else
-            SourceImage(
-              cacheWidth: 360,
-              url: url,
-              fit: BoxFit.cover,
-              opacity:
-                  inLibrary ? const AlwaysStoppedAnimation<double>(0.34) : null,
-              placeholder: (_) => Container(
-                color: inLibrary
-                    ? placeholder.withValues(alpha: 0.34)
-                    : placeholder,
-              ),
-              errorWidget: (_, _) => Container(
-                color: inLibrary
-                    ? placeholder.withValues(alpha: 0.34)
-                    : placeholder,
-              ),
-            ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.75),
-                ],
-              ),
-            ),
+    final headers = ref
+        .watch(installedSourceImageHeadersProvider)
+        .valueOrNull?[sourceIdInt];
+
+    final fallback = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: TideCover.fallbackGradient(manga.url.hashCode),
+      ),
+    );
+    // Mirrors Mihon: covers already in the library are dimmed. Painted via
+    // Image.opacity rather than an Opacity widget, which saveLayered every
+    // dimmed cell each scrolled frame.
+    final cover = (url == null || url.isEmpty)
+        ? fallback
+        : SourceImage(
+            cacheWidth: 360,
+            url: url,
+            headers: headers,
+            fit: BoxFit.cover,
+            opacity:
+                inLibrary ? const AlwaysStoppedAnimation<double>(0.34) : null,
+            placeholder: (_) => fallback,
+            errorWidget: (_, _) => fallback,
+          );
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.42),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
           ),
-          if (inLibrary)
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            cover,
+            const Positioned.fill(child: TideScrim()),
+            if (inLibrary)
+              const Positioned(top: 7, left: 7, child: TideLibraryMark()),
             Positioned(
-              top: 0,
-              left: 0,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.secondary,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(8),
-                    bottomRight: Radius.circular(8),
-                  ),
-                ),
-                child: Icon(
-                  Icons.collections_bookmark,
-                  size: 14,
-                  color: Theme.of(context).colorScheme.onSecondary,
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: Text(
+                manga.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TideText.title(size: 12.5).copyWith(
+                  color: TideColors.brightAt(0.92),
+                  height: 1.2,
                 ),
               ),
             ),
-          Positioned(
-            left: 6,
-            right: 6,
-            bottom: 6,
-            child: Text(
-              manga.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-            ),
-          ),
-          // Tap routes via `insertFromSource` into the manga details
-          // screen — same flow Mihon uses when picking a result before
-          // adding to library.
-          Positioned.fill(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
+            // Tap routes via `insertFromSource` into the manga details
+            // screen — same flow Mihon uses when picking a result before
+            // adding to library.
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => _openManga(context, ref),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -495,4 +526,22 @@ class _ResultCard extends ConsumerWidget {
       );
     }
   }
+}
+
+class _Note extends StatelessWidget {
+  const _Note(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TideText.body(),
+          ),
+        ),
+      );
 }

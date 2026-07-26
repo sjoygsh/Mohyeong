@@ -596,6 +596,91 @@ class TideTag extends StatelessWidget {
   }
 }
 
+/// A selectable option. Off it reads as [TideTag]; on, it takes the accent as
+/// an edge and a wash — never as a fill, which at chip size would put a solid
+/// block of colour into every filter row.
+class TideChip extends StatelessWidget {
+  const TideChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint =
+        selected ? TideColors.accentLight : TideColors.textAt(0.75);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: tideEase,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected
+              ? TideColors.accent.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? TideColors.accent.withValues(alpha: 0.55)
+                : Colors.white.withValues(alpha: 0.10),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: tint),
+              const SizedBox(width: 6),
+            ],
+            Text(label, style: TextStyle(fontSize: 12, color: tint)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Already yours" marker for a cover in a browse result. Mirrors Mihon's
+/// in-library badge, in the one place the accent is allowed to fill a shape —
+/// small enough that it reads as a mark.
+class TideLibraryMark extends StatelessWidget {
+  const TideLibraryMark({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 22,
+      height: 22,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: TideColors.accent,
+        borderRadius: BorderRadius.circular(7),
+        boxShadow: [
+          BoxShadow(
+            color: TideColors.accent.withValues(alpha: 0.5),
+            blurRadius: 12,
+          ),
+        ],
+      ),
+      child: const Icon(
+        Icons.collections_bookmark,
+        size: 13,
+        color: TideColors.ground,
+      ),
+    );
+  }
+}
+
 /// The one place the accent is allowed to fill a shape: a "New" marker, small
 /// enough that it reads as a mark rather than a flood.
 class TideBadge extends StatelessWidget {

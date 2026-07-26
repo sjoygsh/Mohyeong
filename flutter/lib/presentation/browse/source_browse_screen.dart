@@ -648,7 +648,7 @@ class _SourceFilterSheetState extends State<_SourceFilterSheet> {
                             runSpacing: 7,
                             children: [
                               for (final opt in def.options)
-                                _FilterChip(
+                                TideChip(
                                   label: opt.label,
                                   selected: _effective(def) == opt.value,
                                   onTap: () => _set(def, opt.value),
@@ -718,51 +718,6 @@ class _SourceFilterSheetState extends State<_SourceFilterSheet> {
                 ],
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Selectable option. Off it is [TideTag]; on it takes the accent as an edge
-/// and a wash, never a fill.
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        curve: tideEase,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected
-              ? TideColors.accent.withValues(alpha: 0.18)
-              : Colors.white.withValues(alpha: 0.07),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected
-                ? TideColors.accent.withValues(alpha: 0.55)
-                : Colors.white.withValues(alpha: 0.10),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: selected ? TideColors.accentLight : TideColors.textAt(0.75),
           ),
         ),
       ),
@@ -980,7 +935,7 @@ class _MangaCard extends ConsumerWidget {
               ),
               if (inLibrary) ...[
                 const SizedBox(width: 10),
-                const _InLibraryMark(),
+                const TideLibraryMark(),
               ],
             ],
           ),
@@ -1026,7 +981,7 @@ class _MangaCard extends ConsumerWidget {
               ),
             ],
             if (inLibrary)
-              const Positioned(top: 7, left: 7, child: _InLibraryMark()),
+              const Positioned(top: 7, left: 7, child: TideLibraryMark()),
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -1115,36 +1070,6 @@ class _MangaCard extends ConsumerWidget {
         SnackBar(content: Text('Could not update library: $e')),
       );
     }
-  }
-}
-
-/// "Already yours" marker, in the one place the accent is allowed to fill a
-/// shape — small enough to read as a mark. Mirrors Mihon's in-library badge.
-class _InLibraryMark extends StatelessWidget {
-  const _InLibraryMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 22,
-      height: 22,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: TideColors.accent,
-        borderRadius: BorderRadius.circular(7),
-        boxShadow: [
-          BoxShadow(
-            color: TideColors.accent.withValues(alpha: 0.5),
-            blurRadius: 12,
-          ),
-        ],
-      ),
-      child: const Icon(
-        Icons.collections_bookmark,
-        size: 13,
-        color: TideColors.ground,
-      ),
-    );
   }
 }
 
