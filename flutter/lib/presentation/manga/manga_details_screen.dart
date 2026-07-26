@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,6 +34,7 @@ import '../../domain/track/model/track.dart';
 import '../common/source_image.dart';
 import '../migration/migration_search_screen.dart';
 import '../reader/reader_screen.dart';
+import '../tide/tide.dart';
 import '../track/manga_tracking_sheet.dart';
 import 'chapter_settings_sheet.dart';
 import 'linked_manga_sheet.dart';
@@ -357,6 +357,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: TideColors.ground,
       body: StreamBuilder<Manga?>(
         stream: _mangaStream,
         builder: (context, mangaSnap) {
@@ -404,29 +405,14 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                   if (!didPop) _clearSelection();
                 },
                 child: Scaffold(
-                  floatingActionButton: _selecting || nextUnread == null
-                      ? null
-                      : _ContinueReadingFab(
-                          manga: manga,
-                          chapter: nextUnread,
-                          anyRead: _anyRead,
-                        ),
-                  bottomNavigationBar: _selecting
-                      ? _ChapterSelectionBar(
-                          picked: _selectedChapters(chapters),
-                          onBookmark: () => _bulkSetBookmark(chapters, true),
-                          onRemoveBookmark: () =>
-                              _bulkSetBookmark(chapters, false),
-                          onMarkRead: () => _bulkSetRead(chapters, true),
-                          onMarkUnread: () => _bulkSetRead(chapters, false),
-                          onMarkPrevious: () =>
-                              _bulkMarkPreviousAsRead(chapters),
-                          onDownload: () => _bulkDownload(manga, chapters),
-                          onDelete: () =>
-                              _bulkDeleteDownloads(manga, chapters),
-                        )
-                      : null,
-                  body: RefreshIndicator(
+                  backgroundColor: TideColors.ground,
+                  // No FAB, no bottomNavigationBar: Tide floats its
+                  // persistent actions over the content as glass, the way the
+                  // series screen and the library do.
+                  body: Stack(children: [
+                  Positioned.fill(child: RefreshIndicator(
+                    color: TideColors.accent,
+                    backgroundColor: const Color(0xFF1A1E2C),
                     // Pull-to-refresh (Mihon parity): re-fetch details +
                     // chapters from the source, same action as the app-bar
                     // refresh button. AlwaysScrollable so the gesture works even
@@ -435,98 +421,6 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                     child: CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
-                  if (_selecting)
-                    SliverAppBar(
-                      pinned: true,
-                      backgroundColor:
-                          Theme.of(context).colorScheme.primaryContainer,
-                      leading: IconButton(
-                        icon: const Icon(Icons.close),
-                        tooltip: 'Clear selection',
-                        onPressed: _clearSelection,
-                      ),
-                      title: Text('${_selectedChapterIds.length} selected'),
-                      actions: [
-                        // Parity with Kotlin: the selection toolbar only
-                        // carries Select all + Invert selection. All the
-                        // bulk chapter actions live in the bottom action
-                        // menu (MangaBottomActionMenu) below.
-                        IconButton(
-                          icon: const Icon(Icons.select_all),
-                          tooltip: 'Select all',
-                          onPressed: () =>
-                              _selectAll(chapters.map((c) => c.id)),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.flip_to_back),
-                          tooltip: 'Invert selection',
-                          onPressed: () =>
-                              _invertSelection(chapters.map((c) => c.id)),
-                        ),
-                      ],
-                    )
-                  else
-                    SliverAppBar(
-                      pinned: true,
-                      title: Text(
-                        manga.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      actions: [
-                        if (manga.favorite)
-                          IconButton(
-                            icon: const Icon(Icons.label_outline),
-                            tooltip: 'Edit categories',
-                            onPressed: () =>
-                                _editCategories(context, ref, manga),
-                          ),
-                        if (manga.favorite)
-                          IconButton(
-                            icon: const Icon(Icons.link),
-                            tooltip: 'Linked sources',
-                            onPressed: () => _openLinkedSheet(context, manga),
-                          ),
-                        if (manga.favorite)
-                          IconButton(
-                            icon: const Icon(Icons.swap_horiz),
-                            tooltip: 'Migrate to another source',
-                            onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => MigrationSearchScreen(
-                                  sourceManga: manga,
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (manga.favorite)
-                          IconButton(
-                            icon: const Icon(Icons.edit_note),
-                            tooltip: 'Edit notes',
-                            onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) =>
-                                    MangaNotesScreen(manga: manga),
-                              ),
-                            ),
-                          ),
-                        IconButton(
-                          icon: _refreshingDetails
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.refresh),
-                          tooltip: 'Refresh from source',
-                          onPressed: _refreshingDetails
-                              ? null
-                              : () => _refreshMangaFromSource(manga),
-                        ),
-                      ],
-                    ),
                   SliverToBoxAdapter(child: _infoBox!),
                   SliverToBoxAdapter(child: _actionRow!),
                   if (!_routeSettled)
@@ -589,13 +483,234 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                       onToggleSelected: _toggleChapterSelected,
                     ),
                   ],
+                  // Clears the floating chrome at the foot of the screen.
+                  const SliverToBoxAdapter(child: SizedBox(height: 112)),
                 ],
-              )),
+              ))),
+              // Floating chrome, in the shape the series screen set: a back
+              // control over the artwork, the screen's actions behind one
+              // more-button, and the persistent Continue bar.
+              Positioned(
+                left: 16,
+                top: MediaQuery.paddingOf(context).top + 8,
+                child: TideIconButton(
+                  icon: Icons.arrow_back_ios_new_rounded,
+                  size: 42,
+                  iconSize: 16,
+                  onTap: () => Navigator.of(context).maybePop(),
+                ),
+              ),
+              if (!_selecting)
+                Positioned(
+                  right: 16,
+                  top: MediaQuery.paddingOf(context).top + 8,
+                  child: _DetailsActions(
+                    manga: manga,
+                    refreshing: _refreshingDetails,
+                    onRefresh: () => _refreshMangaFromSource(manga),
+                    onCategories: () => _editCategories(context, ref, manga),
+                    onLinked: () => _openLinkedSheet(context, manga),
+                    onMigrate: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            MigrationSearchScreen(sourceManga: manga),
+                      ),
+                    ),
+                    onNotes: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => MangaNotesScreen(manga: manga),
+                      ),
+                    ),
+                  ),
+                ),
+              if (_selecting)
+                Positioned(
+                  left: 70,
+                  right: 16,
+                  top: MediaQuery.paddingOf(context).top + 8,
+                  child: _SelectionHeader(
+                    count: _selectedChapterIds.length,
+                    onSelectAll: () => _selectAll(chapters.map((c) => c.id)),
+                    onInvert: () =>
+                        _invertSelection(chapters.map((c) => c.id)),
+                  ),
+                ),
+              if (_selecting)
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 24,
+                  child: _ChapterSelectionBar(
+                    picked: _selectedChapters(chapters),
+                    onBookmark: () => _bulkSetBookmark(chapters, true),
+                    onRemoveBookmark: () => _bulkSetBookmark(chapters, false),
+                    onMarkRead: () => _bulkSetRead(chapters, true),
+                    onMarkUnread: () => _bulkSetRead(chapters, false),
+                    onMarkPrevious: () => _bulkMarkPreviousAsRead(chapters),
+                    onDownload: () => _bulkDownload(manga, chapters),
+                    onDelete: () => _bulkDeleteDownloads(manga, chapters),
+                  ),
+                )
+              else if (nextUnread != null)
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 24,
+                  child: _ContinueReadingFab(
+                    manga: manga,
+                    chapter: nextUnread,
+                    anyRead: _anyRead,
+                  ),
+                ),
+            ]),
             ),
               );
             },
           );
         },
+      ),
+    );
+  }
+}
+
+/// The screen's own actions, behind one control. There were five icon
+/// buttons in the app bar; over full-bleed artwork that is a row of glyphs
+/// with no surface to sit on, and four of them only exist for a favourite.
+class _DetailsActions extends StatelessWidget {
+  const _DetailsActions({
+    required this.manga,
+    required this.refreshing,
+    required this.onRefresh,
+    required this.onCategories,
+    required this.onLinked,
+    required this.onMigrate,
+    required this.onNotes,
+  });
+
+  final Manga manga;
+  final bool refreshing;
+  final VoidCallback onRefresh;
+  final VoidCallback onCategories;
+  final VoidCallback onLinked;
+  final VoidCallback onMigrate;
+  final VoidCallback onNotes;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 42,
+      height: 42,
+      child: TideGlass(
+        radius: 21,
+        tintTop: 0.09,
+        tintBottom: 0.03,
+        highlight: 0.16,
+        border: 0.11,
+        onTap: refreshing ? null : () => _open(context),
+        child: Center(
+          child: refreshing
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: TideColors.accent,
+                  ),
+                )
+              : Icon(Icons.more_horiz, size: 18, color: TideColors.textAt(0.8)),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _open(BuildContext context) async {
+    final picked = await showTideSheet<String>(
+      context,
+      (_) => TideOptionSheet(
+        title: manga.title,
+        options: [
+          ('refresh', 'Refresh from source'),
+          if (manga.favorite) ('categories', 'Edit categories'),
+          if (manga.favorite) ('linked', 'Linked sources'),
+          if (manga.favorite) ('migrate', 'Migrate to another source'),
+          if (manga.favorite) ('notes', 'Edit notes'),
+        ],
+        selected: '',
+      ),
+    );
+    switch (picked) {
+      case 'refresh':
+        onRefresh();
+      case 'categories':
+        onCategories();
+      case 'linked':
+        onLinked();
+      case 'migrate':
+        onMigrate();
+      case 'notes':
+        onNotes();
+    }
+  }
+}
+
+/// Selection count + select-all / invert, floating beside the back control.
+class _SelectionHeader extends StatelessWidget {
+  const _SelectionHeader({
+    required this.count,
+    required this.onSelectAll,
+    required this.onInvert,
+  });
+
+  final int count;
+  final VoidCallback onSelectAll;
+  final VoidCallback onInvert;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 42,
+      child: TideGlass(
+        radius: 21,
+        blur: true,
+        tintTop: 0.13,
+        tintBottom: 0.05,
+        highlight: 0.26,
+        border: 0.15,
+        saturation: 1.9,
+        padding: const EdgeInsets.only(left: 16, right: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$count selected',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TideText.title(size: 14)
+                    .copyWith(color: TideColors.textBright),
+              ),
+            ),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onSelectAll,
+              child: SizedBox(
+                width: 38,
+                height: 42,
+                child: Icon(Icons.select_all,
+                    size: 17, color: TideColors.textAt(0.75)),
+              ),
+            ),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onInvert,
+              child: SizedBox(
+                width: 38,
+                height: 42,
+                child: Icon(Icons.flip_to_back,
+                    size: 17, color: TideColors.textAt(0.75)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -996,22 +1111,21 @@ class _MissingCountRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final label = count == 1 ? 'Missing 1 chapter' : 'Missing $count chapters';
+    final rule = Divider(color: Colors.white.withValues(alpha: 0.09));
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
       child: Row(
         children: [
-          const Expanded(child: Divider()),
+          Expanded(child: rule),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Text(
               label,
-              style: theme.textTheme.labelMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: TideText.caption(size: 11.5, opacity: 0.35),
             ),
           ),
-          const Expanded(child: Divider()),
+          Expanded(child: rule),
         ],
       ),
     );
@@ -1034,14 +1148,9 @@ class _VolumeHeaderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Text(
-        _label(),
-        style: theme.textTheme.titleSmall
-            ?.copyWith(color: theme.colorScheme.primary),
-      ),
+    return TideSectionHeader(
+      label: _label(),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
     );
   }
 }
@@ -1127,56 +1236,109 @@ class _ChapterSelectionBar extends StatelessWidget {
     final showMarkUnread = picked.any((c) => c.read || c.lastPageRead > 0);
     final showMarkPrevious = picked.length == 1;
 
-    return BottomAppBar(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          if (showBookmark)
-            IconButton(
-              icon: const Icon(Icons.bookmark_add_outlined),
-              tooltip: 'Bookmark',
-              onPressed: onBookmark,
-            ),
-          if (showRemoveBookmark)
-            IconButton(
-              icon: const Icon(Icons.bookmark_remove_outlined),
-              tooltip: 'Remove bookmark',
-              onPressed: onRemoveBookmark,
-            ),
-          if (showMarkRead)
-            IconButton(
-              icon: const Icon(Icons.done_all),
-              tooltip: 'Mark as read',
-              onPressed: onMarkRead,
-            ),
-          if (showMarkUnread)
-            IconButton(
-              icon: const Icon(Icons.remove_done),
-              tooltip: 'Mark as unread',
-              onPressed: onMarkUnread,
-            ),
-          if (showMarkPrevious)
-            IconButton(
-              icon: const Icon(Icons.playlist_add_check),
-              tooltip: 'Mark previous as read',
-              onPressed: onMarkPrevious,
-            ),
-          // Download/Delete are always offered: per-chapter download state
-          // is tracked inside each row, so we can't cheaply compute the
-          // "any not downloaded" / "any downloaded" gates the Kotlin menu
-          // uses. Functionality is identical; only the conditional hiding
-          // is relaxed.
-          IconButton(
-            icon: const Icon(Icons.download_outlined),
-            tooltip: 'Download',
-            onPressed: onDownload,
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'Delete downloads',
-            onPressed: onDelete,
+    return SizedBox(
+      height: 58,
+      child: TideGlass(
+        radius: 29,
+        blur: true,
+        tintTop: 0.13,
+        tintBottom: 0.05,
+        highlight: 0.26,
+        border: 0.15,
+        saturation: 1.9,
+        shadows: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 40,
+            offset: const Offset(0, 18),
           ),
         ],
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            if (showBookmark)
+              _BarAction(
+                icon: Icons.bookmark_add_outlined,
+                label: 'Bookmark',
+                onTap: onBookmark,
+              ),
+            if (showRemoveBookmark)
+              _BarAction(
+                icon: Icons.bookmark_remove_outlined,
+                label: 'Unbookmark',
+                onTap: onRemoveBookmark,
+              ),
+            if (showMarkRead)
+              _BarAction(
+                icon: Icons.done_all,
+                label: 'Read',
+                onTap: onMarkRead,
+              ),
+            if (showMarkUnread)
+              _BarAction(
+                icon: Icons.remove_done,
+                label: 'Unread',
+                onTap: onMarkUnread,
+              ),
+            if (showMarkPrevious)
+              _BarAction(
+                icon: Icons.playlist_add_check,
+                label: 'Previous',
+                onTap: onMarkPrevious,
+              ),
+            // Download/Delete are always offered: per-chapter download state
+            // is tracked inside each row, so we can't cheaply compute the
+            // "any not downloaded" / "any downloaded" gates the Kotlin menu
+            // uses. Functionality is identical; only the conditional hiding
+            // is relaxed.
+            _BarAction(
+              icon: Icons.download_outlined,
+              label: 'Download',
+              onTap: onDownload,
+            ),
+            _BarAction(
+              icon: Icons.delete_outline,
+              label: 'Delete',
+              onTap: onDelete,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One action in a floating glass bar.
+class _BarAction extends StatelessWidget {
+  const _BarAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: TideColors.textAt(0.85)),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TideText.caption(size: 9, opacity: 0.5),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1195,19 +1357,78 @@ class _ContinueReadingFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FloatingActionButton.extended(
-      icon: const Icon(Icons.play_arrow),
-      label: Text(anyRead ? 'Resume' : 'Start'),
-      onPressed: () {
-        Navigator.of(context).push(
+    return SizedBox(
+      height: 60,
+      child: TideGlass(
+        radius: 30,
+        blur: true,
+        tintTop: 0.14,
+        tintBottom: 0.05,
+        highlight: 0.28,
+        border: 0.16,
+        saturation: 1.9,
+        onTap: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => ReaderScreen(
-              mangaId: manga.id,
-              chapterId: chapter.id,
-            ),
+            builder: (_) =>
+                ReaderScreen(mangaId: manga.id, chapterId: chapter.id),
           ),
-        );
-      },
+        ),
+        shadows: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 44,
+            offset: const Offset(0, 18),
+          ),
+        ],
+        padding: const EdgeInsets.fromLTRB(22, 0, 8, 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    anyRead ? 'RESUME' : 'START',
+                    style: TideText.kicker(
+                      size: 10,
+                      color: TideColors.textAt(0.5),
+                    ).copyWith(letterSpacing: 1.6),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    tideChapterLabel(chapter.name, chapter.chapterNumber),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.title(size: 15)
+                        .copyWith(color: TideColors.textBright),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: TideColors.accent,
+                boxShadow: [
+                  BoxShadow(
+                    color: TideColors.accent.withValues(alpha: 0.55),
+                    blurRadius: 26,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                size: 22,
+                color: Color(0xFF12141F),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1736,135 +1957,78 @@ class _MangaInfoBox extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Stack(
-      children: [
-        // Blurred backdrop. Mihon uses the cover image with a 4dp blur
-        // and 0.2 alpha plus a transparent → background-colour gradient
-        // so the foreground row stays legible on light covers.
-        Positioned.fill(child: _Backdrop(manga: manga)),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: SizedBox(
-                  width: 110,
-                  height: 155, // ~book aspect ratio 1:1.41
-                  child: InkWell(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => MangaCoverViewer(manga: manga),
-                        fullscreenDialog: true,
-                      ),
-                    ),
-                    child: _CoverImage(
-                      mangaId: manga.id,
-                      url: manga.thumbnailUrl,
-                      sourceId: manga.source,
-                    ),
-                  ),
-                ),
+    // The cover IS the head of the page, the way it is on the series screen:
+    // full-bleed off the top edge with the text rising out of it, rather than
+    // a 110px thumbnail beside a form over a blurred copy of itself.
+    return SizedBox(
+      height: 430,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => MangaCoverViewer(manga: manga),
+                fullscreenDialog: true,
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+            ),
+            child: _CoverImage(
+              mangaId: manga.id,
+              url: manga.thumbnailUrl,
+              sourceId: manga.source,
+            ),
+          ),
+          // Ends fully opaque so the hand-off to the ground is seamless —
+          // anything less leaves the join visible and the text sitting on a
+          // ghost of the cover.
+          const IgnorePointer(child: TideScrim(opaqueTail: true)),
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 16,
+            child: IgnorePointer(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (manga.author?.trim().isNotEmpty == true)
                     Text(
-                      manga.title,
-                      style: Theme.of(context).textTheme.titleLarge,
-                      maxLines: 3,
+                      manga.author!.trim().toUpperCase(),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: TideText.kicker(color: TideColors.accent)
+                          .copyWith(letterSpacing: 2.2),
                     ),
-                    const SizedBox(height: 4),
-                    _IconText(
-                      icon: Icons.person_outline,
-                      text: manga.author?.trim().isNotEmpty == true
-                          ? manga.author!.trim()
-                          : 'Unknown author',
-                    ),
-                    if (manga.artist?.trim().isNotEmpty == true &&
-                        manga.artist!.trim() != manga.author?.trim()) ...[
-                      const SizedBox(height: 2),
-                      _IconText(
-                        icon: Icons.brush_outlined,
-                        text: manga.artist!.trim(),
-                      ),
-                    ],
-                    const SizedBox(height: 6),
-                    _StatusRow(
-                      status: manga.status,
-                      source: ref
-                          .watch(_sourceByIdProvider(manga.source))
-                          .valueOrNull,
+                  const SizedBox(height: 9),
+                  Text(
+                    manga.title,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.display(31),
+                  ),
+                  if (manga.artist?.trim().isNotEmpty == true &&
+                      manga.artist!.trim() != manga.author?.trim()) ...[
+                    const SizedBox(height: 7),
+                    Text(
+                      'Art by ${manga.artist!.trim()}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TideText.caption(size: 12.5),
                     ),
                   ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _Backdrop extends ConsumerWidget {
-  const _Backdrop({required this.manga});
-
-  final Manga manga;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final url =
-        ref.watch(coverCacheProvider).coverUrlFor(manga.id, manga.thumbnailUrl);
-    final headers = ref
-        .watch(installedSourceImageHeadersProvider)
-        .valueOrNull?[manga.source];
-    final bg = Theme.of(context).colorScheme.surface;
-    if (url == null || url.isEmpty) {
-      return Container(color: bg);
-    }
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Blur the dimmed cover directly with an [ImageFiltered] rather than
-        // a [BackdropFilter]: the latter has no clip inside a scroll view and
-        // blurs every layer painted behind it — including the chapter list as
-        // it scrolls up under this header, which washed the list out.
-        // [ImageFiltered] only filters its own child, so the bleed is gone.
-        // RepaintBoundary so the blur rasterizes once into a cached layer —
-        // without it the 6px gaussian re-ran every frame of the route push
-        // animation (and any repaint above it), janking the screen open.
-        RepaintBoundary(
-          child: ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-            child: Opacity(
-              opacity: 0.25,
-              child: SourceImage(
-                cacheWidth: 480,
-                url: url,
-                headers: headers,
-                fit: BoxFit.cover,
-                placeholder: (_) => Container(color: bg),
-                errorWidget: (_, _) => Container(color: bg),
+                  const SizedBox(height: 10),
+                  _StatusRow(
+                    status: manga.status,
+                    source:
+                        ref.watch(_sourceByIdProvider(manga.source)).valueOrNull,
+                  ),
+                ],
               ),
             ),
           ),
-        ),
-        // Transparent → background gradient for legibility.
-        DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Colors.transparent, bg],
-            ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -1901,35 +2065,6 @@ class _CoverImage extends ConsumerWidget {
   }
 }
 
-class _IconText extends StatelessWidget {
-  const _IconText({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75);
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 4),
-        Expanded(
-          child: Text(
-            text,
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(color: color),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 /// Status icon + label · source name. Source name renders only when the
 /// source lookup resolves; otherwise the row degrades to status alone.
 class _StatusRow extends StatelessWidget {
@@ -1940,12 +2075,12 @@ class _StatusRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75);
-    final style = Theme.of(context).textTheme.bodyMedium?.copyWith(color: color);
+    final color = TideColors.textAt(0.6);
+    final style = TideText.caption(size: 12.5, opacity: 0.6);
     return Row(
       children: [
-        Icon(_statusIcon(status), size: 16, color: color),
-        const SizedBox(width: 4),
+        Icon(_statusIcon(status), size: 14, color: color),
+        const SizedBox(width: 5),
         Flexible(
           child: Text(
             _statusLabel(status),
@@ -1955,14 +2090,14 @@ class _StatusRow extends StatelessWidget {
           ),
         ),
         if (source != null) ...[
-          Text(' • ', style: style),
+          Text(' · ', style: style),
           if (source!.isStub)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
+            const Padding(
+              padding: EdgeInsets.only(right: 4),
               child: Icon(
                 Icons.warning_amber_rounded,
-                size: 16,
-                color: Theme.of(context).colorScheme.error,
+                size: 14,
+                color: Color(0xFFE8837F),
               ),
             ),
           Flexible(
@@ -2011,14 +2146,13 @@ class _MangaActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    final muted =
-        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
+    const primary = TideColors.accent;
+    final muted = TideColors.textAt(0.62);
     // A manually-set interval is stored as a negative value (Kotlin
     // parity); highlight the button with the accent colour in that case.
     final customInterval = manga.fetchInterval < 0;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      padding: const EdgeInsets.fromLTRB(13, 14, 13, 8),
       child: Row(
         children: [
           Expanded(
@@ -2073,20 +2207,38 @@ class _ActionButton extends StatelessWidget {
   final Color color;
   final VoidCallback onPressed;
 
+  /// The accent means "this one is on" — favourite, or a hand-set interval.
+  bool get _lit => color == TideColors.accent;
+
   @override
   Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: onPressed,
-      child: Column(
-        children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12, color: color),
-            textAlign: TextAlign.center,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: SizedBox(
+        height: 62,
+        child: TideGlass(
+          radius: 16,
+          tintTop: _lit ? 0.13 : 0.065,
+          tintBottom: _lit ? 0.05 : 0.022,
+          highlight: _lit ? 0.20 : 0.13,
+          border: _lit ? 0.20 : 0.085,
+          onTap: onPressed,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(height: 5),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TideText.caption(size: 10.5, opacity: 0.75)
+                    .copyWith(color: color),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -2303,13 +2455,7 @@ class _GenreChip extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) {
-    return Chip(
-      label: Text(text, style: const TextStyle(fontSize: 12)),
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
+  Widget build(BuildContext context) => TideTag(text);
 }
 
 // Mirrors SManga.STATUS_*: 0=Unknown, 1=Ongoing, 2=Completed, 3=Licensed,
