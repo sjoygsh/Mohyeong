@@ -1,3 +1,11 @@
+// ===========================================================================
+// Tide about.
+//
+// The one screen where the app is allowed to say what it is, so the version is
+// the headline rather than a row two thirds down, and the description reads as
+// prose instead of as a settings entry.
+// ===========================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,11 +13,12 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/updater/app_update_checker.dart';
+import '../tide/tide.dart';
 
-/// About / version info. Mirrors the Kotlin `AboutScreen` layout: logo
-/// header, the Mohyeong description + AI-collaboration note, the version /
+/// About / version info. Mirrors the Kotlin `AboutScreen` content: the
+/// Mohyeong description + AI-collaboration note, the version /
 /// check-for-updates / what's-new / open-source-licenses rows, and the
-/// Website / Help / GitHub link row at the bottom.
+/// Website / Help / GitHub links.
 class AboutScreen extends ConsumerWidget {
   const AboutScreen({super.key});
 
@@ -33,58 +42,59 @@ class AboutScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('About')),
-      body: FutureBuilder<PackageInfo>(
-        future: PackageInfo.fromPlatform(),
-        builder: (context, snap) {
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final info = snap.data!;
-          final version = '${info.version} (${info.buildNumber})';
-          return ListView(
-            children: [
-              // LogoHeader equivalent (matches the More tab logo header).
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 56),
-                child: Center(
-                  child: Image.asset(
-                    'assets/ic_mihon.png',
-                    width: 64,
-                    height: 64,
-                    color: theme.colorScheme.onSurface,
+      backgroundColor: TideColors.ground,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: 0.34)),
+          Positioned.fill(
+            child: TideRise(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const TideHeader(title: 'About'),
+                  Expanded(
+                    child: FutureBuilder<PackageInfo>(
+                      future: PackageInfo.fromPlatform(),
+                      builder: (context, snap) {
+                        if (!snap.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              color: TideColors.accent,
+                            ),
+                          );
+                        }
+                        final info = snap.data!;
+                        final version =
+                            '${info.version} (${info.buildNumber})';
+                        return _body(context, ref, version);
+                      },
+                    ),
                   ),
-                ),
+                ],
               ),
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _description,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(
-                        _aiNote,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              ListTile(
-                title: const Text('Version'),
-                subtitle: Text(version),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _body(BuildContext context, WidgetRef ref, String version) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 32),
+      children: [
+        // The version, as the headline — it is the fact people open this
+        // screen for, and it used to be the subtitle of the fifth row down.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Mohyeong', style: TideText.display(38)),
+              const SizedBox(height: 8),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () {
                   Clipboard.setData(
                     ClipboardData(text: 'Mohyeong $version'),
@@ -93,50 +103,103 @@ class AboutScreen extends ConsumerWidget {
                     const SnackBar(content: Text('Copied to clipboard')),
                   );
                 },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      version,
+                      style: TideText.title(size: 15)
+                          .copyWith(color: TideColors.accent),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.copy_rounded,
+                      size: 14,
+                      color: TideColors.textAt(0.3),
+                    ),
+                  ],
+                ),
               ),
-              ListTile(
-                title: const Text('Check for updates'),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(_description, style: TideText.body()),
+              const SizedBox(height: 14),
+              Text(
+                _aiNote,
+                style: TideText.caption(size: 12.5, opacity: 0.45)
+                    .copyWith(height: 1.55),
+              ),
+            ],
+          ),
+        ),
+        const TideSectionHeader(label: 'Version'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: [
+              TideRow(
+                icon: Icons.system_update_alt,
+                title: 'Check for updates',
+                trailing: const TideChevron(),
                 onTap: () => _checkForUpdates(context, ref),
               ),
-              ListTile(
-                title: const Text("What's new"),
+              const SizedBox(height: 8),
+              TideRow(
+                icon: Icons.new_releases_outlined,
+                title: "What's new",
+                trailing: Icon(
+                  Icons.open_in_new,
+                  size: 15,
+                  color: TideColors.textAt(0.3),
+                ),
                 onTap: () => _open(_releaseUrl),
               ),
-              ListTile(
-                title: const Text('Open source licenses'),
+              const SizedBox(height: 8),
+              TideRow(
+                icon: Icons.balance_outlined,
+                title: 'Open source licenses',
+                trailing: const TideChevron(),
                 onTap: () => showLicensePage(
                   context: context,
                   applicationName: 'Mohyeong',
                   applicationVersion: version,
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    _LinkIcon(
-                      label: 'Website',
-                      icon: Icons.language,
-                      url: _websiteUrl,
-                    ),
-                    _LinkIcon(
-                      label: 'Help',
-                      icon: Icons.help_outline,
-                      url: _helpUrl,
-                    ),
-                    _LinkIcon(
-                      label: 'GitHub',
-                      icon: Icons.code,
-                      url: _githubUrl,
-                    ),
-                  ],
-                ),
+            ],
+          ),
+        ),
+        const TideSectionHeader(label: 'Links'),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              _LinkTile(
+                label: 'Website',
+                icon: Icons.language,
+                url: _websiteUrl,
+              ),
+              SizedBox(width: 8),
+              _LinkTile(
+                label: 'Help',
+                icon: Icons.help_outline,
+                url: _helpUrl,
+              ),
+              SizedBox(width: 8),
+              _LinkTile(
+                label: 'GitHub',
+                icon: Icons.code,
+                url: _githubUrl,
               ),
             ],
-          );
-        },
-      ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -152,8 +215,9 @@ class AboutScreen extends ConsumerWidget {
 
     AppUpdateResult result;
     try {
-      result =
-          await ref.read(appUpdateCheckerProvider).checkForUpdate(forceCheck: true);
+      result = await ref
+          .read(appUpdateCheckerProvider)
+          .checkForUpdate(forceCheck: true);
     } catch (_) {
       messenger
         ..hideCurrentSnackBar()
@@ -189,10 +253,10 @@ class AboutScreen extends ConsumerWidget {
   }
 }
 
-/// A labelled, tappable icon mirroring Kotlin's `LinkIcon` — an icon button
-/// over a small caption that opens [url] in the browser.
-class _LinkIcon extends StatelessWidget {
-  const _LinkIcon({
+/// A labelled destination off the app — Kotlin's `LinkIcon`, given enough
+/// room to be tappable and enough label to be readable.
+class _LinkTile extends StatelessWidget {
+  const _LinkTile({
     required this.label,
     required this.icon,
     required this.url,
@@ -204,21 +268,22 @@ class _LinkIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(icon),
-            tooltip: label,
-            onPressed: () => launchUrl(
-              Uri.parse(url),
-              mode: LaunchMode.externalApplication,
-            ),
-          ),
-          Text(label, style: Theme.of(context).textTheme.labelSmall),
-        ],
+    return Expanded(
+      child: TideGlass(
+        radius: 16,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        onTap: () => launchUrl(
+          Uri.parse(url),
+          mode: LaunchMode.externalApplication,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 19, color: TideColors.textAt(0.7)),
+            const SizedBox(height: 8),
+            Text(label, style: TideText.caption(size: 11.5, opacity: 0.6)),
+          ],
+        ),
       ),
     );
   }

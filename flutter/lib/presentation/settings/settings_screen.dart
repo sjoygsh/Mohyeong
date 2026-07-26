@@ -1,6 +1,15 @@
+// ===========================================================================
+// Tide settings.
+//
+// A directory, nothing more — so it is ten rows and no invention. Grouped by
+// what they actually govern rather than run as one undifferentiated column:
+// what you read, how the app behaves, and what it does with your data.
+// ===========================================================================
+
 import 'package:flutter/material.dart';
 
 import '../about/about_screen.dart';
+import '../tide/tide.dart';
 import '../track/trackers_settings_screen.dart';
 import 'advanced_settings_screen.dart';
 import 'appearance_settings_screen.dart';
@@ -12,7 +21,7 @@ import 'reader_settings_screen.dart';
 import 'security_settings_screen.dart';
 
 /// Top-level Settings screen. Mirror of Mihon's `SettingsMainScreen`:
-/// a categorical list where each tile pushes the matching sub-screen.
+/// a categorical list where each row pushes the matching sub-screen.
 /// Sub-screens own the actual preference UI.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -20,77 +29,121 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
+      backgroundColor: TideColors.ground,
+      body: TideRise(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const TideHeader(title: 'Settings'),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 28),
+                children: const [
+                  TideSectionHeader(
+                    label: 'Reading',
+                    padding: EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  ),
+                  _Group([
+                    _Entry(
+                      icon: Icons.collections_bookmark_outlined,
+                      title: 'Library',
+                      subtitle: 'Categories, global update, chapter swipe',
+                      destination: LibrarySettingsScreen(),
+                    ),
+                    _Entry(
+                      icon: Icons.chrome_reader_mode_outlined,
+                      title: 'Reader',
+                      subtitle: 'Reading mode, display, navigation',
+                      destination: ReaderSettingsScreen(),
+                    ),
+                    _Entry(
+                      icon: Icons.explore_outlined,
+                      title: 'Browse',
+                      subtitle: 'Sources, extensions, global search',
+                      destination: BrowseSettingsScreen(),
+                    ),
+                    _Entry(
+                      icon: Icons.sync_outlined,
+                      title: 'Tracking',
+                      subtitle: 'One-way progress sync, enhanced sync',
+                      destination: TrackersSettingsScreen(),
+                    ),
+                  ]),
+                  TideSectionHeader(label: 'App'),
+                  _Group([
+                    _Entry(
+                      icon: Icons.palette_outlined,
+                      title: 'Appearance',
+                      subtitle: 'Theme, date & time format',
+                      destination: AppearanceSettingsScreen(),
+                    ),
+                    _Entry(
+                      icon: Icons.security_outlined,
+                      title: 'Security and privacy',
+                      subtitle: 'App lock, secure screen',
+                      destination: SecuritySettingsScreen(),
+                    ),
+                    _Entry(
+                      icon: Icons.code_outlined,
+                      title: 'Advanced',
+                      subtitle: 'Dump crash logs, battery optimizations',
+                      destination: AdvancedSettingsScreen(),
+                    ),
+                    _Entry(
+                      icon: Icons.info_outline,
+                      title: 'About',
+                      subtitle: 'Version and links',
+                      destination: AboutScreen(),
+                    ),
+                  ]),
+                  TideSectionHeader(label: 'Data'),
+                  _Group([
+                    _Entry(
+                      icon: Icons.get_app,
+                      title: 'Downloads',
+                      subtitle: 'Automatic download, download ahead',
+                      destination: DownloadSettingsScreen(),
+                    ),
+                    _Entry(
+                      icon: Icons.storage_outlined,
+                      title: 'Data and storage',
+                      subtitle: 'Manual & automatic backups, storage space',
+                      destination: DataStorageSettingsScreen(),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Group extends StatelessWidget {
+  const _Group(this.entries);
+
+  final List<_Entry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
         children: [
-          _SettingsTile(
-            icon: Icons.palette_outlined,
-            title: 'Appearance',
-            subtitle: 'Theme, date & time format',
-            destination: const AppearanceSettingsScreen(),
-          ),
-          _SettingsTile(
-            icon: Icons.collections_bookmark_outlined,
-            title: 'Library',
-            subtitle: 'Categories, global update, chapter swipe',
-            destination: const LibrarySettingsScreen(),
-          ),
-          _SettingsTile(
-            icon: Icons.chrome_reader_mode_outlined,
-            title: 'Reader',
-            subtitle: 'Reading mode, display, navigation',
-            destination: const ReaderSettingsScreen(),
-          ),
-          _SettingsTile(
-            icon: Icons.get_app,
-            title: 'Downloads',
-            subtitle: 'Automatic download, download ahead',
-            destination: const DownloadSettingsScreen(),
-          ),
-          _SettingsTile(
-            icon: Icons.sync_outlined,
-            title: 'Tracking',
-            subtitle: 'One-way progress sync, enhanced sync',
-            destination: const TrackersSettingsScreen(),
-          ),
-          _SettingsTile(
-            icon: Icons.explore_outlined,
-            title: 'Browse',
-            subtitle: 'Sources, extensions, global search',
-            destination: const BrowseSettingsScreen(),
-          ),
-          _SettingsTile(
-            icon: Icons.storage_outlined,
-            title: 'Data and storage',
-            subtitle: 'Manual & automatic backups, storage space',
-            destination: const DataStorageSettingsScreen(),
-          ),
-          _SettingsTile(
-            icon: Icons.security_outlined,
-            title: 'Security and privacy',
-            subtitle: 'App lock, secure screen',
-            destination: const SecuritySettingsScreen(),
-          ),
-          _SettingsTile(
-            icon: Icons.code_outlined,
-            title: 'Advanced',
-            subtitle: 'Dump crash logs, battery optimizations',
-            destination: const AdvancedSettingsScreen(),
-          ),
-          _SettingsTile(
-            icon: Icons.info_outline,
-            title: 'About',
-            subtitle: 'Version and links',
-            destination: const AboutScreen(),
-          ),
+          for (final (i, entry) in entries.indexed) ...[
+            if (i > 0) const SizedBox(height: 8),
+            entry,
+          ],
         ],
       ),
     );
   }
 }
 
-class _SettingsTile extends StatelessWidget {
-  const _SettingsTile({
+class _Entry extends StatelessWidget {
+  const _Entry({
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -104,11 +157,11 @@ class _SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
+    return TideRow(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      trailing: const TideChevron(),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => destination),
       ),
