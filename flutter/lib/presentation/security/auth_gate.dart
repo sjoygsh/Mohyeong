@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/security/secure_screen.dart';
 import '../../data/security/security_preferences.dart';
 import '../../data/source/incognito_preferences.dart';
+import '../tide/tide.dart';
 
 /// Wraps the app behind a biometric / device-credential lock when the
 /// app-lock preference is on. Mirrors Mihon's `UnlockActivity` flow:
@@ -145,21 +146,60 @@ class _AuthGateState extends ConsumerState<AuthGate>
     if (!_ready) return const Scaffold();
     if (!_locked) return widget.child;
     return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.lock_outline, size: 64),
-            const SizedBox(height: 16),
-            const Text('Mohyeong is locked'),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _authenticate,
-              icon: const Icon(Icons.fingerprint),
-              label: const Text('Unlock'),
+      backgroundColor: TideColors.ground,
+      body: Stack(
+        children: [
+          const TideAurora(),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 48),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // The lock is the whole screen's subject, so it gets the
+                  // accent's glow rather than sitting as a grey glyph.
+                  Container(
+                    width: 74,
+                    height: 74,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: TideColors.accent.withValues(alpha: 0.14),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: TideColors.accent.withValues(alpha: 0.3),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: TideColors.accent.withValues(alpha: 0.25),
+                          blurRadius: 34,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.lock_outline,
+                        size: 30, color: TideColors.accent),
+                  ),
+                  const SizedBox(height: 26),
+                  Text('Locked', style: TideText.display(26)),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Mohyeong is waiting for you.',
+                    textAlign: TextAlign.center,
+                    style: TideText.body(),
+                  ),
+                  const SizedBox(height: 30),
+                  SizedBox(
+                    width: 190,
+                    child: TideButton(
+                      label: 'Unlock',
+                      primary: true,
+                      onTap: _authenticate,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

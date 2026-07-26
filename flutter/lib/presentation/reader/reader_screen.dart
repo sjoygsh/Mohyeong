@@ -2556,12 +2556,14 @@ class _PageListState extends State<_PageList> {
                     style: const TextStyle(color: Colors.white70),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () {
-                      setState(_refetch);
-                    },
-                    child: const Text('Retry'),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: 170,
+                    child: TideButton(
+                      label: 'Retry',
+                      primary: true,
+                      onTap: () => setState(_refetch),
+                    ),
                   ),
                 ],
               ),
@@ -3110,16 +3112,20 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
               style: const TextStyle(color: Colors.white70),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _initError = null;
-                  _loadingInitial = true;
-                });
-                unawaited(_loadInitial());
-              },
-              child: const Text('Retry'),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: 170,
+              child: TideButton(
+                label: 'Retry',
+                primary: true,
+                onTap: () {
+                  setState(() {
+                    _initError = null;
+                    _loadingInitial = true;
+                  });
+                  unawaited(_loadInitial());
+                },
+              ),
             ),
           ],
         ),

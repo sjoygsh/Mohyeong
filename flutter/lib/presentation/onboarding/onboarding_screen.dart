@@ -28,11 +28,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/onboarding/onboarding_preferences.dart';
 import '../../data/preferences/appearance_preferences.dart';
-import '../../data/preferences/theme_preference.dart';
 import '../../data/source/local_source_preferences.dart';
 import '../../data/source/saf.dart';
 import '../../data/system/app_permissions.dart';
 import '../backup/backup_screen.dart';
+import '../tide/tide.dart';
 
 const String _storageHelpUrl =
     'https://sjoygsh.github.io/Mohyeong/help.html#storage';
@@ -129,7 +129,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final canAccept = _canAccept(ref);
-    final theme = Theme.of(context);
+    const titles = ['Appearance', 'Storage', 'Permissions', 'Guides'];
     return PopScope(
       // Block leaving onboarding until finished; the in-flow back button
       // walks to the previous step instead.
@@ -138,74 +138,109 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         if (!didPop) _back();
       },
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.rocket_launch_outlined,
-                      size: 48,
-                      color: theme.colorScheme.primary,
+        backgroundColor: TideColors.ground,
+        body: Stack(
+          children: [
+            const TideAurora(),
+            SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 30, 24, 22),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('WELCOME',
+                            style: TideText.kicker(
+                                    size: 12,
+                                    color: TideColors.textAt(0.45))
+                                .copyWith(letterSpacing: 2.4)),
+                        const SizedBox(height: 10),
+                        Text(titles[_current], style: TideText.display(30)),
+                        const SizedBox(height: 8),
+                        Text(
+                          "A few things to set up. All of it can be changed "
+                          'later in settings.',
+                          style: TideText.body(),
+                        ),
+                        const SizedBox(height: 20),
+                        // The steps as a row of lit rules: the one you are on
+                        // takes the accent, the ones behind you stay bright,
+                        // and what's ahead is dim. Progress you can read
+                        // without a "3 of 4".
+                        Row(
+                          children: [
+                            for (var i = 0; i < _stepCount; i++) ...[
+                              if (i > 0) const SizedBox(width: 6),
+                              Expanded(
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 320),
+                                  curve: tideEase,
+                                  height: 3,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(2),
+                                    color: i == _current
+                                        ? TideColors.accent
+                                        : Colors.white.withValues(
+                                            alpha: i < _current ? 0.34 : 0.10),
+                                    boxShadow: i == _current
+                                        ? [
+                                            BoxShadow(
+                                              color: TideColors.accent
+                                                  .withValues(alpha: 0.5),
+                                              blurRadius: 10,
+                                            ),
+                                          ]
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Welcome!',
-                      style: theme.textTheme.headlineSmall,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      "Let's set some things up first. You can always change "
-                      'these in the settings later too.',
-                      style: theme.textTheme.bodyMedium,
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 250),
-                  transitionBuilder: (child, animation) {
-                    final offset = Tween<Offset>(
-                      begin: const Offset(0.15, 0),
-                      end: Offset.zero,
-                    ).animate(animation);
-                    return SlideTransition(
-                      position: offset,
-                      child: FadeTransition(opacity: animation, child: child),
-                    );
-                  },
-                  child: SingleChildScrollView(
-                    key: ValueKey<int>(_current),
-                    padding: const EdgeInsets.all(24),
-                    child: _stepContent(_current),
                   ),
-                ),
-              ),
-              const Divider(height: 1),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Text(
-                      'Step ${_current + 1} of $_stepCount',
-                      style: theme.textTheme.bodySmall,
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      transitionBuilder: (child, animation) {
+                        final offset = Tween<Offset>(
+                          begin: const Offset(0.15, 0),
+                          end: Offset.zero,
+                        ).animate(animation);
+                        return SlideTransition(
+                          position: offset,
+                          child:
+                              FadeTransition(opacity: animation, child: child),
+                        );
+                      },
+                      child: SingleChildScrollView(
+                        key: ValueKey<int>(_current),
+                        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                        child: _stepContent(_current),
+                      ),
                     ),
-                    const Spacer(),
-                    FilledButton(
-                      onPressed: canAccept ? _next : null,
-                      child: Text(_isLast ? 'Get started' : 'Next'),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 6, 24, 22),
+                    child: Opacity(
+                      // The gate is the Storage step with no folder picked.
+                      // Dimming says "not yet" where a dead button says
+                      // nothing at all.
+                      opacity: canAccept ? 1 : 0.4,
+                      child: TideButton(
+                        label: _isLast ? 'Get started' : 'Next',
+                        primary: true,
+                        onTap: canAccept ? _next : () {},
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -234,44 +269,26 @@ class _ThemeStep extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final themeMode = ref.watch(themePreferenceProvider);
     final amoled = ref.watch(amoledProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Theme', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        RadioGroup<ThemeMode>(
-          groupValue: themeMode,
-          onChanged: (m) {
-            if (m != null) ref.read(themePreferenceProvider.notifier).setMode(m);
-          },
-          child: const Column(
-            children: [
-              RadioListTile<ThemeMode>(
-                value: ThemeMode.system,
-                title: Text('Follow system'),
-                contentPadding: EdgeInsets.zero,
-              ),
-              RadioListTile<ThemeMode>(
-                value: ThemeMode.light,
-                title: Text('Light'),
-                contentPadding: EdgeInsets.zero,
-              ),
-              RadioListTile<ThemeMode>(
-                value: ThemeMode.dark,
-                title: Text('Dark'),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ],
-          ),
+        Text(
+          'Mohyeong is built dark. The light and follow-system options are '
+          'gone rather than left as switches that do nothing.',
+          style: TideText.body(),
         ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('AMOLED black'),
-          subtitle: const Text('Use a pure-black background in dark mode.'),
-          value: amoled,
-          onChanged: (v) => ref.read(amoledProvider.notifier).set(v),
+        const SizedBox(height: 18),
+        TideRow(
+          icon: Icons.contrast,
+          title: 'AMOLED black',
+          subtitle: 'Pure black, so dark pixels draw no power',
+          lit: amoled,
+          trailing: TideSwitch(
+            value: amoled,
+            onChanged: (v) => ref.read(amoledProvider.notifier).set(v),
+          ),
+          onTap: () => ref.read(amoledProvider.notifier).set(!amoled),
         ),
       ],
     );
@@ -325,35 +342,34 @@ class _StorageStepState extends ConsumerState<_StorageStep> {
   @override
   Widget build(BuildContext context) {
     final uri = ref.watch(storageDirProvider);
-    final theme = Theme.of(context);
-    final selected =
-        uri == null ? 'No storage location set' : (_displayName ?? uri);
+    final chosen = uri != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Select a folder where Mohyeong will store chapter downloads, '
-          'backups, and more.\n\nA dedicated folder is recommended.\n\n'
-          'Selected folder: $selected',
-          style: theme.textTheme.bodyMedium,
+          'Pick a folder for chapter downloads, backups, and more. A '
+          'dedicated folder is recommended.',
+          style: TideText.body(),
         ),
-        const SizedBox(height: 8),
-        FilledButton(
-          onPressed: _picking ? null : _pick,
-          child: const Text('Select a folder'),
+        const SizedBox(height: 18),
+        // The chosen folder is the state of this step, so it takes the lit
+        // row rather than being buried in a paragraph.
+        TideRow(
+          icon: chosen ? Icons.folder : Icons.folder_off_outlined,
+          title: chosen ? (_displayName ?? uri) : 'No folder yet',
+          subtitle: chosen ? 'Tap to change' : 'Required to continue',
+          lit: chosen,
+          onTap: _picking ? null : _pick,
         ),
-        const SizedBox(height: 8),
-        const Divider(),
-        const SizedBox(height: 8),
+        const SizedBox(height: 26),
         Text(
-          'Updating from an older version and not sure what to select? Refer '
-          'to the storage guide for more information.',
-          style: theme.textTheme.bodyMedium,
+          'Updating from an older version and not sure what to pick?',
+          style: TideText.body(),
         ),
-        const SizedBox(height: 8),
-        FilledButton(
-          onPressed: () => _openUrl(_storageHelpUrl),
-          child: const Text('Storage guide'),
+        const SizedBox(height: 12),
+        TideButton(
+          label: 'Storage guide',
+          onTap: () => _openUrl(_storageHelpUrl),
         ),
       ],
     );
@@ -451,16 +467,41 @@ class _PermissionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: granted
-          ? const Icon(Icons.check_circle, color: Colors.green)
-          : OutlinedButton(
-              onPressed: () => onRequest(),
-              child: const Text('Grant'),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TideGlass(
+        radius: 16,
+        tintTop: granted ? 0.125 : 0.06,
+        tintBottom: granted ? 0.045 : 0.02,
+        highlight: granted ? 0.19 : 0.12,
+        border: granted ? 0.20 : 0.08,
+        onTap: granted ? null : () => onRequest(),
+        padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title, style: TideText.title()),
+                  const SizedBox(height: 4),
+                  Text(subtitle, style: TideText.caption(size: 12.5)),
+                ],
+              ),
             ),
+            const SizedBox(width: 12),
+            if (granted)
+              Icon(Icons.check_rounded, size: 19, color: TideColors.accent)
+            else
+              Text(
+                'Grant',
+                style: TideText.title(size: 13, color: TideColors.accent),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -474,33 +515,33 @@ class _GuidesStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'New to Mohyeong? We recommend checking out the getting started '
-          'guide.',
-          style: theme.textTheme.bodyMedium,
+          'New here? The getting started guide covers adding sources and '
+          'building a library.',
+          style: TideText.body(),
         ),
-        const SizedBox(height: 8),
-        FilledButton(
-          onPressed: () => _openUrl(_gettingStartedUrl),
-          child: const Text('Getting started guide'),
+        const SizedBox(height: 16),
+        TideRow(
+          icon: Icons.menu_book_outlined,
+          title: 'Getting started guide',
+          subtitle: 'Opens in your browser',
+          trailing: const TideChevron(),
+          onTap: () => _openUrl(_gettingStartedUrl),
         ),
-        const SizedBox(height: 8),
-        const Divider(),
-        const SizedBox(height: 8),
-        Text(
-          'Reinstalling Mohyeong?',
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 8),
-        FilledButton(
-          onPressed: () => Navigator.of(context).push(
+        const SizedBox(height: 26),
+        Text('Coming back to Mohyeong?', style: TideText.body()),
+        const SizedBox(height: 16),
+        TideRow(
+          icon: Icons.settings_backup_restore,
+          title: 'Restore a backup',
+          subtitle: 'Bring over an existing library',
+          trailing: const TideChevron(),
+          onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const BackupScreen()),
           ),
-          child: const Text('Restore backup'),
         ),
       ],
     );

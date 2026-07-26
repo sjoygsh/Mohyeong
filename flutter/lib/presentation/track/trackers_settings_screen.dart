@@ -90,27 +90,13 @@ class TrackersSettingsScreen extends ConsumerWidget {
     WidgetRef ref,
     AutoTrackState current,
   ) async {
-    final picked = await showDialog<AutoTrackState>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Update progress when marked as read'),
-        children: [
-          RadioGroup<AutoTrackState>(
-            groupValue: current,
-            onChanged: (v) => Navigator.of(ctx).pop(v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final state in AutoTrackState.values)
-                  RadioListTile<AutoTrackState>(
-                    value: state,
-                    title: Text(state.label),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    final picked = await pickPref<AutoTrackState>(
+      context,
+      title: 'Update progress when marked as read',
+      options: [
+        for (final state in AutoTrackState.values) (state, state.label),
+      ],
+      selected: current,
     );
     if (picked != null) {
       await ref

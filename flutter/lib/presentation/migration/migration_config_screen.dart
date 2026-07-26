@@ -324,8 +324,8 @@ class _MigrationConfigScreenState extends ConsumerState<MigrationConfigScreen> {
   Widget _header(String text) {
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+        child: Text(text, style: TideText.body()),
       ),
     );
   }
@@ -427,119 +427,98 @@ class _MigrationConfigSheetState extends State<_MigrationConfigSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          bottom: MediaQuery.viewInsetsOf(context).bottom + 16,
-        ),
+    return TideSheetPanel(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.62,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 8),
-                child: Text(
-                  'Data to migrate',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
+              Text('Migrate', style: TideText.display(21)),
+              TideSectionHeader(
+                label: 'Data to carry over',
+                padding: const EdgeInsets.fromLTRB(2, 20, 2, 10),
               ),
-              Wrap(
-                spacing: 8,
+              Row(
                 children: [
-                  FilterChip(
-                    label: const Text('Chapters'),
+                  TideChip(
+                    label: 'Chapters',
                     selected: _copyChapters,
-                    onSelected: (v) => setState(() => _copyChapters = v),
+                    onTap: () => setState(() => _copyChapters = !_copyChapters),
                   ),
-                  FilterChip(
-                    label: const Text('Categories'),
+                  const SizedBox(width: 8),
+                  TideChip(
+                    label: 'Categories',
                     selected: _copyCategories,
-                    onSelected: (v) => setState(() => _copyCategories = v),
+                    onTap: () =>
+                        setState(() => _copyCategories = !_copyCategories),
                   ),
                 ],
               ),
-              const Divider(),
-              TextField(
-                controller: _queryController,
-                decoration: const InputDecoration(
-                  labelText: 'Additional keywords (optional)',
-                  helperText:
-                      'Helps narrow down search results by adding '
-                      'additional keywords',
-                  border: OutlineInputBorder(),
-                ),
+              TideSectionHeader(
+                label: 'Search',
+                padding: const EdgeInsets.fromLTRB(2, 24, 2, 10),
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Hide entries without a match'),
+              TideField(
+                controller: _queryController,
+                hintText: 'Additional keywords (optional)',
+                icon: Icons.search,
+              ),
+              const SizedBox(height: 12),
+              _ConfigSwitch(
+                title: 'Hide entries without a match',
                 value: _hideUnmatched,
                 onChanged: (v) {
                   setState(() => _hideUnmatched = v);
                   widget.prefs.setMigrationHideUnmatched(v);
                 },
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Hide entries without newer chapters'),
-                subtitle: const Text(
-                  'Only show entry if the match has additional chapters',
-                ),
+              _ConfigSwitch(
+                title: 'Hide entries without newer chapters',
+                subtitle: 'Only show a match that has additional chapters',
                 value: _hideWithoutUpdates,
                 onChanged: (v) {
                   setState(() => _hideWithoutUpdates = v);
                   widget.prefs.setMigrationHideWithoutUpdates(v);
                 },
               ),
-              const Divider(),
-              Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_outlined,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'These options are slow and dangerous and may lead '
-                      'to restrictions from sources',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ),
-                ],
+              TideSectionHeader(
+                label: 'Slow and risky',
+                padding: const EdgeInsets.fromLTRB(2, 24, 2, 8),
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Advanced search mode'),
-                subtitle: const Text(
-                  'Breaks down the title into keywords for a wider search',
+              Padding(
+                padding: const EdgeInsets.fromLTRB(2, 0, 2, 12),
+                child: Text(
+                  'These search every source hard enough that some of them '
+                  'will start refusing you.',
+                  style: TideText.caption(size: 12.5),
                 ),
+              ),
+              _ConfigSwitch(
+                title: 'Advanced search mode',
+                subtitle: 'Break the title into keywords for a wider search',
                 value: _deepSearch,
                 onChanged: (v) {
                   setState(() => _deepSearch = v);
                   widget.prefs.setMigrationDeepSearch(v);
                 },
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Match based on chapter number'),
-                subtitle: const Text(
-                  'If enabled, chooses the match furthest ahead. Otherwise, '
-                  'picks the first match by source priority.',
-                ),
+              _ConfigSwitch(
+                title: 'Match on chapter number',
+                subtitle: 'Take the match furthest ahead, not the '
+                    'highest-priority source',
                 value: _prioritizeByChapters,
                 onChanged: (v) {
                   setState(() => _prioritizeByChapters = v);
                   widget.prefs.setMigrationPrioritizeByChapters(v);
                 },
               ),
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: () {
+              const SizedBox(height: 20),
+              TideButton(
+                label: 'Continue',
+                primary: true,
+                onTap: () {
                   final cleaned = _queryController.text.trim();
                   Navigator.of(context).pop(
                     MigrationRunConfig(
@@ -549,7 +528,6 @@ class _MigrationConfigSheetState extends State<_MigrationConfigSheet> {
                     ),
                   );
                 },
-                child: const Text('Continue'),
               ),
             ],
           ),
@@ -559,6 +537,57 @@ class _MigrationConfigSheetState extends State<_MigrationConfigSheet> {
   }
 }
 
+/// A switch on a pane of glass, for the options in the config sheet. The
+/// settings screens get this from PrefSwitch; a sheet has no PrefScaffold
+/// around it, so it carries its own.
+class _ConfigSwitch extends StatelessWidget {
+  const _ConfigSwitch({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: TideGlass(
+        radius: 15,
+        tintTop: value ? 0.115 : 0.06,
+        tintBottom: value ? 0.042 : 0.02,
+        highlight: value ? 0.18 : 0.12,
+        border: value ? 0.17 : 0.08,
+        onTap: () => onChanged(!value),
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title, style: TideText.title(size: 14)),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 3),
+                    Text(subtitle!, style: TideText.caption(size: 12)),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            TideSwitch(value: value, onChanged: onChanged),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// Hands the picked sources to the next step. Same persistent-action shape
 /// the series screen and the download queue use.

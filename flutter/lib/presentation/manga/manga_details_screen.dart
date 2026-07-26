@@ -34,6 +34,7 @@ import '../../domain/track/model/track.dart';
 import '../common/source_image.dart';
 import '../migration/migration_search_screen.dart';
 import '../reader/reader_screen.dart';
+import '../settings/pref_tiles.dart';
 import '../tide/tide.dart';
 import '../track/manga_tracking_sheet.dart';
 import 'chapter_settings_sheet.dart';
@@ -1488,9 +1489,13 @@ Future<void> _editFetchInterval(
   WidgetRef ref,
   Manga manga,
 ) async {
-  final picked = await showDialog<int>(
-    context: context,
-    builder: (_) => _FetchIntervalDialog(current: manga.fetchInterval),
+  final picked = await pickPref<int>(
+    context,
+    title: 'Fetch interval',
+    options: [
+      for (final o in _fetchIntervalOptions) (o.days, o.label),
+    ],
+    selected: manga.fetchInterval,
   );
   if (picked == null || picked == manga.fetchInterval) return;
   await ref.read(mangaRepositoryProvider).setFetchInterval(manga.id, picked);
@@ -1513,122 +1518,120 @@ class _DuplicateMangaDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final shown = duplicates.take(_maxRows).toList(growable: false);
     final extras = duplicates.length - shown.length;
-    return AlertDialog(
-      title: const Text('Possible duplicate'),
-      contentPadding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
-      content: SizedBox(
-        width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
-              child: Text('Already in your library:'),
-            ),
-            for (final d in shown)
-              ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-                leading: SizedBox(
-                  width: 40,
-                  height: 56,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: _CoverImage(
-                      mangaId: d.id,
-                      url: d.thumbnailUrl,
-                      sourceId: d.source,
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Possible duplicate', style: TideText.display(21)),
+          const SizedBox(height: 6),
+          Text('Already in your library', style: TideText.caption(size: 13)),
+          const SizedBox(height: 18),
+          for (final d in shown) ...[
+            TideGlass(
+              radius: 14,
+              tintTop: 0.085,
+              tintBottom: 0.03,
+              highlight: 0.15,
+              border: 0.10,
+              // Tapping a duplicate is how you say "that one, not a new
+              // copy" — it opens that series and abandons the add.
+              onTap: () {
+                Navigator.of(context).pop(false);
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MangaDetailsScreen(mangaId: d.id),
+                  ),
+                );
+              },
+              padding: const EdgeInsets.fromLTRB(10, 10, 14, 10),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: SizedBox(
+                      width: 36,
+                      height: 50,
+                      child: _CoverImage(
+                        mangaId: d.id,
+                        url: d.thumbnailUrl,
+                        sourceId: d.source,
+                      ),
                     ),
                   ),
-                ),
-                title: Text(
-                  d.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: (d.author != null && d.author!.isNotEmpty)
-                    ? Text(
-                        d.author!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      )
-                    : null,
-                onTap: () {
-                  Navigator.of(context).pop(false);
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => MangaDetailsScreen(mangaId: d.id),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          d.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TideText.title(size: 14),
+                        ),
+                        if (d.author != null && d.author!.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            d.author!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TideText.caption(size: 12),
+                          ),
+                        ],
+                      ],
                     ),
-                  );
-                },
+                  ),
+                ],
               ),
-            if (extras > 0)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
-                child: Text(
-                  '… and $extras more',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
+            ),
+            const SizedBox(height: 8),
           ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Add anyway'),
-        ),
-      ],
-    );
-  }
-}
-
-class _FetchIntervalDialog extends StatelessWidget {
-  const _FetchIntervalDialog({required this.current});
-
-  final int current;
-
-  static const List<({int days, String label})> _options = [
-    (days: 0, label: 'Default'),
-    (days: 1, label: 'Every day'),
-    (days: 2, label: 'Every 2 days'),
-    (days: 3, label: 'Every 3 days'),
-    (days: 7, label: 'Weekly'),
-    (days: 14, label: 'Every 2 weeks'),
-    (days: 30, label: 'Monthly'),
-    (days: 60, label: 'Every 2 months'),
-    (days: 90, label: 'Every 3 months'),
-    (days: -1, label: 'Off'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SimpleDialog(
-      title: const Text('Fetch interval'),
-      children: [
-        RadioGroup<int>(
-          groupValue: current,
-          onChanged: (v) => Navigator.of(context).pop(v),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          if (extras > 0)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('and $extras more',
+                  style: TideText.caption(size: 12)),
+            ),
+          const SizedBox(height: 12),
+          Row(
             children: [
-              for (final opt in _options)
-                RadioListTile<int>(
-                  value: opt.days,
-                  title: Text(opt.label),
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(false),
                 ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TideButton(
+                  label: 'Add anyway',
+                  primary: true,
+                  onTap: () => Navigator.of(context).pop(true),
+                ),
+              ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
+
+/// Fetch-interval choices, 1:1 with Mihon's.
+const List<({int days, String label})> _fetchIntervalOptions = [
+  (days: 0, label: 'Default'),
+  (days: 1, label: 'Every day'),
+  (days: 2, label: 'Every 2 days'),
+  (days: 3, label: 'Every 3 days'),
+  (days: 7, label: 'Weekly'),
+  (days: 14, label: 'Every 2 weeks'),
+  (days: 30, label: 'Monthly'),
+  (days: 60, label: 'Every 2 months'),
+  (days: 90, label: 'Every 3 months'),
+  (days: -1, label: 'Off'),
+];
 
 /// Mirrors Mihon's `MangaScreenModel.openMangaInWebView`: resolve the
 /// source's `baseUrl`, join it with the relative `manga.url`, and hand
@@ -1741,24 +1744,13 @@ Future<void> _toggleFavorite(
 ) async {
   final mangaRepo = ref.read(mangaRepositoryProvider);
   if (manga.favorite) {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove from library?'),
-        content: const Text(
-          'The manga stays in the database (so your read history is kept) '
-          'but disappears from the Library tab.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Remove'),
-          ),
-        ],
+    final confirmed = await showTideSheet<bool>(
+      context,
+      (ctx) => const TideConfirmSheet(
+        title: 'Remove from library',
+        message: 'Your reading history is kept — the series just leaves '
+            'the library.',
+        confirmLabel: 'Remove',
       ),
     );
     if (confirmed != true) return;
@@ -1772,9 +1764,9 @@ Future<void> _toggleFavorite(
       manga.title,
     );
     if (dupes.isNotEmpty && context.mounted) {
-      final go = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => _DuplicateMangaDialog(duplicates: dupes),
+      final go = await showTideSheet<bool>(
+        context,
+        (ctx) => _DuplicateMangaDialog(duplicates: dupes),
       );
       if (go != true) return;
     }
@@ -1878,60 +1870,73 @@ class _CategorySelectorState extends State<_CategorySelector> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Text(
-                'Categories',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                children: widget.categories.map((c) {
-                  final checked = _selected.contains(c.id);
-                  return CheckboxListTile(
+    return TideSheetPanel(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Categories', style: TideText.display(21)),
+          const SizedBox(height: 6),
+          Text(
+            _selected.isEmpty
+                ? 'No category'
+                : '${_selected.length} selected',
+            style: TideText.caption(size: 13),
+          ),
+          const SizedBox(height: 18),
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              itemCount: widget.categories.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 7),
+              itemBuilder: (_, i) {
+                final c = widget.categories[i];
+                final checked = _selected.contains(c.id);
+                return TideGlass(
+                  radius: 14,
+                  tintTop: checked ? 0.115 : 0.06,
+                  tintBottom: checked ? 0.042 : 0.02,
+                  highlight: checked ? 0.18 : 0.12,
+                  border: checked ? 0.17 : 0.08,
+                  padding: const EdgeInsets.fromLTRB(13, 12, 14, 12),
+                  child: TideCheck(
+                    label: c.name,
                     value: checked,
                     onChanged: (v) {
                       setState(() {
-                        if (v == true) {
+                        if (v) {
                           _selected.add(c.id);
                         } else {
                           _selected.remove(c.id);
                         }
                       });
                     },
-                    title: Text(c.name),
-                  );
-                }).toList(growable: false),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(_selected),
-                    child: const Text('Save'),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TideButton(
+                  label: 'Save',
+                  primary: true,
+                  onTap: () => Navigator.of(context).pop(_selected),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -2275,15 +2280,12 @@ class _TrackerPreviewBar extends ConsumerWidget {
                 final t = tracks[i];
                 final tracker = registry.byId(t.trackerId);
                 final name = tracker?.name ?? 'Tracker ${t.trackerId}';
-                return ActionChip(
-                  avatar: CircleAvatar(
-                    child: Text(
-                      name.substring(0, 1),
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                  label: Text(_chipLabel(name, t)),
-                  onPressed: () => _openTrackingSheet(context, manga),
+                // A bound tracker is live state, so the chip reads as
+                // selected — same as everything else the app is holding on.
+                return TideChip(
+                  label: _chipLabel(name, t),
+                  selected: true,
+                  onTap: () => _openTrackingSheet(context, manga),
                 );
               },
             ),
@@ -3077,36 +3079,63 @@ Future<String?> showBookmarkNoteDialog(
 }) async {
   final controller = TextEditingController(text: initialNote);
   try {
-    return await showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Bookmark note'),
-          content: SizedBox(
-            width: 400,
-            child: TextField(
-              controller: controller,
-              autofocus: true,
-              maxLines: 6,
-              minLines: 4,
-              decoration: const InputDecoration(
-                hintText: 'Where did you leave off? Anything to remember?',
-                border: OutlineInputBorder(),
+    return await showTideSheet<String>(
+      context,
+      (ctx) => TideSheetPanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Bookmark note', style: TideText.display(21)),
+            const SizedBox(height: 16),
+            // Taller than a TideField: a note is a few lines, not a value.
+            TideGlass(
+              radius: 18,
+              tintTop: 0.09,
+              tintBottom: 0.03,
+              highlight: 0.16,
+              border: 0.11,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: TextField(
+                controller: controller,
+                autofocus: true,
+                maxLines: 6,
+                minLines: 4,
+                cursorColor: TideColors.accent,
+                style: TideText.title(size: 14.5),
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintText: 'Where did you leave off?',
+                  hintStyle: TideText.title(
+                    size: 14.5,
+                    color: TideColors.textAt(0.33),
+                  ),
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(controller.text),
-              child: const Text('Save'),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: TideButton(
+                    label: 'Cancel',
+                    onTap: () => Navigator.of(ctx).pop(),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TideButton(
+                    label: 'Save',
+                    primary: true,
+                    onTap: () => Navigator.of(ctx).pop(controller.text),
+                  ),
+                ),
+              ],
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   } finally {
     controller.dispose();

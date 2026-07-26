@@ -151,32 +151,36 @@ class _DevPageSourceScreenState extends ConsumerState<DevPageSourceScreen> {
         children: [
           const TideHeader(title: 'Dev: page source'),
           Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Column(
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _urlField,
-                    decoration: const InputDecoration(
-                      hintText: 'https://example.com/manga/foo',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    onSubmitted: (_) => _go(),
-                  ),
+                TideField(
+                  controller: _urlField,
+                  hintText: 'https://example.com/manga/foo',
+                  icon: Icons.link,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  textInputAction: TextInputAction.go,
+                  onSubmitted: (_) => _go(),
                 ),
-                const SizedBox(width: 8),
-                FilledButton(onPressed: _go, child: const Text('Go')),
-                const SizedBox(width: 4),
-                FilledButton.tonal(onPressed: _dump, child: const Text('Dump')),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TideButton(
+                          label: 'Go', primary: true, onTap: _go),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: TideButton(label: 'Dump', onTap: _dump)),
+                  ],
+                ),
               ],
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(_status, style: Theme.of(context).textTheme.bodySmall),
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+            child: Text(_status, style: TideText.caption(size: 12)),
           ),
-          const SizedBox(height: 4),
           Expanded(child: WebViewWidget(controller: _controller)),
         ],
       ),

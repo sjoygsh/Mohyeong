@@ -62,8 +62,23 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           children: [
             const TideHeader(title: 'Sync'),
             Expanded(child: asyncPrefs.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Failed to load sync prefs: $e')),
+        loading: () => const Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: TideColors.accent,
+            ),
+          ),
+        ),
+        error: (e, _) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Text('Failed to load sync prefs: $e',
+                textAlign: TextAlign.center, style: TideText.body()),
+          ),
+        ),
         data: (prefs) {
           _data ??= prefs.read();
           if (_hostCtl.text.isEmpty) _hostCtl.text = _data!.host;
@@ -100,9 +115,13 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           onTap: _busy
               ? null
               : () async {
-                  final picked = await showDialog<SyncService>(
-                    context: context,
-                    builder: (_) => _ServicePickerDialog(current: data.service),
+                  final picked = await pickPref<SyncService>(
+                    context,
+                    title: 'Sync service',
+                    options: [
+                      for (final s in SyncService.values) (s, s.label),
+                    ],
+                    selected: data.service,
                   );
                   if (picked == null) return;
                   setState(() => _data = data.copyWith(service: picked));
@@ -111,39 +130,34 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         if (data.service != SyncService.none) ...[
           if (_needsHost(data.service))
             _padded(
-              TextField(
+              TideField(
                 controller: _hostCtl,
-                decoration: InputDecoration(
-                  labelText: _hostLabel(data.service),
-                  hintText: _hostHint(data.service),
-                  border: const OutlineInputBorder(),
-                ),
+                label: _hostLabel(data.service),
+                hintText: _hostHint(data.service),
+                icon: Icons.dns_outlined,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
               ),
             ),
           if (data.service == SyncService.webDav)
             _padded(
-              TextField(
+              TideField(
                 controller: _usernameCtl,
-                decoration: const InputDecoration(
-                  labelText: 'Username',
-                  border: OutlineInputBorder(),
-                ),
+                label: 'Username',
+                icon: Icons.person_outline,
+                autocorrect: false,
               ),
             ),
           _padded(
-            TextField(
+            TideField(
               controller: _apiKeyCtl,
+              label: _secretLabel(data.service),
+              hintText: _secretHint(data.service),
+              icon: Icons.key_outlined,
               obscureText: true,
               autocorrect: false,
-              enableSuggestions: false,
-              decoration: InputDecoration(
-                labelText: _secretLabel(data.service),
-                hintText: _secretHint(data.service),
-                border: const OutlineInputBorder(),
-              ),
             ),
           ),
-          const Divider(),
           // "What to sync" group (Kotlin pref_sync_data_category).
           const PrefSectionHeader('What to sync'),
           PrefSwitchRaw(
@@ -170,7 +184,6 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(syncHistory: v)),
           ),
-          const Divider(),
           // ── Automation (Kotlin pref_sync_automation) ────────────────
           const PrefSectionHeader('Automation'),
           PrefSwitchRaw(
@@ -186,17 +199,22 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             onTap: !(data.autoSyncEnabled && !_busy)
                 ? null
                 : () async {
-              final picked = await showDialog<int>(
-                context: context,
-                builder: (_) => _SyncIntervalPickerDialog(
-                  current: data.autoSyncIntervalHours,
-                ),
-              );
-              if (picked != null) {
-                setState(() =>
-                    _data = data.copyWith(autoSyncIntervalHours: picked));
-              }
-            },
+                    final picked = await pickPref<int>(
+                      context,
+                      title: 'Sync interval',
+                      options: [
+                        for (final v in _intervalOptions) (v, _intervalLabel(v)),
+                      ],
+                      selected: _intervalOptions
+                              .contains(data.autoSyncIntervalHours)
+                          ? data.autoSyncIntervalHours
+                          : 12,
+                    );
+                    if (picked != null) {
+                      setState(() =>
+                          _data = data.copyWith(autoSyncIntervalHours: picked));
+                    }
+                  },
           ),
           PrefSwitchRaw(
             title: 'Sync on app start',
@@ -204,56 +222,37 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(syncOnAppStart: v)),
           ),
-          const Divider(),
+          const PrefSectionHeader('Run'),
           if (data.lastSyncTimestamp > 0)
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 4),
-              child: Text(
-                'Last sync: ${DateTime.fromMillisecondsSinceEpoch(data.lastSyncTimestamp)}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+            PrefNote(
+              'Last synced '
+              '${tideRelative(DateTime.fromMillisecondsSinceEpoch(data.lastSyncTimestamp))}',
             ),
           Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _busy ? null : () => _save(prefs),
-                    icon: const Icon(Icons.save_outlined),
-                    label: const Text('Save'),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Opacity(
+              opacity: _busy ? 0.5 : 1,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TideButton(
+                      label: 'Save',
+                      onTap: _busy ? () {} : () => _save(prefs),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _busy ? null : () => _runSync(prefs),
-                    icon: _busy
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.sync),
-                    label: const Text('Sync now'),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TideButton(
+                      label: _busy ? 'Syncing…' : 'Sync now',
+                      primary: true,
+                      onTap: _busy ? () {} : () => _runSync(prefs),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          if (_lastStatus != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
-              child: Text(
-                _lastStatus!,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
+          if (_lastStatus != null) PrefNote(_lastStatus!),
         ],
       ],
     );
@@ -348,6 +347,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       );
 }
 
+/// Mirrors Mihon's SettingsSyncScreen entries.
+const _intervalOptions = <int>[6, 12, 24, 48];
+
 /// Labels for the auto-sync interval, matching Kotlin's update_*hour strings.
 String _intervalLabel(int hours) {
   return switch (hours) {
@@ -359,57 +361,3 @@ String _intervalLabel(int hours) {
   };
 }
 
-class _SyncIntervalPickerDialog extends StatelessWidget {
-  const _SyncIntervalPickerDialog({required this.current});
-
-  final int current;
-
-  // Mirrors Mihon's SettingsSyncScreen entries: 6, 12, 24, 48.
-  static const _options = <int>[6, 12, 24, 48];
-
-  @override
-  Widget build(BuildContext context) {
-    return SimpleDialog(
-      title: const Text('Sync interval'),
-      children: [
-        RadioGroup<int>(
-          groupValue: _options.contains(current) ? current : 12,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final v in _options)
-                RadioListTile<int>(
-                  value: v,
-                  title: Text(_intervalLabel(v)),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ServicePickerDialog extends StatelessWidget {
-  const _ServicePickerDialog({required this.current});
-  final SyncService current;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Sync service'),
-      content: RadioGroup<SyncService>(
-        groupValue: current,
-        onChanged: (v) => Navigator.of(context).pop(v),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final s in SyncService.values)
-              RadioListTile<SyncService>(value: s, title: Text(s.label)),
-          ],
-        ),
-      ),
-    );
-  }
-}

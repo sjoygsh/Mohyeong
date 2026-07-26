@@ -393,18 +393,23 @@ class _StorageLocationTileState extends ConsumerState<_StorageLocationTile> {
   @override
   Widget build(BuildContext context) {
     final uri = ref.watch(storageDirProvider);
-    return ListTile(
-      leading: _picking
+    return PrefRow(
+      icon: Icons.folder_outlined,
+      title: 'Storage location',
+      subtitle: uri == null ? 'Not set' : (_displayName ?? uri),
+      // Set is the ON state here — downloads and backups have somewhere
+      // to go — so the row lights like every other configured setting.
+      lit: uri != null,
+      trailing: _picking
           ? const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: TideColors.accent,
+              ),
             )
-          : const Icon(Icons.folder_outlined),
-      title: const Text('Storage location'),
-      subtitle: Text(
-        uri == null ? 'No storage location set' : (_displayName ?? uri),
-      ),
+          : null,
       onTap: _picking ? null : _pick,
     );
   }
