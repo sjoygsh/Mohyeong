@@ -185,40 +185,7 @@ class _Chrome extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              MediaQuery.paddingOf(context).top + 12,
-              20,
-              12,
-            ),
-            child: Row(
-              children: [
-                TideIconButton(
-                  icon: Icons.arrow_back_ios_new_rounded,
-                  iconSize: 15,
-                  onTap: () => Navigator.of(context).maybePop(),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 21,
-                      height: 1.15,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: -0.5,
-                      color: TideColors.text,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ...actions,
-              ],
-            ),
-          ),
+          TideHeader(title: title, actions: actions),
           if (segmented != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),

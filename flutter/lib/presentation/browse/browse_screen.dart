@@ -7,9 +7,8 @@
 // deterministic sigil instead of a generic icon: a list of thirty identical
 // glyphs is a list you have to read every line of.
 //
-// Sub-screens reached from here (source browse, global search, the filter and
-// per-source settings screens, and the Migrate view's own body) are still
-// Material and inherit the dark theme; they convert next.
+// The Migrate view's own body is still Material under the dark theme; every
+// other screen reachable from here has been converted.
 // ===========================================================================
 
 import 'dart:io';
@@ -713,149 +712,16 @@ Future<void> _promptForUrl(
 ) async {
   final url = await showTideSheet<String>(
     context,
-    (_) => const _UrlSheet(),
+    (_) => const TideInputSheet(
+      title: 'Install from URL',
+      hintText: 'https://...',
+      confirmLabel: 'Install',
+      keyboardType: TextInputType.url,
+    ),
   );
   if (url == null || url.isEmpty) return;
   if (!context.mounted) return;
   await _runInstall(context, () => repo.installFromUrl(url));
-}
-
-/// Text-entry sheet for the install-from-URL flow.
-class _UrlSheet extends StatefulWidget {
-  const _UrlSheet();
-
-  @override
-  State<_UrlSheet> createState() => _UrlSheetState();
-}
-
-class _UrlSheetState extends State<_UrlSheet> {
-  final TextEditingController _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _submit() => Navigator.of(context).pop(_controller.text.trim());
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      // Lifts clear of the keyboard, which is the whole point of a sheet that
-      // asks for typed input.
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-          child: TideGlass(
-            radius: 26,
-            blur: true,
-            tintTop: 0.13,
-            tintBottom: 0.05,
-            highlight: 0.26,
-            border: 0.15,
-            saturation: 1.9,
-            padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Install from URL', style: TideText.display(21)),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 44,
-                  child: TideGlass(
-                    radius: 22,
-                    tintTop: 0.09,
-                    tintBottom: 0.03,
-                    highlight: 0.16,
-                    border: 0.11,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Center(
-                      child: TextField(
-                        controller: _controller,
-                        autofocus: true,
-                        cursorColor: TideColors.accent,
-                        style: TideText.title(size: 14.5),
-                        keyboardType: TextInputType.url,
-                        textInputAction: TextInputAction.go,
-                        onSubmitted: (_) => _submit(),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          border: InputBorder.none,
-                          hintText: 'https://...',
-                          hintStyle: TideText.title(
-                            size: 14.5,
-                            color: TideColors.textAt(0.33),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 46,
-                        child: TideGlass(
-                          radius: 23,
-                          tintTop: 0.09,
-                          tintBottom: 0.03,
-                          highlight: 0.16,
-                          border: 0.11,
-                          onTap: () => Navigator.of(context).pop(),
-                          child: Center(
-                            child: Text(
-                              'Cancel',
-                              style: TideText.title(
-                                size: 14.5,
-                                color: TideColors.textAt(0.8),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _submit,
-                        child: Container(
-                          height: 46,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: TideColors.accent,
-                            borderRadius: BorderRadius.circular(23),
-                            boxShadow: [
-                              BoxShadow(
-                                color:
-                                    TideColors.accent.withValues(alpha: 0.45),
-                                blurRadius: 24,
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            'Install',
-                            style: TideText.title(size: 14.5)
-                                .copyWith(color: TideColors.ground),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 Future<void> _promptForFile(

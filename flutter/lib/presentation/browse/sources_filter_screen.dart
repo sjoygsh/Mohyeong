@@ -1,14 +1,23 @@
+// ===========================================================================
+// Tide source filter.
+//
+// Two levels of the same decision — a language on or off, and inside an
+// enabled language, each source on or off — so they are drawn as two levels:
+// language rows carry a switch and light when enabled, and their sources hang
+// beneath them, indented, until the language goes dark and takes them with it.
+// ===========================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
 import '../../data/source/source_preferences.dart';
+import '../tide/tide.dart';
 
 /// Filter the Sources list by language and by per-source toggle.
-/// Languages are expand/collapse sections — flipping a language off
-/// hides every source for that language. Inside an enabled language,
-/// the per-source checkbox flips the entry in/out of the
+/// Flipping a language off hides every source for that language. Inside an
+/// enabled language, the per-source toggle flips the entry in/out of the
 /// `hidden_catalogues` set. Mirrors Mihon's `SourcesFilterScreen`.
 class SourcesFilterScreen extends ConsumerWidget {
   const SourcesFilterScreen({super.key});
@@ -17,16 +26,23 @@ class SourcesFilterScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final prefsAsync = ref.watch(sourcePreferencesProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Filter sources')),
-      body: prefsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text('Failed to load preferences: $e'),
-          ),
+      backgroundColor: TideColors.ground,
+      body: TideRise(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const TideHeader(title: 'Filter sources'),
+            Expanded(
+              child: prefsAsync.when(
+                loading: () => const Center(
+                  child: CircularProgressIndicator(color: TideColors.accent),
+                ),
+                error: (e, _) => _Note('Failed to load preferences: $e'),
+                data: (prefs) => _Body(prefs: prefs),
+              ),
+            ),
+          ],
         ),
-        data: (prefs) => _Body(prefs: prefs),
       ),
     );
   }
@@ -44,19 +60,15 @@ class _Body extends ConsumerWidget {
       stream: repo.watchInstalled(),
       builder: (context, extSnap) {
         if (!extSnap.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: CircularProgressIndicator(color: TideColors.accent),
+          );
         }
         final extensions = extSnap.data!;
         if (extensions.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'No extensions installed yet. Install one from the '
-                'Extensions tab to manage filters here.',
-                textAlign: TextAlign.center,
-              ),
-            ),
+          return const _Note(
+            'No extensions installed yet. Install one from the Extensions '
+            'view to manage filters here.',
           );
         }
         // Group by language, sort languages and their entries.
@@ -67,8 +79,8 @@ class _Body extends ConsumerWidget {
         }
         final sortedLangs = groups.keys.toList()..sort();
         for (final l in sortedLangs) {
-          groups[l]!.sort((a, b) =>
-              a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+          groups[l]!.sort(
+              (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
         }
         return StreamBuilder<Set<String>>(
           stream: prefs.watchEnabledLanguages(),
@@ -80,34 +92,53 @@ class _Body extends ConsumerWidget {
               initialData: prefs.getDisabledSources(),
               builder: (context, disSnap) {
                 final disabled = disSnap.data ?? const <String>{};
-                final tiles = <Widget>[];
+                final rows = <Widget>[];
                 for (final lang in sortedLangs) {
                   final langEnabled = enabledLangs.contains(lang);
-                  tiles.add(
-                    SwitchListTile(
-                      title: Text(_displayLanguage(lang)),
-                      value: langEnabled,
-                      onChanged: (_) => prefs.toggleLanguage(lang),
+                  final sources = groups[lang]!;
+                  if (rows.isNotEmpty) rows.add(const SizedBox(height: 10));
+                  rows.add(
+                    TideRow(
+                      icon: Icons.translate,
+                      title: _displayLanguage(lang),
+                      subtitle: sources.length == 1
+                          ? '1 source'
+                          : '${sources.length} sources',
+                      lit: langEnabled,
+                      onTap: () => prefs.toggleLanguage(lang),
+                      trailing: TideSwitch(
+                        value: langEnabled,
+                        onChanged: (_) => prefs.toggleLanguage(lang),
+                      ),
                     ),
                   );
-                  if (langEnabled) {
-                    for (final ext in groups[lang]!) {
-                      final srcEnabled = !disabled.contains(ext.id);
-                      tiles.add(
-                        CheckboxListTile(
-                          title: Text(ext.name),
-                          subtitle: Text(
-                            '${ext.lang.toUpperCase()} • v${ext.versionCode}',
-                          ),
-                          value: srcEnabled,
-                          onChanged: (_) => prefs.toggleSource(ext.id),
-                          controlAffinity: ListTileControlAffinity.trailing,
+                  if (!langEnabled) continue;
+                  for (final ext in sources) {
+                    final enabled = !disabled.contains(ext.id);
+                    rows.add(const SizedBox(height: 7));
+                    rows.add(
+                      // Indented: these belong to the language above them, and
+                      // they disappear with it.
+                      Padding(
+                        padding: const EdgeInsets.only(left: 22),
+                        child: TideRow(
+                          icon: enabled
+                              ? Icons.check_circle
+                              : Icons.circle_outlined,
+                          title: ext.name,
+                          subtitle:
+                              '${ext.lang.toUpperCase()} · v${ext.versionCode}',
+                          lit: enabled,
+                          onTap: () => prefs.toggleSource(ext.id),
                         ),
-                      );
-                    }
+                      ),
+                    );
                   }
                 }
-                return ListView(children: tiles);
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+                  children: rows,
+                );
               },
             );
           },
@@ -115,6 +146,24 @@ class _Body extends ConsumerWidget {
       },
     );
   }
+}
+
+class _Note extends StatelessWidget {
+  const _Note(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TideText.body(),
+          ),
+        ),
+      );
 }
 
 /// Map common Mihon language codes to human-readable names. Falls back

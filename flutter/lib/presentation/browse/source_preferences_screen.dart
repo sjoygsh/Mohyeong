@@ -1,13 +1,24 @@
+// ===========================================================================
+// Tide source settings.
+//
+// Whatever the extension declares, rendered in the app's own controls: a
+// checkbox becomes a Tide switch, a select opens an option sheet, a text
+// preference opens an input sheet. Each row shows its CURRENT value in its
+// caption, so the screen answers "how is this source configured" without
+// opening anything.
+// ===========================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/source/extension_repository.dart';
 import '../../domain/source/model/manga_source.dart';
+import '../tide/tide.dart';
 
 /// Per-source settings editor — the JS-extension analog of Kotlin's
 /// `SourcePreferencesScreen` (ConfigurableSource). Renders the defs the
 /// extension declares through its optional `preferences()` contract method:
-/// `select` → radio dialog, `checkbox` → switch, `text` → text-field dialog.
+/// `select` → option sheet, `checkbox` → switch, `text` → input sheet.
 /// Only NON-default picks persist (under `source_prefs_<slug>`), and every
 /// change re-injects into the live runtime immediately.
 class SourcePreferencesScreen extends ConsumerStatefulWidget {
@@ -56,6 +67,17 @@ class _SourcePreferencesScreenState
   String _effective(SourceFilterDef def) =>
       _values[def.key] ?? def.defaultValue ?? '';
 
+  /// Label for the currently-selected option of a `select` def, falling back
+  /// to the raw stored value when the extension no longer offers it.
+  String _selectedLabel(SourceFilterDef def) {
+    final value = _effective(def);
+    return def.options
+            .where((o) => o.value == value)
+            .map((o) => o.label)
+            .firstOrNull ??
+        value;
+  }
+
   Future<void> _set(SourceFilterDef def, String value) async {
     setState(() {
       if (value == (def.defaultValue ?? '')) {
@@ -70,51 +92,25 @@ class _SourcePreferencesScreenState
   }
 
   Future<void> _pickSelect(SourceFilterDef def) async {
-    final picked = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(def.title),
-        children: [
-          RadioGroup<String>(
-            groupValue: _effective(def),
-            onChanged: (v) => Navigator.of(ctx).pop(v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final opt in def.options)
-                  RadioListTile<String>(
-                    title: Text(opt.label),
-                    value: opt.value,
-                  ),
-              ],
-            ),
-          ),
-        ],
+    final picked = await showTideSheet<String>(
+      context,
+      (_) => TideOptionSheet(
+        title: def.title,
+        options: [for (final o in def.options) (o.value, o.label)],
+        selected: _effective(def),
       ),
     );
     if (picked != null) await _set(def, picked);
   }
 
   Future<void> _editText(SourceFilterDef def) async {
-    final controller = TextEditingController(text: _effective(def));
-    final saved = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(def.title),
-        content: TextField(controller: controller, autofocus: true),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: const Text('OK'),
-          ),
-        ],
+    final saved = await showTideSheet<String>(
+      context,
+      (_) => TideInputSheet(
+        title: def.title,
+        initialValue: _effective(def),
       ),
     );
-    controller.dispose();
     if (saved != null) await _set(def, saved);
   }
 
@@ -122,51 +118,89 @@ class _SourcePreferencesScreenState
   Widget build(BuildContext context) {
     final defs = _defs;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.sourceName)),
-      body: _error != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text('Failed to load settings: $_error'),
-              ),
-            )
-          : defs == null
-              ? const Center(child: CircularProgressIndicator())
-              : ListView(
-                  children: [
-                    for (final def in defs)
-                      switch (def.type) {
-                        'checkbox' => SwitchListTile(
-                            title: Text(def.title),
-                            value: _effective(def) == 'true',
-                            // Persist the literal boolean string both ways so
-                            // an extension testing `=== 'false'` sees it; _set
-                            // still drops the key when it equals the default.
-                            onChanged: (v) => _set(def, v ? 'true' : 'false'),
-                          ),
-                        'text' => ListTile(
-                            title: Text(def.title),
-                            subtitle: _effective(def).isEmpty
-                                ? null
-                                : Text(_effective(def)),
-                            onTap: () => _editText(def),
-                          ),
-                        _ => ListTile(
-                            title: Text(def.title),
-                            subtitle: Text(
-                              def.options
-                                  .where(
-                                      (o) => o.value == _effective(def))
-                                  .map((o) => o.label)
-                                  .firstOrNull ??
-                                  _effective(def),
-                            ),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => _pickSelect(def),
-                          ),
-                      },
-                  ],
-                ),
+      backgroundColor: TideColors.ground,
+      body: TideRise(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TideHeader(title: widget.sourceName),
+            Expanded(child: _body(defs)),
+          ],
+        ),
+      ),
     );
   }
+
+  Widget _body(List<SourceFilterDef>? defs) {
+    if (_error != null) {
+      return _Note('Failed to load settings: $_error');
+    }
+    if (defs == null) {
+      return const Center(
+        child: CircularProgressIndicator(color: TideColors.accent),
+      );
+    }
+    if (defs.isEmpty) {
+      return const _Note('This source has no settings.');
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+      children: [
+        for (final (i, def) in defs.indexed) ...[
+          if (i > 0) const SizedBox(height: 8),
+          switch (def.type) {
+            'checkbox' => TideRow(
+                icon: Icons.tune,
+                title: def.title,
+                lit: _effective(def) == 'true',
+                // Persist the literal boolean string both ways so an
+                // extension testing `=== 'false'` sees it; _set still drops
+                // the key when it equals the default.
+                onTap: () => _set(
+                  def,
+                  _effective(def) == 'true' ? 'false' : 'true',
+                ),
+                trailing: TideSwitch(
+                  value: _effective(def) == 'true',
+                  onChanged: (v) => _set(def, v ? 'true' : 'false'),
+                ),
+              ),
+            'text' => TideRow(
+                icon: Icons.edit_outlined,
+                title: def.title,
+                subtitle:
+                    _effective(def).isEmpty ? 'Not set' : _effective(def),
+                trailing: const TideChevron(),
+                onTap: () => _editText(def),
+              ),
+            _ => TideRow(
+                icon: Icons.list_alt_outlined,
+                title: def.title,
+                subtitle: _selectedLabel(def),
+                trailing: const TideChevron(),
+                onTap: () => _pickSelect(def),
+              ),
+          },
+        ],
+      ],
+    );
+  }
+}
+
+class _Note extends StatelessWidget {
+  const _Note(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TideText.body(),
+          ),
+        ),
+      );
 }

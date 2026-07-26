@@ -1261,6 +1261,351 @@ Future<T?> showTideSheet<T>(
   );
 }
 
+/// The head of a pushed screen: a back control, a title, and any actions.
+///
+/// Tide has no app bars. A screen you pushed into needs a way out and a name,
+/// and nothing else — the bar that used to carry those was mostly a coloured
+/// slab holding two icons apart.
+class TideHeader extends StatelessWidget {
+  const TideHeader({
+    super.key,
+    required this.title,
+    this.actions = const [],
+    this.onBack,
+  });
+
+  final String title;
+  final List<Widget> actions;
+
+  /// Defaults to popping the route.
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        MediaQuery.paddingOf(context).top + 12,
+        20,
+        12,
+      ),
+      child: Row(
+        children: [
+          TideIconButton(
+            icon: Icons.arrow_back_ios_new_rounded,
+            iconSize: 15,
+            onTap: onBack ?? () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 21,
+                height: 1.15,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.5,
+                color: TideColors.text,
+              ),
+            ),
+          ),
+          if (actions.isNotEmpty) const SizedBox(width: 8),
+          ...actions,
+        ],
+      ),
+    );
+  }
+}
+
+/// The shell every Tide sheet is built in: glass, blurred, safe-area aware,
+/// and lifted clear of the keyboard when one is up.
+class TideSheetPanel extends StatelessWidget {
+  const TideSheetPanel({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          child: TideGlass(
+            radius: 26,
+            // Genuinely floats over the screen it was called from, so the blur
+            // has something to reveal.
+            blur: true,
+            tintTop: 0.13,
+            tintBottom: 0.05,
+            highlight: 0.26,
+            border: 0.15,
+            saturation: 1.9,
+            padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
+            shadows: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.6),
+                blurRadius: 44,
+                offset: const Offset(0, 18),
+              ),
+            ],
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A pill button in a sheet. [primary] fills with the accent; otherwise it is
+/// another pane of glass.
+class TideButton extends StatelessWidget {
+  const TideButton({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.primary = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    if (primary) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: 46,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: TideColors.accent,
+            borderRadius: BorderRadius.circular(23),
+            boxShadow: [
+              BoxShadow(
+                color: TideColors.accent.withValues(alpha: 0.45),
+                blurRadius: 24,
+              ),
+            ],
+          ),
+          child: Text(
+            label,
+            style: TideText.title(size: 14.5)
+                .copyWith(color: TideColors.ground),
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      height: 46,
+      child: TideGlass(
+        radius: 23,
+        tintTop: 0.09,
+        tintBottom: 0.03,
+        highlight: 0.16,
+        border: 0.11,
+        onTap: onTap,
+        child: Center(
+          child: Text(
+            label,
+            style: TideText.title(size: 14.5, color: TideColors.textAt(0.8)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Asks for one line of text and pops it. Pops null on cancel.
+class TideInputSheet extends StatefulWidget {
+  const TideInputSheet({
+    super.key,
+    required this.title,
+    this.initialValue = '',
+    this.hintText,
+    this.confirmLabel = 'Save',
+    this.keyboardType,
+  });
+
+  final String title;
+  final String initialValue;
+  final String? hintText;
+  final String confirmLabel;
+  final TextInputType? keyboardType;
+
+  @override
+  State<TideInputSheet> createState() => _TideInputSheetState();
+}
+
+class _TideInputSheetState extends State<TideInputSheet> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialValue);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_controller.text.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(widget.title, style: TideText.display(21)),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 44,
+            child: TideGlass(
+              radius: 22,
+              tintTop: 0.09,
+              tintBottom: 0.03,
+              highlight: 0.16,
+              border: 0.11,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Center(
+                child: TextField(
+                  controller: _controller,
+                  autofocus: true,
+                  cursorColor: TideColors.accent,
+                  style: TideText.title(size: 14.5),
+                  keyboardType: widget.keyboardType,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _submit(),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    hintText: widget.hintText,
+                    hintStyle: TideText.title(
+                      size: 14.5,
+                      color: TideColors.textAt(0.33),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TideButton(
+                  label: widget.confirmLabel,
+                  primary: true,
+                  onTap: _submit,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Picks one of a set of values and pops it. Pops null when dismissed.
+class TideOptionSheet extends StatelessWidget {
+  const TideOptionSheet({
+    super.key,
+    required this.title,
+    required this.options,
+    required this.selected,
+  });
+
+  final String title;
+
+  /// `(value, label)` pairs, in the order the source declared them.
+  final List<(String, String)> options;
+  final String selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(title, style: TideText.display(21)),
+          const SizedBox(height: 16),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final (i, (value, label)) in options.indexed) ...[
+                    if (i > 0) const SizedBox(height: 8),
+                    _Option(
+                      label: label,
+                      selected: value == selected,
+                      onTap: () => Navigator.of(context).pop(value),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Option extends StatelessWidget {
+  const _Option({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TideGlass(
+      radius: 14,
+      tintTop: selected ? 0.13 : 0.06,
+      tintBottom: selected ? 0.05 : 0.02,
+      highlight: selected ? 0.20 : 0.12,
+      border: selected ? 0.20 : 0.08,
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TideText.title(
+                color: selected ? TideColors.textBright : TideColors.text,
+              ),
+            ),
+          ),
+          if (selected)
+            const Icon(Icons.check_rounded,
+                size: 18, color: TideColors.accent),
+        ],
+      ),
+    );
+  }
+}
+
 /// Confirm / cancel in a Tide sheet, with room for one extra control.
 ///
 /// [extra] is handed the sheet's own `setState` so a caller can drive a
