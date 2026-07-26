@@ -8,7 +8,14 @@
 //
 //   hero      the series you are furthest through, rotating through the top 5
 //   continue  what you are mid-way into, with the position you left it at
-//   tonight   chapters that landed since you last read
+//   tonight   everything that has arrived, newest first
+//
+// Tonight IS the updates surface — there is no separate Updates page. It
+// carries the whole of it: the global refresh (button and pull-to-refresh),
+// day grouping, the unread / bookmarked / muted-scanlator filters, search,
+// multi-select with bulk mark-read and bookmark, and the route to Upcoming.
+// The one thing it drops is a redundant day header over today's arrivals,
+// because that is what the section is already called.
 //
 // Every section is fed by a repository stream the app already maintains, so
 // this is a new presentation of existing state, not a new source of truth.
@@ -20,13 +27,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/chapter/chapter_repository.dart';
+import '../../data/cover/cover_cache.dart';
 import '../../data/history/history_repository.dart';
 import '../../data/library/library_repository.dart';
+import '../../data/library/library_updater.dart';
+import '../../data/source/extension_repository.dart';
+import '../../data/updates/updates_filter_prefs.dart';
 import '../../data/updates/updates_repository.dart';
+import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/library/model/library_item.dart';
+import '../../domain/manga/model/tri_state.dart';
+import '../common/source_image.dart';
 import '../home/home_screen.dart';
 import '../library/library_screen.dart';
 import '../reader/reader_screen.dart';
+import '../upcoming/upcoming_screen.dart';
 import 'tide.dart';
 import 'tide_series_screen.dart';
 
@@ -48,6 +63,21 @@ class _Resuming {
   final DateTime readAt;
 }
 
+/// A row of the Tonight feed: either a day separator or an update.
+sealed class _FeedRow {
+  const _FeedRow();
+}
+
+class _DayRow extends _FeedRow {
+  const _DayRow(this.label);
+  final String label;
+}
+
+class _UpdateRow extends _FeedRow {
+  const _UpdateRow(this.update);
+  final LibraryUpdate update;
+}
+
 class TideHomeScreen extends ConsumerStatefulWidget {
   const TideHomeScreen({super.key});
 
@@ -58,7 +88,7 @@ class TideHomeScreen extends ConsumerStatefulWidget {
 class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
   // Held rather than rebuilt per frame: a stream recreated inside build()
   // re-subscribes on every rebuild and the list flickers back to its loading
-  // state. Same pattern the Updates and History screens use.
+  // state. Same pattern the History screen uses.
   late final Stream<List<LibraryItem>> _library =
       ref.read(libraryRepositoryProvider).watchAll();
   late final Stream<List<HistoryWithContext>> _history =
@@ -71,6 +101,26 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
   /// Index of the hero currently shown; advanced on a timer.
   int _hero = 0;
   Timer? _rotate;
+
+  /// Whether a foreground library update is in flight. Drives the header
+  /// control's spinner and blocks a second concurrent run.
+  bool _updating = false;
+
+  /// Chapter ids picked in the Tonight feed's multi-select.
+  final Set<int> _selected = <int>{};
+
+  bool _searchingUpdates = false;
+  String _updatesQuery = '';
+  final TextEditingController _updatesSearch = TextEditingController();
+
+  /// Memoised filter + day-grouping output for Tonight. Recomputed only when
+  /// the stream emits, a filter axis or the query changes, or the calendar day
+  /// rolls over — not on every selection tap or keystroke rebuild.
+  Object? _rowsKey;
+  List<LibraryUpdate> _visible = const [];
+  List<_FeedRow> _rows = const [];
+
+  bool get _selecting => _selected.isNotEmpty;
 
   /// Whether the floating bar is showing. It gets out of the way while you
   /// read down the feed and comes back the moment you scroll up — the same
@@ -121,6 +171,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
   void dispose() {
     _rotate?.cancel();
     _scroll.dispose();
+    _updatesSearch.dispose();
     super.dispose();
   }
 
@@ -161,6 +212,114 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // Updates: refresh, filtering, selection
+  // -------------------------------------------------------------------------
+
+  /// Foreground library update — the same `LibraryUpdater.updateAll` the
+  /// Updates tab ran. The workmanager schedule keeps running independently in
+  /// the background; this is the "do it now" path.
+  Future<void> _refresh() async {
+    if (_updating) return;
+    setState(() => _updating = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final result = await ref.read(libraryUpdaterProvider).updateAll();
+      if (!mounted) return;
+      final msg = result.newChapters == 0
+          ? 'No new chapters found.'
+          : '${result.newChapters} new chapter'
+              '${result.newChapters == 1 ? '' : 's'} added.';
+      messenger.showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('Refresh failed: $e')));
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  void _toggleSelected(int chapterId) {
+    setState(() {
+      if (!_selected.add(chapterId)) _selected.remove(chapterId);
+    });
+  }
+
+  void _clearSelection() {
+    if (_selected.isEmpty) return;
+    setState(_selected.clear);
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selected
+        ..clear()
+        ..addAll(_visible.map((u) => u.chapterId));
+    });
+  }
+
+  /// Toggles every visible row's membership — mirrors Kotlin
+  /// `UpdatesScreenModel.invertSelection`.
+  void _invertSelection() {
+    setState(() {
+      for (final u in _visible) {
+        if (!_selected.add(u.chapterId)) _selected.remove(u.chapterId);
+      }
+    });
+  }
+
+  Future<void> _bulkSetRead(bool read) async {
+    final repo = ref.read(chapterRepositoryProvider);
+    final setReadStatus = ref.read(setReadStatusProvider);
+    final selected = _visible
+        .where((u) => _selected.contains(u.chapterId))
+        .toList(growable: false);
+    // Group the selected updates by manga so we can resolve each id back to
+    // a full `Chapter` row (the interactor needs read/lastPageRead/bookmark
+    // to decide what to skip and what download to delete).
+    final idsByManga = <int, Set<int>>{};
+    for (final u in selected) {
+      (idsByManga[u.mangaId] ??= <int>{}).add(u.chapterId);
+    }
+    for (final entry in idsByManga.entries) {
+      final chapters = await repo.getByMangaId(entry.key);
+      final picked = chapters
+          .where((c) => entry.value.contains(c.id))
+          .toList(growable: false);
+      await setReadStatus.setRead(read: read, chapters: picked);
+    }
+    _clearSelection();
+  }
+
+  Future<void> _bulkSetBookmark(bool bookmark) async {
+    final repo = ref.read(chapterRepositoryProvider);
+    final ids = _visible
+        .where((u) => _selected.contains(u.chapterId))
+        .map((u) => u.chapterId)
+        .toList(growable: false);
+    for (final id in ids) {
+      await repo.setBookmark(id, bookmark);
+    }
+    _clearSelection();
+  }
+
+  void _openUpdatesSearch() => setState(() => _searchingUpdates = true);
+
+  void _closeUpdatesSearch() {
+    setState(() {
+      _searchingUpdates = false;
+      _updatesQuery = '';
+      _updatesSearch.clear();
+    });
+  }
+
+  Future<void> _openFilters() => showTideSheet<void>(
+        context,
+        (_) => const _UpdatesFilterSheet(),
+      );
+
+  // -------------------------------------------------------------------------
+
   Future<void> _openSeries(int mangaId) => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => TideSeriesScreen(mangaId: mangaId),
@@ -170,8 +329,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
   Future<void> _openChapter(int mangaId, int chapterId) =>
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) =>
-              ReaderScreen(mangaId: mangaId, chapterId: chapterId),
+          builder: (_) => ReaderScreen(mangaId: mangaId, chapterId: chapterId),
         ),
       );
 
@@ -202,7 +360,19 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
     final visible = ref.watch(homeTabIndexProvider) == 0;
     return TickerMode(
       enabled: visible,
-      child: _scaffold(),
+      // System back closes the in-flight thing first: selection, then search.
+      child: PopScope(
+        canPop: !_selecting && !_searchingUpdates,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          if (_selecting) {
+            _clearSelection();
+          } else if (_searchingUpdates) {
+            _closeUpdatesSearch();
+          }
+        },
+        child: _scaffold(),
+      ),
     );
   }
 
@@ -216,39 +386,50 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
             child: NotificationListener<ScrollNotification>(
               onNotification: _onScroll,
               child: StreamBuilder<List<LibraryItem>>(
-              stream: _library,
-              builder: (context, librarySnap) {
-                final items = librarySnap.data ?? const <LibraryItem>[];
-                return StreamBuilder<List<HistoryWithContext>>(
-                  stream: _history,
-                  builder: (context, historySnap) {
-                    return StreamBuilder<List<LibraryUpdate>>(
-                      stream: _updates,
-                      builder: (context, updatesSnap) => _content(
-                        items,
-                        historySnap.data ?? const <HistoryWithContext>[],
-                        updatesSnap.data ?? const <LibraryUpdate>[],
-                        loading: !librarySnap.hasData,
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+                stream: _library,
+                builder: (context, librarySnap) {
+                  final items = librarySnap.data ?? const <LibraryItem>[];
+                  return StreamBuilder<List<HistoryWithContext>>(
+                    stream: _history,
+                    builder: (context, historySnap) {
+                      return StreamBuilder<List<LibraryUpdate>>(
+                        stream: _updates,
+                        builder: (context, updatesSnap) => _content(
+                          items,
+                          historySnap.data ?? const <HistoryWithContext>[],
+                          updatesSnap.data ?? const <LibraryUpdate>[],
+                          loading: !librarySnap.hasData,
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
           ),
           // Slides clear of the content rather than fading in place: the bar
-          // is an object, so it should leave the way an object would.
+          // is an object, so it should leave the way an object would. In
+          // selection mode the bulk actions take its place.
           AnimatedPositioned(
             duration: const Duration(milliseconds: 260),
             curve: tideEase,
-            left: 40,
-            right: 40,
-            bottom: _barVisible ? 26 : -80,
+            left: _selecting ? 16 : 40,
+            right: _selecting ? 16 : 40,
+            bottom: _barVisible || _selecting ? 26 : -80,
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 200),
-              opacity: _barVisible ? 1 : 0,
-              child: const _TideTabBar(),
+              opacity: _barVisible || _selecting ? 1 : 0,
+              child: _selecting
+                  ? _SelectionBar(
+                      selected: _visible
+                          .where((u) => _selected.contains(u.chapterId))
+                          .toList(growable: false),
+                      onBookmark: () => _bulkSetBookmark(true),
+                      onUnbookmark: () => _bulkSetBookmark(false),
+                      onMarkRead: () => _bulkSetRead(true),
+                      onMarkUnread: () => _bulkSetRead(false),
+                    )
+                  : const _TideTabBar(),
             ),
           ),
         ],
@@ -269,67 +450,195 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
     }
     final heroes = _topRead(items);
     final resuming = _resuming(items, history);
-    // Tonight is what arrived and has not been read yet — the list is a queue,
-    // so a chapter leaves it once it has been.
-    final tonight =
-        updates.where((u) => !u.read).take(12).toList(growable: false);
+    final filters = ref.watch(updatesFiltersProvider);
+    _recomputeRows(updates, filters);
 
     return TideRise(
-      child: ListView(
-        controller: _scroll,
-        padding: const EdgeInsets.only(top: 60, bottom: 118),
-        children: [
-          const _Header(),
-          if (heroes.isNotEmpty)
-            _Hero(
-              items: heroes,
-              index: _hero % heroes.length,
-              onOpen: (id) => _openSeries(id),
-              onRead: (id) => _resume(id),
-            )
-          else
-            const _EmptyLibraryCard(),
-          // Both sections always render, empty or not. They are the only way
-          // to History and Updates now that Tide's glass bar has replaced the
-          // Material one here, and a route that appears only when it happens
-          // to have contents is a route the reader cannot rely on.
-          TideSectionHeader(
-            label: 'Continue',
-            trailing: resuming.isEmpty ? null : '${resuming.length}',
-            onTap: () => ref.read(homeTabIndexProvider.notifier).set(1),
-          ),
-          if (resuming.isEmpty)
-            const _SectionEmpty('Nothing part-read right now.')
-          else
-            _ContinueRail(
-              entries: resuming,
-              onTap: (mangaId) => _resume(mangaId),
-              onLongPress: (mangaId) => _openSeries(mangaId),
+      child: RefreshIndicator(
+        // Pull-to-refresh runs the same library update the header control
+        // does — the gesture the Updates tab had, kept.
+        onRefresh: _refresh,
+        color: TideColors.accent,
+        backgroundColor: const Color(0xFF1A1E2C),
+        child: CustomScrollView(
+          controller: _scroll,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(child: _header()),
+            if (heroes.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _Hero(
+                  items: heroes,
+                  index: _hero % heroes.length,
+                  onOpen: _openSeries,
+                  onRead: _resume,
+                ),
+              )
+            else
+              const SliverToBoxAdapter(child: _EmptyLibraryCard()),
+            // Both sections always render, empty or not. Continue is the only
+            // way to History now that Tide's glass bar has replaced the
+            // Material one here, and a route that appears only when it happens
+            // to have contents is a route the reader cannot rely on.
+            SliverToBoxAdapter(
+              child: TideSectionHeader(
+                label: 'Continue',
+                trailing: resuming.isEmpty ? null : '${resuming.length}',
+                onTap: () => ref.read(homeTabIndexProvider.notifier).set(1),
+              ),
             ),
-          TideSectionHeader(
-            label: 'Tonight',
-            trailing: tonight.isEmpty ? null : '${tonight.length}',
-          ),
-          if (tonight.isEmpty)
-            const _SectionEmpty('No new chapters waiting.')
-          else
-            _TonightList(
-              updates: tonight,
-              onTap: (u) => _openChapter(u.mangaId, u.chapterId),
-              onOpenSeries: (u) => _openSeries(u.mangaId),
+            if (resuming.isEmpty)
+              const SliverToBoxAdapter(
+                child: _SectionEmpty('Nothing part-read right now.'),
+              )
+            else
+              SliverToBoxAdapter(
+                child: _ContinueRail(
+                  entries: resuming,
+                  onTap: _resume,
+                  onLongPress: _openSeries,
+                ),
+              ),
+            SliverToBoxAdapter(
+              child: _TonightHeader(
+                count: _visible.length,
+                filtersActive: filters.isActive,
+                searching: _searchingUpdates,
+                onSearch: _openUpdatesSearch,
+                onCloseSearch: _closeUpdatesSearch,
+                onFilter: _openFilters,
+                onUpcoming: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const UpcomingScreen(),
+                  ),
+                ),
+              ),
             ),
-        ],
+            if (_searchingUpdates)
+              SliverToBoxAdapter(
+                child: _UpdatesSearchField(
+                  controller: _updatesSearch,
+                  onChanged: (v) => setState(() => _updatesQuery = v.trim()),
+                ),
+              ),
+            if (_rows.isEmpty)
+              SliverToBoxAdapter(
+                child: _SectionEmpty(
+                  _updatesQuery.isNotEmpty
+                      ? 'No updates match that.'
+                      : filters.isActive
+                          ? 'No updates match the current filter.'
+                          : 'No new chapters waiting.',
+                ),
+              )
+            else
+              SliverList.builder(
+                itemCount: _rows.length,
+                itemBuilder: (context, i) => switch (_rows[i]) {
+                  final _DayRow row => TideSectionHeader(
+                      label: row.label,
+                      padding: const EdgeInsets.fromLTRB(20, 22, 20, 10),
+                    ),
+                  final _UpdateRow row => Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 9),
+                      child: _UpdateTile(
+                        update: row.update,
+                        selected: _selected.contains(row.update.chapterId),
+                        selecting: _selecting,
+                        onTap: () => _selecting
+                            ? _toggleSelected(row.update.chapterId)
+                            : _openChapter(
+                                row.update.mangaId,
+                                row.update.chapterId,
+                              ),
+                        onLongPress: () =>
+                            _toggleSelected(row.update.chapterId),
+                        onOpenSeries: () => _openSeries(row.update.mangaId),
+                      ),
+                    ),
+                },
+              ),
+            // Clears the floating bar, and the selection bar when it's up.
+            const SliverToBoxAdapter(child: SizedBox(height: 118)),
+          ],
+        ),
       ),
     );
   }
-}
 
-/// Greeting, wordmark and the two round controls.
-class _Header extends ConsumerWidget {
-  const _Header();
+  /// Filters and day-groups the updates feed, memoised on everything that can
+  /// change the result. Today's arrivals get no day header — the section is
+  /// already called Tonight, and "TONIGHT / TODAY" says one thing twice.
+  void _recomputeRows(List<LibraryUpdate> updates, UpdatesFilters filters) {
+    final q = _updatesQuery.toLowerCase();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final key = (
+      updates,
+      q,
+      filters.unread,
+      filters.bookmark,
+      filters.hideMutedScanlators,
+      today,
+    );
+    if (key == _rowsKey) return;
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
+    _visible = updates.where((u) {
+      if (q.isNotEmpty && !u.mangaTitle.toLowerCase().contains(q)) return false;
+      if (!applyTriState(filters.unread, () => !u.read)) return false;
+      if (!applyTriState(filters.bookmark, () => u.bookmark)) return false;
+      if (filters.hideMutedScanlators && u.isScanlatorMuted) return false;
+      return true;
+    }).toList(growable: false);
+
+    // The stream is already ordered date_fetch DESC, so a single pass groups
+    // it — mirrors Kotlin `getUiModel()`'s insertSeparators over
+    // `dateFetch.toLocalDate()`.
+    final rows = <_FeedRow>[];
+    String? lastLabel;
+    for (final u in _visible) {
+      final label = _dayLabel(u.dateFetch, today);
+      if (label != lastLabel) {
+        if (label != 'Today') rows.add(_DayRow(label));
+        lastLabel = label;
+      }
+      rows.add(_UpdateRow(u));
+    }
+    _rows = rows;
+    _rowsKey = key;
+  }
+
+  /// Greeting and the two round controls, or the selection header.
+  Widget _header() {
+    if (_selecting) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        child: Row(
+          children: [
+            TideIconButton(
+              icon: Icons.close_rounded,
+              onTap: _clearSelection,
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Text(
+                '${_selected.length} selected',
+                style: const TextStyle(
+                  fontSize: 20,
+                  height: 1.15,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: -0.5,
+                  color: TideColors.text,
+                ),
+              ),
+            ),
+            TideIconButton(icon: Icons.select_all, onTap: _selectAll),
+            const SizedBox(width: 9),
+            TideIconButton(icon: Icons.flip_to_back, onTap: _invertSelection),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
       child: Row(
@@ -360,28 +669,220 @@ class _Header extends ConsumerWidget {
             onTap: () => ref.read(homeTabIndexProvider.notifier).set(2),
           ),
           const SizedBox(width: 9),
-          // The design's avatar chip. It leads to More, which is where every
-          // account-shaped thing in the app already lives.
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => ref.read(homeTabIndexProvider.notifier).set(3),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF8D81D6), Color(0xFF3F5F86)],
-                ),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.16),
-                ),
-              ),
+          // Where the avatar chip used to be. An avatar is a decoration; a
+          // library that has not checked for new chapters is the one thing
+          // this screen can actually be wrong about.
+          _RefreshButton(updating: _updating, onTap: _refresh),
+        ],
+      ),
+    );
+  }
+}
+
+/// Round glass control that spins while a library update runs.
+class _RefreshButton extends StatefulWidget {
+  const _RefreshButton({required this.updating, required this.onTap});
+
+  final bool updating;
+  final VoidCallback onTap;
+
+  @override
+  State<_RefreshButton> createState() => _RefreshButtonState();
+}
+
+class _RefreshButtonState extends State<_RefreshButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _spin = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.updating) _spin.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RefreshButton old) {
+    super.didUpdateWidget(old);
+    if (widget.updating && !_spin.isAnimating) {
+      _spin.repeat();
+    } else if (!widget.updating && _spin.isAnimating) {
+      // Finish the turn it is on rather than snapping back to 0 — a control
+      // that stops mid-rotation reads as a glitch.
+      _spin.animateTo(1, duration: const Duration(milliseconds: 300)).then((_) {
+        if (mounted && !widget.updating) _spin.value = 0;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _spin.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: TideGlass(
+        radius: 20,
+        tintTop: widget.updating ? 0.14 : 0.09,
+        tintBottom: widget.updating ? 0.05 : 0.03,
+        highlight: widget.updating ? 0.24 : 0.16,
+        border: widget.updating ? 0.22 : 0.11,
+        onTap: widget.updating ? null : widget.onTap,
+        child: Center(
+          child: RotationTransition(
+            turns: _spin,
+            child: Icon(
+              Icons.refresh,
+              size: 18,
+              color: widget.updating
+                  ? TideColors.accent
+                  : TideColors.textAt(0.8),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tonight's own header: the section label, its count, and the three controls
+/// the Updates toolbar carried — search, filter, and the route to Upcoming.
+class _TonightHeader extends StatelessWidget {
+  const _TonightHeader({
+    required this.count,
+    required this.filtersActive,
+    required this.searching,
+    required this.onSearch,
+    required this.onCloseSearch,
+    required this.onFilter,
+    required this.onUpcoming,
+  });
+
+  final int count;
+  final bool filtersActive;
+  final bool searching;
+  final VoidCallback onSearch;
+  final VoidCallback onCloseSearch;
+  final VoidCallback onFilter;
+  final VoidCallback onUpcoming;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 30, 16, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            'TONIGHT',
+            style: TideText.kicker(size: 13, color: TideColors.textAt(0.5))
+                .copyWith(letterSpacing: 1.82),
+          ),
+          const SizedBox(width: 10),
+          if (count > 0)
+            Text('$count', style: TideText.caption(size: 12, opacity: 0.35)),
+          const Spacer(),
+          _HeaderAction(
+            icon: searching ? Icons.close_rounded : Icons.search,
+            onTap: searching ? onCloseSearch : onSearch,
+          ),
+          _HeaderAction(
+            icon: Icons.filter_list,
+            lit: filtersActive,
+            onTap: onFilter,
+          ),
+          _HeaderAction(icon: Icons.calendar_month, onTap: onUpcoming),
         ],
+      ),
+    );
+  }
+}
+
+class _HeaderAction extends StatelessWidget {
+  const _HeaderAction({
+    required this.icon,
+    required this.onTap,
+    this.lit = false,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: Icon(
+          icon,
+          size: 17,
+          color: lit ? TideColors.accent : TideColors.textAt(0.45),
+        ),
+      ),
+    );
+  }
+}
+
+class _UpdatesSearchField extends StatelessWidget {
+  const _UpdatesSearchField({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: SizedBox(
+        height: 40,
+        child: TideGlass(
+          radius: 20,
+          tintTop: 0.09,
+          tintBottom: 0.03,
+          highlight: 0.16,
+          border: 0.11,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 16, color: TideColors.textAt(0.42)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  autofocus: true,
+                  cursorColor: TideColors.accent,
+                  style: TideText.title(size: 14),
+                  textInputAction: TextInputAction.search,
+                  onChanged: onChanged,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    hintText: 'Search updates',
+                    hintStyle: TideText.title(
+                      size: 14,
+                      color: TideColors.textAt(0.33),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -740,112 +1241,411 @@ class _ContinueRail extends StatelessWidget {
   }
 }
 
-/// Chapters that have arrived and not been read.
-class _TonightList extends StatelessWidget {
-  const _TonightList({
-    required this.updates,
+/// One arrival. Carries the state the Updates list carried: read rows go
+/// quiet, bookmarks show, a muted scanlator strikes the title through, and a
+/// selected row lights.
+class _UpdateTile extends StatelessWidget {
+  const _UpdateTile({
+    required this.update,
+    required this.selected,
+    required this.selecting,
     required this.onTap,
+    required this.onLongPress,
     required this.onOpenSeries,
   });
 
-  final List<LibraryUpdate> updates;
-  final ValueChanged<LibraryUpdate> onTap;
-  final ValueChanged<LibraryUpdate> onOpenSeries;
+  final LibraryUpdate update;
+  final bool selected;
+  final bool selecting;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final VoidCallback onOpenSeries;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          for (final (i, u) in updates.indexed) ...[
-            if (i > 0) const SizedBox(height: 9),
-            TideGlass(
-              radius: 18,
-              onTap: () => onTap(u),
-              padding: const EdgeInsets.fromLTRB(11, 11, 14, 11),
-              child: Row(
+    final muted = update.isScanlatorMuted;
+    final dim = update.read || muted;
+    final subtitle = <String>[
+      tideChapterLabel(update.chapterName, -1),
+      if (update.scanlator != null && update.scanlator!.isNotEmpty)
+        update.scanlator!,
+      if (update.isLinkedAttribution) 'linked source',
+      tideRelative(
+        DateTime.fromMillisecondsSinceEpoch(
+          update.dateFetch == 0 ? update.dateUpload : update.dateFetch,
+        ),
+      ),
+    ].join(' · ');
+
+    return TideGlass(
+      radius: 18,
+      tintTop: selected ? 0.16 : (dim ? 0.05 : 0.075),
+      tintBottom: selected ? 0.05 : (dim ? 0.02 : 0.026),
+      highlight: selected ? 0.20 : (dim ? 0.10 : 0.13),
+      border: selected ? 0.30 : (dim ? 0.07 : 0.09),
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(11, 11, 14, 11),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onLongPress: onLongPress,
+        child: Row(
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              // While selecting, the cover is part of the row rather than its
+              // own target — otherwise half the tile silently opts out of the
+              // selection you are building.
+              onTap: selecting ? onTap : onOpenSeries,
+              child: SizedBox(
+                width: 44,
+                height: 58,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Opacity(
+                    opacity: dim ? 0.55 : 1,
+                    child: _UpdateCover(update: update),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => onOpenSeries(u),
-                    child: SizedBox(
-                      width: 44,
-                      height: 58,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: TideCover.fallbackGradient(u.mangaId),
-                          ),
-                          child: _UpdateThumb(update: u),
-                        ),
-                      ),
+                  Text(
+                    update.mangaTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.title(
+                      color: dim ? TideColors.textAt(0.5) : TideColors.text,
+                    ).copyWith(
+                      decoration:
+                          muted ? TextDecoration.lineThrough : null,
+                      decorationColor: TideColors.textAt(0.5),
                     ),
                   ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          u.mangaTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TideText.title(),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${tideChapterLabel(u.chapterName, -1)} · '
-                          '${tideRelative(
-                            DateTime.fromMillisecondsSinceEpoch(
-                              u.dateFetch == 0 ? u.dateUpload : u.dateFetch,
-                            ),
-                          )}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TideText.caption(),
-                        ),
-                      ],
-                    ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.caption(opacity: dim ? 0.3 : 0.45),
                   ),
-                  // Only the freshest arrival is marked; a badge on every row
-                  // marks nothing.
-                  if (i == 0) ...[
-                    const SizedBox(width: 10),
-                    const TideBadge('New'),
-                  ],
                 ],
               ),
             ),
+            if (update.bookmark) ...[
+              const SizedBox(width: 10),
+              const Icon(Icons.bookmark, size: 15, color: TideColors.accent),
+            ],
+            if (selecting) ...[
+              const SizedBox(width: 10),
+              _SelectMark(selected: selected),
+            ] else if (!update.read && update.lastPageRead == 0) ...[
+              const SizedBox(width: 10),
+              const TideBadge('New'),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectMark extends StatelessWidget {
+  const _SelectMark({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: tideEase,
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color:
+            selected ? TideColors.accent : Colors.white.withValues(alpha: 0.06),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected
+              ? TideColors.accent
+              : Colors.white.withValues(alpha: 0.22),
+        ),
+      ),
+      child: selected
+          ? const Icon(Icons.check_rounded, size: 14, color: TideColors.ground)
+          : null,
+    );
+  }
+}
+
+/// Cover for an update row, resolved through the shared cover cache and the
+/// source's own image headers.
+///
+/// This used to open a second full-library stream PER ROW to find the manga
+/// that owned the cover; the update projection already carries the source id
+/// and thumbnail, which is everything the pipeline needs.
+class _UpdateCover extends ConsumerWidget {
+  const _UpdateCover({required this.update});
+
+  final LibraryUpdate update;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fallback = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: TideCover.fallbackGradient(update.mangaId),
+      ),
+    );
+    final url = ref
+        .watch(coverCacheProvider)
+        .coverUrlFor(update.mangaId, update.thumbnailUrl);
+    if (url == null || url.isEmpty) return fallback;
+    final headers = ref
+        .watch(installedSourceImageHeadersProvider)
+        .valueOrNull?[update.source];
+    return SourceImage(
+      url: url,
+      headers: headers,
+      cacheWidth: 180,
+      fit: BoxFit.cover,
+      placeholder: (_) => fallback,
+      errorWidget: (_, _) => fallback,
+    );
+  }
+}
+
+/// Bulk actions over the current selection. Mirrors Kotlin's
+/// `MangaBottomActionMenu` for the Updates tab: each action shows only when it
+/// applies to what is actually selected.
+class _SelectionBar extends StatelessWidget {
+  const _SelectionBar({
+    required this.selected,
+    required this.onBookmark,
+    required this.onUnbookmark,
+    required this.onMarkRead,
+    required this.onMarkUnread,
+  });
+
+  final List<LibraryUpdate> selected;
+  final VoidCallback onBookmark;
+  final VoidCallback onUnbookmark;
+  final VoidCallback onMarkRead;
+  final VoidCallback onMarkUnread;
+
+  @override
+  Widget build(BuildContext context) {
+    final anyNotBookmarked = selected.any((u) => !u.bookmark);
+    final allBookmarked =
+        selected.isNotEmpty && selected.every((u) => u.bookmark);
+    final anyUnread = selected.any((u) => !u.read);
+    final anyReadOrStarted =
+        selected.any((u) => u.read || u.lastPageRead > 0);
+
+    return SizedBox(
+      height: 58,
+      child: TideGlass(
+        radius: 29,
+        blur: true,
+        tintTop: 0.13,
+        tintBottom: 0.05,
+        highlight: 0.26,
+        border: 0.15,
+        saturation: 1.9,
+        shadows: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 40,
+            offset: const Offset(0, 18),
+          ),
+        ],
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            if (anyNotBookmarked)
+              _BarAction(
+                icon: Icons.bookmark_add_outlined,
+                label: 'Bookmark',
+                onTap: onBookmark,
+              ),
+            if (allBookmarked)
+              _BarAction(
+                icon: Icons.bookmark_remove_outlined,
+                label: 'Unbookmark',
+                onTap: onUnbookmark,
+              ),
+            if (anyUnread)
+              _BarAction(
+                icon: Icons.done_all,
+                label: 'Read',
+                onTap: onMarkRead,
+              ),
+            if (anyReadOrStarted)
+              _BarAction(
+                icon: Icons.remove_done,
+                label: 'Unread',
+                onTap: onMarkUnread,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BarAction extends StatelessWidget {
+  const _BarAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 19, color: TideColors.textAt(0.85)),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TideText.caption(size: 10, opacity: 0.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Three-axis filter sheet: unread (tri), bookmark (tri), and a flip for
+/// hiding muted-scanlator rows entirely. Each tri-state cycles
+/// off → include → exclude on tap.
+class _UpdatesFilterSheet extends ConsumerWidget {
+  const _UpdatesFilterSheet();
+
+  static TriState _next(TriState v) => switch (v) {
+        TriState.disabled => TriState.enabledIs,
+        TriState.enabledIs => TriState.enabledNot,
+        TriState.enabledNot => TriState.disabled,
+      };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final filters = ref.watch(updatesFiltersProvider);
+    final notifier = ref.read(updatesFiltersProvider.notifier);
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Filter updates', style: TideText.display(21)),
+          const SizedBox(height: 18),
+          _TriRow(
+            label: 'Unread',
+            value: filters.unread,
+            onTap: () => notifier.setUnread(_next(filters.unread)),
+          ),
+          const SizedBox(height: 8),
+          _TriRow(
+            label: 'Bookmarked',
+            value: filters.bookmark,
+            onTap: () => notifier.setBookmark(_next(filters.bookmark)),
+          ),
+          const SizedBox(height: 8),
+          TideRow(
+            icon: Icons.volume_off_outlined,
+            title: 'Hide muted scanlators',
+            subtitle: 'When off, muted rows still show, struck through',
+            lit: filters.hideMutedScanlators,
+            onTap: () =>
+                notifier.setHideMutedScanlators(!filters.hideMutedScanlators),
+            trailing: TideSwitch(
+              value: filters.hideMutedScanlators,
+              onChanged: notifier.setHideMutedScanlators,
+            ),
+          ),
+          const SizedBox(height: 20),
+          TideButton(
+            label: 'Done',
+            primary: true,
+            onTap: () => Navigator.of(context).pop(),
+          ),
         ],
       ),
     );
   }
 }
 
-/// Cover thumbnail for an update row, resolved through the shared cover
-/// pipeline via the manga's own record.
-class _UpdateThumb extends ConsumerWidget {
-  const _UpdateThumb({required this.update});
+/// One tri-state axis: off, include, or exclude — stated in words, because
+/// three states behind one icon is a puzzle.
+class _TriRow extends StatelessWidget {
+  const _TriRow({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
 
-  final LibraryUpdate update;
+  final String label;
+  final TriState value;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return StreamBuilder<List<LibraryItem>>(
-      stream: ref.read(libraryRepositoryProvider).watchAll(),
-      builder: (context, snap) {
-        final item = snap.data
-            ?.where((it) => it.manga.id == update.mangaId)
-            .firstOrNull;
-        if (item == null) return const SizedBox.shrink();
-        return TideCover(manga: item.manga, cacheWidth: 180);
-      },
+  Widget build(BuildContext context) {
+    final (icon, state) = switch (value) {
+      TriState.disabled => (Icons.check_box_outline_blank, 'Off'),
+      TriState.enabledIs => (Icons.check_box, 'Include'),
+      TriState.enabledNot => (Icons.disabled_by_default, 'Exclude'),
+    };
+    return TideRow(
+      icon: icon,
+      title: label,
+      subtitle: state,
+      lit: value != TriState.disabled,
+      onTap: onTap,
     );
   }
+}
+
+/// Relative day label for a `date_fetch` epoch-ms value. Mirrors Kotlin's
+/// `relativeDateText`: Today / Yesterday / weekday (within a week) / absolute
+/// date. Kept identical to the History screen's grouping.
+String _dayLabel(int epochMs, DateTime today) {
+  final t = DateTime.fromMillisecondsSinceEpoch(epochMs);
+  final that = DateTime(t.year, t.month, t.day);
+  final diffDays = today.difference(that).inDays;
+  if (diffDays == 0) return 'Today';
+  if (diffDays == 1) return 'Yesterday';
+  if (diffDays < 7) return _weekdayName(that.weekday);
+  return '${that.year}-${that.month.toString().padLeft(2, '0')}-'
+      '${that.day.toString().padLeft(2, '0')}';
+}
+
+String _weekdayName(int weekday) {
+  const names = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+  return names[(weekday - 1) % 7];
 }
 
 class _EmptyLibraryCard extends StatelessWidget {
