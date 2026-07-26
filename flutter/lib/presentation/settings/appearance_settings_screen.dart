@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/preferences/appearance_preferences.dart';
 import '../theme/app_theme.dart';
 import '../util/timestamp_format.dart';
+import '../tide/tide.dart';
 import 'pref_tiles.dart';
 
 /// Appearance sub-screen: theme mode, AMOLED dark, and display
@@ -64,48 +65,27 @@ class _ThemeColorTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: _Swatch(current.seed),
-      title: const Text('App theme'),
-      subtitle: Text(current.label),
-      trailing: const Icon(Icons.chevron_right),
+    return PrefRow(
+      icon: Icons.palette_outlined,
+      title: 'App theme',
+      subtitle: current.label,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _Swatch(current.seed),
+          const SizedBox(width: 10),
+          const TideChevron(),
+        ],
+      ),
       onTap: () async {
-        final picked = await showDialog<AppColorTheme>(
-          context: context,
-          builder: (_) => _ThemeColorPickerDialog(current: current),
+        final picked = await pickPref<AppColorTheme>(
+          context,
+          title: 'App theme',
+          selected: current,
+          options: [for (final t in AppColorTheme.values) (t, t.label)],
         );
         if (picked != null) onPicked(picked);
       },
-    );
-  }
-}
-
-class _ThemeColorPickerDialog extends StatelessWidget {
-  const _ThemeColorPickerDialog({required this.current});
-
-  final AppColorTheme current;
-
-  @override
-  Widget build(BuildContext context) {
-    return SimpleDialog(
-      title: const Text('App theme'),
-      children: [
-        RadioGroup<AppColorTheme>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final t in AppColorTheme.values)
-                RadioListTile<AppColorTheme>(
-                  value: t,
-                  secondary: _Swatch(t.seed),
-                  title: Text(t.label),
-                ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
@@ -153,14 +133,18 @@ class _DateFormatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      title: const Text('Date format'),
-      subtitle: Text(_dateFormatLabel(current)),
-      trailing: const Icon(Icons.chevron_right),
+    return PrefRow(
+      icon: Icons.event_outlined,
+      title: 'Date format',
+      subtitle: _dateFormatLabel(current),
       onTap: () async {
-        final picked = await showDialog<String>(
-          context: context,
-          builder: (_) => _DateFormatPickerDialog(current: current),
+        final picked = await pickPref<String>(
+          context,
+          title: 'Date format',
+          selected: _dateFormatPatterns.contains(current) ? current : '',
+          options: [
+            for (final p in _dateFormatPatterns) (p, _dateFormatLabel(p)),
+          ],
         );
         if (picked != null) onPicked(picked);
       },
@@ -168,33 +152,3 @@ class _DateFormatTile extends StatelessWidget {
   }
 }
 
-class _DateFormatPickerDialog extends StatelessWidget {
-  const _DateFormatPickerDialog({required this.current});
-
-  final String current;
-
-  @override
-  Widget build(BuildContext context) {
-    final groupValue =
-        _dateFormatPatterns.contains(current) ? current : '';
-    return SimpleDialog(
-      title: const Text('Date format'),
-      children: [
-        RadioGroup<String>(
-          groupValue: groupValue,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final p in _dateFormatPatterns)
-                RadioListTile<String>(
-                  value: p,
-                  title: Text(_dateFormatLabel(p)),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}

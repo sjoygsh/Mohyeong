@@ -63,14 +63,19 @@ class DownloadSettingsScreen extends ConsumerWidget {
             title: 'After manually marked as read',
             provider: removeAfterMarkedAsReadProvider,
           ),
-          ListTile(
-            title: const Text('After reading automatically delete'),
-            subtitle: Text(_removeSlotsLabel(removeSlots)),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            icon: Icons.auto_delete_outlined,
+            title: 'After reading automatically delete',
+            subtitle: _removeSlotsLabel(removeSlots),
             onTap: () async {
-              final picked = await showDialog<int>(
-                context: context,
-                builder: (_) => _RemoveSlotsPickerDialog(current: removeSlots),
+              const options = <int>[-1, 0, 1, 2, 3, 4];
+              final picked = await pickPref<int>(
+                context,
+                title: 'After reading automatically delete',
+                selected: options.contains(removeSlots) ? removeSlots : -1,
+                options: [
+                  for (final v in options) (v, _removeSlotsLabel(v)),
+                ],
               );
               if (picked != null) {
                 await ref
@@ -108,15 +113,20 @@ class DownloadSettingsScreen extends ConsumerWidget {
             enabled: downloadNew,
           ),
           const PrefSectionHeader('Download ahead'),
-          ListTile(
-            title: const Text('Auto download while reading'),
-            subtitle: Text(_downloadAheadLabel(downloadAhead)),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            icon: Icons.downloading,
+            title: 'Auto download while reading',
+            subtitle: _downloadAheadLabel(downloadAhead),
             onTap: () async {
-              final picked = await showDialog<int>(
-                context: context,
-                builder: (_) =>
-                    _DownloadAheadPickerDialog(current: downloadAhead),
+              // Mirrors Mihon's entries: 0 (disabled), 2, 3, 5, 10.
+              const options = <int>[0, 2, 3, 5, 10];
+              final picked = await pickPref<int>(
+                context,
+                title: 'Auto download while reading',
+                selected: options.contains(downloadAhead) ? downloadAhead : 0,
+                options: [
+                  for (final v in options) (v, _downloadAheadLabel(v)),
+                ],
               );
               if (picked != null) {
                 await ref
@@ -125,12 +135,9 @@ class DownloadSettingsScreen extends ConsumerWidget {
               }
             },
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Text(
-              'Only works if the current chapter + the next one are already '
-              'downloaded.',
-            ),
+          const PrefNote(
+            'Only works if the current chapter and the next one are already '
+            'downloaded.',
           ),
         ],
     );
@@ -157,66 +164,3 @@ String _removeSlotsLabel(int slots) {
   };
 }
 
-class _DownloadAheadPickerDialog extends StatelessWidget {
-  const _DownloadAheadPickerDialog({required this.current});
-
-  final int current;
-
-  // Mirrors Mihon's entries: 0 (disabled), 2, 3, 5, 10.
-  static const _options = <int>[0, 2, 3, 5, 10];
-
-  @override
-  Widget build(BuildContext context) {
-    return SimpleDialog(
-      title: const Text('Auto download while reading'),
-      children: [
-        RadioGroup<int>(
-          groupValue: _options.contains(current) ? current : 0,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final v in _options)
-                RadioListTile<int>(
-                  value: v,
-                  title: Text(_downloadAheadLabel(v)),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _RemoveSlotsPickerDialog extends StatelessWidget {
-  const _RemoveSlotsPickerDialog({required this.current});
-
-  final int current;
-
-  // Mirrors Mihon's removeAfterReadSlots entries: -1, 0, 1, 2, 3, 4.
-  static const _options = <int>[-1, 0, 1, 2, 3, 4];
-
-  @override
-  Widget build(BuildContext context) {
-    return SimpleDialog(
-      title: const Text('After reading automatically delete'),
-      children: [
-        RadioGroup<int>(
-          groupValue: _options.contains(current) ? current : -1,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final v in _options)
-                RadioListTile<int>(
-                  value: v,
-                  title: Text(_removeSlotsLabel(v)),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}

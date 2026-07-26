@@ -13,6 +13,7 @@ import '../../data/storage/app_cache.dart';
 import '../../domain/manga/model/manga.dart';
 import '../backup/backup_screen.dart';
 import '../sync/sync_settings_screen.dart';
+import '../tide/tide.dart';
 import 'pref_tiles.dart';
 
 /// Data & storage sub-screen: storage location + backup/restore + sync.
@@ -22,47 +23,37 @@ class DataStorageSettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Data and storage'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.help_outline),
-            tooltip: 'Guide',
-            onPressed: () => launchUrl(
-              Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html#storage'),
-              mode: LaunchMode.externalApplication,
-            ),
+    return PrefScaffold(
+      title: 'Data and storage',
+      actions: [
+        TideIconButton(
+          icon: Icons.help_outline,
+          onTap: () => launchUrl(
+            Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html#storage'),
+            mode: LaunchMode.externalApplication,
           ),
-        ],
-      ),
-      body: ListView(
-        children: [
+        ),
+      ],
+      children: [
           const _StorageLocationTile(),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              'Used for automatic backups, chapter downloads, and local '
-              'source.',
-              style: TextStyle(fontSize: 12),
-            ),
+          const PrefNote(
+            'Used for automatic backups, chapter downloads, and the local '
+            'source.',
           ),
-          const Divider(height: 1),
-          ListTile(
-            title: const Text('Backup & restore'),
-            subtitle: const Text('Mihon-compatible .tachibk export/import'),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            icon: Icons.settings_backup_restore,
+            title: 'Backup & restore',
+            subtitle: 'Mihon-compatible .tachibk export/import',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => const BackupScreen(),
               ),
             ),
           ),
-          ListTile(
-            title: const Text('Sync'),
-            subtitle:
-                const Text('SyncYomi, WebDAV, Google Drive, or Dropbox'),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            icon: Icons.sync,
+            title: 'Sync',
+            subtitle: 'SyncYomi, WebDAV, Google Drive, or Dropbox',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => const SyncSettingsScreen(),
@@ -79,8 +70,7 @@ class DataStorageSettingsScreen extends StatelessWidget {
           // ── Export (Kotlin getExportGroup) ──────────────────────────
           const PrefSectionHeader('Export'),
           const _ExportLibraryTile(),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -181,15 +171,13 @@ class _ClearCacheTileState extends State<_ClearCacheTile> {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      title: const Text('Clear chapter cache'),
-      subtitle: Text(
-        _sizeBytes == null
-            ? 'Used: …'
-            : 'Used: ${AppCache.readableSize(_sizeBytes!)}',
-      ),
-      enabled: !_clearing,
-      onTap: _clear,
+    return PrefRow(
+      icon: Icons.cleaning_services_outlined,
+      title: 'Clear chapter cache',
+      subtitle: _sizeBytes == null
+          ? 'Used: …'
+          : 'Used: ${AppCache.readableSize(_sizeBytes!)}',
+      onTap: _clearing ? null : _clear,
     );
   }
 }
@@ -200,8 +188,8 @@ class _AutoClearCacheSwitch extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Verbatim Mihon string pref_auto_clear_chapter_cache.
-    return SwitchListTile(
-      title: const Text('Clear chapter cache on app launch'),
+    return PrefSwitchRaw(
+      title: 'Clear chapter cache on app launch',
       value: ref.watch(autoClearChapterCacheProvider),
       onChanged: ref.read(autoClearChapterCacheProvider.notifier).set,
     );
@@ -237,9 +225,9 @@ class _ExportLibraryTile extends ConsumerWidget {
 
   Future<void> _export(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
-    final options = await showDialog<(bool, bool)>(
-      context: context,
-      builder: (ctx) => const _ColumnSelectionDialog(),
+    final options = await showTideSheet<(bool, bool)>(
+      context,
+      (_) => const _ColumnSelectionDialog(),
     );
     if (options == null) return;
     final (author, artist) = options;
@@ -259,8 +247,10 @@ class _ExportLibraryTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ListTile(
-      title: const Text('Library List'),
+    return PrefRow(
+      icon: Icons.table_chart_outlined,
+      title: 'Library List',
+      subtitle: 'Export titles, authors and artists as CSV',
       onTap: () => _export(context, ref),
     );
   }
@@ -284,52 +274,73 @@ class _ColumnSelectionDialogState extends State<_ColumnSelectionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Select data to include'),
-      content: Column(
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          CheckboxListTile(
-            controlAffinity: ListTileControlAffinity.leading,
-            title: const Text('Title'),
+          Text('Select data to include', style: TideText.display(21)),
+          const SizedBox(height: 18),
+          TideCheck(
+            label: 'Title',
             value: _title,
             onChanged: (v) => setState(() {
-              _title = v ?? false;
+              _title = v;
               if (!_title) {
                 _author = false;
                 _artist = false;
               }
             }),
           ),
-          CheckboxListTile(
-            controlAffinity: ListTileControlAffinity.leading,
-            title: const Text('Author'),
-            value: _author,
-            onChanged: _title
-                ? (v) => setState(() => _author = v ?? false)
-                : null,
+          const SizedBox(height: 14),
+          Opacity(
+            opacity: _title ? 1 : 0.45,
+            child: TideCheck(
+              label: 'Author',
+              value: _author,
+              onChanged: (v) {
+                if (_title) setState(() => _author = v);
+              },
+            ),
           ),
-          CheckboxListTile(
-            controlAffinity: ListTileControlAffinity.leading,
-            title: const Text('Artist'),
-            value: _artist,
-            onChanged: _title
-                ? (v) => setState(() => _artist = v ?? false)
-                : null,
+          const SizedBox(height: 14),
+          Opacity(
+            opacity: _title ? 1 : 0.45,
+            child: TideCheck(
+              label: 'Artist',
+              value: _artist,
+              onChanged: (v) {
+                if (_title) setState(() => _artist = v);
+              },
+            ),
+          ),
+          const SizedBox(height: 22),
+          Row(
+            children: [
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Opacity(
+                  opacity: _title ? 1 : 0.4,
+                  child: TideButton(
+                    label: 'Save',
+                    primary: true,
+                    onTap: () {
+                      if (!_title) return;
+                      Navigator.of(context).pop((_author, _artist));
+                    },
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed:
-              _title ? () => Navigator.of(context).pop((_author, _artist)) : null,
-          child: const Text('Save'),
-        ),
-      ],
     );
   }
 }

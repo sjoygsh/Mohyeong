@@ -48,12 +48,9 @@ class LibrarySettingsScreen extends ConsumerWidget {
       children: [
           // ── Categories ──────────────────────────────────────────────
           const PrefSectionHeader('Categories'),
-          ListTile(
-            title: const Text('Edit categories'),
-            subtitle: Text(
-              categoryCount == 1 ? '1 category' : '$categoryCount categories',
-            ),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            title: 'Edit categories',
+            subtitle: categoryCount == 1 ? '1 category' : '$categoryCount categories',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => const CategoriesScreen(),
@@ -64,10 +61,9 @@ class LibrarySettingsScreen extends ConsumerWidget {
 
           // ── Global update ───────────────────────────────────────────
           const PrefSectionHeader('Global update'),
-          ListTile(
-            title: const Text('Automatic updates'),
-            subtitle: Text(interval.label),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            title: 'Automatic updates',
+            subtitle: interval.label,
             onTap: () async {
               final picked = await showDialog<LibraryUpdateInterval>(
                 context: context,
@@ -103,25 +99,19 @@ class LibrarySettingsScreen extends ConsumerWidget {
           // ── Behavior ────────────────────────────────────────────────
           const PrefSectionHeader('Behavior'),
           // Verbatim Mihon string pref_hide_missing_chapter_indicators.
-          SwitchListTile(
-            title: const Text('Hide missing chapter indicators'),
-            subtitle: const Text(
-              'Hide the "Missing N chapters" rows between chapters with a '
+          PrefSwitchRaw(
+            title: 'Hide missing chapter indicators',
+            subtitle: 'Hide the "Missing N chapters" rows between chapters with a '
               'numbering gap on the manga page',
-            ),
             value: ref.watch(hideMissingChaptersProvider),
-            onChanged:
-                ref.read(hideMissingChaptersProvider.notifier).setEnabled,
+            onChanged: ref.read(hideMissingChaptersProvider.notifier).setEnabled,
           ),
           // Verbatim Mihon strings pref_group_chapters_by_volume / _summary.
-          SwitchListTile(
-            title: const Text('Group chapters by volume'),
-            subtitle: const Text(
-              'Show volume headers between chapter groups on the manga page',
-            ),
+          PrefSwitchRaw(
+            title: 'Group chapters by volume',
+            subtitle: 'Show volume headers between chapter groups on the manga page',
             value: ref.watch(groupChaptersByVolumeProvider),
-            onChanged:
-                ref.read(groupChaptersByVolumeProvider.notifier).setEnabled,
+            onChanged: ref.read(groupChaptersByVolumeProvider.notifier).setEnabled,
           ),
           // Verbatim Mihon strings pref_chapter_swipe_start / _end.
           _SwipeActionTile(
@@ -136,12 +126,10 @@ class LibrarySettingsScreen extends ConsumerWidget {
 
           // ── Display (Mohyeong-specific) ─────────────────────────────
           const PrefSectionHeader('Display'),
-          SwitchListTile(
-            title: const Text('Show continue reading button'),
-            subtitle: const Text(
-              'Overlay a play button on cards to resume the next '
+          PrefSwitchRaw(
+            title: 'Show continue reading button',
+            subtitle: 'Overlay a play button on cards to resume the next '
               'unread chapter.',
-            ),
             value: showContinueReading,
             onChanged: ref
                 .read(showContinueReadingButtonProvider.notifier)
@@ -150,38 +138,27 @@ class LibrarySettingsScreen extends ConsumerWidget {
 
           // ── Badges ──────────────────────────────────────────────────
           const PrefSectionHeader('Badges'),
-          SwitchListTile(
-            title: const Text('Unread count'),
-            subtitle: const Text(
-              'Show the number of unread chapters on each card.',
-            ),
+          PrefSwitchRaw(
+            title: 'Unread count',
+            subtitle: 'Show the number of unread chapters on each card.',
             value: showUnreadBadge,
-            onChanged:
-                ref.read(displayUnreadBadgeProvider.notifier).setEnabled,
+            onChanged: ref.read(displayUnreadBadgeProvider.notifier).setEnabled,
           ),
-          SwitchListTile(
-            title: const Text('Downloaded count'),
-            subtitle: const Text(
-              'Show the number of downloaded chapters on each card.',
-            ),
+          PrefSwitchRaw(
+            title: 'Downloaded count',
+            subtitle: 'Show the number of downloaded chapters on each card.',
             value: showDownloadBadge,
-            onChanged:
-                ref.read(displayDownloadBadgeProvider.notifier).setEnabled,
+            onChanged: ref.read(displayDownloadBadgeProvider.notifier).setEnabled,
           ),
-          SwitchListTile(
-            title: const Text('Local source chip'),
-            subtitle: const Text(
-              'Mark cards backed by the built-in Local source.',
-            ),
+          PrefSwitchRaw(
+            title: 'Local source chip',
+            subtitle: 'Mark cards backed by the built-in Local source.',
             value: showLocalBadge,
-            onChanged:
-                ref.read(displayLocalBadgeProvider.notifier).setEnabled,
+            onChanged: ref.read(displayLocalBadgeProvider.notifier).setEnabled,
           ),
-          SwitchListTile(
-            title: const Text('Language code chip'),
-            subtitle: const Text(
-              "Show the source's language code on each card.",
-            ),
+          PrefSwitchRaw(
+            title: 'Language code chip',
+            subtitle: "Show the source's language code on each card.",
             value: showLanguageBadge,
             onChanged:
                 ref.read(displayLanguageBadgeProvider.notifier).setEnabled,
@@ -216,16 +193,10 @@ class _DeviceRestrictionSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Text(
-            'Automatic updates device restrictions',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
+        const PrefSectionHeader('Automatic updates device restrictions'),
         for (final (token, label) in _entries)
-          CheckboxListTile(
-            title: Text(label),
+          PrefCheckRaw(
+            label: label,
             value: selected.contains(token),
             onChanged: enabled
                 ? (checked) {
@@ -266,16 +237,10 @@ class _SmartUpdateSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Text(
-            'Smart update',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
+        const PrefSectionHeader('Smart update'),
         for (final (token, label) in _entries)
-          CheckboxListTile(
-            title: Text(label),
+          PrefCheckRaw(
+            label: label,
             value: selected.contains(token),
             onChanged: (checked) {
               final next = {...selected};
@@ -311,16 +276,10 @@ class _MarkDuplicateReadSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Text(
-            'Mark duplicate read chapter as read',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
+        const PrefSectionHeader('Mark duplicate read chapter as read'),
         for (final (token, label) in _entries)
-          CheckboxListTile(
-            title: Text(label),
+          PrefCheckRaw(
+            label: label,
             value: selected.contains(token),
             onChanged: (checked) {
               final next = {...selected};
@@ -344,7 +303,7 @@ class _IntervalPickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SimpleDialog(
+    return PrefChoiceDialog(
       title: const Text('Automatic updates'),
       children: [
         RadioGroup<LibraryUpdateInterval>(
@@ -391,13 +350,13 @@ class _DefaultCategoryTile extends ConsumerWidget {
         }
       }
     }
-    return ListTile(
-      title: const Text('Default category'),
-      subtitle: Text(label),
+    return PrefRow(
+      title: 'Default category',
+      subtitle: label,
       onTap: () async {
         final picked = await showDialog<int>(
           context: context,
-          builder: (ctx) => SimpleDialog(
+          builder: (ctx) => PrefChoiceDialog(
             title: const Text('Default category'),
             children: [
               RadioGroup<int>(
@@ -449,13 +408,13 @@ class _SwipeActionTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final current = ChapterSwipeAction.fromName(ref.watch(provider));
-    return ListTile(
-      title: Text(title),
-      subtitle: Text(current.label),
+    return PrefRow(
+      title: title,
+      subtitle: current.label,
       onTap: () async {
         final picked = await showDialog<ChapterSwipeAction>(
           context: context,
-          builder: (ctx) => SimpleDialog(
+          builder: (ctx) => PrefChoiceDialog(
             title: Text(title),
             children: [
               RadioGroup<ChapterSwipeAction>(

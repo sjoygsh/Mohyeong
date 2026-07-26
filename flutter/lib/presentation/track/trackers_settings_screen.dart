@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../tide/tide.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/track/track_preferences.dart';
@@ -23,22 +25,18 @@ class TrackersSettingsScreen extends ConsumerWidget {
     final advanced = registry.all
         .where((t) => t.category == TrackerCategory.advanced)
         .toList(growable: false);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tracking'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.help_outline),
-            tooltip: 'Tracking guide',
-            onPressed: () => launchUrl(
-              Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html#tracking'),
-              mode: LaunchMode.externalApplication,
-            ),
+    return PrefScaffold(
+      title: 'Tracking',
+      actions: [
+        TideIconButton(
+          icon: Icons.help_outline,
+          onTap: () => launchUrl(
+            Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html#tracking'),
+            mode: LaunchMode.externalApplication,
           ),
-        ],
-      ),
-      body: ListView(
-        children: [
+        ),
+      ],
+      children: [
           // Top-level tracking behaviour (Mihon SettingsTrackingScreen: three
           // ungrouped items above the "Trackers" service group).
           PrefSwitch(
@@ -56,10 +54,10 @@ class TrackersSettingsScreen extends ConsumerWidget {
               final state = AutoTrackState.fromKey(
                 ref.watch(autoUpdateTrackOnMarkReadProvider),
               );
-              return ListTile(
-                title: const Text('Update progress when marked as read'),
-                subtitle: Text(state.label),
-                trailing: const Icon(Icons.chevron_right),
+              return PrefRow(
+                icon: Icons.done_all,
+                title: 'Update progress when marked as read',
+                subtitle: state.label,
                 onTap: () => _pickAutoTrackState(context, ref, state),
               );
             },
@@ -80,8 +78,7 @@ class TrackersSettingsScreen extends ConsumerWidget {
               'tracked automatically when added to your library.',
             ),
           ],
-        ],
-      ),
+      ],
     );
   }
 
@@ -130,13 +127,7 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        label,
-        style: const TextStyle(fontWeight: FontWeight.w600),
-      ),
-    );
+    return PrefSectionHeader(label);
   }
 }
 
@@ -206,24 +197,31 @@ class _TrackerTileState extends State<_TrackerTile> {
   @override
   Widget build(BuildContext context) {
     final loggedIn = _loggedIn;
-    return ListTile(
-      leading: CircleAvatar(
-        child: Text(widget.tracker.name.substring(0, 1)),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: TideRow(
+        icon: loggedIn == true ? Icons.link : Icons.link_off,
+        title: widget.tracker.name,
+        subtitle: loggedIn == null
+            ? 'Checking…'
+            : (loggedIn ? 'Logged in' : 'Not logged in'),
+        lit: loggedIn == true,
+        onTap: _working ? null : (loggedIn == true ? _logout : _login),
+        trailing: _working
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: TideColors.accent,
+                ),
+              )
+            : Text(
+                loggedIn == true ? 'Log out' : 'Log in',
+                style: TideText.title(size: 13)
+                    .copyWith(color: TideColors.accent),
+              ),
       ),
-      title: Text(widget.tracker.name),
-      subtitle: Text(loggedIn == null
-          ? 'Checking…'
-          : (loggedIn ? 'Logged in' : 'Not logged in')),
-      trailing: _working
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : TextButton(
-              onPressed: loggedIn == true ? _logout : _login,
-              child: Text(loggedIn == true ? 'Log out' : 'Log in'),
-            ),
     );
   }
 }

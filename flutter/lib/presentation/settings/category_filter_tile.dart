@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../tide/tide.dart';
+import 'pref_tiles.dart';
+
 import '../../data/category/category_repository.dart';
 import '../../data/preferences/typed_preferences.dart';
 import '../../domain/category/model/category.dart';
@@ -48,15 +51,16 @@ class CategoryFilterTile extends ConsumerWidget {
       subtitle = names.isEmpty ? emptyLabel : names.join(', ');
     }
 
-    return ListTile(
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
-      enabled: categories.isNotEmpty,
-      onTap: () async {
-        final picked = await showDialog<Set<String>>(
-          context: context,
-          builder: (_) => _CategoryFilterDialog(
+    return PrefRow(
+      icon: Icons.label_outline,
+      title: title,
+      subtitle: subtitle,
+      onTap: categories.isEmpty
+          ? null
+          : () async {
+        final picked = await showTideSheet<Set<String>>(
+          context,
+          (_) => _CategoryFilterSheet(
             title: title,
             categories: categories,
             initial: selected,
@@ -103,15 +107,16 @@ class CategoryTriStateTile extends ConsumerWidget {
     final excluded = ref.watch(excludedProvider);
     final categories =
         ref.watch(userCategoriesProvider).valueOrNull ?? const <Category>[];
-    return ListTile(
-      title: Text(title),
-      subtitle: Text(categoriesLabel(categories, included, excluded)),
-      trailing: const Icon(Icons.chevron_right),
-      enabled: enabled && categories.isNotEmpty,
-      onTap: () async {
-        final result = await showDialog<TriStateCategoryResult>(
-          context: context,
-          builder: (_) => _CategoryTriStateDialog(
+    return PrefRow(
+      icon: Icons.label_outline,
+      title: title,
+      subtitle: categoriesLabel(categories, included, excluded),
+      onTap: !(enabled && categories.isNotEmpty)
+          ? null
+          : () async {
+        final result = await showTideSheet<TriStateCategoryResult>(
+          context,
+          (_) => _CategoryTriStateSheet(
             title: title,
             message: message,
             categories: categories,
@@ -168,8 +173,8 @@ class TriStateCategoryResult {
   final Set<String> excluded;
 }
 
-class _CategoryTriStateDialog extends StatefulWidget {
-  const _CategoryTriStateDialog({
+class _CategoryTriStateSheet extends StatefulWidget {
+  const _CategoryTriStateSheet({
     required this.title,
     required this.message,
     required this.categories,
@@ -184,11 +189,11 @@ class _CategoryTriStateDialog extends StatefulWidget {
   final Set<String> excluded;
 
   @override
-  State<_CategoryTriStateDialog> createState() =>
-      _CategoryTriStateDialogState();
+  State<_CategoryTriStateSheet> createState() =>
+      _CategoryTriStateSheetState();
 }
 
-class _CategoryTriStateDialogState extends State<_CategoryTriStateDialog> {
+class _CategoryTriStateSheetState extends State<_CategoryTriStateSheet> {
   late final Set<String> _included = {...widget.included};
   late final Set<String> _excluded = {...widget.excluded};
 
@@ -206,6 +211,13 @@ class _CategoryTriStateDialogState extends State<_CategoryTriStateDialog> {
     });
   }
 
+  /// Three states behind one icon is a puzzle; the row says which it is.
+  String _stateWord(String id) {
+    if (_included.contains(id)) return 'Included';
+    if (_excluded.contains(id)) return 'Excluded';
+    return 'Not used';
+  }
+
   IconData _iconFor(String id) {
     if (_included.contains(id)) return Icons.check_box;
     if (_excluded.contains(id)) return Icons.indeterminate_check_box;
@@ -214,45 +226,66 @@ class _CategoryTriStateDialogState extends State<_CategoryTriStateDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            if (widget.message != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-                child: Text(widget.message!),
-              ),
-            for (final c in widget.categories)
-              ListTile(
-                leading: Icon(_iconFor(c.id.toString())),
-                title: Text(c.name),
-                onTap: () => _cycle(c.id.toString()),
-              ),
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(widget.title, style: TideText.display(21)),
+          if (widget.message != null) ...[
+            const SizedBox(height: 6),
+            Text(widget.message!, style: TideText.caption(size: 12.5)),
           ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(
-            TriStateCategoryResult(_included, _excluded),
+          const SizedBox(height: 16),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final (i, c) in widget.categories.indexed) ...[
+                    if (i > 0) const SizedBox(height: 8),
+                    TideRow(
+                      icon: _iconFor(c.id.toString()),
+                      title: c.name,
+                      subtitle: _stateWord(c.id.toString()),
+                      lit: _included.contains(c.id.toString()) ||
+                          _excluded.contains(c.id.toString()),
+                      onTap: () => _cycle(c.id.toString()),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
-          child: const Text('OK'),
-        ),
-      ],
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TideButton(
+                  label: 'Save',
+                  primary: true,
+                  onTap: () => Navigator.of(context).pop(
+                    TriStateCategoryResult(_included, _excluded),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _CategoryFilterDialog extends StatefulWidget {
-  const _CategoryFilterDialog({
+class _CategoryFilterSheet extends StatefulWidget {
+  const _CategoryFilterSheet({
     required this.title,
     required this.categories,
     required this.initial,
@@ -263,47 +296,66 @@ class _CategoryFilterDialog extends StatefulWidget {
   final Set<String> initial;
 
   @override
-  State<_CategoryFilterDialog> createState() => _CategoryFilterDialogState();
+  State<_CategoryFilterSheet> createState() => _CategoryFilterSheetState();
 }
 
-class _CategoryFilterDialogState extends State<_CategoryFilterDialog> {
+class _CategoryFilterSheetState extends State<_CategoryFilterSheet> {
   late final Set<String> _selected = {...widget.initial};
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            for (final c in widget.categories)
-              CheckboxListTile(
-                title: Text(c.name),
-                value: _selected.contains(c.id.toString()),
-                onChanged: (checked) => setState(() {
-                  final key = c.id.toString();
-                  if (checked ?? false) {
-                    _selected.add(key);
-                  } else {
-                    _selected.remove(key);
-                  }
-                }),
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(widget.title, style: TideText.display(21)),
+          const SizedBox(height: 16),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final (i, c) in widget.categories.indexed) ...[
+                    if (i > 0) const SizedBox(height: 10),
+                    TideCheck(
+                      label: c.name,
+                      value: _selected.contains(c.id.toString()),
+                      onChanged: (checked) => setState(() {
+                        final key = c.id.toString();
+                        if (checked) {
+                          _selected.add(key);
+                        } else {
+                          _selected.remove(key);
+                        }
+                      }),
+                    ),
+                  ],
+                ],
               ),
-          ],
-        ),
+            ),
+          ),
+          const SizedBox(height: 22),
+          Row(
+            children: [
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TideButton(
+                  label: 'Save',
+                  primary: true,
+                  onTap: () => Navigator.of(context).pop(_selected),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(_selected),
-          child: const Text('OK'),
-        ),
-      ],
     );
   }
 }

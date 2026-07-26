@@ -10,6 +10,7 @@ import '../../data/manga/manga_repository.dart';
 import '../../data/network/app_http_client.dart';
 import '../../data/network/network_preferences.dart';
 import '../../data/storage/app_cache.dart';
+import '../tide/tide.dart';
 import 'pref_tiles.dart';
 
 /// Advanced sub-screen. Mirror of the blind-executable parts of Mihon's
@@ -34,44 +35,35 @@ class AdvancedSettingsScreen extends ConsumerWidget {
             provider: verboseLoggingProvider,
           ),
           const PrefSectionHeader('Networking'),
-          ListTile(
-            leading: const Icon(Icons.dns_outlined),
-            title: const Text('DNS over HTTPS (DoH)'),
-            subtitle: Text(dohProviderLabels[doh] ?? 'Disabled'),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            icon: Icons.dns_outlined,
+            title: 'DNS over HTTPS (DoH)',
+            subtitle: dohProviderLabels[doh] ?? 'Disabled',
             onTap: () => _pickDoh(context, ref),
           ),
-          ListTile(
-            leading: const Icon(Icons.cookie_outlined),
-            title: const Text('Clear cookies'),
-            subtitle: const Text(
-              'Remove all stored cookies, including Cloudflare clearances.',
-            ),
+          PrefRow(
+            icon: Icons.cookie_outlined,
+            title: 'Clear cookies',
+            subtitle: 'Including Cloudflare clearances',
             onTap: () => _clearCookies(context, ref),
           ),
           const PrefSectionHeader('Data'),
-          ListTile(
-            leading: const Icon(Icons.cleaning_services_outlined),
-            title: const Text('Clear chapter cache'),
-            subtitle: const Text(
-              'Delete cached chapter pages to free up space.',
-            ),
+          PrefRow(
+            icon: Icons.cleaning_services_outlined,
+            title: 'Clear chapter cache',
+            subtitle: 'Delete cached pages to free up space',
             onTap: () => _clearChapterCache(context),
           ),
-          ListTile(
-            leading: const Icon(Icons.image_not_supported_outlined),
-            title: const Text('Clear cover cache'),
-            subtitle: const Text(
-              'Delete downloaded cover thumbnails (re-fetched on demand).',
-            ),
+          PrefRow(
+            icon: Icons.image_not_supported_outlined,
+            title: 'Clear cover cache',
+            subtitle: 'Thumbnails are re-fetched on demand',
             onTap: () => _clearCoverCache(context),
           ),
-          ListTile(
-            leading: const Icon(Icons.delete_sweep_outlined),
-            title: const Text('Clear database'),
-            subtitle: const Text(
-              'Delete history for entries that are not saved in your library',
-            ),
+          PrefRow(
+            icon: Icons.delete_sweep_outlined,
+            title: 'Clear database',
+            subtitle: 'Drops entries that are not in your library',
             onTap: () => _clearDatabase(context, ref),
           ),
         ],
@@ -80,27 +72,13 @@ class AdvancedSettingsScreen extends ConsumerWidget {
 
   Future<void> _pickDoh(BuildContext context, WidgetRef ref) async {
     final current = ref.read(dohProviderProvider);
-    final picked = await showDialog<int>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('DNS over HTTPS (DoH)'),
-        children: [
-          RadioGroup<int>(
-            groupValue: current,
-            onChanged: (v) => Navigator.of(ctx).pop(v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final entry in dohProviderLabels.entries)
-                  RadioListTile<int>(
-                    value: entry.key,
-                    title: Text(entry.value),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    final picked = await pickPref<int>(
+      context,
+      title: 'DNS over HTTPS (DoH)',
+      selected: current,
+      options: [
+        for (final e in dohProviderLabels.entries) (e.key, e.value),
+      ],
     );
     if (picked != null) {
       await ref.read(dohProviderProvider.notifier).set(picked);
@@ -165,25 +143,14 @@ class AdvancedSettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _clearDatabase(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Clear database'),
-        content: const Text(
-          'This permanently removes every manga that is not in your '
-          'library, along with its chapters and history. Library entries '
-          'are kept. Continue?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Clear'),
-          ),
-        ],
+    final confirmed = await showTideSheet<bool>(
+      context,
+      (_) => const TideConfirmSheet(
+        title: 'Clear database',
+        message: 'This permanently removes every manga that is not in your '
+            'library, along with its chapters and history. Library entries '
+            'are kept.',
+        confirmLabel: 'Clear',
       ),
     );
     if (confirmed != true) return;

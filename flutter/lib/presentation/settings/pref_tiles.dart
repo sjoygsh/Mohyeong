@@ -253,3 +253,219 @@ class PrefScaffold extends StatelessWidget {
     );
   }
 }
+
+
+/// A checkbox preference — a fact you tick, not a mode you flip. Kept
+/// distinct from [PrefSwitch] because Mihon uses both and they mean
+/// different things: a switch turns behaviour on, a check includes an item.
+class PrefCheck extends StatelessWidget {
+  const PrefCheck({
+    super.key,
+    required this.label,
+    this.subtitle,
+    required this.value,
+    required this.onChanged,
+    this.enabled = true,
+  });
+
+  final String label;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: TideRow(
+        icon: value ? Icons.check_box : Icons.check_box_outline_blank,
+        title: label,
+        subtitle: subtitle,
+        lit: enabled && value,
+        onTap: enabled ? () => onChanged(!value) : null,
+      ),
+    );
+    return enabled ? row : Opacity(opacity: 0.45, child: row);
+  }
+}
+
+/// Picks one of [options] in a Tide sheet and returns it. Replaces the
+/// `showDialog` + `SimpleDialog` + `RadioListTile` trio the settings screens
+/// used for every enum-shaped preference.
+///
+/// [TideOptionSheet] speaks strings, so values ride across as their index —
+/// which keeps this generic without asking every caller for a codec.
+Future<T?> pickPref<T>(
+  BuildContext context, {
+  required String title,
+  required List<(T, String)> options,
+  T? selected,
+}) async {
+  final current = options.indexWhere((o) => o.$1 == selected);
+  final picked = await showTideSheet<String>(
+    context,
+    (_) => TideOptionSheet(
+      title: title,
+      options: [
+        for (final (i, o) in options.indexed) ('$i', o.$2),
+      ],
+      selected: current < 0 ? '' : '$current',
+    ),
+  );
+  if (picked == null) return null;
+  return options[int.parse(picked)].$1;
+}
+
+
+/// A choice dialog on Tide glass. The settings screens open a dozen of these
+/// through `showDialog`; rather than restructure every one, this gives them
+/// the app's surface — and themes the radios inside so the selected option
+/// reads in the accent rather than in Material's default.
+class PrefChoiceDialog extends StatelessWidget {
+  const PrefChoiceDialog({
+    super.key,
+    required this.title,
+    required this.children,
+  });
+
+  final Widget title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: TideGlass(
+        radius: 26,
+        blur: true,
+        tintTop: 0.13,
+        tintBottom: 0.05,
+        highlight: 0.26,
+        border: 0.15,
+        saturation: 1.9,
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 14),
+        shadows: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 44,
+            offset: const Offset(0, 18),
+          ),
+        ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DefaultTextStyle(
+              style: TideText.display(20),
+              child: title,
+            ),
+            const SizedBox(height: 10),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    radioTheme: RadioThemeData(
+                      fillColor: WidgetStateProperty.resolveWith(
+                        (states) => states.contains(WidgetState.selected)
+                            ? TideColors.accent
+                            : TideColors.textAt(0.4),
+                      ),
+                    ),
+                    listTileTheme: ListTileThemeData(
+                      dense: true,
+                      textColor: TideColors.text,
+                      contentPadding: EdgeInsets.zero,
+                      titleTextStyle: TideText.title(size: 14),
+                    ),
+                    splashColor: TideColors.accent.withValues(alpha: 0.12),
+                    highlightColor: TideColors.accent.withValues(alpha: 0.08),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: children,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+/// [PrefSwitch] for a preference that is not a plain bool provider — a
+/// derived value, or one whose setter takes an extra step.
+class PrefSwitchRaw extends StatelessWidget {
+  const PrefSwitchRaw({
+    super.key,
+    required this.title,
+    this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onChanged != null;
+    final row = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: TideRow(
+        icon: value ? Icons.check_circle : Icons.circle_outlined,
+        title: title,
+        subtitle: subtitle,
+        lit: enabled && value,
+        onTap: enabled ? () => onChanged!(!value) : null,
+        trailing: TideSwitch(
+          value: value,
+          onChanged: enabled ? onChanged! : (_) {},
+        ),
+      ),
+    );
+    return enabled ? row : Opacity(opacity: 0.45, child: row);
+  }
+}
+
+/// [PrefCheck] taking Material's nullable `onChanged` shape, so the screens
+/// that gate a checkbox on another preference convert without rewriting the
+/// callback.
+class PrefCheckRaw extends StatelessWidget {
+  const PrefCheckRaw({
+    super.key,
+    required this.label,
+    this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool?>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onChanged != null;
+    final row = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: TideRow(
+        icon: value ? Icons.check_box : Icons.check_box_outline_blank,
+        title: label,
+        subtitle: subtitle,
+        lit: enabled && value,
+        onTap: enabled ? () => onChanged!(!value) : null,
+      ),
+    );
+    return enabled ? row : Opacity(opacity: 0.45, child: row);
+  }
+}

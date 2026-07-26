@@ -42,31 +42,25 @@ class SecuritySettingsScreen extends ConsumerWidget {
             title: 'Require unlock',
             provider: useBiometricLockProvider,
           ),
-          ListTile(
-            enabled: useBiometric,
-            title: const Text('Lock when idle'),
-            subtitle: Text(_lockAfterOptions[lockAfter] ?? 'Always'),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            icon: Icons.timer_outlined,
+            title: 'Lock when idle',
+            subtitle: _lockAfterOptions[lockAfter] ?? 'Always',
             onTap: useBiometric ? () => _pickLockAfter(context, ref) : null,
           ),
           PrefSwitch(
             title: 'Hide notification content',
             provider: hideNotificationContentProvider,
           ),
-          ListTile(
-            title: const Text('Secure screen'),
-            subtitle:
-                Text(_secureScreenLabels[secureMode] ?? 'Incognito mode'),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            icon: Icons.visibility_off_outlined,
+            title: 'Secure screen',
+            subtitle: _secureScreenLabels[secureMode] ?? 'Incognito mode',
             onTap: () => _pickSecureScreen(context, ref),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              'Secure screen hides app contents when switching apps and '
-              'block screenshots',
-              style: TextStyle(fontSize: 12),
-            ),
+          const PrefNote(
+            'Secure screen hides app contents when switching apps and blocks '
+            'screenshots.',
           ),
         ],
     );
@@ -74,11 +68,13 @@ class SecuritySettingsScreen extends ConsumerWidget {
 
   Future<void> _pickLockAfter(BuildContext context, WidgetRef ref) async {
     final current = ref.read(lockAfterMinutesProvider);
-    final picked = await _pickValue<int>(
+    final picked = await pickPref<int>(
       context,
       title: 'Lock when idle',
-      current: current,
-      options: _lockAfterOptions,
+      selected: current,
+      options: [
+        for (final e in _lockAfterOptions.entries) (e.key, e.value),
+      ],
     );
     if (picked != null) {
       await ref.read(lockAfterMinutesProvider.notifier).set(picked);
@@ -87,45 +83,17 @@ class SecuritySettingsScreen extends ConsumerWidget {
 
   Future<void> _pickSecureScreen(BuildContext context, WidgetRef ref) async {
     final current = ref.read(secureScreenModeProvider);
-    final picked = await _pickValue<SecureScreenMode>(
+    final picked = await pickPref<SecureScreenMode>(
       context,
       title: 'Secure screen',
-      current: current,
-      options: _secureScreenLabels,
+      selected: current,
+      options: [
+        for (final e in _secureScreenLabels.entries) (e.key, e.value),
+      ],
     );
     if (picked != null) {
       await ref.read(secureScreenModeProvider.notifier).set(picked);
     }
   }
 
-  /// Generic single-choice radio dialog shared by the pickers above.
-  Future<T?> _pickValue<T>(
-    BuildContext context, {
-    required String title,
-    required T current,
-    required Map<T, String> options,
-  }) {
-    return showDialog<T>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(title),
-        children: [
-          RadioGroup<T>(
-            groupValue: current,
-            onChanged: (v) => Navigator.of(ctx).pop(v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final entry in options.entries)
-                  RadioListTile<T>(
-                    value: entry.key,
-                    title: Text(entry.value),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

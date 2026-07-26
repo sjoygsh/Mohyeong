@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/reader/reader_behavior_preferences.dart';
 import '../../data/reader/reader_preferences.dart';
 import '../../domain/reader/model/reading_mode.dart';
+import '../tide/tide.dart';
 import 'pref_tiles.dart';
 
 /// Settings → Reader. Mirrors Mihon's `SettingsReaderScreen` structure:
@@ -56,10 +57,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
     return PrefScaffold(
       title: 'Reader',
       children: [
-          ListTile(
-            title: const Text('Default reading mode'),
-            subtitle: Text(readerMode.label),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            title: 'Default reading mode',
+            subtitle: readerMode.label,
             onTap: () async {
               final picked = await showDialog<ReadingMode>(
                 context: context,
@@ -72,10 +72,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
               }
             },
           ),
-          ListTile(
-            title: const Text('Double tap animation speed'),
-            subtitle: Text(_animSpeedLabel(doubleTapSpeed)),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            title: 'Double tap animation speed',
+            subtitle: _animSpeedLabel(doubleTapSpeed),
             onTap: () async {
               final picked = await showDialog<int>(
                 context: context,
@@ -104,10 +103,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
             provider: readerPageTransitionsProvider,
           ),
           const PrefSectionHeader('Display'),
-          ListTile(
-            title: const Text('Default rotation'),
-            subtitle: Text(orientation.label),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            title: 'Default rotation',
+            subtitle: orientation.label,
             onTap: () async {
               final picked = await showDialog<ReaderOrientation>(
                 context: context,
@@ -118,10 +116,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
               }
             },
           ),
-          ListTile(
-            title: const Text('Background color'),
-            subtitle: Text(background.label),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            title: 'Background color',
+            subtitle: background.label,
             onTap: () async {
               final picked = await showDialog<ReaderBackground>(
                 context: context,
@@ -151,10 +148,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Show page number',
             provider: readerShowPageNumberProvider,
           ),
-          ListTile(
-            title: const Text('Auto-hide chrome'),
-            subtitle: Text(_autoHideLabel(autoHideSeconds)),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            title: 'Auto-hide chrome',
+            subtitle: _autoHideLabel(autoHideSeconds),
             onTap: () async {
               final picked = await showDialog<int>(
                 context: context,
@@ -195,11 +191,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
             onChanged: (v) =>
                 ref.read(readerFlashIntervalProvider.notifier).set(v),
           ),
-          ListTile(
-            title: const Text('Flash with'),
-            subtitle: Text(flashColor.label),
-            trailing: const Icon(Icons.chevron_right),
-            enabled: flashEnabled,
+          PrefRow(
+            title: 'Flash with',
+            subtitle: flashColor.label,
             onTap: !flashEnabled
                 ? null
                 : () async {
@@ -235,10 +229,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
             provider: readerAlwaysShowTransitionProvider,
           ),
           const PrefSectionHeader('Paged'),
-          ListTile(
-            title: const Text('Tap zones'),
-            subtitle: Text(navModePager.label),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            title: 'Tap zones',
+            subtitle: navModePager.label,
             onTap: () async {
               final picked = await showDialog<ReaderNavMode>(
                 context: context,
@@ -257,10 +250,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
             provider: readerTapNavigateInvertProvider,
             enabled: navModePager != ReaderNavMode.disabled,
           ),
-          ListTile(
-            title: const Text('Scale type'),
-            subtitle: Text(scaleType.label),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            title: 'Scale type',
+            subtitle: scaleType.label,
             onTap: () async {
               final picked = await showDialog<ReaderImageScaleType>(
                 context: context,
@@ -275,14 +267,13 @@ class ReaderSettingsScreen extends ConsumerWidget {
           ),
           // Kotlin pref_zoom_start — now honoured by the paged viewer's
           // initial transform for wide pages.
-          ListTile(
-            title: const Text('Zoom start position'),
-            subtitle: Text(zoomStart.label),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            title: 'Zoom start position',
+            subtitle: zoomStart.label,
             onTap: () async {
               final picked = await showDialog<ReaderZoomStart>(
                 context: context,
-                builder: (ctx) => SimpleDialog(
+                builder: (ctx) => PrefChoiceDialog(
                   title: const Text('Zoom start position'),
                   children: [
                     RadioGroup<ReaderZoomStart>(
@@ -341,10 +332,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
             enabled: rotateToFit,
           ),
           const PrefSectionHeader('Long strip'),
-          ListTile(
-            title: const Text('Tap zones'),
-            subtitle: Text(navModeWebtoon.label),
-            trailing: const Icon(Icons.chevron_right),
+          PrefRow(
+            title: 'Tap zones',
+            subtitle: navModeWebtoon.label,
             onTap: () async {
               final picked = await showDialog<ReaderNavMode>(
                 context: context,
@@ -415,18 +405,17 @@ class ReaderSettingsScreen extends ConsumerWidget {
             provider: readerCustomBrightnessProvider,
           ),
           if (customBrightness) const _BrightnessSlider(),
-          SwitchListTile(
-            title: const Text('Custom color filter'),
+          PrefSwitchRaw(
+            title: 'Custom color filter',
             value: colorFilterEnabled,
             onChanged: (v) =>
                 ref.read(readerColorFilterEnabledProvider.notifier).set(v),
           ),
           if (colorFilterEnabled) ...[
             const _ColorFilterChannelSliders(),
-            ListTile(
-              title: const Text('Color filter blend mode'),
-              subtitle: Text(colorFilterMode.label),
-              trailing: const Icon(Icons.chevron_right),
+            PrefRow(
+              title: 'Color filter blend mode',
+              subtitle: colorFilterMode.label,
               onTap: () async {
                 final picked = await showDialog<ReaderColorFilterMode>(
                   context: context,
@@ -482,19 +471,50 @@ class _ValueSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      title: Text(title),
-      enabled: enabled,
-      subtitle: Slider(
-        min: min.toDouble(),
-        max: max.toDouble(),
-        divisions: max - min,
-        value: value.toDouble(),
-        label: valueLabel(value),
-        onChanged: enabled ? (v) => onChanged(v.round()) : null,
+    final row = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: TideGlass(
+        radius: 16,
+        tintTop: 0.075,
+        tintBottom: 0.026,
+        highlight: 0.14,
+        border: 0.09,
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text(title, style: TideText.title())),
+                Text(
+                  valueLabel(value),
+                  style: TideText.title(size: 14)
+                      .copyWith(color: TideColors.accent),
+                ),
+              ],
+            ),
+            SliderTheme(
+              data: SliderThemeData(
+                activeTrackColor: TideColors.accent,
+                inactiveTrackColor: Colors.white.withValues(alpha: 0.12),
+                thumbColor: TideColors.accentLight,
+                overlayColor: TideColors.accent.withValues(alpha: 0.15),
+                trackHeight: 3,
+              ),
+              child: Slider(
+                min: min.toDouble(),
+                max: max.toDouble(),
+                divisions: max - min,
+                value: value.toDouble(),
+                label: valueLabel(value),
+                onChanged: enabled ? (v) => onChanged(v.round()) : null,
+              ),
+            ),
+          ],
+        ),
       ),
-      trailing: Text(valueLabel(value)),
     );
+    return enabled ? row : Opacity(opacity: 0.45, child: row);
   }
 }
 
@@ -515,7 +535,7 @@ class _DoubleTapSpeedPickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SimpleDialog(
+    return PrefChoiceDialog(
       title: const Text('Double tap animation speed'),
       children: [
         RadioGroup<int>(
@@ -613,7 +633,7 @@ class _ReadingModePickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SimpleDialog(
+    return PrefChoiceDialog(
       title: const Text('Default reading mode'),
       children: [
         RadioGroup<ReadingMode>(
@@ -643,7 +663,7 @@ class _OrientationPickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SimpleDialog(
+    return PrefChoiceDialog(
       title: const Text('Default rotation'),
       children: [
         RadioGroup<ReaderOrientation>(
@@ -672,7 +692,7 @@ class _ReaderBackgroundPickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SimpleDialog(
+    return PrefChoiceDialog(
       title: const Text('Background color'),
       children: [
         RadioGroup<ReaderBackground>(
@@ -701,7 +721,7 @@ class _FlashColorPickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SimpleDialog(
+    return PrefChoiceDialog(
       title: const Text('Flash with'),
       children: [
         RadioGroup<ReaderFlashColor>(
@@ -731,7 +751,7 @@ class _NavModePickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SimpleDialog(
+    return PrefChoiceDialog(
       title: Text(title),
       children: [
         RadioGroup<ReaderNavMode>(
@@ -760,7 +780,7 @@ class _ScaleTypePickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SimpleDialog(
+    return PrefChoiceDialog(
       title: const Text('Scale type'),
       children: [
         RadioGroup<ReaderImageScaleType>(
@@ -789,7 +809,7 @@ class _ColorFilterModePickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SimpleDialog(
+    return PrefChoiceDialog(
       title: const Text('Color filter blend mode'),
       children: [
         RadioGroup<ReaderColorFilterMode>(
@@ -818,7 +838,7 @@ class _ReaderAutoHideChromePickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SimpleDialog(
+    return PrefChoiceDialog(
       title: const Text('Auto-hide chrome'),
       children: [
         RadioGroup<int>(

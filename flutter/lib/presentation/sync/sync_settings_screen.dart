@@ -6,6 +6,10 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../tide/tide.dart';
+
+import '../settings/pref_tiles.dart';
+
 import '../../data/sync/sync_manager.dart';
 import '../../data/sync/sync_preferences.dart';
 import '../../data/sync/sync_scheduler.dart';
@@ -51,8 +55,13 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   Widget build(BuildContext context) {
     final asyncPrefs = ref.watch(syncPreferencesProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Sync')),
-      body: asyncPrefs.when(
+      backgroundColor: TideColors.ground,
+      body: TideRise(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const TideHeader(title: 'Sync'),
+            Expanded(child: asyncPrefs.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Failed to load sync prefs: $e')),
         data: (prefs) {
@@ -73,6 +82,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           }
           return _buildForm(context, prefs);
         },
+      )),
+          ],
+        ),
       ),
     );
   }
@@ -82,10 +94,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 12),
       children: [
-        ListTile(
-          title: const Text('Sync service'),
-          subtitle: Text(data.service.label),
-          trailing: const Icon(Icons.chevron_right),
+        PrefRow(
+          title: 'Sync service',
+          subtitle: data.service.label,
           onTap: _busy
               ? null
               : () async {
@@ -134,59 +145,47 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           ),
           const Divider(),
           // "What to sync" group (Kotlin pref_sync_data_category).
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'What to sync',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          SwitchListTile(
-            title: const Text('Categories'),
+          const PrefSectionHeader('What to sync'),
+          PrefSwitchRaw(
+            title: 'Categories',
             value: data.syncCategories,
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(syncCategories: v)),
           ),
-          SwitchListTile(
-            title: const Text('Chapters'),
+          PrefSwitchRaw(
+            title: 'Chapters',
             value: data.syncChapters,
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(syncChapters: v)),
           ),
-          SwitchListTile(
-            title: const Text('Tracking'),
+          PrefSwitchRaw(
+            title: 'Tracking',
             value: data.syncTracking,
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(syncTracking: v)),
           ),
-          SwitchListTile(
-            title: const Text('History'),
+          PrefSwitchRaw(
+            title: 'History',
             value: data.syncHistory,
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(syncHistory: v)),
           ),
           const Divider(),
           // ── Automation (Kotlin pref_sync_automation) ────────────────
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'Automation',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          SwitchListTile(
-            title: const Text('Sync automatically'),
-            subtitle: const Text('Run periodic syncs in the background'),
+          const PrefSectionHeader('Automation'),
+          PrefSwitchRaw(
+            title: 'Sync automatically',
+            subtitle: 'Run periodic syncs in the background',
             value: data.autoSyncEnabled,
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(autoSyncEnabled: v)),
           ),
-          ListTile(
-            title: const Text('Sync interval'),
-            subtitle: Text(_intervalLabel(data.autoSyncIntervalHours)),
-            trailing: const Icon(Icons.chevron_right),
-            enabled: data.autoSyncEnabled && !_busy,
-            onTap: () async {
+          PrefRow(
+            title: 'Sync interval',
+            subtitle: _intervalLabel(data.autoSyncIntervalHours),
+            onTap: !(data.autoSyncEnabled && !_busy)
+                ? null
+                : () async {
               final picked = await showDialog<int>(
                 context: context,
                 builder: (_) => _SyncIntervalPickerDialog(
@@ -199,8 +198,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               }
             },
           ),
-          SwitchListTile(
-            title: const Text('Sync on app start'),
+          PrefSwitchRaw(
+            title: 'Sync on app start',
             value: data.syncOnAppStart,
             onChanged: (v) =>
                 setState(() => _data = data.copyWith(syncOnAppStart: v)),

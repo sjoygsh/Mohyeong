@@ -40,26 +40,18 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     return PrefScaffold(
       title: 'Backup & restore',
       children: [
-          ListTile(
-            leading: const Icon(Icons.save_outlined),
-            title: const Text('Create backup'),
-            subtitle: const Text(
-              'Saves a .tachibk file you can restore later or move to Mihon.',
-            ),
-            enabled: !_busy,
-            onTap: _createBackup,
+          PrefRow(
+            icon: Icons.save_outlined,
+            title: 'Create backup',
+            subtitle: 'A .tachibk file you can restore later, or move to Mihon',
+            onTap: _busy ? null : _createBackup,
           ),
-          ListTile(
-            leading: const Icon(Icons.restore_outlined),
-            title: const Text('Restore backup'),
-            subtitle: const Text(
-              'Reads a .tachibk file (Mihon or Mohyeong) and merges it into '
-              'your library.',
-            ),
-            enabled: !_busy,
-            onTap: _restoreBackup,
+          PrefRow(
+            icon: Icons.restore_outlined,
+            title: 'Restore backup',
+            subtitle: 'Reads a .tachibk (Mihon or Mohyeong) and merges it in',
+            onTap: _busy ? null : _restoreBackup,
           ),
-          const Divider(height: 1),
           const _BackupIntervalTile(),
           if (_busy)
             const Padding(
@@ -224,14 +216,14 @@ class _BackupIntervalTile extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ListTile(
-          leading: const Icon(Icons.schedule_outlined),
-          title: const Text('Automatic backup frequency'),
-          subtitle: Text(_labelFor(interval)),
+        PrefRow(
+          icon: Icons.schedule_outlined,
+          title: 'Automatic backup frequency',
+          subtitle: _labelFor(interval),
           onTap: () async {
             final picked = await showDialog<int>(
               context: context,
-              builder: (ctx) => SimpleDialog(
+              builder: (ctx) => PrefChoiceDialog(
                 title: const Text('Automatic backup frequency'),
                 children: [
                   RadioGroup<int>(
