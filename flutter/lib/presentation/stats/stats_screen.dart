@@ -1,3 +1,15 @@
+// ===========================================================================
+// Tide statistics.
+//
+// Four groups of three numbers. The three that answer "how much of this have I
+// actually done" lead at display size; the rest are panels of quiet figures.
+// Chapters carries a lit underline for the read ratio, because "1,284 total /
+// 903 read" is a fraction the eye should not have to compute.
+//
+// Every figure is Mihon's, computed the same way — this is a new presentation
+// of the same snapshot, not a new set of statistics.
+// ===========================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,13 +21,12 @@ import '../../data/library/library_update_preference.dart';
 import '../../data/track/track_repository.dart';
 import '../../data/track/tracker_registry.dart';
 import '../../domain/library/model/library_item.dart';
+import '../tide/tide.dart';
 
-/// Statistics screen — 1:1 with Mihon's `StatsScreenContent`: four
-/// `SectionCard`s (Overview / Entries / Chapters / Trackers), each laid out
-/// as a `Row` of equal-weight metric items. The Overview row shows large
-/// figures with primary-tinted icons; the rest are compact figure/label
-/// pairs. Data is a one-shot snapshot pulled when the screen opens.
-class StatsScreen extends ConsumerWidget {
+/// Statistics screen — the same four groups Mihon's `StatsScreenContent`
+/// shows (Overview / Entries / Chapters / Trackers). Data is a one-shot
+/// snapshot pulled when the screen opens.
+class StatsScreen extends ConsumerStatefulWidget {
   const StatsScreen({super.key});
 
   // Source status value matching SManga.COMPLETED.
@@ -24,85 +35,145 @@ class StatsScreen extends ConsumerWidget {
   static const int _localSourceId = 0;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final libraryRepo = ref.watch(libraryRepositoryProvider);
-    final historyRepo = ref.watch(historyRepositoryProvider);
-    final trackRepo = ref.watch(trackRepositoryProvider);
-    final registry = ref.watch(trackerRegistryProvider);
-    final downloadRepo = ref.watch(downloadRepositoryProvider);
+  ConsumerState<StatsScreen> createState() => _StatsScreenState();
+}
 
+class _StatsScreenState extends ConsumerState<StatsScreen> {
+  /// Held rather than started in build: the load runs a library snapshot, a
+  /// track query and a login probe per tracker, and building it inline
+  /// re-ran the lot on every rebuild.
+  late final Future<_Stats> _future = _load(
+    ref.read(libraryRepositoryProvider),
+    ref.read(historyRepositoryProvider),
+    ref.read(trackRepositoryProvider),
+    ref.read(trackerRegistryProvider),
+    ref.read(downloadRepositoryProvider),
+  );
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Statistics')),
-      body: FutureBuilder<_Stats>(
-        future: _load(libraryRepo, historyRepo, trackRepo, registry, downloadRepo),
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return Center(child: Text('Failed to load stats: ${snap.error}'));
-          }
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final s = snap.data!;
-          return ListView(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            children: [
-              _SectionCard(
-                title: 'Overview',
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+      backgroundColor: TideColors.ground,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: 0.34)),
+          Positioned.fill(
+            child: TideRise(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const TideHeader(title: 'Statistics'),
+                  Expanded(
+                    child: FutureBuilder<_Stats>(
+                      future: _future,
+                      builder: (context, snap) {
+                        if (snap.hasError) {
+                          return _Note('Failed to load stats: ${snap.error}');
+                        }
+                        if (!snap.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              color: TideColors.accent,
+                            ),
+                          );
+                        }
+                        return _body(snap.data!);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _body(_Stats s) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 32),
+      children: [
+        // The headline three. Read duration first: it is the only figure here
+        // that measures what you did rather than what you have.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: TideGlass(
+            radius: 22,
+            tintTop: 0.085,
+            tintBottom: 0.03,
+            highlight: 0.15,
+            border: 0.10,
+            padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'TIME READ',
+                  style: TideText.kicker(size: 10.5)
+                      .copyWith(letterSpacing: 1.7),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _formatDuration(s.totalReadMs),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TideText.display(34),
+                ),
+                const SizedBox(height: 22),
+                Row(
                   children: [
-                    _OverviewItem(
+                    _Headline(
                       icon: Icons.collections_bookmark_outlined,
                       value: '${s.libraryMangaCount}',
                       label: 'In library',
                     ),
-                    _OverviewItem(
-                      icon: Icons.schedule_outlined,
-                      value: _formatDuration(s.totalReadMs),
-                      label: 'Read duration',
-                    ),
-                    _OverviewItem(
+                    const SizedBox(width: 14),
+                    _Headline(
                       icon: Icons.local_library_outlined,
                       value: '${s.completedMangaCount}',
-                      label: 'Completed entries',
+                      label: 'Completed',
                     ),
                   ],
                 ),
-              ),
-              _SectionCard(
-                title: 'Entries',
-                child: Row(
-                  children: [
-                    _StatItem('${s.globalUpdateItemCount}', 'In global update'),
-                    _StatItem('${s.startedMangaCount}', 'Started'),
-                    _StatItem('${s.localMangaCount}', 'Local'),
-                  ],
-                ),
-              ),
-              _SectionCard(
-                title: 'Chapters',
-                child: Row(
-                  children: [
-                    _StatItem('${s.totalChapterCount}', 'Total'),
-                    _StatItem('${s.readChapterCount}', 'Read'),
-                    _StatItem('${s.downloadCount}', 'Downloaded'),
-                  ],
-                ),
-              ),
-              _SectionCard(
-                title: 'Trackers',
-                child: Row(
-                  children: [
-                    _StatItem('${s.trackedTitleCount}', 'Tracked entries'),
-                    _StatItem(_formatMeanScore(s), 'Mean score'),
-                    _StatItem('${s.trackerCount}', 'Used'),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+              ],
+            ),
+          ),
+        ),
+        const TideSectionHeader(label: 'Entries'),
+        _Panel(
+          cells: [
+            ('${s.globalUpdateItemCount}', 'In global update'),
+            ('${s.startedMangaCount}', 'Started'),
+            ('${s.localMangaCount}', 'Local'),
+          ],
+        ),
+        TideSectionHeader(
+          label: 'Chapters',
+          trailing: s.totalChapterCount == 0
+              ? null
+              : '${(s.readChapterCount / s.totalChapterCount * 100).round()}% read',
+        ),
+        _Panel(
+          cells: [
+            ('${s.totalChapterCount}', 'Total'),
+            ('${s.readChapterCount}', 'Read'),
+            ('${s.downloadCount}', 'Downloaded'),
+          ],
+          // The accent as a line: the fraction, drawn rather than computed.
+          ratio: s.totalChapterCount == 0
+              ? null
+              : s.readChapterCount / s.totalChapterCount,
+        ),
+        const TideSectionHeader(label: 'Trackers'),
+        _Panel(
+          cells: [
+            ('${s.trackedTitleCount}', 'Tracked'),
+            (_formatMeanScore(s), 'Mean score'),
+            ('${s.trackerCount}', 'Used'),
+          ],
+        ),
+      ],
     );
   }
 
@@ -195,8 +266,7 @@ Future<_Stats> _load(
                 MangaUpdateRestriction.outsideReleasePeriod,
               ])
           .toSet();
-  final included =
-      _parseIds(prefs.getStringList('library_update_categories'));
+  final included = _parseIds(prefs.getStringList('library_update_categories'));
   final excluded =
       _parseIds(prefs.getStringList('library_update_categories_exclude'));
 
@@ -266,7 +336,8 @@ class _Stats {
       totalChapters += i.totalCount;
       readChapters += i.readCount;
       final hasStarted = i.readCount > 0;
-      if (i.manga.status == StatsScreen._statusCompleted && i.unreadCount == 0) {
+      if (i.manga.status == StatsScreen._statusCompleted &&
+          i.unreadCount == 0) {
         completed++;
       }
       if (hasStarted) started++;
@@ -280,13 +351,14 @@ class _Stats {
       if (!isIncluded || isExcluded) continue;
       // Restriction filter — the entry counts toward the global update only
       // when NONE of the active skip-conditions apply.
-      final skip = (restrictions.contains(MangaUpdateRestriction.nonCompleted) &&
-              i.manga.status == StatsScreen._statusCompleted) ||
-          (restrictions.contains(MangaUpdateRestriction.hasUnread) &&
-              i.unreadCount != 0) ||
-          (restrictions.contains(MangaUpdateRestriction.nonRead) &&
-              i.totalCount > 0 &&
-              !hasStarted);
+      final skip =
+          (restrictions.contains(MangaUpdateRestriction.nonCompleted) &&
+                  i.manga.status == StatsScreen._statusCompleted) ||
+              (restrictions.contains(MangaUpdateRestriction.hasUnread) &&
+                  i.unreadCount != 0) ||
+              (restrictions.contains(MangaUpdateRestriction.nonRead) &&
+                  i.totalCount > 0 &&
+                  !hasStarted);
       if (!skip) globalUpdate++;
     }
     return _Stats(
@@ -306,42 +378,9 @@ class _Stats {
   }
 }
 
-/// Section title (titleSmall) + an ElevatedCard with an extra-large rounded
-/// shape, mirroring Mihon's `SectionCard`.
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Text(title, style: Theme.of(context).textTheme.titleSmall),
-        ),
-        Card(
-          elevation: 1,
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: IntrinsicHeight(child: child),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Large figure + label with a primary-tinted icon below (Overview row).
-class _OverviewItem extends StatelessWidget {
-  const _OverviewItem({
+/// One of the two secondary headline figures, beside the read duration.
+class _Headline extends StatelessWidget {
+  const _Headline({
     required this.icon,
     required this.value,
     required this.label,
@@ -353,67 +392,167 @@ class _OverviewItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Expanded(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          Text(
-            value,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
+          Icon(icon, size: 17, color: TideColors.accent),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 19,
+                    height: 1.15,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.38,
+                    color: TideColors.textBright,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TideText.caption(size: 11, opacity: 0.42),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          Icon(icon, color: theme.colorScheme.primary),
         ],
       ),
     );
   }
 }
 
-/// Compact figure + label (Entries / Chapters / Trackers rows).
-class _StatItem extends StatelessWidget {
-  const _StatItem(this.value, this.label);
+/// Three evenly-weighted figures in one pane, optionally underlined with a
+/// ratio.
+class _Panel extends StatelessWidget {
+  const _Panel({required this.cells, this.ratio});
+
+  final List<(String value, String label)> cells;
+  final double? ratio;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: TideGlass(
+        radius: 20,
+        tintTop: 0.085,
+        tintBottom: 0.03,
+        highlight: 0.15,
+        border: 0.10,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IntrinsicHeight(
+              child: Row(
+                children: [
+                  for (final (i, (value, label)) in cells.indexed) ...[
+                    if (i > 0)
+                      Container(
+                        width: 1,
+                        color: Colors.white.withValues(alpha: 0.09),
+                      ),
+                    Expanded(child: _Cell(value: value, label: label)),
+                  ],
+                ],
+              ),
+            ),
+            if (ratio != null)
+              SizedBox(
+                height: 3,
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: (ratio!.clamp(0.0, 1.0) * 1000).round(),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: TideColors.accent,
+                          boxShadow: [
+                            BoxShadow(
+                              color:
+                                  TideColors.accent.withValues(alpha: 0.75),
+                              blurRadius: 9,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: ((1 - ratio!.clamp(0.0, 1.0)) * 1000).round(),
+                      child: const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Cell extends StatelessWidget {
+  const _Cell({required this.value, required this.label});
 
   final String value;
   final String label;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Expanded(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             value,
-            textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
             textAlign: TextAlign.center,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
+            style: const TextStyle(
+              fontSize: 19,
+              height: 1.2,
+              fontWeight: FontWeight.w500,
+              letterSpacing: -0.38,
+              color: TideColors.textBright,
             ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TideText.kicker(size: 9.5).copyWith(letterSpacing: 1.2),
           ),
         ],
       ),
     );
   }
+}
+
+class _Note extends StatelessWidget {
+  const _Note(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TideText.body(),
+          ),
+        ),
+      );
 }
