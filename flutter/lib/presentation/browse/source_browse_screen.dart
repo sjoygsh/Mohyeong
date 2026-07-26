@@ -1,3 +1,16 @@
+// ===========================================================================
+// Tide source browse.
+//
+// A catalogue is artwork, so the covers carry the screen and everything else
+// gets out of their way: no app bar, no tab underline, no chrome that isn't a
+// control. Popular / Latest / Search sit behind the same glass segmented
+// control Browse uses, and the source's own filters open as a Tide sheet.
+//
+// The three Kotlin display modes survive intact — compact grid (title over the
+// cover), comfortable grid (title beneath it), and list — because which one
+// you want depends on whether you are recognising covers or reading titles.
+// ===========================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,6 +24,7 @@ import '../../domain/source/model/source_manga.dart';
 import '../cloudflare/cloudflare_solver_screen.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
+import '../tide/tide.dart';
 
 /// URLs of the manga already favourited for a given source id. Used to
 /// drop in-library results from the browse grid when the
@@ -22,8 +36,8 @@ final favoritedUrlsForSourceProvider =
   return favorites.map((m) => m.url).toSet();
 });
 
-/// Browses a single installed source: tabs for Popular / Latest / Search,
-/// each backed by an infinite-scroll grid pulled from the JS extension.
+/// Browses a single installed source: Popular / Latest / Search, each backed
+/// by an infinite-scroll grid pulled from the JS extension.
 class SourceBrowseScreen extends ConsumerStatefulWidget {
   const SourceBrowseScreen({
     super.key,
@@ -33,7 +47,7 @@ class SourceBrowseScreen extends ConsumerStatefulWidget {
 
   final String sourceId;
 
-  /// When non-null/non-empty the screen opens on the Search tab with this
+  /// When non-null/non-empty the screen opens on the Search view with this
   /// query pre-run — used by Global search's "open source" affordance,
   /// mirroring Kotlin handing the query to BrowseSourceScreen.
   final String? initialQuery;
@@ -44,100 +58,228 @@ class SourceBrowseScreen extends ConsumerStatefulWidget {
 
 class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen> {
   Future<MangaSource>? _sourceFuture;
+  int? _view;
+
+  /// Views already visited. The current one always builds; these keep their
+  /// loaded pages and scroll position after you switch away.
+  ///
+  /// Load-bearing: every view fetches on its first build — Popular and Latest
+  /// each pull a page, and Search asks the extension for its filter list — so
+  /// building all three up front would fire three requests at a source the
+  /// moment you opened it, for two results nobody asked to see.
+  final Set<int> _built = {};
 
   @override
   void initState() {
     super.initState();
-    _sourceFuture = ref.read(extensionRepositoryProvider)
-        .getSource(widget.sourceId);
+    _sourceFuture =
+        ref.read(extensionRepositoryProvider).getSource(widget.sourceId);
   }
+
+  bool get _hasInitialQuery =>
+      widget.initialQuery != null && widget.initialQuery!.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<MangaSource>(
-      future: _sourceFuture,
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return Scaffold(
-            appBar: AppBar(),
-            body: Center(child: Text('Failed to load source: ${snap.error}')),
-          );
-        }
-        if (!snap.hasData) {
-          return Scaffold(
-            appBar: AppBar(),
-            body: const Center(child: CircularProgressIndicator()),
-          );
-        }
-        final source = snap.data!;
-        final tabs = <Tab>[
-          const Tab(text: 'Popular'),
-          if (source.supportsLatest) const Tab(text: 'Latest'),
-          const Tab(text: 'Search'),
-        ];
-        final hasInitialQuery =
-            widget.initialQuery != null && widget.initialQuery!.isNotEmpty;
-        return DefaultTabController(
-          length: tabs.length,
-          // Search is always the last tab; land on it when pre-filled.
-          initialIndex: hasInitialQuery ? tabs.length - 1 : 0,
-          child: Scaffold(
-            appBar: AppBar(
-              title: Text(source.name),
-              actions: [
-                // Kotlin BrowseSourceToolbar's "Display mode" selector.
-                Consumer(
-                  builder: (context, ref, _) {
-                    final current = SourceDisplayMode.fromName(
-                      ref.watch(sourceDisplayModeProvider),
-                    );
-                    return PopupMenuButton<SourceDisplayMode>(
-                      tooltip: 'Display mode',
-                      icon: const Icon(Icons.view_module_outlined),
-                      onSelected: (mode) => ref
-                          .read(sourceDisplayModeProvider.notifier)
-                          .set(mode.storageName),
-                      itemBuilder: (_) => [
-                        for (final mode in SourceDisplayMode.values)
-                          CheckedPopupMenuItem(
-                            value: mode,
-                            checked: mode == current,
-                            child: Text(mode.label),
-                          ),
-                      ],
-                    );
-                  },
-                ),
-                if (source.baseUrl.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.shield_outlined),
-                    tooltip: 'Solve Cloudflare challenge',
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) =>
-                              CloudflareSolverScreen(url: source.baseUrl),
-                        ),
-                      );
-                    },
-                  ),
-              ],
-              bottom: TabBar(tabs: tabs),
+    return Scaffold(
+      backgroundColor: TideColors.ground,
+      body: FutureBuilder<MangaSource>(
+        future: _sourceFuture,
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return _Chrome(
+              title: 'Source',
+              child: _Note('Failed to load source: ${snap.error}'),
+            );
+          }
+          if (!snap.hasData) {
+            return const _Chrome(title: 'Source', child: _Spinner());
+          }
+          return _body(snap.data!);
+        },
+      ),
+    );
+  }
+
+  Widget _body(MangaSource source) {
+    final labels = <String>[
+      'Popular',
+      if (source.supportsLatest) 'Latest',
+      'Search',
+    ];
+    // Search is always the last view; land on it when pre-filled.
+    final view = _view ??= _hasInitialQuery ? labels.length - 1 : 0;
+    final searchIndex = labels.length - 1;
+
+    return _Chrome(
+      title: source.name,
+      actions: [
+        const _DisplayModeButton(),
+        if (source.baseUrl.isNotEmpty) ...[
+          const SizedBox(width: 9),
+          TideIconButton(
+            icon: Icons.shield_outlined,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => CloudflareSolverScreen(url: source.baseUrl),
+              ),
             ),
-            body: TabBarView(
+          ),
+        ],
+      ],
+      segmented: TideSegmented(
+        labels: labels,
+        index: view,
+        onChanged: (i) => setState(() {
+          // The one being left joins the built set so it survives the switch.
+          _built.add(view);
+          _view = i;
+        }),
+      ),
+      child: IndexedStack(
+        index: view,
+        children: [
+          for (var i = 0; i < labels.length; i++)
+            if (i == view || _built.contains(i))
+              _viewAt(i, source, searchIndex, view)
+            else
+              const SizedBox.shrink(),
+        ],
+      ),
+    );
+  }
+
+  Widget _viewAt(int i, MangaSource source, int searchIndex, int view) {
+    if (i == searchIndex) {
+      return _SearchListing(
+        source: source,
+        initialQuery: widget.initialQuery,
+        active: view == searchIndex,
+      );
+    }
+    return _Listing(
+      source: source,
+      mode: i == 0 ? _ListingMode.popular : _ListingMode.latest,
+    );
+  }
+}
+
+/// Header, segmented control and body — the frame every state of this screen
+/// renders inside, so a failure still has a way back.
+class _Chrome extends StatelessWidget {
+  const _Chrome({
+    required this.title,
+    required this.child,
+    this.actions = const [],
+    this.segmented,
+  });
+
+  final String title;
+  final Widget child;
+  final List<Widget> actions;
+  final Widget? segmented;
+
+  @override
+  Widget build(BuildContext context) {
+    return TideRise(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              MediaQuery.paddingOf(context).top + 12,
+              20,
+              12,
+            ),
+            child: Row(
               children: [
-                _Listing(source: source, mode: _ListingMode.popular),
-                if (source.supportsLatest)
-                  _Listing(source: source, mode: _ListingMode.latest),
-                _SearchListing(
-                  source: source,
-                  initialQuery: widget.initialQuery,
+                TideIconButton(
+                  icon: Icons.arrow_back_ios_new_rounded,
+                  iconSize: 15,
+                  onTap: () => Navigator.of(context).maybePop(),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 21,
+                      height: 1.15,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.5,
+                      color: TideColors.text,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ...actions,
               ],
             ),
           ),
-        );
-      },
+          if (segmented != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
+              child: segmented!,
+            ),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
+
+/// Kotlin BrowseSourceToolbar's display-mode selector, as a sheet rather than
+/// a popup menu — a Material menu here would be the only opaque slab on the
+/// screen.
+class _DisplayModeButton extends ConsumerWidget {
+  const _DisplayModeButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current =
+        SourceDisplayMode.fromName(ref.watch(sourceDisplayModeProvider));
+    return TideIconButton(
+      icon: Icons.view_module_outlined,
+      onTap: () => showTideSheet<void>(
+        context,
+        (ctx) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final (i, mode) in SourceDisplayMode.values.indexed) ...[
+                  if (i > 0) const SizedBox(height: 8),
+                  TideRow(
+                    icon: switch (mode) {
+                      SourceDisplayMode.list => Icons.view_list_outlined,
+                      SourceDisplayMode.comfortableGrid =>
+                        Icons.view_comfy_alt_outlined,
+                      _ => Icons.grid_view_outlined,
+                    },
+                    title: mode.label,
+                    lit: mode == current,
+                    trailing: mode == current
+                        ? const Icon(Icons.check_rounded,
+                            size: 18, color: TideColors.accent)
+                        : null,
+                    onTap: () {
+                      ref
+                          .read(sourceDisplayModeProvider.notifier)
+                          .set(mode.storageName);
+                      Navigator.of(ctx).pop();
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -212,10 +354,19 @@ class _ListingState extends State<_Listing>
 }
 
 class _SearchListing extends StatefulWidget {
-  const _SearchListing({required this.source, this.initialQuery});
+  const _SearchListing({
+    required this.source,
+    required this.active,
+    this.initialQuery,
+  });
 
   final MangaSource source;
   final String? initialQuery;
+
+  /// Whether Search is the view on screen. The field only takes focus when it
+  /// is — an autofocus inside an IndexedStack would raise the keyboard while
+  /// the reader is looking at Popular.
+  final bool active;
 
   @override
   State<_SearchListing> createState() => _SearchListingState();
@@ -310,10 +461,9 @@ class _SearchListingState extends State<_SearchListing>
   /// Kotlin's source filter sheet: one control per declared filter, with
   /// Reset / Filter actions. Applying re-runs the search with the picks.
   void _openFilterSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _SourceFilterSheet(
+    showTideSheet<void>(
+      context,
+      (ctx) => _SourceFilterSheet(
         defs: _filterDefs,
         initial: Map.of(_selections),
         onApply: (picks) {
@@ -338,44 +488,67 @@ class _SearchListingState extends State<_SearchListing>
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
           child: Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: _controller,
-                  textInputAction: TextInputAction.search,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
-                    hintText: 'Search this source',
-                    border: OutlineInputBorder(),
-                    isDense: true,
+                child: SizedBox(
+                  height: 42,
+                  child: TideGlass(
+                    radius: 21,
+                    tintTop: 0.09,
+                    tintBottom: 0.03,
+                    highlight: 0.16,
+                    border: 0.11,
+                    padding: const EdgeInsets.only(left: 15, right: 12),
+                    child: Row(
+                      children: [
+                        Icon(Icons.search,
+                            size: 17, color: TideColors.textAt(0.42)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _controller,
+                            autofocus: widget.active && !_searchedOnce,
+                            cursorColor: TideColors.accent,
+                            style: TideText.title(size: 14.5),
+                            textInputAction: TextInputAction.search,
+                            onSubmitted: (q) => _search(q.trim()),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              border: InputBorder.none,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(vertical: 11),
+                              hintText: 'Search this source',
+                              hintStyle: TideText.title(
+                                size: 14.5,
+                                color: TideColors.textAt(0.33),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  onSubmitted: (q) => _search(q.trim()),
                 ),
               ),
-              if (_filterDefs.isNotEmpty)
-                IconButton(
-                  icon: Icon(
-                    Icons.filter_list,
-                    color: _selections.isNotEmpty
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
-                  ),
-                  tooltip: 'Filter',
-                  onPressed: _openFilterSheet,
+              if (_filterDefs.isNotEmpty) ...[
+                const SizedBox(width: 9),
+                TideIconButton(
+                  icon: Icons.filter_list,
+                  size: 42,
+                  onTap: _openFilterSheet,
                 ),
+              ],
             ],
           ),
         ),
         if (!_searchedOnce)
           Expanded(
-            child: Center(
-              child: Text(
-                _filterDefs.isEmpty
-                    ? 'Enter a query to search.'
-                    : 'Enter a query or apply filters to search.',
-              ),
+            child: _Note(
+              _filterDefs.isEmpty
+                  ? 'Enter a query to search.'
+                  : 'Enter a query or apply filters to search.',
             ),
           )
         else
@@ -394,9 +567,9 @@ class _SearchListingState extends State<_SearchListing>
   }
 }
 
-/// Bottom sheet rendering a source's declared search filters: `select`
-/// filters as choice-chip rows, `checkbox` filters as switches. Only
-/// non-default picks are reported, so Reset genuinely clears the search.
+/// Sheet rendering a source's declared search filters: `select` filters as
+/// chip rows, `checkbox` filters as Tide checks. Only non-default picks are
+/// reported, so Reset genuinely clears the search.
 class _SourceFilterSheet extends StatefulWidget {
   const _SourceFilterSheet({
     required this.defs,
@@ -431,65 +604,166 @@ class _SourceFilterSheetState extends State<_SourceFilterSheet> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final def in widget.defs) ...[
-              if (def.type == 'checkbox')
-                SwitchListTile(
-                  title: Text(def.title),
-                  value: _effective(def) == 'true',
-                  onChanged: (v) => _set(def, v ? 'true' : ''),
-                )
-              else ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Text(
-                    def.title,
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                ),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        child: TideGlass(
+          radius: 26,
+          blur: true,
+          tintTop: 0.13,
+          tintBottom: 0.05,
+          highlight: 0.26,
+          border: 0.15,
+          saturation: 1.9,
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Filters', style: TideText.display(21)),
+              const SizedBox(height: 4),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      for (final (i, opt) in def.options.indexed) ...[
-                        if (i > 0) const SizedBox(width: 8),
-                        ChoiceChip(
-                          selected: _effective(def) == opt.value,
-                          label: Text(opt.label),
-                          onSelected: (_) => _set(def, opt.value),
-                        ),
+                      for (final def in widget.defs) ...[
+                        const SizedBox(height: 16),
+                        if (def.type == 'checkbox')
+                          TideCheck(
+                            label: def.title,
+                            value: _effective(def) == 'true',
+                            onChanged: (v) => _set(def, v ? 'true' : ''),
+                          )
+                        else ...[
+                          Text(
+                            def.title.toUpperCase(),
+                            style: TideText.kicker(size: 10.5)
+                                .copyWith(letterSpacing: 1.6),
+                          ),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 7,
+                            runSpacing: 7,
+                            children: [
+                              for (final opt in def.options)
+                                _FilterChip(
+                                  label: opt.label,
+                                  selected: _effective(def) == opt.value,
+                                  onTap: () => _set(def, opt.value),
+                                ),
+                            ],
+                          ),
+                        ],
                       ],
                     ],
                   ),
                 ),
-              ],
-            ],
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-              child: Row(
+              ),
+              const SizedBox(height: 22),
+              Row(
                 children: [
-                  OutlinedButton(
-                    onPressed: () => setState(_draft.clear),
-                    child: const Text('Reset'),
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: TideGlass(
+                        radius: 23,
+                        tintTop: 0.09,
+                        tintBottom: 0.03,
+                        highlight: 0.16,
+                        border: 0.11,
+                        onTap: () => setState(_draft.clear),
+                        child: Center(
+                          child: Text(
+                            'Reset',
+                            style: TideText.title(
+                              size: 14.5,
+                              color: TideColors.textAt(0.8),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  const Spacer(),
-                  FilledButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      widget.onApply(_draft);
-                    },
-                    child: const Text('Filter'),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        widget.onApply(_draft);
+                      },
+                      child: Container(
+                        height: 46,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: TideColors.accent,
+                          borderRadius: BorderRadius.circular(23),
+                          boxShadow: [
+                            BoxShadow(
+                              color: TideColors.accent.withValues(alpha: 0.45),
+                              blurRadius: 24,
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          'Filter',
+                          style: TideText.title(size: 14.5)
+                              .copyWith(color: TideColors.ground),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Selectable option. Off it is [TideTag]; on it takes the accent as an edge
+/// and a wash, never a fill.
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: tideEase,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected
+              ? TideColors.accent.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? TideColors.accent.withValues(alpha: 0.55)
+                : Colors.white.withValues(alpha: 0.10),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: selected ? TideColors.accentLight : TideColors.textAt(0.75),
+          ),
         ),
       ),
     );
@@ -532,16 +806,9 @@ class _MangaGrid extends ConsumerWidget {
       }
     }
     if (error != null && items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text('Failed to load: $error'),
-        ),
-      );
+      return _Note('Failed to load: $error');
     }
-    if (items.isEmpty && loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    if (items.isEmpty && loading) return const _Spinner();
     if (items.isEmpty) {
       // Local source empty state carries the guide link (Kotlin
       // BrowseSourceScreen's EmptyScreen action for LocalSource).
@@ -550,23 +817,26 @@ class _MangaGrid extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('No results found'),
-              const SizedBox(height: 8),
-              TextButton.icon(
-                icon: const Icon(Icons.help_outline),
-                label: const Text('Local source guide'),
-                onPressed: () => launchUrl(
+              Text('No results found', style: TideText.body()),
+              const SizedBox(height: 14),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => launchUrl(
                   Uri.parse(
                     'https://sjoygsh.github.io/Mohyeong/help.html#local-source',
                   ),
                   mode: LaunchMode.externalApplication,
+                ),
+                child: Text(
+                  'Local source guide',
+                  style: TideText.title(size: 13.5, color: TideColors.accent),
                 ),
               ),
             ],
           ),
         );
       }
-      return const Center(child: Text('No results found'));
+      return const _Note('No results found');
     }
     // Kotlin sourceDisplayMode: compact grid (title over cover),
     // comfortable grid (title under cover), or list rows.
@@ -583,37 +853,33 @@ class _MangaGrid extends ConsumerWidget {
       },
       child: mode == SourceDisplayMode.list
           ? ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 28),
               itemCount: items.length + (hasMore ? 1 : 0),
               itemBuilder: (_, i) {
-                if (i >= items.length) {
-                  return const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                return _MangaCard(
-                  manga: items[i],
-                  sourceId: sourceId,
-                  style: mode,
+                if (i >= items.length) return const _TailSpinner();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _MangaCard(
+                    manga: items[i],
+                    sourceId: sourceId,
+                    style: mode,
+                  ),
                 );
               },
             )
           : GridView.builder(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 28),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
                 // Comfortable cells are taller to fit the caption row.
                 childAspectRatio:
-                    mode == SourceDisplayMode.comfortableGrid ? 0.52 : 0.65,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
+                    mode == SourceDisplayMode.comfortableGrid ? 0.52 : 0.66,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 12,
               ),
               itemCount: items.length + (hasMore ? 1 : 0),
               itemBuilder: (_, i) {
-                if (i >= items.length) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+                if (i >= items.length) return const _TailSpinner();
                 return _MangaCard(
                   manga: items[i],
                   sourceId: sourceId,
@@ -640,26 +906,31 @@ class _MangaCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
     final url = manga.thumbnailUrl;
     final sourceIdInt = sourceNumericId(sourceId);
     // Source's image-request headers (Referer/UA) so hotlink-protected cover
     // CDNs don't 403 into a blank tile.
-    final imageHeaders =
-        ref.watch(installedSourceImageHeadersProvider).valueOrNull?[sourceIdInt];
+    final imageHeaders = ref
+        .watch(installedSourceImageHeadersProvider)
+        .valueOrNull?[sourceIdInt];
     final favoritedUrls = ref
             .watch(favoritedUrlsForSourceProvider(sourceIdInt))
             .valueOrNull ??
         const <String>{};
     final inLibrary = favoritedUrls.contains(manga.url);
 
+    // A missing cover falls back to Tide's deterministic gradient rather than
+    // a flat grey box: in a grid of artwork an empty cell reads as a hole.
+    final fallback = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: TideCover.fallbackGradient(manga.url.hashCode),
+      ),
+    );
     // Mirrors Mihon: covers already in the library are dimmed. The dim rides
-    // the image paint (Image.opacity) / a translucent fill instead of an
-    // Opacity widget, which saveLayered every dimmed cell each scrolled frame.
-    final fillColor =
-        inLibrary ? placeholder.withValues(alpha: 0.34) : placeholder;
+    // the image paint (Image.opacity) instead of an Opacity widget, which
+    // saveLayered every dimmed cell each scrolled frame.
     final coverImage = (url == null || url.isEmpty)
-        ? Container(color: fillColor)
+        ? fallback
         : SourceImage(
             cacheWidth: 480,
             url: url,
@@ -667,8 +938,8 @@ class _MangaCard extends ConsumerWidget {
             fit: BoxFit.cover,
             opacity:
                 inLibrary ? const AlwaysStoppedAnimation<double>(0.34) : null,
-            placeholder: (_) => Container(color: fillColor),
-            errorWidget: (_, _) => Container(color: fillColor),
+            placeholder: (_) => fallback,
+            errorWidget: (_, _) => fallback,
           );
 
     // Tap routes via `insertFromSource` (resolves an existing row when
@@ -681,67 +952,90 @@ class _MangaCard extends ConsumerWidget {
         _toggleFavorite(context, ref, sourceIdInt, inLibrary);
 
     if (style == SourceDisplayMode.list) {
-      return ListTile(
-        leading: ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: SizedBox(width: 40, height: 56, child: coverImage),
-        ),
-        title: Text(
-          manga.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: inLibrary ? const _InLibraryChip() : null,
+      return TideGlass(
+        radius: 16,
         onTap: onTap,
-        onLongPress: onLongPress,
+        padding: const EdgeInsets.fromLTRB(11, 11, 14, 11),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onLongPress: onLongPress,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 44,
+                height: 58,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: coverImage,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Text(
+                  manga.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TideText.title(),
+                ),
+              ),
+              if (inLibrary) ...[
+                const SizedBox(width: 10),
+                const _InLibraryMark(),
+              ],
+            ],
+          ),
+        ),
       );
     }
 
-    final coverStack = ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          coverImage,
-          // Compact grid draws the title over the cover bottom; the
-          // comfortable grid keeps the cover clean and captions below.
-          if (style == SourceDisplayMode.compactGrid) ...[
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.75),
-                  ],
+    final coverStack = Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.42),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            coverImage,
+            // Compact draws the title over the cover, so it needs the scrim
+            // the whole design uses under type on artwork; comfortable keeps
+            // the cover clean and captions below.
+            if (style == SourceDisplayMode.compactGrid) ...[
+              const Positioned.fill(child: TideScrim()),
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Text(
+                  manga.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TideText.title(size: 12.5).copyWith(
+                    color: TideColors.brightAt(0.92),
+                    height: 1.2,
+                  ),
                 ),
               ),
-            ),
-          ],
-          if (inLibrary) const _InLibraryBadge(),
-          if (style == SourceDisplayMode.compactGrid)
-            Positioned(
-              left: 6,
-              right: 6,
-              bottom: 6,
-              child: Text(
-                manga.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
-          Positioned.fill(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
+            ],
+            if (inLibrary)
+              const Positioned(top: 7, left: 7, child: _InLibraryMark()),
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: onTap,
                 onLongPress: onLongPress,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
 
@@ -751,12 +1045,12 @@ class _MangaCard extends ConsumerWidget {
         children: [
           Expanded(child: coverStack),
           Padding(
-            padding: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.only(top: 7),
             child: Text(
               manga.title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12),
+              style: TideText.caption(size: 11.5, opacity: 0.62),
             ),
           ),
         ],
@@ -795,20 +1089,12 @@ class _MangaCard extends ConsumerWidget {
     final repo = ref.read(mangaRepositoryProvider);
     final messenger = ScaffoldMessenger.of(context);
     if (inLibrary) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          content: Text('Remove "${manga.title}" from your library?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Remove'),
-            ),
-          ],
+      final confirmed = await showTideSheet<bool>(
+        context,
+        (_) => TideConfirmSheet(
+          title: 'Remove from library',
+          message: 'Remove "${manga.title}" from your library?',
+          confirmLabel: 'Remove',
         ),
       );
       if (confirmed != true) return;
@@ -820,7 +1106,8 @@ class _MangaCard extends ConsumerWidget {
       ref.invalidate(favoritedUrlsForSourceProvider(sourceIdInt));
       messenger.showSnackBar(
         SnackBar(
-          content: Text(inLibrary ? 'Removed from library' : 'Added to library'),
+          content:
+              Text(inLibrary ? 'Removed from library' : 'Added to library'),
         ),
       );
     } catch (e) {
@@ -831,54 +1118,76 @@ class _MangaCard extends ConsumerWidget {
   }
 }
 
-/// Small "in library" indicator overlaid on a source cover's top-left,
-/// mirroring Mihon's MangaCover in-library badge.
-/// Trailing "In library" marker for list-mode rows (the grid corner badge
-/// doesn't fit a ListTile).
-class _InLibraryChip extends StatelessWidget {
-  const _InLibraryChip();
+/// "Already yours" marker, in the one place the accent is allowed to fill a
+/// shape — small enough to read as a mark. Mirrors Mihon's in-library badge.
+class _InLibraryMark extends StatelessWidget {
+  const _InLibraryMark();
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      width: 22,
+      height: 22,
+      alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: scheme.secondary,
-        borderRadius: BorderRadius.circular(8),
+        color: TideColors.accent,
+        borderRadius: BorderRadius.circular(7),
+        boxShadow: [
+          BoxShadow(
+            color: TideColors.accent.withValues(alpha: 0.5),
+            blurRadius: 12,
+          ),
+        ],
       ),
-      child: Text(
-        'In library',
-        style: TextStyle(fontSize: 11, color: scheme.onSecondary),
+      child: const Icon(
+        Icons.collections_bookmark,
+        size: 13,
+        color: TideColors.ground,
       ),
     );
   }
 }
 
-class _InLibraryBadge extends StatelessWidget {
-  const _InLibraryBadge();
+class _Note extends StatelessWidget {
+  const _Note(this.text);
+
+  final String text;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Positioned(
-      top: 0,
-      left: 0,
-      child: Container(
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: scheme.secondary,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(8),
-            bottomRight: Radius.circular(8),
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TideText.body(),
           ),
         ),
-        child: Icon(
-          Icons.collections_bookmark,
-          size: 14,
-          color: scheme.onSecondary,
+      );
+}
+
+class _Spinner extends StatelessWidget {
+  const _Spinner();
+
+  @override
+  Widget build(BuildContext context) => const Center(
+        child: CircularProgressIndicator(color: TideColors.accent),
+      );
+}
+
+/// The load-more indicator that sits in the last grid cell / list row.
+class _TailSpinner extends StatelessWidget {
+  const _TailSpinner();
+
+  @override
+  Widget build(BuildContext context) => const Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: TideColors.accent,
+          ),
         ),
-      ),
-    );
-  }
+      );
 }
