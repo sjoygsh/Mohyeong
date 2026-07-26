@@ -817,6 +817,98 @@ class TideChevron extends StatelessWidget {
       );
 }
 
+/// Switches between peer views: a glass pill with one lit segment that slides.
+///
+/// Replaces a Material TabBar, whose underline-and-ripple belongs to a
+/// different design. The lit segment is the accent as an edge and a glow
+/// around a pane, never as a filled block — a solid accent tab would be the
+/// largest wash of colour in the app.
+class TideSegmented extends StatelessWidget {
+  const TideSegmented({
+    super.key,
+    required this.labels,
+    required this.index,
+    required this.onChanged,
+  });
+
+  final List<String> labels;
+  final int index;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 42,
+      child: TideGlass(
+        radius: 21,
+        tintTop: 0.075,
+        tintBottom: 0.026,
+        highlight: 0.14,
+        border: 0.09,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final segment = constraints.maxWidth / labels.length;
+            return Stack(
+              children: [
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 260),
+                  curve: tideEase,
+                  left: index * segment,
+                  top: 0,
+                  bottom: 0,
+                  width: segment,
+                  child: Padding(
+                    padding: const EdgeInsets.all(3),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: TideColors.accent.withValues(alpha: 0.38),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: TideColors.accent.withValues(alpha: 0.22),
+                            blurRadius: 16,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    for (final (i, label) in labels.indexed)
+                      Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => onChanged(i),
+                          child: Center(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TideText.title(
+                                size: 13.5,
+                                color: i == index
+                                    ? TideColors.textBright
+                                    : TideColors.textAt(0.45),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 /// Tide's switch: a track that fills with the accent and lights when on.
 ///
 /// Material's Switch carries its own colour scheme and ripple, both of which

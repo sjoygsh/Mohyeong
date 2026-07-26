@@ -1,3 +1,17 @@
+// ===========================================================================
+// Tide browse.
+//
+// Three peer views — the sources you read from, the extensions that provide
+// them, and migration — behind a glass segmented control rather than a
+// Material TabBar. Each view is a run of glass rows, and each source carries a
+// deterministic sigil instead of a generic icon: a list of thirty identical
+// glyphs is a list you have to read every line of.
+//
+// Sub-screens reached from here (source browse, global search, the filter and
+// per-source settings screens, and the Migrate view's own body) are still
+// Material and inherit the dark theme; they convert next.
+// ===========================================================================
+
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -13,110 +27,166 @@ import '../../data/source/local_source.dart';
 import '../../data/source/local_source_preferences.dart';
 import '../../data/source/source_preferences.dart';
 import '../home/home_screen.dart';
+import '../tide/tide.dart';
 import 'global_search_screen.dart';
 import 'migrate_source_screen.dart';
 import 'source_browse_screen.dart';
 import 'source_preferences_screen.dart';
 import 'sources_filter_screen.dart';
 
-/// Browse hosts three sub-tabs: Sources (installed sources you can browse),
-/// Extensions (install / uninstall management), and Migrate (moves
-/// favourites from one source to another).
-class BrowseScreen extends ConsumerWidget {
+/// Browse hosts three views: Sources (installed sources you can browse),
+/// Extensions (install / uninstall management), and Migrate (moves favourites
+/// from one source to another).
+class BrowseScreen extends ConsumerStatefulWidget {
   const BrowseScreen({super.key});
 
+  static const _migrationHelp =
+      'https://sjoygsh.github.io/Mohyeong/help.html#source-migration';
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BrowseScreen> createState() => _BrowseScreenState();
+}
+
+class _BrowseScreenState extends ConsumerState<BrowseScreen> {
+  int _view = 0;
+
+  /// Views build on first visit and stay alive after, so switching back keeps
+  /// scroll position. Lazily, though: the Extensions view probes every origin
+  /// for a newer version on its first build, and the shell pre-warms this
+  /// whole tab during post-launch idle — building all three up front would
+  /// fire that probe on every cold start.
+  final Set<int> _built = {0};
+
+  @override
+  void initState() {
+    super.initState();
     // Mirrors Kotlin BrowseTab.onReselect: tapping the already-selected Browse
-    // bottom-nav destination (index 3) opens the global search screen.
-    ref.listen<HomeReselectSignal>(homeReselectProvider, (prev, next) {
-      if (next.tab == 3 && next.tick != (prev?.tick ?? 0)) {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => const GlobalSearchScreen(),
-          ),
-        );
-      }
+    // destination opens global search. The index is 2, not 3 — this went dead
+    // when the Updates tab was removed and every tab after it shifted down.
+    ref.listenManual<HomeReselectSignal>(homeReselectProvider, (prev, next) {
+      if (next.tab != 2 || !mounted) return;
+      _openGlobalSearch();
     });
-    return DefaultTabController(
-      length: 3,
+  }
+
+  void _openGlobalSearch() => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const GlobalSearchScreen()),
+      );
+
+  void _select(int view) {
+    if (view == _view) return;
+    setState(() {
+      _view = view;
+      _built.add(view);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = ref.watch(homeTabIndexProvider) == 2;
+    return TickerMode(
+      enabled: visible,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Browse'),
-          actions: [
-            // Kotlin MigrateSourceTab's HelpOutline action — only while the
-            // Migrate tab is active (per-tab toolbar actions, like Kotlin's
-            // TabContent.actions).
-            Builder(
-              builder: (innerContext) {
-                final tabs = DefaultTabController.of(innerContext);
-                return AnimatedBuilder(
-                  animation: tabs,
-                  builder: (_, _) => tabs.index == 2
-                      ? IconButton(
-                          icon: const Icon(Icons.help_outline),
-                          tooltip: 'Migration help',
-                          onPressed: () => launchUrl(
-                            Uri.parse(
-                              'https://sjoygsh.github.io/Mohyeong/help.html'
-                              '#source-migration',
-                            ),
-                            mode: LaunchMode.externalApplication,
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                );
-              },
-            ),
-            Builder(
-              builder: (innerContext) => IconButton(
-                icon: const Icon(Icons.search),
-                tooltip: 'Global search',
-                onPressed: () {
-                  Navigator.of(innerContext).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const GlobalSearchScreen(),
-                    ),
-                  );
-                },
-              ),
-            ),
-            Builder(
-              builder: (innerContext) => IconButton(
-                icon: const Icon(Icons.filter_list),
-                tooltip: 'Filter sources',
-                onPressed: () {
-                  Navigator.of(innerContext).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SourcesFilterScreen(),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Sources'),
-              Tab(text: 'Extensions'),
-              Tab(text: 'Migrate'),
-            ],
-          ),
-        ),
-        body: const TabBarView(
+        backgroundColor: TideColors.ground,
+        body: Stack(
           children: [
-            _SourcesTab(),
-            _ExtensionsTab(),
-            MigrateSourceTab(),
+            const Positioned.fill(child: TideAurora(opacity: 0.3)),
+            Positioned.fill(
+              child: TideRise(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _header(),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                      child: TideSegmented(
+                        labels: const ['Sources', 'Extensions', 'Migrate'],
+                        index: _view,
+                        onChanged: _select,
+                      ),
+                    ),
+                    Expanded(
+                      child: IndexedStack(
+                        index: _view,
+                        children: [
+                          for (final i in const [0, 1, 2])
+                            if (_built.contains(i))
+                              switch (i) {
+                                0 => const _SourcesView(),
+                                1 => const _ExtensionsView(),
+                                _ => const MigrateSourceTab(),
+                              }
+                            else
+                              const SizedBox.shrink(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _header() {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        MediaQuery.paddingOf(context).top + 14,
+        20,
+        14,
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'Browse',
+              style: TextStyle(
+                fontSize: 26,
+                height: 1.15,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.65,
+                color: TideColors.text,
+              ),
+            ),
+          ),
+          // Kotlin MigrateSourceTab's help action — shown only on that view,
+          // the way Kotlin scopes toolbar actions per tab.
+          if (_view == 2) ...[
+            TideIconButton(
+              icon: Icons.help_outline,
+              onTap: () => launchUrl(
+                Uri.parse(BrowseScreen._migrationHelp),
+                mode: LaunchMode.externalApplication,
+              ),
+            ),
+            const SizedBox(width: 9),
+          ],
+          TideIconButton(icon: Icons.search, onTap: _openGlobalSearch),
+          const SizedBox(width: 9),
+          TideIconButton(
+            icon: Icons.filter_list,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const SourcesFilterScreen(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _SourcesTab extends ConsumerWidget {
-  const _SourcesTab();
+// ---------------------------------------------------------------------------
+// Sources
+// ---------------------------------------------------------------------------
+
+class _SourcesView extends ConsumerWidget {
+  const _SourcesView();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -126,9 +196,7 @@ class _SourcesTab extends ConsumerWidget {
     return StreamBuilder<List<InstalledExtension>>(
       stream: repo.watchInstalled(),
       builder: (context, snap) {
-        if (!snap.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
+        if (!snap.hasData) return const _Spinner();
         final allExtensions = snap.data!;
         final sourcePrefs = sourcePrefsAsync.value;
         final localRoot = prefsAsync.value?.root;
@@ -162,7 +230,7 @@ class _SourcesTab extends ConsumerWidget {
                                             .contains(e.lang.toLowerCase())) &&
                                 !disabledIds.contains(e.id))
                             .toList(growable: false);
-                    return _buildList(
+                    return _list(
                       context,
                       ref,
                       extensions,
@@ -182,7 +250,7 @@ class _SourcesTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildList(
+  Widget _list(
     BuildContext context,
     WidgetRef ref,
     List<InstalledExtension> extensions,
@@ -200,94 +268,93 @@ class _SourcesTab extends ConsumerWidget {
         if (!pinnedIds.contains(e.id)) e,
     ];
     return ListView(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.folder_outlined),
-              title: const Text('Local source'),
-              subtitle: Text(
+      padding: const EdgeInsets.only(bottom: 28),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TideRow(
+            icon: Icons.folder_outlined,
+            title: 'Local source',
+            subtitle:
                 localRoot ?? 'Tap to choose a folder of manga on this device.',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: localRoot == null
-                  ? const Icon(Icons.chevron_right)
-                  : IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      tooltip: 'Change folder',
-                      onPressed: () => _pickLocalRoot(context, ref),
-                    ),
-              onTap: () async {
-                if (localRoot == null) {
-                  await _pickLocalRoot(context, ref);
-                  return;
-                }
-                if (!context.mounted) return;
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) =>
-                        const SourceBrowseScreen(sourceId: LocalSource.sourceId),
+            lit: localRoot != null,
+            trailing: localRoot == null
+                ? const TideChevron()
+                : _RowAction(
+                    icon: Icons.edit_outlined,
+                    onTap: () => _pickLocalRoot(context, ref),
                   ),
-                );
-              },
+            onTap: () async {
+              if (localRoot == null) {
+                await _pickLocalRoot(context, ref);
+                return;
+              }
+              if (!context.mounted) return;
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      const SourceBrowseScreen(sourceId: LocalSource.sourceId),
+                ),
+              );
+            },
+          ),
+        ),
+        if (extensions.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
+            child: _EmptyNote(
+              'No other sources installed. Install an extension on the '
+              'Extensions view to browse online manga.',
             ),
-            if (extensions.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'No other sources installed. Install an extension on '
-                  'the Extensions tab to browse online manga.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            if (pinned.isNotEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Text(
-                  'Pinned',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-              for (final e in pinned)
-                _SourceTile(
-                  extension: e,
-                  pinned: true,
-                  sourcePrefs: sourcePrefs,
-                ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Text(
-                  'All',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-            for (final e in unpinned)
-              _SourceTile(
-                extension: e,
-                pinned: false,
-                sourcePrefs: sourcePrefs,
-              ),
-            if (filtered)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                child: Text(
-                  'Some sources are hidden by your filter. Tap the '
-                  'funnel icon above to adjust.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.outline,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
+          ),
+        if (pinned.isNotEmpty) ...[
+          const TideSectionHeader(
+            label: 'Pinned',
+            padding: EdgeInsets.fromLTRB(20, 26, 20, 12),
+          ),
+          _rows(pinned, pinnedIds, sourcePrefs),
+          const TideSectionHeader(
+            label: 'All',
+            padding: EdgeInsets.fromLTRB(20, 26, 20, 12),
+          ),
+        ],
+        if (unpinned.isNotEmpty)
+          Padding(
+            padding: EdgeInsets.only(top: pinned.isEmpty ? 10 : 0),
+            child: _rows(unpinned, pinnedIds, sourcePrefs),
+          ),
+        if (filtered)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
+            child: _EmptyNote(
+              'Some sources are hidden by your filter. Tap the funnel above '
+              'to adjust.',
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _rows(
+    List<InstalledExtension> extensions,
+    Set<String> pinnedIds,
+    SourcePreferences? sourcePrefs,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          for (final (i, e) in extensions.indexed) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _SourceRow(
+              extension: e,
+              pinned: pinnedIds.contains(e.id),
+              sourcePrefs: sourcePrefs,
+            ),
           ],
-        );
+        ],
+      ),
+    );
   }
 }
 
@@ -298,7 +365,7 @@ Future<void> _pickLocalRoot(BuildContext context, WidgetRef ref) async {
   if (picked == null) return;
   final prefs = await ref.read(localSourcePreferencesProvider.future);
   await prefs.setRoot(picked);
-  // Bust the FutureProvider cache so the tile re-reads the new root.
+  // Bust the FutureProvider cache so the row re-reads the new root.
   ref.invalidate(localSourcePreferencesProvider);
   if (!context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(
@@ -306,14 +373,103 @@ Future<void> _pickLocalRoot(BuildContext context, WidgetRef ref) async {
   );
 }
 
-class _ExtensionsTab extends ConsumerStatefulWidget {
-  const _ExtensionsTab();
+/// Single row in the Sources list. The pin flips `pinned_catalogues`
+/// membership; pinned rows render above the rest under a "Pinned" header.
+class _SourceRow extends ConsumerStatefulWidget {
+  const _SourceRow({
+    required this.extension,
+    required this.pinned,
+    required this.sourcePrefs,
+  });
+
+  final InstalledExtension extension;
+  final bool pinned;
+  final SourcePreferences? sourcePrefs;
 
   @override
-  ConsumerState<_ExtensionsTab> createState() => _ExtensionsTabState();
+  ConsumerState<_SourceRow> createState() => _SourceRowState();
 }
 
-class _ExtensionsTabState extends ConsumerState<_ExtensionsTab> {
+class _SourceRowState extends ConsumerState<_SourceRow> {
+  /// Whether this extension declares the optional `preferences()` contract
+  /// — gates the per-source settings gear (Kotlin only shows the gear for
+  /// ConfigurableSource implementations too).
+  late bool _hasPrefs =
+      sourcePrefsCapabilityCache[widget.extension.id] ?? false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!sourcePrefsCapabilityCache.containsKey(widget.extension.id)) {
+      _probePrefs();
+    }
+  }
+
+  Future<void> _probePrefs() async {
+    final id = widget.extension.id;
+    try {
+      final source = await ref.read(extensionRepositoryProvider).getSource(id);
+      final defs = await source.getPreferences();
+      sourcePrefsCapabilityCache[id] = defs.isNotEmpty;
+      if (mounted && defs.isNotEmpty) setState(() => _hasPrefs = true);
+    } catch (_) {
+      // Broken extension — no gear; don't cache so a fixed install retries.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final extension = widget.extension;
+    final pinned = widget.pinned;
+    final sourcePrefs = widget.sourcePrefs;
+    return _SigilRow(
+      seed: extension.id,
+      title: extension.name,
+      subtitle: extension.lang.toUpperCase(),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => SourceBrowseScreen(sourceId: extension.id),
+        ),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_hasPrefs)
+            _RowAction(
+              icon: Icons.settings_outlined,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SourcePreferencesScreen(
+                    sourceId: extension.id,
+                    sourceName: extension.name,
+                  ),
+                ),
+              ),
+            ),
+          if (sourcePrefs != null)
+            _RowAction(
+              icon: pinned ? Icons.push_pin : Icons.push_pin_outlined,
+              lit: pinned,
+              onTap: () => sourcePrefs.toggleSourcePin(extension.id),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Extensions
+// ---------------------------------------------------------------------------
+
+class _ExtensionsView extends ConsumerStatefulWidget {
+  const _ExtensionsView();
+
+  @override
+  ConsumerState<_ExtensionsView> createState() => _ExtensionsViewState();
+}
+
+class _ExtensionsViewState extends ConsumerState<_ExtensionsView> {
   @override
   void initState() {
     super.initState();
@@ -329,105 +485,128 @@ class _ExtensionsTabState extends ConsumerState<_ExtensionsTab> {
   Widget build(BuildContext context) {
     final repo = ref.watch(extensionRepositoryProvider);
     final updatable = ref.watch(extensionUpdatesProvider);
-    return Scaffold(
-      body: StreamBuilder<List<InstalledExtension>>(
-        stream: repo.watchInstalled(),
-        builder: (context, snap) {
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final extensions = snap.data!;
-          final incognitoExtensions = ref.watch(incognitoExtensionsProvider);
-          if (extensions.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'No extensions installed. Tap the + button to add one '
-                  'from a file or URL.',
-                  textAlign: TextAlign.center,
-                ),
+    final incognitoExtensions = ref.watch(incognitoExtensionsProvider);
+    return StreamBuilder<List<InstalledExtension>>(
+      stream: repo.watchInstalled(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const _Spinner();
+        final extensions = snap.data!;
+        return ListView(
+          padding: const EdgeInsets.only(bottom: 28),
+          children: [
+            // The install affordance is a row rather than a floating button:
+            // a FAB would sit on top of the shell's own navigation bar, and
+            // "add one" belongs at the head of the list it adds to.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TideRow(
+                icon: Icons.add,
+                title: 'Install extension',
+                subtitle: 'From a raw .js URL, or a file on this device',
+                lit: true,
+                trailing: const TideChevron(),
+                onTap: () => _showAddSheet(context, repo),
               ),
-            );
-          }
-          return ListView.builder(
-            itemCount: extensions.length,
-            itemBuilder: (_, i) {
-              final e = extensions[i];
-              final canUpdate = e.installUrl != null;
-              final hasUpdate = updatable.contains(e.id);
-              final incognito = incognitoExtensions.contains(e.id);
-              return ListTile(
-                title: Text(e.name),
-                subtitle: Text(
-                  '${e.lang.toUpperCase()} • v${e.versionCode}'
-                  '${hasUpdate ? ' • Update available' : ''}',
-                  style: hasUpdate
-                      ? TextStyle(
-                          color: Theme.of(context).colorScheme.primary)
-                      : null,
+            ),
+            if (extensions.isEmpty)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
+                child: _EmptyNote(
+                  'No extensions installed yet. Install one above to browse '
+                  'online manga.',
                 ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
+              )
+            else ...[
+              TideSectionHeader(
+                label: 'Installed',
+                trailing: '${extensions.length}',
+                padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
                   children: [
-                    IconButton(
-                      icon: Icon(
-                        incognito
-                            ? Icons.no_encryption_gmailerrorred
-                            : Icons.no_encryption_gmailerrorred_outlined,
+                    for (final (i, e) in extensions.indexed) ...[
+                      if (i > 0) const SizedBox(height: 8),
+                      _ExtensionRow(
+                        extension: e,
+                        hasUpdate: updatable.contains(e.id),
+                        incognito: incognitoExtensions.contains(e.id),
+                        repo: repo,
                       ),
-                      color: incognito
-                          ? Theme.of(context).colorScheme.primary
-                          : null,
-                      // Verbatim Mihon string
-                      // pref_incognito_mode_extension_summary.
-                      tooltip: 'Pause reading history for extension',
-                      onPressed: () {
-                        final notifier =
-                            ref.read(incognitoExtensionsProvider.notifier);
-                        final next = {...incognitoExtensions};
-                        if (incognito) {
-                          next.remove(e.id);
-                        } else {
-                          next.add(e.id);
-                        }
-                        notifier.set(next);
-                      },
-                    ),
-                    if (canUpdate)
-                      IconButton(
-                        icon: Icon(
-                          Icons.refresh,
-                          color: hasUpdate
-                              ? Theme.of(context).colorScheme.primary
-                              : null,
-                        ),
-                        tooltip: hasUpdate
-                            ? 'Update available'
-                            : 'Update from origin URL',
-                        onPressed: () async {
-                          await _runUpdate(context, repo, e);
-                          clearExtensionUpdate(ref, e.id);
-                        },
-                      ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      tooltip: 'Uninstall',
-                      onPressed: () async {
-                        await _confirmUninstall(context, repo, e);
-                        clearExtensionUpdate(ref, e.id);
-                      },
-                    ),
+                    ],
                   ],
                 ),
-              );
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ExtensionRow extends ConsumerWidget {
+  const _ExtensionRow({
+    required this.extension,
+    required this.hasUpdate,
+    required this.incognito,
+    required this.repo,
+  });
+
+  final InstalledExtension extension;
+  final bool hasUpdate;
+  final bool incognito;
+  final ExtensionRepository repo;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final canUpdate = extension.installUrl != null;
+    return _SigilRow(
+      seed: extension.id,
+      title: extension.name,
+      subtitle: '${extension.lang.toUpperCase()} · v${extension.versionCode}'
+          '${hasUpdate ? ' · Update available' : ''}',
+      // A row with an update waiting is the one row on this screen worth
+      // finding at a glance.
+      lit: hasUpdate,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _RowAction(
+            icon: incognito
+                ? Icons.no_encryption_gmailerrorred
+                : Icons.no_encryption_gmailerrorred_outlined,
+            lit: incognito,
+            // Verbatim Mihon string pref_incognito_mode_extension_summary.
+            onTap: () {
+              final current = ref.read(incognitoExtensionsProvider);
+              final next = {...current};
+              if (incognito) {
+                next.remove(extension.id);
+              } else {
+                next.add(extension.id);
+              }
+              ref.read(incognitoExtensionsProvider.notifier).set(next);
             },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddSheet(context, repo),
-        child: const Icon(Icons.add),
+          ),
+          if (canUpdate)
+            _RowAction(
+              icon: Icons.refresh,
+              lit: hasUpdate,
+              onTap: () async {
+                await _runUpdate(context, repo, extension);
+                clearExtensionUpdate(ref, extension.id);
+              },
+            ),
+          _RowAction(
+            icon: Icons.delete_outline,
+            onTap: () async {
+              await _confirmUninstall(context, repo, extension);
+              clearExtensionUpdate(ref, extension.id);
+            },
+          ),
+        ],
       ),
     );
   }
@@ -442,11 +621,7 @@ Future<void> _runUpdate(
   ExtensionRepository repo,
   InstalledExtension e,
 ) async {
-  showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => const Center(child: CircularProgressIndicator()),
-  );
+  _showProgress(context);
   try {
     final beforeVersion = e.versionCode;
     final updated = await repo.updateFromOrigin(e);
@@ -477,24 +652,13 @@ Future<void> _confirmUninstall(
   ExtensionRepository repo,
   InstalledExtension e,
 ) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text('Uninstall ${e.name}?'),
-      content: const Text(
-        'The extension and any cached source code will be removed. '
-        'Saved manga and history are kept.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(false),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text('Uninstall'),
-        ),
-      ],
+  final confirmed = await showTideSheet<bool>(
+    context,
+    (_) => TideConfirmSheet(
+      title: 'Uninstall ${e.name}?',
+      message: 'The extension and any cached source code will be removed. '
+          'Saved manga and history are kept.',
+      confirmLabel: 'Uninstall',
     ),
   );
   if (confirmed == true) {
@@ -506,32 +670,38 @@ Future<void> _showAddSheet(
   BuildContext context,
   ExtensionRepository repo,
 ) async {
-  await showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    builder: (ctx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.link),
-            title: const Text('Install from URL'),
-            subtitle: const Text('Paste a raw .js URL'),
-            onTap: () async {
-              Navigator.of(ctx).pop();
-              await _promptForUrl(context, repo);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.upload_file_outlined),
-            title: const Text('Install from file'),
-            subtitle: const Text('Pick a .js file from device storage'),
-            onTap: () async {
-              Navigator.of(ctx).pop();
-              await _promptForFile(context, repo);
-            },
-          ),
-        ],
+  await showTideSheet<void>(
+    context,
+    (ctx) => SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TideRow(
+              icon: Icons.link,
+              title: 'Install from URL',
+              subtitle: 'Paste a raw .js URL',
+              trailing: const TideChevron(),
+              onTap: () async {
+                Navigator.of(ctx).pop();
+                await _promptForUrl(context, repo);
+              },
+            ),
+            const SizedBox(height: 8),
+            TideRow(
+              icon: Icons.upload_file_outlined,
+              title: 'Install from file',
+              subtitle: 'Pick a .js file from device storage',
+              trailing: const TideChevron(),
+              onTap: () async {
+                Navigator.of(ctx).pop();
+                await _promptForFile(context, repo);
+              },
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -541,33 +711,151 @@ Future<void> _promptForUrl(
   BuildContext context,
   ExtensionRepository repo,
 ) async {
-  final controller = TextEditingController();
-  final url = await showDialog<String>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Install from URL'),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        decoration: const InputDecoration(
-          hintText: 'https://...',
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-          child: const Text('Install'),
-        ),
-      ],
-    ),
+  final url = await showTideSheet<String>(
+    context,
+    (_) => const _UrlSheet(),
   );
   if (url == null || url.isEmpty) return;
   if (!context.mounted) return;
   await _runInstall(context, () => repo.installFromUrl(url));
+}
+
+/// Text-entry sheet for the install-from-URL flow.
+class _UrlSheet extends StatefulWidget {
+  const _UrlSheet();
+
+  @override
+  State<_UrlSheet> createState() => _UrlSheetState();
+}
+
+class _UrlSheetState extends State<_UrlSheet> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_controller.text.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      // Lifts clear of the keyboard, which is the whole point of a sheet that
+      // asks for typed input.
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          child: TideGlass(
+            radius: 26,
+            blur: true,
+            tintTop: 0.13,
+            tintBottom: 0.05,
+            highlight: 0.26,
+            border: 0.15,
+            saturation: 1.9,
+            padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Install from URL', style: TideText.display(21)),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 44,
+                  child: TideGlass(
+                    radius: 22,
+                    tintTop: 0.09,
+                    tintBottom: 0.03,
+                    highlight: 0.16,
+                    border: 0.11,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Center(
+                      child: TextField(
+                        controller: _controller,
+                        autofocus: true,
+                        cursorColor: TideColors.accent,
+                        style: TideText.title(size: 14.5),
+                        keyboardType: TextInputType.url,
+                        textInputAction: TextInputAction.go,
+                        onSubmitted: (_) => _submit(),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          hintText: 'https://...',
+                          hintStyle: TideText.title(
+                            size: 14.5,
+                            color: TideColors.textAt(0.33),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 46,
+                        child: TideGlass(
+                          radius: 23,
+                          tintTop: 0.09,
+                          tintBottom: 0.03,
+                          highlight: 0.16,
+                          border: 0.11,
+                          onTap: () => Navigator.of(context).pop(),
+                          child: Center(
+                            child: Text(
+                              'Cancel',
+                              style: TideText.title(
+                                size: 14.5,
+                                color: TideColors.textAt(0.8),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _submit,
+                        child: Container(
+                          height: 46,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: TideColors.accent,
+                            borderRadius: BorderRadius.circular(23),
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                    TideColors.accent.withValues(alpha: 0.45),
+                                blurRadius: 24,
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            'Install',
+                            style: TideText.title(size: 14.5)
+                                .copyWith(color: TideColors.ground),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 Future<void> _promptForFile(
@@ -588,11 +876,7 @@ Future<void> _runInstall(
   BuildContext context,
   Future<InstalledExtension> Function() install,
 ) async {
-  showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => const Center(child: CircularProgressIndicator()),
-  );
+  _showProgress(context);
   try {
     final extension = await install();
     if (!context.mounted) return;
@@ -609,95 +893,183 @@ Future<void> _runInstall(
   }
 }
 
-/// Single row in the Sources list. Trailing pin icon flips
-/// `pinned_catalogues` membership; pinned rows render above the rest
-/// under a "Pinned" header.
-class _SourceTile extends ConsumerStatefulWidget {
-  const _SourceTile({
-    required this.extension,
-    required this.pinned,
-    required this.sourcePrefs,
-  });
-
-  final InstalledExtension extension;
-  final bool pinned;
-  final SourcePreferences? sourcePrefs;
-
-  @override
-  ConsumerState<_SourceTile> createState() => _SourceTileState();
+/// Blocking spinner over a dimmed screen, dismissed by its caller popping.
+void _showProgress(BuildContext context) {
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    barrierColor: Colors.black.withValues(alpha: 0.62),
+    builder: (_) => const Center(
+      child: CircularProgressIndicator(color: TideColors.accent),
+    ),
+  );
 }
 
-class _SourceTileState extends ConsumerState<_SourceTile> {
-  /// Whether this extension declares the optional `preferences()` contract
-  /// — gates the per-source settings gear (Kotlin only shows the gear for
-  /// ConfigurableSource implementations too).
-  late bool _hasPrefs = sourcePrefsCapabilityCache[widget.extension.id] ?? false;
+// ---------------------------------------------------------------------------
+// Shared pieces
+// ---------------------------------------------------------------------------
+
+/// A glass row led by a sigil rather than an icon.
+///
+/// Every source would otherwise present the same generic glyph, which makes a
+/// list of thirty a list you have to read line by line. The sigil is the
+/// source's initial over a gradient derived from its id, so a given source
+/// keeps the same colour between sessions and becomes findable by shape.
+class _SigilRow extends StatelessWidget {
+  const _SigilRow({
+    required this.seed,
+    required this.title,
+    required this.subtitle,
+    required this.trailing,
+    this.onTap,
+    this.lit = false,
+  });
+
+  final String seed;
+  final String title;
+  final String subtitle;
+
+  /// Null on an extension row: managing an extension is what the trailing
+  /// controls are for, and the row itself goes nowhere — same as before.
+  final VoidCallback? onTap;
+  final Widget trailing;
+  final bool lit;
 
   @override
-  void initState() {
-    super.initState();
-    if (!sourcePrefsCapabilityCache.containsKey(widget.extension.id)) {
-      _probePrefs();
-    }
+  Widget build(BuildContext context) {
+    return TideGlass(
+      radius: 16,
+      tintTop: lit ? 0.13 : 0.075,
+      tintBottom: lit ? 0.05 : 0.026,
+      highlight: lit ? 0.20 : 0.14,
+      border: lit ? 0.20 : 0.09,
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(11, 11, 8, 11),
+      child: Row(
+        children: [
+          _Sigil(seed: seed, label: title),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TideText.title(),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TideText.caption(
+                    opacity: lit ? 0.62 : 0.45,
+                  ).copyWith(color: lit ? TideColors.accent : null),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          trailing,
+        ],
+      ),
+    );
   }
+}
 
-  Future<void> _probePrefs() async {
-    final id = widget.extension.id;
-    try {
-      final source =
-          await ref.read(extensionRepositoryProvider).getSource(id);
-      final defs = await source.getPreferences();
-      sourcePrefsCapabilityCache[id] = defs.isNotEmpty;
-      if (mounted && defs.isNotEmpty) setState(() => _hasPrefs = true);
-    } catch (_) {
-      // Broken extension — no gear; don't cache so a fixed install retries.
+class _Sigil extends StatelessWidget {
+  const _Sigil({required this.seed, required this.label});
+
+  final String seed;
+  final String label;
+
+  /// Stable across sessions and platforms — String.hashCode is not something
+  /// to lean on for anything the user would notice changing.
+  static int _seedOf(String s) {
+    var sum = 0;
+    for (final unit in s.codeUnits) {
+      sum = (sum * 31 + unit) & 0x7fffffff;
     }
+    return sum;
   }
 
   @override
   Widget build(BuildContext context) {
-    final extension = widget.extension;
-    final pinned = widget.pinned;
-    final sourcePrefs = widget.sourcePrefs;
-    return ListTile(
-      title: Text(extension.name),
-      subtitle: Text(extension.lang.toUpperCase()),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_hasPrefs)
-            IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: 'Source settings',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => SourcePreferencesScreen(
-                      sourceId: extension.id,
-                      sourceName: extension.name,
-                    ),
-                  ),
-                );
-              },
-            ),
-          if (sourcePrefs != null)
-            IconButton(
-              icon: Icon(
-                pinned ? Icons.push_pin : Icons.push_pin_outlined,
-                color: pinned ? Theme.of(context).colorScheme.primary : null,
-              ),
-              tooltip: pinned ? 'Unpin' : 'Pin to top',
-              onPressed: () => sourcePrefs.toggleSourcePin(extension.id),
-            ),
-        ],
+    final trimmed = label.trim();
+    final initial = trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
+    return Container(
+      width: 38,
+      height: 38,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        gradient: TideCover.fallbackGradient(_seedOf(seed)),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
       ),
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => SourceBrowseScreen(sourceId: extension.id),
-          ),
-        );
-      },
+      child: Text(
+        initial,
+        style: TextStyle(
+          fontSize: 16,
+          height: 1,
+          fontWeight: FontWeight.w500,
+          color: TideColors.brightAt(0.9),
+        ),
+      ),
     );
   }
+}
+
+/// Small quiet control at the end of a row.
+class _RowAction extends StatelessWidget {
+  const _RowAction({
+    required this.icon,
+    required this.onTap,
+    this.lit = false,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 34,
+        height: 38,
+        child: Icon(
+          icon,
+          size: 17,
+          color: lit ? TideColors.accent : TideColors.textAt(0.42),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyNote extends StatelessWidget {
+  const _EmptyNote(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+        text,
+        textAlign: TextAlign.center,
+        style: TideText.caption(size: 12.5, opacity: 0.4),
+      );
+}
+
+class _Spinner extends StatelessWidget {
+  const _Spinner();
+
+  @override
+  Widget build(BuildContext context) => const Center(
+        child: CircularProgressIndicator(color: TideColors.accent),
+      );
 }
