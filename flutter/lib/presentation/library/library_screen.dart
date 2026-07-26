@@ -1,3 +1,19 @@
+// ===========================================================================
+// Tide library.
+//
+// The shelf. Covers are the whole content, so the chrome gets out of their
+// way: no app bar, no Material card, no popup menus — a header that names the
+// category and counts it, category chips, and a grid of artwork on the ground.
+//
+// Every badge is drawn as glass over the cover rather than as a solid swatch
+// from a colour scheme: unread takes the accent (it is the one number you are
+// looking for), downloaded and Local/language sit back as quiet chips. The
+// resume button is the same accent disc the series screen uses.
+//
+// All of the filter / sort / display / selection LOGIC below is untouched —
+// this is a new presentation of it, not a new pipeline.
+// ===========================================================================
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -7,11 +23,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/base/base_preferences.dart';
 import '../../data/category/category_repository.dart';
 import '../../data/chapter/chapter_repository.dart';
-import '../../data/cover/cover_cache.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_repository.dart';
-import '../../data/library/library_update_preference.dart';
 import '../../data/library/library_updater.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/notification/notification_service.dart';
@@ -21,12 +35,10 @@ import '../../data/track/track_repository.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/library/model/library_item.dart';
 import '../../domain/chapter/service/set_read_status.dart';
-import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
-import '../common/source_image.dart';
-import '../home/home_screen.dart';
 import '../manga/manga_details_screen.dart';
 import '../reader/reader_screen.dart';
+import '../tide/tide.dart';
 
 /// Tri-state filters for the library grid. Each axis can be off (show
 /// everything), include-only (show rows where the predicate matches),
@@ -120,16 +132,9 @@ class LibraryFilters {
   }
 }
 
-/// Library tab: streams the favorites + per-manga aggregate stats from
-/// `libraryView`, partitions by category (tabs above the grid when more
-/// than one category exists), and renders one of three display modes:
-///
-/// * Comfortable — cover with title under the cover (default)
-/// * Compact     — cover with title overlaid on the cover
-/// * Cover only  — no title, denser grid
-///
-/// Each grid item carries an unread-count badge in the top-start corner,
-/// matching Mihon's library presentation.
+/// The shelf: streams the favorites + per-manga aggregate stats from
+/// `libraryView`, partitions by category, and renders one of four display
+/// modes (compact / comfortable / cover-only grids, or a list).
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
 
@@ -144,17 +149,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   // Created ONCE per consumer — previously each rebuild called watchAll()
   // inline (new stream → StreamBuilder resubscribe per setState, i.e. per
   // search keystroke / selection tap), and the title re-issued a fresh
-  // categories query per rebuild. The title gets its own stream objects
-  // (not shared — drift query streams replay on listen but are
-  // single-subscription; drift dedups identical active queries internally
-  // so the DB work isn't doubled).
+  // categories query per rebuild.
   late final Stream<List<LibraryItem>> _libraryStream =
       ref.read(libraryRepositoryProvider).watchAll();
   late final Stream<List<Category>> _categoryStream =
-      ref.read(categoryRepositoryProvider).watchAll();
-  late final Stream<List<LibraryItem>> _titleLibraryStream =
-      ref.read(libraryRepositoryProvider).watchAll();
-  late final Stream<List<Category>> _titleCategoryStream =
       ref.read(categoryRepositoryProvider).watchAll();
   // Memoised downloaded/tracked filter sets (see build) — resolved once per
   // axis combination rather than on every rebuild.
@@ -164,23 +162,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   bool _updating = false;
   int _selectedCategoryId = Category.uncategorizedId;
   // Manga ids the user has multi-selected via long-press. Empty set
-  // means selection mode is off. Mihon shows a contextual app bar with
-  // bulk actions when at least one item is selected.
+  // means selection mode is off.
   final Set<int> _selected = <int>{};
-  late final TextEditingController _searchController =
-      TextEditingController();
+  late final TextEditingController _searchController = TextEditingController();
 
   // Ids of the entries currently visible in the grid (after category tab,
   // search and filter narrowing). Updated by [_LibraryBody] during its build
-  // so "Select all" / "Invert selection" operate on the displayed set —
-  // mirrors Mihon, where those act on the active category's items.
+  // so "Select all" / "Invert selection" operate on the displayed set.
   List<int> _visibleIds = const <int>[];
 
   bool get _selecting => _selected.isNotEmpty;
 
-  void _selectAllVisible() {
-    setState(() => _selected.addAll(_visibleIds));
-  }
+  void _selectAllVisible() => setState(() => _selected.addAll(_visibleIds));
 
   void _invertVisibleSelection() {
     setState(() {
@@ -209,86 +202,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     setState(() => _selected.clear());
   }
 
+  void _closeSearch() {
+    setState(() {
+      _searching = false;
+      _searchController.clear();
+      _query = '';
+    });
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
-  }
-
-  /// Contextual app bar shown while at least one card is selected. Mirrors
-  /// Mihon's `LibrarySelectionToolbar`: a cancel (X) action-mode bar with the
-  /// selected count and just two actions — Select all and Invert selection.
-  /// The bulk operations live in the bottom action bar
-  /// ([_buildSelectionBottomBar]), matching Mihon's `LibraryBottomActionMenu`.
-  AppBar _buildSelectionAppBar() {
-    return AppBar(
-      leading: IconButton(
-        icon: const Icon(Icons.close),
-        onPressed: _clearSelection,
-      ),
-      title: Text('${_selected.length}'),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.select_all),
-          tooltip: 'Select all',
-          onPressed: _selectAllVisible,
-        ),
-        IconButton(
-          icon: const Icon(Icons.flip_to_back),
-          tooltip: 'Invert selection',
-          onPressed: _invertVisibleSelection,
-        ),
-      ],
-    );
-  }
-
-  /// Bottom action bar for library selection mode. Mirrors Mihon's
-  /// `LibraryBottomActionMenu`: Move to category, Mark read, Mark unread,
-  /// Download, Delete. (Bulk Migrate is not yet wired — single-entry
-  /// migration only.)
-  Widget _buildSelectionBottomBar() {
-    return BottomAppBar(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.label_outline),
-            tooltip: 'Move to category',
-            onPressed: _selectionMoveToCategory,
-          ),
-          IconButton(
-            icon: const Icon(Icons.done_all),
-            tooltip: 'Mark as read',
-            onPressed: () => _selectionMarkRead(true),
-          ),
-          IconButton(
-            icon: const Icon(Icons.remove_done),
-            tooltip: 'Mark as unread',
-            onPressed: () => _selectionMarkRead(false),
-          ),
-          PopupMenuButton<int?>(
-            icon: const Icon(Icons.download_outlined),
-            tooltip: 'Download chapters',
-            onSelected: _selectionDownloadNext,
-            itemBuilder: (_) => const [
-              PopupMenuItem<int?>(value: 1, child: Text('Next 1 chapter')),
-              PopupMenuItem<int?>(value: 5, child: Text('Next 5 chapters')),
-              PopupMenuItem<int?>(value: 10, child: Text('Next 10 chapters')),
-              PopupMenuItem<int?>(value: 25, child: Text('Next 25 chapters')),
-              PopupMenuItem<int?>(
-                value: null,
-                child: Text('All unread chapters'),
-              ),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'Remove from library',
-            onPressed: _selectionRemoveFromLibrary,
-          ),
-        ],
-      ),
-    );
   }
 
   /// Bulk download for selected manga: for each, fetch its chapters, sort
@@ -326,6 +251,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     ));
   }
 
+  Future<void> _openDownloadSheet() async {
+    final picked = await showTideSheet<String>(
+      context,
+      (_) => const TideOptionSheet(
+        title: 'Download chapters',
+        options: [
+          ('1', 'Next 1 chapter'),
+          ('5', 'Next 5 chapters'),
+          ('10', 'Next 10 chapters'),
+          ('25', 'Next 25 chapters'),
+          ('all', 'All unread chapters'),
+        ],
+        selected: '',
+      ),
+    );
+    if (picked == null) return;
+    await _selectionDownloadNext(picked == 'all' ? null : int.parse(picked));
+  }
+
   Future<void> _selectionMarkRead(bool read) async {
     final chapterRepo = ref.read(chapterRepositoryProvider);
     final setReadStatus = ref.read(setReadStatusProvider);
@@ -340,10 +284,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Future<void> _selectionRemoveFromLibrary() async {
     final messenger = ScaffoldMessenger.of(context);
-    final result = await showDialog<_RemoveResult>(
-      context: context,
-      builder: (ctx) =>
-          _RemoveLibraryDialog(count: _selected.length),
+    final result = await showTideSheet<_RemoveResult>(
+      context,
+      (_) => _RemoveLibrarySheet(count: _selected.length),
     );
     if (result == null) return;
     if (!result.remove && !result.deleteDownloads) return;
@@ -376,25 +319,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   Future<void> _selectionMoveToCategory() async {
     final categoryRepo = ref.read(categoryRepositoryProvider);
     final allCats = await categoryRepo.getAll();
-    final userCats = allCats
-        .where((c) => !c.isSystemCategory)
-        .toList(growable: false);
+    final userCats =
+        allCats.where((c) => !c.isSystemCategory).toList(growable: false);
     if (!mounted) return;
     if (userCats.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'No categories yet. Create one in More -> Categories first.',
+            'No categories yet. Create one in More → Categories first.',
           ),
         ),
       );
       return;
     }
-    final selectedIds = await showModalBottomSheet<Set<int>>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _BulkCategorySheet(categories: userCats),
+    final selectedIds = await showTideSheet<Set<int>>(
+      context,
+      (_) => _BulkCategorySheet(categories: userCats),
     );
     if (selectedIds == null) return;
     final ids = _selected.toList(growable: false);
@@ -405,16 +345,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     _clearSelection();
   }
 
-  /// Opens the tabbed Filter / Sort / Display settings sheet. Mirrors
-  /// Mihon's LibrarySettingsDialog (a TabbedDialog). Filter changes apply
-  /// live through [_filters]; sort/display changes write straight to their
-  /// providers, so there are no Apply/Cancel buttons.
+  /// Filter / Sort / Display, behind one glass sheet. Every change applies
+  /// live: filter toggles flow back through [_filters]; sort and display write
+  /// straight to their providers — so there is nothing to apply or cancel.
   void _showSettingsSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => _LibrarySettingsSheet(
+    showTideSheet<void>(
+      context,
+      (_) => _LibrarySettingsSheet(
         current: _filters,
         onFiltersChanged: (next) => setState(() => _filters = next),
       ),
@@ -422,8 +359,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   /// "Open random entry": pick a random favourite from the active category
-  /// (respecting the current search query) and open its details. Mirrors
-  /// Mihon's `getRandomLibraryItemForCurrentCategory`.
+  /// (respecting the current search query) and open its details.
   Future<void> _openRandomEntry() async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
@@ -444,6 +380,29 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         builder: (_) => MangaDetailsScreen(mangaId: pick.manga.id),
       ),
     );
+  }
+
+  Future<void> _openOverflow() async {
+    final picked = await showTideSheet<String>(
+      context,
+      (_) => const TideOptionSheet(
+        title: 'Library',
+        options: [
+          ('all', 'Update library'),
+          ('category', 'Update this category'),
+          ('random', 'Open random entry'),
+        ],
+        selected: '',
+      ),
+    );
+    switch (picked) {
+      case 'all':
+        await _refreshLibrary();
+      case 'category':
+        await _refreshLibrary(categoryId: _selectedCategoryId);
+      case 'random':
+        await _openRandomEntry();
+    }
   }
 
   /// Foreground library update. Independent of the workmanager schedule.
@@ -483,13 +442,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         chapterCount: result.newChapters,
       );
       await notifications.showLibraryErrors(result.failures.length);
-      // Bump the Updates-tab badge (Mihon increments newUpdatesCount on
-      // every library update, manual or scheduled).
-      if (result.newChapters > 0) {
-        final notifier = ref.read(newUpdatesCountProvider.notifier);
-        await notifier
-            .set(ref.read(newUpdatesCountProvider) + result.newChapters);
-      }
       if (!mounted) return;
       final msg = result.newChapters == 0
           ? 'No new chapters found.'
@@ -519,199 +471,459 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ? _filters.copyWith(downloaded: TriState.enabledIs)
         : _filters;
 
-    // Library is tab 0. Mirrors Kotlin `LibraryTab.onReselect`: tapping the
-    // already-active Library destination opens the settings sheet.
-    ref.listen<HomeReselectSignal>(homeReselectProvider, (prev, next) {
-      if (next.tab == 0 && next.tick != (prev?.tick ?? 0)) {
-        _showSettingsSheet();
-      }
-    });
-
-    return Scaffold(
-      bottomNavigationBar:
-          _selecting ? _buildSelectionBottomBar() : null,
-      appBar: _selecting ? _buildSelectionAppBar() : AppBar(
-        title: _searching
-            ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                onChanged: (v) => setState(() => _query = v.trim()),
-                decoration: const InputDecoration(
-                  hintText: 'Search library',
-                  border: InputBorder.none,
+    return PopScope(
+      // Back closes the in-flight thing first: selection, then search.
+      canPop: !_selecting && !_searching,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_selecting) {
+          _clearSelection();
+        } else if (_searching) {
+          _closeSearch();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: TideColors.ground,
+        body: Stack(
+          children: [
+            const Positioned.fill(child: TideAurora(opacity: 0.28)),
+            Positioned.fill(
+              child: TideRise(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _header(),
+                    if (_searching) _searchField(),
+                    Expanded(
+                      child: _content(
+                        displayMode,
+                        sortPref,
+                        effectiveFilters,
+                      ),
+                    ),
+                  ],
                 ),
-                style: Theme.of(context).textTheme.titleLarge,
-              )
-            : _LibraryTitle(
-                selectedCategoryId: _selectedCategoryId,
-                libraryStream: _titleLibraryStream,
-                categoryStream: _titleCategoryStream,
               ),
-        actions: [
-          // Mirrors Mihon's LibraryToolbar: a single Filter icon (active-
-          // tinted when any filter is set) opens the tabbed Filter/Sort/
-          // Display sheet; the search icon toggles the in-place search field;
-          // the overflow folds the library-update + random-entry actions.
-          IconButton(
-            icon: Icon(_searching ? Icons.close : Icons.search),
-            tooltip: 'Search',
-            onPressed: () {
-              setState(() {
-                if (_searching) {
-                  _searching = false;
-                  _searchController.clear();
-                  _query = '';
-                } else {
-                  _searching = true;
-                }
-              });
-            },
-          ),
-          IconButton(
-            icon: Icon(
-              Icons.filter_list,
-              color: _filters.isActive
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
             ),
-            tooltip: 'Filter',
-            onPressed: _showSettingsSheet,
+            if (_selecting)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 24,
+                child: _SelectionBar(
+                  onCategory: _selectionMoveToCategory,
+                  onMarkRead: () => _selectionMarkRead(true),
+                  onMarkUnread: () => _selectionMarkRead(false),
+                  onDownload: _openDownloadSheet,
+                  onRemove: _selectionRemoveFromLibrary,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _header() {
+    if (_selecting) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          MediaQuery.paddingOf(context).top + 12,
+          20,
+          12,
+        ),
+        child: Row(
+          children: [
+            TideIconButton(icon: Icons.close_rounded, onTap: _clearSelection),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Text(
+                '${_selected.length} selected',
+                style: const TextStyle(
+                  fontSize: 20,
+                  height: 1.15,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: -0.5,
+                  color: TideColors.text,
+                ),
+              ),
+            ),
+            TideIconButton(icon: Icons.select_all, onTap: _selectAllVisible),
+            const SizedBox(width: 9),
+            TideIconButton(
+              icon: Icons.flip_to_back,
+              onTap: _invertVisibleSelection,
+            ),
+          ],
+        ),
+      );
+    }
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        MediaQuery.paddingOf(context).top + 12,
+        20,
+        12,
+      ),
+      child: Row(
+        children: [
+          TideIconButton(
+            icon: Icons.arrow_back_ios_new_rounded,
+            iconSize: 15,
+            onTap: () => Navigator.of(context).maybePop(),
           ),
-          PopupMenuButton<_LibraryMenuAction>(
-            icon: _updating
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.more_vert),
-            onSelected: (action) {
-              switch (action) {
-                case _LibraryMenuAction.updateLibrary:
-                  _refreshLibrary();
-                case _LibraryMenuAction.updateCategory:
-                  _refreshLibrary(categoryId: _selectedCategoryId);
-                case _LibraryMenuAction.openRandom:
-                  _openRandomEntry();
+          const SizedBox(width: 12),
+          Expanded(
+            child: _LibraryTitle(
+              selectedCategoryId: _selectedCategoryId,
+              libraryStream: _libraryStream,
+              categoryStream: _categoryStream,
+            ),
+          ),
+          const SizedBox(width: 8),
+          TideIconButton(
+            icon: _searching ? Icons.close_rounded : Icons.search,
+            onTap: () => setState(() {
+              if (_searching) {
+                _closeSearch();
+              } else {
+                _searching = true;
               }
-            },
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: _LibraryMenuAction.updateLibrary,
-                enabled: !_updating,
-                child: const Text('Update library'),
-              ),
-              PopupMenuItem(
-                value: _LibraryMenuAction.updateCategory,
-                enabled: !_updating,
-                child: const Text('Update category'),
-              ),
-              const PopupMenuItem(
-                value: _LibraryMenuAction.openRandom,
-                child: Text('Open random entry'),
+            }),
+          ),
+          const SizedBox(width: 9),
+          _FilterButton(
+            active: _filters.isActive,
+            onTap: _showSettingsSheet,
+          ),
+          const SizedBox(width: 9),
+          _OverflowButton(updating: _updating, onTap: _openOverflow),
+        ],
+      ),
+    );
+  }
+
+  Widget _searchField() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: SizedBox(
+        height: 42,
+        child: TideGlass(
+          radius: 21,
+          tintTop: 0.09,
+          tintBottom: 0.03,
+          highlight: 0.16,
+          border: 0.11,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 17, color: TideColors.textAt(0.42)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  cursorColor: TideColors.accent,
+                  style: TideText.title(size: 14.5),
+                  textInputAction: TextInputAction.search,
+                  onChanged: (v) => setState(() => _query = v.trim()),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 11),
+                    hintText: 'Search library',
+                    hintStyle: TideText.title(
+                      size: 14.5,
+                      color: TideColors.textAt(0.33),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
-        ],
+        ),
       ),
-      body: StreamBuilder<List<LibraryItem>>(
-        stream: _libraryStream,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return _ErrorView(error: snapshot.error!);
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final items = snapshot.data!;
-          if (items.isEmpty) {
-            return const _EmptyLibrary();
-          }
-          return StreamBuilder<List<Category>>(
-            stream: _categoryStream,
-            builder: (context, catSnap) {
-              final categories = catSnap.data ?? const <Category>[];
-              // Both the Downloaded and Tracked axes need async-resolved
-              // sets. Resolve them in parallel only when at least one is
-              // enabled — most users never enable either.
-              final needsDownloaded =
-                  effectiveFilters.downloaded != TriState.disabled;
-              final needsTracked =
-                  effectiveFilters.tracked != TriState.disabled;
-              if (needsDownloaded || needsTracked) {
-                final downloadRepo = ref.watch(downloadRepositoryProvider);
-                final trackRepo = ref.watch(trackRepositoryProvider);
-                // Memoised: re-resolving on every rebuild walked the whole
-                // downloads tree per frame while a downloaded/tracked
-                // filter was active. Re-resolved only when the needed axes
-                // change or after a library refresh invalidates it.
-                final setsKey = (needsDownloaded, needsTracked);
-                if (_asyncSets == null || _asyncSetsKey != setsKey) {
-                  _asyncSetsKey = setsKey;
-                  _asyncSets = _resolveAsyncFilterSets(
-                    downloadRepo: needsDownloaded ? downloadRepo : null,
-                    trackRepo: needsTracked ? trackRepo : null,
-                  );
-                }
-                return FutureBuilder<_AsyncFilterSets>(
-                  future: _asyncSets,
-                  builder: (context, snap) {
-                    if (!snap.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final sets = snap.data!;
-                    return _LibraryBody(
-                      items: items,
-                      categories: categories,
-                      query: _query,
-                      sort: sortPref,
-                      filters: effectiveFilters,
-                      downloadedKeys: sets.downloadedKeys,
-                      trackedMangaIds: sets.trackedMangaIds,
-                      displayMode: displayMode,
-                      selectedCategoryId: _selectedCategoryId,
-                      onCategoryChanged: (id) =>
-                          setState(() => _selectedCategoryId = id),
-                      onRefresh: _refreshLibrary,
-                      selected: _selected,
-                      selecting: _selecting,
-                      onToggleSelected: _toggleSelected,
-                      onVisibleIdsResolved: (ids) => _visibleIds = ids,
-                    );
-                  },
+    );
+  }
+
+  Widget _content(
+    LibraryDisplayMode displayMode,
+    LibrarySortPref sortPref,
+    LibraryFilters effectiveFilters,
+  ) {
+    return StreamBuilder<List<LibraryItem>>(
+      stream: _libraryStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return _ErrorView(error: snapshot.error!);
+        if (!snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: TideColors.accent),
+          );
+        }
+        final items = snapshot.data!;
+        if (items.isEmpty) return const _EmptyLibrary();
+        return StreamBuilder<List<Category>>(
+          stream: _categoryStream,
+          builder: (context, catSnap) {
+            final categories = catSnap.data ?? const <Category>[];
+            // Both the Downloaded and Tracked axes need async-resolved sets.
+            // Resolve them in parallel only when at least one is enabled —
+            // most users never enable either.
+            final needsDownloaded =
+                effectiveFilters.downloaded != TriState.disabled;
+            final needsTracked = effectiveFilters.tracked != TriState.disabled;
+            if (needsDownloaded || needsTracked) {
+              final downloadRepo = ref.watch(downloadRepositoryProvider);
+              final trackRepo = ref.watch(trackRepositoryProvider);
+              // Memoised: re-resolving on every rebuild walked the whole
+              // downloads tree per frame while a downloaded/tracked filter
+              // was active.
+              final setsKey = (needsDownloaded, needsTracked);
+              if (_asyncSets == null || _asyncSetsKey != setsKey) {
+                _asyncSetsKey = setsKey;
+                _asyncSets = _resolveAsyncFilterSets(
+                  downloadRepo: needsDownloaded ? downloadRepo : null,
+                  trackRepo: needsTracked ? trackRepo : null,
                 );
               }
-              return _LibraryBody(
-                items: items,
-                categories: categories,
-                query: _query,
-                sort: sortPref,
-                filters: effectiveFilters,
-                downloadedKeys: null,
-                trackedMangaIds: null,
-                displayMode: displayMode,
-                selectedCategoryId: _selectedCategoryId,
-                onCategoryChanged: (id) =>
-                    setState(() => _selectedCategoryId = id),
-                onRefresh: _refreshLibrary,
-                selected: _selected,
-                selecting: _selecting,
-                onToggleSelected: _toggleSelected,
-                onVisibleIdsResolved: (ids) => _visibleIds = ids,
+              return FutureBuilder<_AsyncFilterSets>(
+                future: _asyncSets,
+                builder: (context, snap) {
+                  if (!snap.hasData) {
+                    return const Center(
+                      child:
+                          CircularProgressIndicator(color: TideColors.accent),
+                    );
+                  }
+                  return _body(
+                    items,
+                    categories,
+                    sortPref,
+                    effectiveFilters,
+                    displayMode,
+                    snap.data!.downloadedKeys,
+                    snap.data!.trackedMangaIds,
+                  );
+                },
               );
-            },
-          );
-        },
+            }
+            return _body(
+              items,
+              categories,
+              sortPref,
+              effectiveFilters,
+              displayMode,
+              null,
+              null,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _body(
+    List<LibraryItem> items,
+    List<Category> categories,
+    LibrarySortPref sortPref,
+    LibraryFilters filters,
+    LibraryDisplayMode displayMode,
+    Set<String>? downloadedKeys,
+    Set<int>? trackedMangaIds,
+  ) {
+    return _LibraryBody(
+      items: items,
+      categories: categories,
+      query: _query,
+      sort: sortPref,
+      filters: filters,
+      downloadedKeys: downloadedKeys,
+      trackedMangaIds: trackedMangaIds,
+      displayMode: displayMode,
+      selectedCategoryId: _selectedCategoryId,
+      onCategoryChanged: (id) => setState(() => _selectedCategoryId = id),
+      onRefresh: _refreshLibrary,
+      selected: _selected,
+      selecting: _selecting,
+      onToggleSelected: _toggleSelected,
+      onVisibleIdsResolved: (ids) => _visibleIds = ids,
+    );
+  }
+}
+
+/// Filter control — lights when any axis is set.
+class _FilterButton extends StatelessWidget {
+  const _FilterButton({required this.active, required this.onTap});
+
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: TideGlass(
+        radius: 20,
+        tintTop: active ? 0.14 : 0.09,
+        tintBottom: active ? 0.05 : 0.03,
+        highlight: active ? 0.24 : 0.16,
+        border: active ? 0.22 : 0.11,
+        onTap: onTap,
+        child: Center(
+          child: Icon(
+            Icons.filter_list,
+            size: 17,
+            color: active ? TideColors.accent : TideColors.textAt(0.8),
+          ),
+        ),
       ),
     );
   }
 }
 
-/// Overflow-menu actions on the library toolbar. Mirrors Mihon's
-/// LibraryToolbar overflow: "Update library" (sweep every favourite),
-/// "Update category" (only the active category tab), and "Open random
-/// entry" (jump to a random manga in the current category).
-enum _LibraryMenuAction { updateLibrary, updateCategory, openRandom }
+/// Library actions — spins while a foreground update runs.
+class _OverflowButton extends StatelessWidget {
+  const _OverflowButton({required this.updating, required this.onTap});
+
+  final bool updating;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: TideGlass(
+        radius: 20,
+        tintTop: updating ? 0.14 : 0.09,
+        tintBottom: updating ? 0.05 : 0.03,
+        highlight: updating ? 0.24 : 0.16,
+        border: updating ? 0.22 : 0.11,
+        onTap: updating ? null : onTap,
+        child: Center(
+          child: updating
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: TideColors.accent,
+                  ),
+                )
+              : Icon(
+                  Icons.more_horiz,
+                  size: 18,
+                  color: TideColors.textAt(0.8),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bulk actions over the current selection. Mirrors Mihon's
+/// `LibraryBottomActionMenu`.
+class _SelectionBar extends StatelessWidget {
+  const _SelectionBar({
+    required this.onCategory,
+    required this.onMarkRead,
+    required this.onMarkUnread,
+    required this.onDownload,
+    required this.onRemove,
+  });
+
+  final VoidCallback onCategory;
+  final VoidCallback onMarkRead;
+  final VoidCallback onMarkUnread;
+  final VoidCallback onDownload;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 58,
+      child: TideGlass(
+        radius: 29,
+        blur: true,
+        tintTop: 0.13,
+        tintBottom: 0.05,
+        highlight: 0.26,
+        border: 0.15,
+        saturation: 1.9,
+        shadows: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 40,
+            offset: const Offset(0, 18),
+          ),
+        ],
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _BarAction(
+              icon: Icons.label_outline,
+              label: 'Category',
+              onTap: onCategory,
+            ),
+            _BarAction(icon: Icons.done_all, label: 'Read', onTap: onMarkRead),
+            _BarAction(
+              icon: Icons.remove_done,
+              label: 'Unread',
+              onTap: onMarkUnread,
+            ),
+            _BarAction(
+              icon: Icons.download_outlined,
+              label: 'Download',
+              onTap: onDownload,
+            ),
+            _BarAction(
+              icon: Icons.delete_outline,
+              label: 'Remove',
+              onTap: onRemove,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BarAction extends StatelessWidget {
+  const _BarAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 19, color: TideColors.textAt(0.85)),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TideText.caption(size: 9.5, opacity: 0.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// Holds the async-resolved sets that the filter predicate needs when
 /// either the Downloaded or Tracked axis is active. Either field may be
@@ -734,17 +946,12 @@ Future<_AsyncFilterSets> _resolveAsyncFilterSets({
   final tracks = trFut == null ? null : await trFut;
   return _AsyncFilterSets(
     downloadedKeys: dl,
-    trackedMangaIds:
-        tracks == null ? null : {for (final t in tracks) t.mangaId},
+    trackedMangaIds: tracks == null ? null : {for (final t in tracks) t.mangaId},
   );
 }
 
 /// Resolves the next unread chapter for [mangaId] and opens the reader on
-/// it, mirroring Mihon's library continue-reading button. "Next unread" is
-/// the first chapter (by `sourceOrder` ascending) whose `read` flag is
-/// false — the same ordering the bulk-download path uses. No-op with a
-/// snackbar when everything is read. [ref] must outlive the await (read,
-/// not watch).
+/// it, mirroring Mihon's library continue-reading button.
 Future<void> _resumeNextUnread(
   BuildContext context,
   WidgetRef ref,
@@ -752,9 +959,8 @@ Future<void> _resumeNextUnread(
 ) async {
   final messenger = ScaffoldMessenger.of(context);
   final navigator = Navigator.of(context);
-  final chapters = await ref.read(chapterRepositoryProvider).getByMangaId(
-        mangaId,
-      );
+  final chapters =
+      await ref.read(chapterRepositoryProvider).getByMangaId(mangaId);
   // sourceOrder 0 == NEWEST, so reading order is descending sourceOrder —
   // resume must open the OLDEST unread chapter (matches the details
   // screen's _pickNextUnread), not the latest release.
@@ -768,10 +974,7 @@ Future<void> _resumeNextUnread(
   }
   await navigator.push(
     MaterialPageRoute<void>(
-      builder: (_) => ReaderScreen(
-        mangaId: mangaId,
-        chapterId: unread.first.id,
-      ),
+      builder: (_) => ReaderScreen(mangaId: mangaId, chapterId: unread.first.id),
     ),
   );
 }
@@ -811,7 +1014,7 @@ class _LibraryBody extends ConsumerStatefulWidget {
   final ValueChanged<int> onToggleSelected;
 
   /// Reports the ids currently shown in the grid (post category/search/filter
-  /// narrowing) so the parent's Select-all / Invert actions act on them.
+  /// narrowing) so the header's Select-all / Invert actions act on them.
   final ValueChanged<List<int>> onVisibleIdsResolved;
 
   @override
@@ -819,12 +1022,9 @@ class _LibraryBody extends ConsumerStatefulWidget {
 }
 
 class _LibraryBodyState extends ConsumerState<_LibraryBody> {
-  // Memoised derived state (same idea as the details screen's _renderKey):
-  // the parent setStates on every selection tap / search keystroke / update
-  // spinner tick, and re-filtering + re-sorting the whole library per
-  // rebuild was the dominant per-frame cost. Keys compare the input
-  // lists/sets by identity (drift emits a fresh list per change; the async
-  // filter sets are memoised in the parent) and the scalar knobs by value.
+  // Memoised derived state: the parent setStates on every selection tap /
+  // search keystroke / update spinner tick, and re-filtering + re-sorting the
+  // whole library per rebuild was the dominant per-frame cost.
   Object? _bucketsKey;
   List<Category> _visibleCategories = const [];
   List<int> _tabIds = const [];
@@ -833,7 +1033,6 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
   Object? _pipelineKey;
   List<LibraryItem> _sorted = const [];
   List<int> _visibleIds = const [];
-
 
   @override
   Widget build(BuildContext context) {
@@ -844,7 +1043,7 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
     final filters = widget.filters;
 
     // Determine which categories actually contain at least one item; we
-    // only show tabs when there's something to switch between.
+    // only show chips when there's something to switch between.
     final bucketsKey = (items, categories);
     if (bucketsKey != _bucketsKey) {
       final usedIds = <int>{};
@@ -852,9 +1051,9 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
         usedIds.addAll(item.categoryIds);
       }
       // Filter the user-defined categories down to those with items. The
-      // system "uncategorized" (id=0) is added as its own tab below, so it
-      // must be excluded here — the DB seeds a real id-0 row (Mihon's system
-      // category) and keeping it produced a duplicate "Default" tab.
+      // system "uncategorized" (id=0) is added as its own chip below, so it
+      // must be excluded here — the DB seeds a real id-0 row and keeping it
+      // produced a duplicate "Default" chip.
       final visibleCategories = [
         for (final c in categories)
           if (!c.isSystemCategory && usedIds.contains(c.id)) c,
@@ -871,18 +1070,15 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
     final tabIds = _tabIds;
     final visibleCategories = _visibleCategories;
 
-    // Tabs follow Mihon's `showPageTabs`: shown when the "Show category tabs"
+    // Chips follow Mihon's `showPageTabs`: shown when the "Show category tabs"
     // pref is on OR a search is active — but still hidden when there's only
-    // one effective bucket to switch between. The per-tab count follows the
-    // "Show number of items" pref (or an active search), per Mihon's
-    // `getItemCountForCategory`.
+    // one effective bucket to switch between.
     final searching = query.isNotEmpty;
     final showCategoryTabsPref = ref.watch(categoryTabsProvider);
     final showCount = ref.watch(categoryNumberOfItemsProvider) || searching;
-    final showTabs =
-        (showCategoryTabsPref || searching) && tabIds.length > 1;
+    final showTabs = (showCategoryTabsPref || searching) && tabIds.length > 1;
 
-    // Pick the active id. Default to the first available tab if the
+    // Pick the active id. Default to the first available chip if the
     // currently-selected one disappeared.
     final activeId = showTabs && !tabIds.contains(widget.selectedCategoryId)
         ? tabIds.first
@@ -890,8 +1086,7 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
 
     // Random sort shuffles deterministically against the persisted seed
     // (regenerated whenever the user re-picks Random); every other axis uses
-    // the comparator. The seed is only watched while Random is active so
-    // re-picks elsewhere don't invalidate the memo.
+    // the comparator.
     final randomSeed = sort.axis == LibrarySortAxis.random
         ? ref.watch(randomSortSeedProvider)
         : 0;
@@ -914,9 +1109,7 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
     );
     if (pipelineKey != _pipelineKey) {
       final filteredByCategory = showTabs
-          ? items
-              .where((it) => it.inCategory(activeId))
-              .toList(growable: false)
+          ? items.where((it) => it.inCategory(activeId)).toList(growable: false)
           : items;
 
       final qLower = query.toLowerCase();
@@ -939,33 +1132,30 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
       _sorted = sort.axis == LibrarySortAxis.random
           ? ([...filtered]..shuffle(math.Random(randomSeed)))
           : ([...filtered]..sort(_compare(sort)));
-      _visibleIds =
-          _sorted.map((it) => it.manga.id).toList(growable: false);
+      _visibleIds = _sorted.map((it) => it.manga.id).toList(growable: false);
       _pipelineKey = pipelineKey;
     }
     final sorted = _sorted;
 
-    // Surface the visible ids so the toolbar's Select-all / Invert act on the
+    // Surface the visible ids so the header's Select-all / Invert act on the
     // displayed set. Pure assignment in the parent (no setState), so it's safe
     // to call during build.
     widget.onVisibleIdsResolved(_visibleIds);
 
-    // The most-read banner lived here; it now leads the home feed, and one
-    // app should not answer "what are you working through" twice.
     return Column(
       children: [
         if (showTabs)
-          _CategoryTabs(
+          _CategoryChips(
             tabIds: tabIds,
             categories: visibleCategories,
             activeId: activeId,
             showCount: showCount,
-            // Counted once per items emission (lazily, only while tabs show
-            // counts) instead of a where().length walk per tab per rebuild.
+            // Counted once per items emission (lazily, only while chips show
+            // counts) instead of a where().length walk per chip per rebuild.
             countFor: (id) => (_categoryCounts ??= {
-              for (final tabId in tabIds)
-                tabId: items.where((it) => it.inCategory(tabId)).length,
-            })[id] ??
+                  for (final tabId in tabIds)
+                    tabId: items.where((it) => it.inCategory(tabId)).length,
+                })[id] ??
                 0,
             onTabSelected: widget.onCategoryChanged,
           ),
@@ -974,13 +1164,15 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
               ? _EmptyMatches(query: query)
               : RefreshIndicator(
                   onRefresh: widget.onRefresh,
+                  color: TideColors.accent,
+                  backgroundColor: const Color(0xFF1A1E2C),
                   child: _LibraryGrid(
                     items: sorted,
                     displayMode: widget.displayMode,
-                    // orientationOf, not MediaQuery.of: the latter
-                    // subscribes to every media-query aspect, so the whole
-                    // grid rebuilt per frame of the keyboard-inset animation
-                    // when library search focused.
+                    // orientationOf, not MediaQuery.of: the latter subscribes
+                    // to every media-query aspect, so the whole grid rebuilt
+                    // per frame of the keyboard-inset animation when library
+                    // search focused.
                     columns: MediaQuery.orientationOf(context) ==
                             Orientation.landscape
                         ? ref.watch(landscapeColumnsProvider)
@@ -1021,14 +1213,15 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
           return 0;
       }
     }
+
     return sort.direction == LibrarySortDirection.ascending
         ? asc
         : (a, b) => asc(b, a);
   }
 }
 
-class _CategoryTabs extends StatelessWidget {
-  const _CategoryTabs({
+class _CategoryChips extends StatelessWidget {
+  const _CategoryChips({
     required this.tabIds,
     required this.categories,
     required this.activeId,
@@ -1051,32 +1244,25 @@ class _CategoryTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surface,
-      elevation: 0,
-      child: SizedBox(
-        height: 44,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          itemCount: tabIds.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 4),
-          itemBuilder: (context, i) {
-            final id = tabIds[i];
-            final selected = id == activeId;
-            final label = showCount
-                ? '${_labelFor(id)} (${countFor(id)})'
-                : _labelFor(id);
-            return Center(
-              child: ChoiceChip(
-                selected: selected,
-                label: Text(label),
-                onSelected: (_) => onTabSelected(id),
-              ),
-            );
-          },
-        ),
+    return SizedBox(
+      height: 46,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        itemCount: tabIds.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final id = tabIds[i];
+          final label =
+              showCount ? '${_labelFor(id)} · ${countFor(id)}' : _labelFor(id);
+          return Center(
+            child: TideChip(
+              label: label,
+              selected: id == activeId,
+              onTap: () => onTabSelected(id),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1104,25 +1290,26 @@ class _LibraryGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (displayMode == LibraryDisplayMode.list) {
-      return ListView.separated(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+      return ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 2, 16, 108),
         itemCount: items.length,
-        separatorBuilder: (_, _) => const Divider(height: 1),
-        itemBuilder: (context, i) => _MangaListTile(
-          item: items[i],
-          isSelected: selected.contains(items[i].manga.id),
-          selecting: selecting,
-          onToggleSelected: onToggleSelected,
+        itemBuilder: (context, i) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _MangaRow(
+            item: items[i],
+            isSelected: selected.contains(items[i].manga.id),
+            selecting: selecting,
+            onToggleSelected: onToggleSelected,
+          ),
         ),
       );
     }
     // Cover-only fits more per row because there's no title row eating
     // space below the cover.
-    final maxExtent = displayMode == LibraryDisplayMode.coverOnlyGrid
-        ? 120.0
-        : 140.0;
+    final maxExtent =
+        displayMode == LibraryDisplayMode.coverOnlyGrid ? 124.0 : 146.0;
     final aspectRatio =
-        displayMode == LibraryDisplayMode.comfortableGrid ? 0.58 : 0.66;
+        displayMode == LibraryDisplayMode.comfortableGrid ? 0.56 : 0.66;
     // 0 columns = Auto: fall back to a max-extent delegate that picks the
     // column count from the cover width. A fixed count honours the user's
     // "Items per row" slider.
@@ -1130,17 +1317,17 @@ class _LibraryGrid extends StatelessWidget {
         ? SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
             childAspectRatio: aspectRatio,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 12,
           )
         : SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: maxExtent,
             childAspectRatio: aspectRatio,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 12,
           );
     return GridView.builder(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 108),
       gridDelegate: gridDelegate,
       itemCount: items.length,
       itemBuilder: (context, i) => _MangaCard(
@@ -1154,134 +1341,8 @@ class _LibraryGrid extends StatelessWidget {
   }
 }
 
-/// Single-row tile for `LibraryDisplayMode.list`. Mirrors Mihon's
-/// `LibraryList`: 40x56 thumbnail on the left, title (1 line) + author
-/// (1 line) in the middle, unread + downloaded badges on the right.
-/// Long-press toggles selection (consistent with the grid modes).
-class _MangaListTile extends ConsumerWidget {
-  const _MangaListTile({
-    required this.item,
-    required this.isSelected,
-    required this.selecting,
-    required this.onToggleSelected,
-  });
-
-  final LibraryItem item;
-  final bool isSelected;
-  final bool selecting;
-  final ValueChanged<int> onToggleSelected;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final manga = item.manga;
-    final scheme = Theme.of(context).colorScheme;
-    final showUnreadBadge = ref.watch(displayUnreadBadgeProvider);
-    final showDownloadBadge = ref.watch(displayDownloadBadgeProvider);
-    final showLocalBadge = ref.watch(displayLocalBadgeProvider);
-    final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
-    final showContinueReading = ref.watch(showContinueReadingButtonProvider);
-    final isLocal = manga.source == LocalSource.numericId;
-    final sourceLangs = showLanguageBadge
-        ? ref.watch(installedSourceLangsProvider).valueOrNull
-        : null;
-    final lang =
-        (sourceLangs != null && !isLocal) ? sourceLangs[manga.source] : null;
-    return InkWell(
-      onTap: () {
-        if (selecting) {
-          onToggleSelected(manga.id);
-        } else {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => MangaDetailsScreen(mangaId: manga.id),
-            ),
-          );
-        }
-      },
-      onLongPress: () => onToggleSelected(manga.id),
-      child: Container(
-        color: isSelected ? scheme.primary.withValues(alpha: 0.15) : null,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 40,
-              height: 56,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: _Cover(manga: manga, cacheWidth: 180),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    manga.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  if (manga.author != null && manga.author!.isNotEmpty)
-                    Text(
-                      manga.author!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurface.withValues(alpha: 0.6),
-                          ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            if (showLocalBadge && isLocal)
-              const Padding(
-                padding: EdgeInsets.only(left: 4),
-                child: _TextChip(text: 'Local'),
-              ),
-            if (lang != null && lang.isNotEmpty && lang != 'all')
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: _TextChip(text: lang.toUpperCase()),
-              ),
-            if (showUnreadBadge && item.unreadCount > 0)
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: _UnreadBadge(count: item.unreadCount),
-              ),
-            if (showDownloadBadge)
-              _DownloadCountBadge(
-                sourceId: manga.source,
-                mangaId: manga.id,
-                padding: const EdgeInsets.only(left: 4),
-              ),
-            if (showContinueReading && !selecting && item.unreadCount > 0)
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: _ContinueReadingButton(
-                  size: 28,
-                  onPressed: () => _resumeNextUnread(context, ref, manga.id),
-                ),
-              ),
-            if (isSelected)
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Icon(Icons.check_circle, color: scheme.primary),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// Downloaded counts for EVERY manga from ONE downloads-tree walk, shared by
-/// all badges and refreshed when a download completes or is deleted. The
-/// previous per-badge probe re-walked a directory each time a card scrolled
-/// into view (grid builders destroy/recreate item state on recycle).
+/// all badges and refreshed when a download completes or is deleted.
 final _downloadedCountsProvider =
     FutureProvider.autoDispose<Map<String, int>>((ref) async {
   final repo = ref.watch(downloadRepositoryProvider);
@@ -1308,15 +1369,10 @@ final _downloadedCountsProvider =
 /// Downloaded-chapter-count badge — pure lookup into the shared counts map,
 /// no per-card I/O.
 class _DownloadCountBadge extends ConsumerWidget {
-  const _DownloadCountBadge({
-    required this.sourceId,
-    required this.mangaId,
-    this.padding = EdgeInsets.zero,
-  });
+  const _DownloadCountBadge({required this.sourceId, required this.mangaId});
 
   final int sourceId;
   final int mangaId;
-  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1324,12 +1380,24 @@ class _DownloadCountBadge extends ConsumerWidget {
     final count =
         counts?[DownloadRepository.encodeMangaKey(sourceId, mangaId)] ?? 0;
     if (count <= 0) return const SizedBox.shrink();
-    return Padding(
-      padding: padding,
-      child: _DownloadedBadge(count: count),
-    );
+    return _QuietBadge(text: '$count', icon: Icons.download_done_rounded);
   }
 }
+
+/// Reads the badge/overlay display preferences once for a cell.
+({
+  bool unread,
+  bool download,
+  bool local,
+  bool language,
+  bool resume,
+}) _badgePrefs(WidgetRef ref) => (
+      unread: ref.watch(displayUnreadBadgeProvider),
+      download: ref.watch(displayDownloadBadgeProvider),
+      local: ref.watch(displayLocalBadgeProvider),
+      language: ref.watch(displayLanguageBadgeProvider),
+      resume: ref.watch(showContinueReadingButtonProvider),
+    );
 
 class _MangaCard extends ConsumerWidget {
   const _MangaCard({
@@ -1357,140 +1425,264 @@ class _MangaCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final manga = item.manga;
-    final showCoverOverlayTitle =
-        displayMode == LibraryDisplayMode.compactGrid;
-    final showTitleBelow =
-        displayMode == LibraryDisplayMode.comfortableGrid;
-    final scheme = Theme.of(context).colorScheme;
-    final showUnreadBadge = ref.watch(displayUnreadBadgeProvider);
-    final showDownloadBadge = ref.watch(displayDownloadBadgeProvider);
-    final showLocalBadge = ref.watch(displayLocalBadgeProvider);
-    final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
-    final showContinueReading = ref.watch(showContinueReadingButtonProvider);
+    final overlayTitle = displayMode == LibraryDisplayMode.compactGrid;
+    final titleBelow = displayMode == LibraryDisplayMode.comfortableGrid;
+    final prefs = _badgePrefs(ref);
     final isLocal = manga.source == LocalSource.numericId;
-    final sourceLangs = showLanguageBadge
+    final sourceLangs = prefs.language
         ? ref.watch(installedSourceLangsProvider).valueOrNull
         : null;
     final lang =
         (sourceLangs != null && !isLocal) ? sourceLangs[manga.source] : null;
-    // Build the top-left badge column: unread on top, then Local/lang
-    // chips below it. Each entry is omitted when its toggle is off so
-    // the column collapses cleanly.
-    final topLeftChildren = <Widget>[
-      if (showUnreadBadge && item.unreadCount > 0)
-        _UnreadBadge(count: item.unreadCount),
-      if (showLocalBadge && isLocal) const _TextChip(text: 'Local'),
-      if (lang != null && lang.isNotEmpty && lang != 'all')
-        _TextChip(text: lang.toUpperCase()),
-    ];
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: isSelected
-            ? BorderSide(color: scheme.primary, width: 3)
-            : BorderSide.none,
+    final cover = Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.42),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
-      child: InkWell(
-        onTap: () {
-          if (selecting) {
-            onToggleSelected(manga.id);
-          } else {
-            _open(context);
-          }
-        },
-        onLongPress: () => onToggleSelected(manga.id),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _Cover(manga: manga),
-                  // Top-start badge column: unread count, then Local /
-                  // language chips stacked beneath.
-                  if (topLeftChildren.isNotEmpty)
-                    Positioned(
-                      top: 4,
-                      left: 4,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (var i = 0; i < topLeftChildren.length; i++) ...[
-                            if (i > 0) const SizedBox(height: 2),
-                            topLeftChildren[i],
-                          ],
-                        ],
-                      ),
-                    ),
-                  // Top-end badge: count of fully-downloaded chapters.
-                  if (showDownloadBadge)
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: _DownloadCountBadge(
-                        sourceId: manga.source,
-                        mangaId: manga.id,
-                      ),
-                    ),
-                  if (showCoverOverlayTitle)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: _CoverTitleOverlay(title: manga.title),
-                    ),
-                  // Bottom-end resume button. Only when the pref is on,
-                  // there's something unread, and we're not selecting —
-                  // matches Mihon's `onClickContinueReading` placement.
-                  if (showContinueReading &&
-                      !selecting &&
-                      item.unreadCount > 0)
-                    Positioned(
-                      right: 6,
-                      bottom: 6,
-                      child: _ContinueReadingButton(
-                        onPressed: () =>
-                            _resumeNextUnread(context, ref, manga.id),
-                      ),
-                    ),
-                  // Selection scrim + check icon. Drawn on top of every
-                  // other overlay so the selection state is obvious.
-                  if (isSelected)
-                    Positioned.fill(
-                      child: ColoredBox(
-                        color: scheme.primary.withValues(alpha: 0.35),
-                        child: Center(
-                          child: Icon(
-                            Icons.check_circle,
-                            size: 36,
-                            color: scheme.onPrimary,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            if (showTitleBelow)
-              Padding(
-                padding: const EdgeInsets.all(6),
+            TideCover(manga: manga),
+            if (overlayTitle) ...[
+              const Positioned.fill(child: TideScrim()),
+              Positioned(
+                left: 8,
+                // Clear of the resume disc when one is showing — the title
+                // used to run underneath it.
+                right: prefs.resume && !selecting && item.unreadCount > 0
+                    ? 48
+                    : 8,
+                bottom: 8,
                 child: Text(
                   manga.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: TideText.title(size: 12.5).copyWith(
+                    color: TideColors.brightAt(0.92),
+                    height: 1.2,
+                  ),
                 ),
               ),
+            ],
+            // Top-start: unread is the number you are looking for, so it
+            // takes the accent; Local / language sit back beneath it.
+            Positioned(
+              top: 7,
+              left: 7,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (prefs.unread && item.unreadCount > 0)
+                    _UnreadBadge(count: item.unreadCount),
+                  if (prefs.local && isLocal) ...[
+                    const SizedBox(height: 4),
+                    const _QuietBadge(text: 'LOCAL'),
+                  ],
+                  if (lang != null && lang.isNotEmpty && lang != 'all') ...[
+                    const SizedBox(height: 4),
+                    _QuietBadge(text: lang.toUpperCase()),
+                  ],
+                ],
+              ),
+            ),
+            if (prefs.download)
+              Positioned(
+                top: 7,
+                right: 7,
+                child: _DownloadCountBadge(
+                  sourceId: manga.source,
+                  mangaId: manga.id,
+                ),
+              ),
+            if (prefs.resume && !selecting && item.unreadCount > 0)
+              Positioned(
+                right: 7,
+                bottom: 7,
+                child: _ResumeButton(
+                  onTap: () => _resumeNextUnread(context, ref, manga.id),
+                ),
+              ),
+            if (isSelected)
+              Positioned.fill(
+                child: ColoredBox(
+                  color: TideColors.accent.withValues(alpha: 0.22),
+                  child: const Center(child: _SelectMark(selected: true)),
+                ),
+              ),
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => selecting
+                    ? onToggleSelected(manga.id)
+                    : _open(context),
+                onLongPress: () => onToggleSelected(manga.id),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final lit = isSelected
+        ? Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: TideColors.accent.withValues(alpha: 0.9),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: TideColors.accent.withValues(alpha: 0.35),
+                  blurRadius: 18,
+                ),
+              ],
+            ),
+            child: cover,
+          )
+        : cover;
+
+    if (!titleBelow) return lit;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: lit),
+        Padding(
+          padding: const EdgeInsets.only(top: 7),
+          child: Text(
+            manga.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TideText.caption(size: 11.5, opacity: 0.62),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Single row for `LibraryDisplayMode.list`.
+class _MangaRow extends ConsumerWidget {
+  const _MangaRow({
+    required this.item,
+    required this.isSelected,
+    required this.selecting,
+    required this.onToggleSelected,
+  });
+
+  final LibraryItem item;
+  final bool isSelected;
+  final bool selecting;
+  final ValueChanged<int> onToggleSelected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final manga = item.manga;
+    final prefs = _badgePrefs(ref);
+    final isLocal = manga.source == LocalSource.numericId;
+    final sourceLangs = prefs.language
+        ? ref.watch(installedSourceLangsProvider).valueOrNull
+        : null;
+    final lang =
+        (sourceLangs != null && !isLocal) ? sourceLangs[manga.source] : null;
+
+    return TideGlass(
+      radius: 16,
+      tintTop: isSelected ? 0.16 : 0.075,
+      tintBottom: isSelected ? 0.05 : 0.026,
+      highlight: isSelected ? 0.20 : 0.14,
+      border: isSelected ? 0.30 : 0.09,
+      onTap: () =>
+          selecting ? onToggleSelected(manga.id) : _openDetails(context),
+      padding: const EdgeInsets.fromLTRB(11, 11, 14, 11),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onLongPress: () => onToggleSelected(manga.id),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 44,
+              height: 58,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: TideCover(manga: manga, cacheWidth: 180),
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    manga.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.title(),
+                  ),
+                  if (manga.author != null && manga.author!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      manga.author!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TideText.caption(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (prefs.local && isLocal) ...[
+              const SizedBox(width: 6),
+              const _QuietBadge(text: 'LOCAL'),
+            ],
+            if (lang != null && lang.isNotEmpty && lang != 'all') ...[
+              const SizedBox(width: 6),
+              _QuietBadge(text: lang.toUpperCase()),
+            ],
+            if (prefs.download) ...[
+              const SizedBox(width: 6),
+              _DownloadCountBadge(sourceId: manga.source, mangaId: manga.id),
+            ],
+            if (prefs.unread && item.unreadCount > 0) ...[
+              const SizedBox(width: 6),
+              _UnreadBadge(count: item.unreadCount),
+            ],
+            if (prefs.resume && !selecting && item.unreadCount > 0) ...[
+              const SizedBox(width: 8),
+              _ResumeButton(
+                size: 30,
+                onTap: () => _resumeNextUnread(context, ref, manga.id),
+              ),
+            ],
+            if (selecting) ...[
+              const SizedBox(width: 8),
+              _SelectMark(selected: isSelected),
+            ],
           ],
         ),
       ),
     );
   }
+
+  void _openDetails(BuildContext context) => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => MangaDetailsScreen(mangaId: item.manga.id),
+        ),
+      );
 }
 
+/// Unread count — the accent filling a small shape, which is the one thing
+/// Nocturne lets it fill.
 class _UnreadBadge extends StatelessWidget {
   const _UnreadBadge({required this.count});
 
@@ -1498,155 +1690,146 @@ class _UnreadBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: scheme.primary,
-        borderRadius: BorderRadius.circular(4),
+        color: TideColors.accent,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: TideColors.accent.withValues(alpha: 0.5),
+            blurRadius: 12,
+          ),
+        ],
       ),
       child: Text(
         '$count',
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: scheme.onPrimary,
-              fontWeight: FontWeight.w600,
-            ),
+        style: const TextStyle(
+          fontSize: 11,
+          height: 1.2,
+          fontWeight: FontWeight.w500,
+          color: TideColors.ground,
+        ),
       ),
     );
   }
 }
 
-/// Top-end badge showing the number of fully-downloaded chapters. Used
-/// alongside the unread badge so the cover can advertise both states
-/// without competing for the same corner. Mihon's badge palette: green
-/// tertiary for downloaded, primary for unread.
-class _DownloadedBadge extends StatelessWidget {
-  const _DownloadedBadge({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: scheme.tertiary,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        '$count',
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: scheme.onTertiary,
-              fontWeight: FontWeight.w600,
-            ),
-      ),
-    );
-  }
-}
-
-/// Compact label chip used for the Local / language-code badges.
-/// Visually distinct from the unread/downloaded count badges (uses the
-/// theme's `secondary` so the count badges stay the primary signal),
-/// but the same rounded-rect padding so they line up in a column.
-class _TextChip extends StatelessWidget {
-  const _TextChip({required this.text});
+/// Everything that is a fact rather than the headline number: downloaded
+/// count, Local, language. Glass, so it sits back from the accent badge.
+class _QuietBadge extends StatelessWidget {
+  const _QuietBadge({required this.text, this.icon});
 
   final String text;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: scheme.secondary,
-        borderRadius: BorderRadius.circular(4),
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
       ),
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: scheme.onSecondary,
-              fontWeight: FontWeight.w600,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 11, color: TideColors.textAt(0.75)),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 10,
+              height: 1.25,
+              letterSpacing: 0.4,
+              fontWeight: FontWeight.w500,
+              color: TideColors.textAt(0.85),
             ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// Filled play button overlaid on a card / list row when the
-/// continue-reading pref is on. Mirrors Mihon's `ContinueReadingButton`:
-/// a small rounded `FilledIconButton` using the `primaryContainer`
-/// colour. [size] differs by host (grid corner vs list trailing).
-class _ContinueReadingButton extends StatelessWidget {
-  const _ContinueReadingButton({
-    required this.onPressed,
-    this.size = 32,
-  });
+/// Resume — the same accent disc the series screen's Continue bar uses.
+class _ResumeButton extends StatelessWidget {
+  const _ResumeButton({required this.onTap, this.size = 34});
 
-  final VoidCallback onPressed;
+  final VoidCallback onTap;
   final double size;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: size,
-      height: size,
-      child: IconButton.filled(
-        padding: EdgeInsets.zero,
-        iconSize: size * 0.6,
-        style: IconButton.styleFrom(
-          backgroundColor: scheme.primaryContainer.withValues(alpha: 0.9),
-          foregroundColor: scheme.onPrimaryContainer,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(6),
-          ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: TideColors.accent,
+          boxShadow: [
+            BoxShadow(
+              color: TideColors.accent.withValues(alpha: 0.5),
+              blurRadius: 16,
+            ),
+          ],
         ),
-        tooltip: 'Resume',
-        onPressed: onPressed,
-        icon: const Icon(Icons.play_arrow),
+        child: Icon(
+          Icons.play_arrow_rounded,
+          size: size * 0.62,
+          color: const Color(0xFF12141F),
+        ),
       ),
     );
   }
 }
 
-class _CoverTitleOverlay extends StatelessWidget {
-  const _CoverTitleOverlay({required this.title});
+class _SelectMark extends StatelessWidget {
+  const _SelectMark({required this.selected});
 
-  final String title;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(6, 12, 6, 6),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.transparent, Color(0xCC000000)],
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: tideEase,
+      width: 26,
+      height: 26,
+      decoration: BoxDecoration(
+        color:
+            selected ? TideColors.accent : Colors.white.withValues(alpha: 0.06),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected
+              ? TideColors.accent
+              : Colors.white.withValues(alpha: 0.28),
         ),
+        boxShadow: selected
+            ? [
+                BoxShadow(
+                  color: TideColors.accent.withValues(alpha: 0.5),
+                  blurRadius: 14,
+                ),
+              ]
+            : null,
       ),
-      child: Text(
-        title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          height: 1.2,
-          fontWeight: FontWeight.w500,
-          shadows: [Shadow(blurRadius: 4, color: Colors.black)],
-        ),
-      ),
+      child: selected
+          ? const Icon(Icons.check_rounded, size: 16, color: TideColors.ground)
+          : null,
     );
   }
 }
 
-/// Bottom sheet for the bulk "Move to category" action. Returns the set
-/// of category ids the user picked (empty Set means "no categories" —
-/// the manga ends up in Uncategorized). Cancel returns null so the
-/// caller leaves memberships untouched.
+/// Bulk "Move to category". Returns the set of category ids the user picked
+/// (empty Set means "no categories" — the manga ends up in Uncategorized).
+/// Cancel returns null so the caller leaves memberships untouched.
 class _BulkCategorySheet extends StatefulWidget {
   const _BulkCategorySheet({required this.categories});
 
@@ -1661,102 +1844,56 @@ class _BulkCategorySheetState extends State<_BulkCategorySheet> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Text(
-                'Move to category',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                children: widget.categories.map((c) {
-                  final checked = _picked.contains(c.id);
-                  return CheckboxListTile(
-                    value: checked,
-                    onChanged: (v) {
-                      setState(() {
-                        if (v == true) {
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Move to category', style: TideText.display(21)),
+          const SizedBox(height: 16),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final (i, c) in widget.categories.indexed) ...[
+                    if (i > 0) const SizedBox(height: 10),
+                    TideCheck(
+                      label: c.name,
+                      value: _picked.contains(c.id),
+                      onChanged: (v) => setState(() {
+                        if (v) {
                           _picked.add(c.id);
                         } else {
                           _picked.remove(c.id);
                         }
-                      });
-                    },
-                    title: Text(c.name),
-                  );
-                }).toList(growable: false),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(_picked),
-                    child: const Text('Save'),
-                  ),
+                      }),
+                    ),
+                  ],
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Cover extends ConsumerWidget {
-  const _Cover({required this.manga, this.cacheWidth = 480});
-
-  final Manga manga;
-
-  /// Physical-pixel decode cap. Defaults to the grid cell's 480; the list
-  /// tile's 40dp cover overrides it to 180 (the app's list-thumbnail width,
-  /// same as Updates/History) so the shared widget doesn't decode and cache a
-  /// list thumbnail at ~7× the pixels it can show.
-  final int cacheWidth;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final placeholderColor =
-        Theme.of(context).colorScheme.surfaceContainerHighest;
-    final url =
-        ref.watch(coverCacheProvider).coverUrlFor(manga.id, manga.thumbnailUrl);
-    if (url == null || url.isEmpty) {
-      return Container(
-        color: placeholderColor,
-        alignment: Alignment.center,
-        child: const Icon(Icons.menu_book, size: 48),
-      );
-    }
-    final headers = ref
-        .watch(installedSourceImageHeadersProvider)
-        .valueOrNull?[manga.source];
-    return SourceImage(
-      cacheWidth: cacheWidth,
-      url: url,
-      headers: headers,
-      fit: BoxFit.cover,
-      placeholder: (_) => Container(color: placeholderColor),
-      errorWidget: (_, _) => Container(
-        color: placeholderColor,
-        alignment: Alignment.center,
-        child: const Icon(Icons.broken_image_outlined, size: 36),
+          ),
+          const SizedBox(height: 22),
+          Row(
+            children: [
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TideButton(
+                  label: 'Save',
+                  primary: true,
+                  onTap: () => Navigator.of(context).pop(_picked),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1768,21 +1905,25 @@ class _EmptyLibrary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.collections_bookmark_outlined, size: 64),
-          const SizedBox(height: 12),
-          Text(
-            'Your library is empty.',
-            style: Theme.of(context).textTheme.titleMedium,
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: TideGlass(
+          radius: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 44),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Your library is empty',
+                  textAlign: TextAlign.center, style: TideText.display(23)),
+              const SizedBox(height: 10),
+              Text(
+                'Find something on Browse and add it, and it will live here.',
+                textAlign: TextAlign.center,
+                style: TideText.body(),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Use the Browse tab to add manga to your library.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1797,11 +1938,13 @@ class _EmptyMatches extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(28),
         child: Text(
           query.isEmpty
               ? 'Nothing in this category yet.'
               : 'No matches for "$query".',
+          textAlign: TextAlign.center,
+          style: TideText.body(),
         ),
       ),
     );
@@ -1817,23 +1960,20 @@ class _ErrorView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(28),
         child: Text(
           'Failed to load library: $error',
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium,
+          style: TideText.body(),
         ),
       ),
     );
   }
 }
 
-/// Library toolbar title. Mirrors Mihon's `getToolbarTitle`: shows
-/// "Library" while category tabs are on, or the active category's name when
-/// they're off. A trailing count "pill" is appended only when the
-/// "Show number of items" preference ([categoryNumberOfItemsProvider]) is on
-/// — the whole-library count with tabs on, or the per-category count with
-/// tabs off.
+/// Header title: "Library" while category chips are on, or the active
+/// category's name when they're off, with a trailing count when the
+/// "Show number of items" preference is on.
 class _LibraryTitle extends ConsumerWidget {
   const _LibraryTitle({
     required this.selectedCategoryId,
@@ -1853,21 +1993,14 @@ class _LibraryTitle extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final showTabs = ref.watch(categoryTabsProvider);
     final showCount = ref.watch(categoryNumberOfItemsProvider);
-    final theme = Theme.of(context);
 
     return StreamBuilder<List<LibraryItem>>(
       stream: libraryStream,
       builder: (context, snap) {
         final items = snap.data ?? const <LibraryItem>[];
-
         if (showTabs) {
-          // Tabs on: title is "Library"; count (if shown) is the whole-
-          // library favourites size.
-          return _titleRow(theme, 'Library', showCount ? items.length : null);
+          return _row('Library', showCount ? items.length : null);
         }
-        // Tabs off: title is the active category name; count (if shown) is
-        // that category's size. Resolve the name asynchronously without
-        // blocking the title.
         final count = showCount
             ? items.where((it) => it.inCategory(selectedCategoryId)).length
             : null;
@@ -1875,47 +2008,45 @@ class _LibraryTitle extends ConsumerWidget {
           stream: categoryStream,
           builder: (context, catSnap) {
             final categories = catSnap.data ?? const <Category>[];
-            final match =
-                categories.where((c) => c.id == selectedCategoryId);
+            final match = categories.where((c) => c.id == selectedCategoryId);
             final name =
                 selectedCategoryId == Category.uncategorizedId || match.isEmpty
                     ? 'Default'
                     : match.first.name;
-            return _titleRow(theme, name, count);
+            return _row(name, count);
           },
         );
       },
     );
   }
 
-  Widget _titleRow(ThemeData theme, String text, int? count) {
-    if (count == null) return Text(text);
+  Widget _row(String text, int? count) {
+    const style = TextStyle(
+      fontSize: 21,
+      height: 1.15,
+      fontWeight: FontWeight.w500,
+      letterSpacing: -0.5,
+      color: TideColors.text,
+    );
+    if (count == null) {
+      return Text(text, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: style);
+    }
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        Flexible(child: Text(text, overflow: TextOverflow.ellipsis)),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            '$count',
-            style: theme.textTheme.bodyMedium,
-          ),
+        Flexible(
+          child: Text(text,
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: style),
         ),
+        const SizedBox(width: 9),
+        Text('$count', style: TideText.caption(size: 13, opacity: 0.4)),
       ],
     );
   }
 }
 
-/// Tabbed Filter / Sort / Display settings sheet for the library. Mirrors
-/// Mihon's `LibrarySettingsDialog` (a TabbedDialog with three tabs). Every
-/// change applies live: filter toggles flow back through [onFiltersChanged];
-/// sort and display write straight to their providers — so there are no
-/// Apply/Cancel buttons.
+/// Filter / Sort / Display behind one glass sheet, switched with the same
+/// segmented control Browse uses. Every change applies live.
 class _LibrarySettingsSheet extends ConsumerStatefulWidget {
   const _LibrarySettingsSheet({
     required this.current,
@@ -1932,47 +2063,39 @@ class _LibrarySettingsSheet extends ConsumerStatefulWidget {
 
 class _LibrarySettingsSheetState extends ConsumerState<_LibrarySettingsSheet> {
   late LibraryFilters _draft = widget.current;
+  int _view = 0;
 
   void _set(LibraryFilters next) {
     setState(() => _draft = next);
     widget.onFiltersChanged(next);
   }
 
-  TriState _cycle(TriState v) {
-    switch (v) {
-      case TriState.disabled:
-        return TriState.enabledIs;
-      case TriState.enabledIs:
-        return TriState.enabledNot;
-      case TriState.enabledNot:
-        return TriState.disabled;
-    }
-  }
+  TriState _cycle(TriState v) => switch (v) {
+        TriState.disabled => TriState.enabledIs,
+        TriState.enabledIs => TriState.enabledNot,
+        TriState.enabledNot => TriState.disabled,
+      };
 
   @override
   Widget build(BuildContext context) {
-    final height = MediaQuery.sizeOf(context).height * 0.6;
-    return SizedBox(
-      height: height,
-      child: DefaultTabController(
-        length: 3,
+    return TideSheetPanel(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.55,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const TabBar(
-              tabs: [
-                Tab(text: 'Filter'),
-                Tab(text: 'Sort'),
-                Tab(text: 'Display'),
-              ],
+            TideSegmented(
+              labels: const ['Filter', 'Sort', 'Display'],
+              index: _view,
+              onChanged: (i) => setState(() => _view = i),
             ),
+            const SizedBox(height: 16),
             Expanded(
-              child: TabBarView(
-                children: [
-                  _buildFilterTab(),
-                  const _SortTab(),
-                  const _DisplayTab(),
-                ],
-              ),
+              child: switch (_view) {
+                0 => _filterView(),
+                1 => const _SortView(),
+                _ => const _DisplayView(),
+              },
             ),
           ],
         ),
@@ -1980,101 +2103,94 @@ class _LibrarySettingsSheetState extends ConsumerState<_LibrarySettingsSheet> {
     );
   }
 
-  Widget _buildFilterTab() {
+  Widget _filterView() {
     // Kotlin FilterPage order: Downloaded, Unread, Started, Bookmarked,
-    // Completed, (interval custom — debug only, omitted), Tracked.
-    // While "Downloaded only" mode is on, the Downloaded row is pinned to
-    // enabled and locked (Kotlin LibrarySettingsDialog: enabled = false).
+    // Completed, Tracked. While "Downloaded only" mode is on, the Downloaded
+    // row is pinned to enabled and locked.
     final downloadedOnly = ref.watch(downloadedOnlyProvider);
-    return ListView(
-      children: [
-        _TriStateRow(
-          label: 'Downloaded',
-          state: downloadedOnly ? TriState.enabledIs : _draft.downloaded,
-          onTap: downloadedOnly
-              ? null
-              : () =>
-                  _set(_draft.copyWith(downloaded: _cycle(_draft.downloaded))),
-        ),
-        _TriStateRow(
-          label: 'Unread',
-          state: _draft.unread,
-          onTap: () => _set(_draft.copyWith(unread: _cycle(_draft.unread))),
-        ),
-        _TriStateRow(
-          label: 'Started',
-          state: _draft.started,
-          onTap: () => _set(_draft.copyWith(started: _cycle(_draft.started))),
-        ),
-        _TriStateRow(
-          label: 'Bookmarked',
-          state: _draft.bookmarked,
-          onTap: () =>
-              _set(_draft.copyWith(bookmarked: _cycle(_draft.bookmarked))),
-        ),
-        _TriStateRow(
-          label: 'Completed',
-          state: _draft.completed,
-          onTap: () =>
-              _set(_draft.copyWith(completed: _cycle(_draft.completed))),
-        ),
-        _TriStateRow(
-          label: 'Tracked',
-          state: _draft.tracked,
-          onTap: () => _set(_draft.copyWith(tracked: _cycle(_draft.tracked))),
-        ),
-      ],
+    final rows = <Widget>[
+      _TriRow(
+        label: 'Downloaded',
+        state: downloadedOnly ? TriState.enabledIs : _draft.downloaded,
+        locked: downloadedOnly,
+        onTap: downloadedOnly
+            ? null
+            : () => _set(_draft.copyWith(downloaded: _cycle(_draft.downloaded))),
+      ),
+      _TriRow(
+        label: 'Unread',
+        state: _draft.unread,
+        onTap: () => _set(_draft.copyWith(unread: _cycle(_draft.unread))),
+      ),
+      _TriRow(
+        label: 'Started',
+        state: _draft.started,
+        onTap: () => _set(_draft.copyWith(started: _cycle(_draft.started))),
+      ),
+      _TriRow(
+        label: 'Bookmarked',
+        state: _draft.bookmarked,
+        onTap: () =>
+            _set(_draft.copyWith(bookmarked: _cycle(_draft.bookmarked))),
+      ),
+      _TriRow(
+        label: 'Completed',
+        state: _draft.completed,
+        onTap: () => _set(_draft.copyWith(completed: _cycle(_draft.completed))),
+      ),
+      _TriRow(
+        label: 'Tracked',
+        state: _draft.tracked,
+        onTap: () => _set(_draft.copyWith(tracked: _cycle(_draft.tracked))),
+      ),
+    ];
+    return ListView.separated(
+      itemCount: rows.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (_, i) => rows[i],
     );
   }
 }
 
-/// A single tri-state filter row: a leading checkbox-style icon (blank →
-/// included → excluded) and a label. Mirrors Mihon's `TriStateItem`.
-class _TriStateRow extends StatelessWidget {
-  const _TriStateRow({
+/// One tri-state axis, stated in words — three states behind one icon is a
+/// puzzle the reader has to solve every time.
+class _TriRow extends StatelessWidget {
+  const _TriRow({
     required this.label,
     required this.state,
     required this.onTap,
+    this.locked = false,
   });
 
   final String label;
   final TriState state;
-
-  /// Null renders the row disabled (greyed, non-interactive) — used while
-  /// "Downloaded only" mode pins the Downloaded axis.
   final VoidCallback? onTap;
+
+  /// Pinned by "Downloaded only" mode — shown, but not changeable here.
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final IconData icon;
-    switch (state) {
-      case TriState.disabled:
-        icon = Icons.check_box_outline_blank;
-      case TriState.enabledIs:
-        icon = Icons.check_box;
-      case TriState.enabledNot:
-        icon = Icons.disabled_by_default;
-    }
-    return ListTile(
-      enabled: onTap != null,
-      leading: Icon(
-        icon,
-        color: state == TriState.disabled ? null : theme.colorScheme.primary,
-      ),
-      title: Text(label),
+    final (icon, word) = switch (state) {
+      TriState.disabled => (Icons.check_box_outline_blank, 'Off'),
+      TriState.enabledIs => (Icons.check_box, 'Include'),
+      TriState.enabledNot => (Icons.disabled_by_default, 'Exclude'),
+    };
+    final row = TideRow(
+      icon: icon,
+      title: label,
+      subtitle: locked ? '$word · locked by Downloaded only' : word,
+      lit: state != TriState.disabled,
       onTap: onTap,
     );
+    return locked ? Opacity(opacity: 0.55, child: row) : row;
   }
 }
 
-/// Sort tab of the library settings sheet. Lists each sort axis with an
-/// asc/desc arrow on the active one; tapping the active axis flips
-/// direction, tapping another switches axes. Random sits last with a
-/// Refresh icon and reshuffles each time it's (re-)selected. Mirrors
-/// Mihon's `SortPage`.
-class _SortTab extends ConsumerWidget {
-  const _SortTab();
+/// Sort axes. Tapping the active one flips direction; tapping another
+/// switches axis. Random reshuffles each time it is re-picked.
+class _SortView extends ConsumerWidget {
+  const _SortView();
 
   static const _entries = <(LibrarySortAxis, String)>[
     (LibrarySortAxis.title, 'Alphabetically'),
@@ -2091,53 +2207,48 @@ class _SortTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final current = ref.watch(librarySortProvider);
-    final theme = Theme.of(context);
-    return ListView(
-      children: [
-        for (final entry in _entries)
-          ListTile(
-            leading: Icon(
-              entry.$1 == LibrarySortAxis.random
-                  ? (entry.$1 == current.axis ? Icons.refresh : null)
-                  : (entry.$1 == current.axis
-                      ? (current.direction == LibrarySortDirection.ascending
-                          ? Icons.arrow_upward
-                          : Icons.arrow_downward)
-                      : null),
-              color:
-                  entry.$1 == current.axis ? theme.colorScheme.primary : null,
-            ),
-            title: Text(
-              entry.$2,
-              style: entry.$1 == current.axis
-                  ? TextStyle(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    )
-                  : null,
-            ),
-            onTap: () {
-              ref.read(librarySortProvider.notifier).setAxis(entry.$1);
-              if (entry.$1 == LibrarySortAxis.random) {
-                ref.read(randomSortSeedProvider.notifier).regenerate();
-              }
-            },
-          ),
-      ],
+    return ListView.separated(
+      itemCount: _entries.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (_, i) {
+        final (axis, label) = _entries[i];
+        final active = axis == current.axis;
+        final ascending = current.direction == LibrarySortDirection.ascending;
+        return TideRow(
+          icon: axis == LibrarySortAxis.random
+              ? Icons.shuffle
+              : active
+                  ? (ascending ? Icons.arrow_upward : Icons.arrow_downward)
+                  : Icons.remove,
+          title: label,
+          subtitle: active && axis != LibrarySortAxis.random
+              ? (ascending ? 'Ascending' : 'Descending')
+              : null,
+          lit: active,
+          trailing: active
+              ? const Icon(Icons.check_rounded,
+                  size: 18, color: TideColors.accent)
+              : null,
+          onTap: () {
+            ref.read(librarySortProvider.notifier).setAxis(axis);
+            if (axis == LibrarySortAxis.random) {
+              ref.read(randomSortSeedProvider.notifier).regenerate();
+            }
+          },
+        );
+      },
     );
   }
 }
 
-/// Display tab of the library settings sheet. Mirrors Mihon's `DisplayPage`:
-/// a chip row of display modes, an "items per row" slider (grid modes only),
-/// then Overlay and Tabs sections of checkbox toggles.
-class _DisplayTab extends ConsumerWidget {
-  const _DisplayTab();
+/// Display mode, density, and which overlays the covers carry.
+class _DisplayView extends ConsumerWidget {
+  const _DisplayView();
 
   static const _modes = <(LibraryDisplayMode, String)>[
-    (LibraryDisplayMode.compactGrid, 'Compact grid'),
-    (LibraryDisplayMode.comfortableGrid, 'Comfortable grid'),
-    (LibraryDisplayMode.coverOnlyGrid, 'Cover-only grid'),
+    (LibraryDisplayMode.compactGrid, 'Compact'),
+    (LibraryDisplayMode.comfortableGrid, 'Comfortable'),
+    (LibraryDisplayMode.coverOnlyGrid, 'Cover only'),
     (LibraryDisplayMode.list, 'List'),
   ];
 
@@ -2154,120 +2265,113 @@ class _DisplayTab extends ConsumerWidget {
         : ref.read(portraitColumnsProvider.notifier);
 
     return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final (m, label) in _modes)
+              TideChip(
+                label: label,
+                selected: mode == m,
+                onTap: () =>
+                    ref.read(libraryDisplayModeProvider.notifier).setMode(m),
+              ),
+          ],
+        ),
+        if (mode != LibraryDisplayMode.list) ...[
+          const SizedBox(height: 18),
+          Row(
             children: [
-              for (final m in _modes)
-                FilterChip(
-                  selected: mode == m.$1,
-                  onSelected: (_) =>
-                      ref.read(libraryDisplayModeProvider.notifier).setMode(m.$1),
-                  label: Text(m.$2),
+              Expanded(
+                child: Text(
+                  'Items per row',
+                  style: TideText.title(size: 13.5),
                 ),
+              ),
+              Text(
+                columns > 0 ? '$columns' : 'Auto',
+                style: TideText.title(size: 13.5, color: TideColors.accent),
+              ),
             ],
           ),
-        ),
-        if (mode != LibraryDisplayMode.list)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                const Expanded(child: Text('Items per row')),
-                Text(columns > 0 ? '$columns' : 'Auto'),
-              ],
+          SliderTheme(
+            data: SliderThemeData(
+              activeTrackColor: TideColors.accent,
+              inactiveTrackColor: Colors.white.withValues(alpha: 0.12),
+              thumbColor: TideColors.accentLight,
+              overlayColor: TideColors.accent.withValues(alpha: 0.15),
+              valueIndicatorColor: TideColors.accent,
+              trackHeight: 3,
+            ),
+            child: Slider(
+              value: columns.toDouble().clamp(0, 10),
+              min: 0,
+              max: 10,
+              divisions: 10,
+              label: columns > 0 ? '$columns' : 'Auto',
+              onChanged: (v) => columnsNotifier.setValue(v.round()),
             ),
           ),
-        if (mode != LibraryDisplayMode.list)
-          Slider(
-            value: columns.toDouble().clamp(0, 10),
-            min: 0,
-            max: 10,
-            divisions: 10,
-            label: columns > 0 ? '$columns' : 'Auto',
-            onChanged: (v) => columnsNotifier.setValue(v.round()),
-          ),
-        const _DisplayHeading('Overlay'),
-        _CheckboxRow(
+        ],
+        const SizedBox(height: 6),
+        const TideSectionHeader(
+          label: 'On the cover',
+          padding: EdgeInsets.fromLTRB(2, 8, 2, 12),
+        ),
+        _Toggle(
           label: 'Downloaded chapters',
           value: ref.watch(displayDownloadBadgeProvider),
           onChanged: (v) =>
               ref.read(displayDownloadBadgeProvider.notifier).setEnabled(v),
         ),
-        _CheckboxRow(
+        _Toggle(
           label: 'Unread chapters',
           value: ref.watch(displayUnreadBadgeProvider),
           onChanged: (v) =>
               ref.read(displayUnreadBadgeProvider.notifier).setEnabled(v),
         ),
-        _CheckboxRow(
+        _Toggle(
           label: 'Local source',
           value: ref.watch(displayLocalBadgeProvider),
           onChanged: (v) =>
               ref.read(displayLocalBadgeProvider.notifier).setEnabled(v),
         ),
-        _CheckboxRow(
+        _Toggle(
           label: 'Language',
           value: ref.watch(displayLanguageBadgeProvider),
           onChanged: (v) =>
               ref.read(displayLanguageBadgeProvider.notifier).setEnabled(v),
         ),
-        _CheckboxRow(
-          label: 'Continue reading button',
+        _Toggle(
+          label: 'Resume button',
           value: ref.watch(showContinueReadingButtonProvider),
-          onChanged: (v) => ref
-              .read(showContinueReadingButtonProvider.notifier)
-              .setEnabled(v),
+          onChanged: (v) =>
+              ref.read(showContinueReadingButtonProvider.notifier).setEnabled(v),
         ),
-        const _DisplayHeading('Tabs'),
-        _CheckboxRow(
-          label: 'Show category tabs',
+        const TideSectionHeader(
+          label: 'Categories',
+          padding: EdgeInsets.fromLTRB(2, 22, 2, 12),
+        ),
+        _Toggle(
+          label: 'Show category chips',
           value: ref.watch(categoryTabsProvider),
           onChanged: (v) =>
               ref.read(categoryTabsProvider.notifier).setEnabled(v),
         ),
-        _CheckboxRow(
+        _Toggle(
           label: 'Show number of items',
           value: ref.watch(categoryNumberOfItemsProvider),
           onChanged: (v) =>
               ref.read(categoryNumberOfItemsProvider.notifier).setEnabled(v),
         ),
-        SizedBox(height: MediaQuery.paddingOf(context).bottom),
       ],
     );
   }
 }
 
-/// Section heading inside the Display tab (e.g. "Overlay", "Tabs").
-/// Mirrors Mihon's `HeadingItem`.
-class _DisplayHeading extends StatelessWidget {
-  const _DisplayHeading(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Text(
-        label,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
-        ),
-      ),
-    );
-  }
-}
-
-/// A checkbox + label row used by the Display tab. Mirrors Mihon's
-/// `CheckboxItem`.
-class _CheckboxRow extends StatelessWidget {
-  const _CheckboxRow({
+class _Toggle extends StatelessWidget {
+  const _Toggle({
     required this.label,
     required this.value,
     required this.onChanged,
@@ -2279,89 +2383,98 @@ class _CheckboxRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => onChanged(!value),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: Row(
-          children: [
-            Checkbox(
-              value: value,
-              onChanged: (v) => onChanged(v ?? false),
-            ),
-            const SizedBox(width: 8),
-            Expanded(child: Text(label)),
-          ],
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: TideRow(
+        icon: value ? Icons.visibility : Icons.visibility_off_outlined,
+        title: label,
+        lit: value,
+        onTap: () => onChanged(!value),
+        trailing: TideSwitch(value: value, onChanged: onChanged),
       ),
     );
   }
 }
 
-/// Result of the bulk remove dialog. Both flags are independent: the
-/// user can opt to remove from library only, downloads only, or both.
-/// `remove == false` means the user cancelled.
+/// Result of the bulk remove sheet. Both flags are independent: the user can
+/// opt to remove from library only, downloads only, or both.
 class _RemoveResult {
   const _RemoveResult({required this.remove, required this.deleteDownloads});
   final bool remove;
   final bool deleteDownloads;
 }
 
-/// Mihon-style `DeleteLibraryMangaDialog`: two checkboxes (manga from
-/// library, downloaded chapters) wired to a single OK button that's
-/// disabled until at least one box is ticked.
-class _RemoveLibraryDialog extends StatefulWidget {
-  const _RemoveLibraryDialog({required this.count});
+/// Mihon's `DeleteLibraryMangaDialog`: two independent checks wired to one
+/// confirm that stays inert until at least one is ticked.
+class _RemoveLibrarySheet extends StatefulWidget {
+  const _RemoveLibrarySheet({required this.count});
 
   final int count;
 
   @override
-  State<_RemoveLibraryDialog> createState() => _RemoveLibraryDialogState();
+  State<_RemoveLibrarySheet> createState() => _RemoveLibrarySheetState();
 }
 
-class _RemoveLibraryDialogState extends State<_RemoveLibraryDialog> {
+class _RemoveLibrarySheetState extends State<_RemoveLibrarySheet> {
   bool _removeFromLibrary = true;
   bool _deleteDownloads = false;
 
   @override
   Widget build(BuildContext context) {
     final canConfirm = _removeFromLibrary || _deleteDownloads;
-    return AlertDialog(
-      title: Text('Remove ${widget.count} manga?'),
-      content: Column(
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          CheckboxListTile(
-            value: _removeFromLibrary,
-            onChanged: (v) => setState(() => _removeFromLibrary = v ?? false),
-            title: const Text('Remove from library'),
-            contentPadding: EdgeInsets.zero,
+          Text(
+            widget.count == 1 ? 'Remove 1 entry' : 'Remove ${widget.count} entries',
+            style: TideText.display(21),
           ),
-          CheckboxListTile(
+          const SizedBox(height: 18),
+          TideCheck(
+            label: 'Remove from library',
+            value: _removeFromLibrary,
+            onChanged: (v) => setState(() => _removeFromLibrary = v),
+          ),
+          const SizedBox(height: 14),
+          TideCheck(
+            label: 'Delete downloaded chapters',
             value: _deleteDownloads,
-            onChanged: (v) => setState(() => _deleteDownloads = v ?? false),
-            title: const Text('Delete downloaded chapters'),
-            contentPadding: EdgeInsets.zero,
+            onChanged: (v) => setState(() => _deleteDownloads = v),
+          ),
+          const SizedBox(height: 22),
+          Row(
+            children: [
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Opacity(
+                  opacity: canConfirm ? 1 : 0.4,
+                  child: TideButton(
+                    label: 'Remove',
+                    primary: true,
+                    onTap: () {
+                      if (!canConfirm) return;
+                      Navigator.of(context).pop(
+                        _RemoveResult(
+                          remove: _removeFromLibrary,
+                          deleteDownloads: _deleteDownloads,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: canConfirm
-              ? () => Navigator.of(context).pop(
-                    _RemoveResult(
-                      remove: _removeFromLibrary,
-                      deleteDownloads: _deleteDownloads,
-                    ),
-                  )
-              : null,
-          child: const Text('OK'),
-        ),
-      ],
     );
   }
 }

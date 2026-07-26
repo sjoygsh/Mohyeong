@@ -610,9 +610,13 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
 
   /// Greeting and the two round controls, or the selection header.
   Widget _header() {
+    // The status-bar inset lives here rather than on the scroll view: the
+    // feed scrolls under the status bar by design, but its FIRST row must
+    // not start beneath the clock.
+    final top = MediaQuery.paddingOf(context).top + 14;
     if (_selecting) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        padding: EdgeInsets.fromLTRB(20, top, 20, 16),
         child: Row(
           children: [
             TideIconButton(
@@ -640,7 +644,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
       );
     }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+      padding: EdgeInsets.fromLTRB(20, top, 20, 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
