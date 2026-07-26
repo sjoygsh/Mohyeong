@@ -2538,41 +2538,30 @@ class _ChapterListHeader extends StatelessWidget {
         : '$visibleCount of $totalCount chapters';
     final manga = mangaForSheet;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.fromLTRB(20, 26, 16, 12),
       child: Row(
         children: [
+          Text(
+            'CHAPTERS',
+            style: TideText.kicker(size: 13, color: TideColors.textAt(0.5))
+                .copyWith(letterSpacing: 1.82),
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               label,
-              style: Theme.of(context).textTheme.titleMedium,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TideText.caption(size: 12, opacity: 0.35),
             ),
           ),
           if (manga != null && availableScanlators.isNotEmpty)
-            IconButton(
-              icon: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Icon(Icons.people_alt_outlined),
-                  // Small primary dot when at least one scanlator is
-                  // excluded — quick visual cue that the list is
-                  // filtered.
-                  if (excludedScanlators.isNotEmpty)
-                    Positioned(
-                      right: -2,
-                      top: -2,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              tooltip: 'Scanlator filter',
-              onPressed: () => _openScanlatorFilterSheet(
+            _HeaderAction(
+              icon: Icons.people_alt_outlined,
+              // Lit when at least one scanlator is excluded — the same
+              // "this list is filtered" cue the funnel gives elsewhere.
+              lit: excludedScanlators.isNotEmpty,
+              onTap: () => _openScanlatorFilterSheet(
                 context,
                 mangaId: manga.id,
                 available: availableScanlators,
@@ -2580,35 +2569,74 @@ class _ChapterListHeader extends StatelessWidget {
               ),
             ),
           if (manga != null && onBulkDownload != null)
-            PopupMenuButton<(_DownloadScope, int?)>(
-              icon: const Icon(Icons.download_outlined),
-              tooltip: 'Download',
-              onSelected: (v) => onBulkDownload!(v.$1, v.$2),
-              // Parity with Kotlin DownloadDropdownMenu: Next 1/5/10/25,
-              // Unread, Bookmarked — always shown, no unread-count gating.
-              itemBuilder: (_) => [
-                for (final n in const [1, 5, 10, 25])
-                  PopupMenuItem<(_DownloadScope, int?)>(
-                    value: (_DownloadScope.next, n),
-                    child: Text(n == 1 ? 'Next chapter' : 'Next $n chapters'),
-                  ),
-                const PopupMenuItem<(_DownloadScope, int?)>(
-                  value: (_DownloadScope.unread, null),
-                  child: Text('Unread'),
-                ),
-                const PopupMenuItem<(_DownloadScope, int?)>(
-                  value: (_DownloadScope.bookmarked, null),
-                  child: Text('Bookmarked'),
-                ),
-              ],
+            _HeaderAction(
+              icon: Icons.download_outlined,
+              onTap: () => _openBulkDownloadSheet(context),
             ),
           if (manga != null)
-            IconButton(
-              icon: const Icon(Icons.tune),
-              tooltip: 'Chapter filter & sort',
-              onPressed: () => _openChapterSettingsSheet(context, manga),
+            _HeaderAction(
+              icon: Icons.tune,
+              onTap: () => _openChapterSettingsSheet(context, manga),
             ),
         ],
+      ),
+    );
+  }
+
+  /// Parity with Kotlin DownloadDropdownMenu: Next 1/5/10/25, Unread,
+  /// Bookmarked — always shown, no unread-count gating.
+  Future<void> _openBulkDownloadSheet(BuildContext context) async {
+    final picked = await showTideSheet<String>(
+      context,
+      (_) => const TideOptionSheet(
+        title: 'Download chapters',
+        options: [
+          ('next:1', 'Next chapter'),
+          ('next:5', 'Next 5 chapters'),
+          ('next:10', 'Next 10 chapters'),
+          ('next:25', 'Next 25 chapters'),
+          ('unread', 'Unread'),
+          ('bookmarked', 'Bookmarked'),
+        ],
+        selected: '',
+      ),
+    );
+    if (picked == null) return;
+    if (picked.startsWith('next:')) {
+      onBulkDownload!(_DownloadScope.next, int.parse(picked.substring(5)));
+    } else if (picked == 'unread') {
+      onBulkDownload!(_DownloadScope.unread, null);
+    } else {
+      onBulkDownload!(_DownloadScope.bookmarked, null);
+    }
+  }
+}
+
+/// Quiet control in a section header.
+class _HeaderAction extends StatelessWidget {
+  const _HeaderAction({
+    required this.icon,
+    required this.onTap,
+    this.lit = false,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: Icon(
+          icon,
+          size: 17,
+          color: lit ? TideColors.accent : TideColors.textAt(0.45),
+        ),
       ),
     );
   }
@@ -2670,60 +2698,9 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
     if (scanlator != null && scanlator.isNotEmpty) {
       subtitleParts.add(scanlator);
     }
-    final tile = ListTile(
-      tileColor: widget.isSelected
-          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
-          : null,
-      title: Text(
-        title,
-        style: TextStyle(
-          color: chapter.read
-              ? Theme.of(context).disabledColor
-              : Theme.of(context).colorScheme.onSurface,
-        ),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: () {
-        final note = chapter.bookmarkNote;
-        final hasNote = note != null && note.isNotEmpty;
-        if (subtitleParts.isEmpty && !hasNote) return null;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (subtitleParts.isNotEmpty) Text(subtitleParts.join(' • ')),
-            if (hasNote)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  note,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontStyle: FontStyle.italic,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ),
-          ],
-        );
-      }(),
-      leading: chapter.bookmark
-          ? const Icon(Icons.bookmark, size: 20)
-          : null,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _DownloadIndicator(state: _downloadState, progress: _progress),
-          if (widget.selecting)
-            // Hide the per-row popup while a multi-select is in flight —
-            // the app bar already exposes the bulk variants of every
-            // action and tapping a row should only toggle selection.
-            const SizedBox.shrink()
-          else
-            PopupMenuButton<_ChapterAction>(
-            onSelected: (action) {
+    // The per-row menu's actions, unchanged — only the control that opens
+    // them moved from a PopupMenuButton to a Tide sheet.
+    void runAction(_ChapterAction action) {
               final chapterRepo = widget.chapterRepo;
               switch (action) {
                 case _ChapterAction.markRead:
@@ -2808,58 +2785,41 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                     chapter.id,
                   );
               }
-            },
-            itemBuilder: (_) => [
-              if (!chapter.read)
-                const PopupMenuItem(
-                  value: _ChapterAction.markRead,
-                  child: Text('Mark as read'),
-                ),
-              if (chapter.read)
-                const PopupMenuItem(
-                  value: _ChapterAction.markUnread,
-                  child: Text('Mark as unread'),
-                ),
-              if (widget.allChapters.any((c) =>
-                  c.chapterNumber < chapter.chapterNumber && !c.read))
-                const PopupMenuItem(
-                  value: _ChapterAction.markPreviousAsRead,
-                  child: Text('Mark previous as read'),
-                ),
-              if (!chapter.bookmark)
-                const PopupMenuItem(
-                  value: _ChapterAction.bookmark,
-                  child: Text('Bookmark'),
-                ),
-              if (chapter.bookmark)
-                const PopupMenuItem(
-                  value: _ChapterAction.unbookmark,
-                  child: Text('Remove bookmark'),
-                ),
-              PopupMenuItem(
-                value: _ChapterAction.editBookmarkNote,
-                child: Text(
-                  chapter.bookmarkNote == null || chapter.bookmarkNote!.isEmpty
-                      ? 'Add bookmark note'
-                      : 'Edit bookmark note',
-                ),
-              ),
-              if (_downloadState != DownloadState.completed &&
-                  _downloadState != DownloadState.downloading &&
-                  _downloadState != DownloadState.queued)
-                const PopupMenuItem(
-                  value: _ChapterAction.download,
-                  child: Text('Download'),
-                ),
-              if (_downloadState == DownloadState.completed)
-                const PopupMenuItem(
-                  value: _ChapterAction.deleteDownload,
-                  child: Text('Delete download'),
-                ),
-            ],
-          ),
-        ],
+    }
+
+    final menu = <(String, String)>[
+      if (!chapter.read) ('markRead', 'Mark as read'),
+      if (chapter.read) ('markUnread', 'Mark as unread'),
+      if (widget.allChapters
+          .any((c) => c.chapterNumber < chapter.chapterNumber && !c.read))
+        ('markPreviousAsRead', 'Mark previous as read'),
+      if (!chapter.bookmark) ('bookmark', 'Bookmark'),
+      if (chapter.bookmark) ('unbookmark', 'Remove bookmark'),
+      (
+        'editBookmarkNote',
+        chapter.bookmarkNote == null || chapter.bookmarkNote!.isEmpty
+            ? 'Add bookmark note'
+            : 'Edit bookmark note',
       ),
+      if (_downloadState != DownloadState.completed &&
+          _downloadState != DownloadState.downloading &&
+          _downloadState != DownloadState.queued)
+        ('download', 'Download'),
+      if (_downloadState == DownloadState.completed)
+        ('deleteDownload', 'Delete download'),
+    ];
+
+    final note = chapter.bookmarkNote;
+    final hasNote = note != null && note.isNotEmpty;
+    final read = chapter.read;
+    final selected = widget.isSelected;
+
+    final tile = TideGlass(
+      radius: 16,
+      tintTop: selected ? 0.16 : (read ? 0.042 : 0.07),
+      tintBottom: selected ? 0.05 : (read ? 0.016 : 0.024),
+      highlight: selected ? 0.20 : (read ? 0.09 : 0.13),
+      border: selected ? 0.30 : (read ? 0.055 : 0.085),
       onTap: () {
         if (widget.selecting) {
           widget.onToggleSelected(chapter.id);
@@ -2874,7 +2834,90 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
           ),
         );
       },
-      onLongPress: () => widget.onToggleSelected(chapter.id),
+      padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onLongPress: () => widget.onToggleSelected(chapter.id),
+        child: Row(
+          children: [
+            if (chapter.bookmark) ...[
+              const Icon(Icons.bookmark, size: 15, color: TideColors.accent),
+              const SizedBox(width: 9),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.title(
+                      color: read ? TideColors.textAt(0.45) : TideColors.text,
+                    ),
+                  ),
+                  if (subtitleParts.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitleParts.join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TideText.caption(opacity: read ? 0.3 : 0.45),
+                    ),
+                  ],
+                  if (hasNote) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      note,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TideText.caption(size: 11.5, opacity: 0.85)
+                          .copyWith(
+                        color: TideColors.accent,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            _DownloadIndicator(state: _downloadState, progress: _progress),
+            if (widget.selecting)
+              // The bulk bar already exposes every one of these actions, and
+              // while selecting a row tap should only ever toggle selection.
+              Padding(
+                padding: const EdgeInsets.only(left: 8, right: 8),
+                child: _ChapterSelectMark(selected: selected),
+              )
+            else
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () async {
+                  final picked = await showTideSheet<String>(
+                    context,
+                    (_) => TideOptionSheet(
+                      title: title,
+                      options: menu,
+                      selected: '',
+                    ),
+                  );
+                  if (picked == null) return;
+                  runAction(_ChapterAction.values.byName(picked));
+                },
+                child: SizedBox(
+                  width: 38,
+                  height: 40,
+                  child: Icon(
+                    Icons.more_vert,
+                    size: 17,
+                    color: TideColors.textAt(0.38),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
     // Swipe actions (Kotlin MangaChapterListItem's swipeable rows). The row
     // never actually dismisses — confirmDismiss performs the action and
@@ -2885,8 +2928,15 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
         ChapterSwipeAction.fromName(ref.watch(swipeToEndActionProvider));
     final startEnabled = swipeStart != ChapterSwipeAction.disabled;
     final endEnabled = swipeEnd != ChapterSwipeAction.disabled;
-    if (widget.selecting || (!startEnabled && !endEnabled)) return tile;
-    return Dismissible(
+    if (widget.selecting || (!startEnabled && !endEnabled)) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: tile,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Dismissible(
       key: ValueKey('chapter-swipe-${chapter.id}'),
       direction: startEnabled && endEnabled
           ? DismissDirection.horizontal
@@ -2903,17 +2953,16 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
         return false;
       },
       child: tile,
-    );
+    ));
   }
 
-  /// Coloured strip + action icon revealed behind a swiping row. Icon choice
+  /// Lit strip + action icon revealed behind a swiping row. Icon choice
   /// matches Kotlin `getSwipeAction` (done/remove-done, bookmark-add/remove,
   /// download-state-dependent download/cancel/delete).
   Widget _swipeBackground(
     ChapterSwipeAction action,
     AlignmentDirectional alignment,
   ) {
-    final scheme = Theme.of(context).colorScheme;
     final IconData icon;
     switch (action) {
       case ChapterSwipeAction.toggleRead:
@@ -2934,10 +2983,16 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
         return const SizedBox.shrink();
     }
     return Container(
-      color: scheme.primaryContainer,
+      decoration: BoxDecoration(
+        color: TideColors.accent.withValues(alpha: 0.20),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: TideColors.accent.withValues(alpha: 0.45),
+        ),
+      ),
       alignment: alignment,
       padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Icon(icon, color: scheme.onPrimaryContainer),
+      child: Icon(icon, color: TideColors.accentLight),
     );
   }
 
@@ -3148,6 +3203,37 @@ class _Error extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Center(child: Text('Error: $error')),
+    );
+  }
+}
+
+
+/// Selection state on a chapter row.
+class _ChapterSelectMark extends StatelessWidget {
+  const _ChapterSelectMark({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: tideEase,
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color:
+            selected ? TideColors.accent : Colors.white.withValues(alpha: 0.06),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected
+              ? TideColors.accent
+              : Colors.white.withValues(alpha: 0.24),
+        ),
+      ),
+      child: selected
+          ? const Icon(Icons.check_rounded, size: 14, color: TideColors.ground)
+          : null,
     );
   }
 }
