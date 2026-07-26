@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../tide/tide.dart';
+
 /// Result of a username/password login dialog. `null` indicates the user
 /// cancelled. Empty values are not filtered — the caller decides which
 /// fields are required.
@@ -76,9 +78,13 @@ class _CredentialsLoginScreenState extends State<CredentialsLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
+      backgroundColor: TideColors.ground,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TideHeader(title: widget.title),
+          Expanded(child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: ListView(
           children: [
             if (widget.helperText != null) ...[
@@ -137,6 +143,8 @@ class _CredentialsLoginScreenState extends State<CredentialsLoginScreen> {
             ),
           ],
         ),
+      )),
+        ],
       ),
     );
   }

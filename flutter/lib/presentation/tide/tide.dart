@@ -1380,11 +1380,17 @@ class TideHeader extends StatelessWidget {
   const TideHeader({
     super.key,
     required this.title,
+    this.subtitle,
     this.actions = const [],
     this.onBack,
   });
 
   final String title;
+
+  /// What the screen is about, when the title alone doesn't say — the series
+  /// a notes editor belongs to, the URL a webview is showing.
+  final String? subtitle;
+
   final List<Widget> actions;
 
   /// Defaults to popping the route.
@@ -1408,17 +1414,30 @@ class TideHeader extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 21,
-                height: 1.15,
-                fontWeight: FontWeight.w500,
-                letterSpacing: -0.5,
-                color: TideColors.text,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 21,
+                    height: 1.15,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.5,
+                    color: TideColors.text,
+                  ),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.caption(size: 11.5, opacity: 0.45),
+                  ),
+              ],
             ),
           ),
           if (actions.isNotEmpty) const SizedBox(width: 8),

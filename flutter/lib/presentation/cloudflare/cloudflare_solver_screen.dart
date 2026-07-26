@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../tide/tide.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../data/network/app_http_client.dart';
@@ -164,16 +166,20 @@ class _CloudflareSolverScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Cloudflare challenge'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _controller.reload(),
-          ),
-        ],
-      ),
+      backgroundColor: TideColors.ground,
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TideHeader(
+            title: 'Cloudflare challenge',
+            actions: [
+              TideIconButton(
+                icon: Icons.refresh,
+                onTap: () => _controller.reload(),
+              ),
+            ],
+          ),
+          Expanded(child: Column(
         children: [
           Container(
             width: double.infinity,
@@ -186,6 +192,8 @@ class _CloudflareSolverScreenState
             ),
           ),
           Expanded(child: WebViewWidget(controller: _controller)),
+        ],
+      ),),
         ],
       ),
     );

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../tide/tide.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 /// Generic OAuth authorization-code flow screen.
@@ -67,19 +69,22 @@ class _OAuthWebViewScreenState extends State<OAuthWebViewScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () {
-            if (!_completed) {
-              _completed = true;
-              Navigator.of(context).pop(null);
-            }
-          },
-        ),
+      backgroundColor: TideColors.ground,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TideHeader(
+            title: widget.title,
+            onBack: () {
+              if (!_completed) {
+                _completed = true;
+                Navigator.of(context).pop(null);
+              }
+            },
+          ),
+          Expanded(child: WebViewWidget(controller: _controller),),
+        ],
       ),
-      body: WebViewWidget(controller: _controller),
     );
   }
 }

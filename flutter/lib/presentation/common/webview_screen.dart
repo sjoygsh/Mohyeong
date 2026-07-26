@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../tide/tide.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -51,58 +53,79 @@ class _WebViewScreenState extends State<WebViewScreen> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  Future<void> _openActions() async {
+    final picked = await showTideSheet<String>(
+      context,
+      (_) => const TideOptionSheet(
+        title: 'Page',
+        options: [
+          ('refresh', 'Refresh'),
+          ('browser', 'Open in browser'),
+          ('share', 'Share link'),
+        ],
+        selected: '',
+      ),
+    );
+    switch (picked) {
+      case 'refresh':
+        await _controller.reload();
+      case 'browser':
+        await _openInBrowser();
+      case 'share':
+        await ReaderImageActions.shareText(_currentUrl);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.title ?? _currentUrl,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (widget.title != null)
-              Text(
-                _currentUrl,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
+      backgroundColor: TideColors.ground,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TideHeader(
+            title: widget.title ?? _currentUrl,
+            subtitle: widget.title == null ? null : _currentUrl,
+            actions: [
+              TideIconButton(
+                icon: Icons.more_horiz,
+                onTap: _openActions,
               ),
-          ],
-        ),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              switch (value) {
-                case 'refresh':
-                  _controller.reload();
-                case 'browser':
-                  _openInBrowser();
-                case 'share':
-                  ReaderImageActions.shareText(_currentUrl);
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'refresh', child: Text('Refresh')),
-              PopupMenuItem(value: 'browser', child: Text('Open in browser')),
-              PopupMenuItem(value: 'share', child: Text('Share')),
             ],
           ),
+          // The app bar carried a LinearProgressIndicator; a lit hairline
+          // under the header says the same thing without a slab.
+          SizedBox(
+            height: 2,
+            child: _progress >= 100
+                ? null
+                : Row(
+                    children: [
+                      Expanded(
+                        flex: _progress.clamp(0, 100),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: TideColors.accent,
+                            boxShadow: [
+                              BoxShadow(
+                                color: TideColors.accent
+                                    .withValues(alpha: 0.7),
+                                blurRadius: 7,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: (100 - _progress).clamp(0, 100),
+                        child: const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
+          ),
+          Expanded(child: WebViewWidget(controller: _controller),),
         ],
-        bottom: _progress < 100
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(2),
-                child: LinearProgressIndicator(value: _progress / 100),
-              )
-            : null,
       ),
-      body: WebViewWidget(controller: _controller),
     );
   }
 }

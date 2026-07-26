@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../tide/tide.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -144,9 +146,10 @@ class _DevPageSourceScreenState extends ConsumerState<DevPageSourceScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Dev: page source')),
+      backgroundColor: TideColors.ground,
       body: Column(
         children: [
+          const TideHeader(title: 'Dev: page source'),
           Padding(
             padding: const EdgeInsets.all(8),
             child: Row(

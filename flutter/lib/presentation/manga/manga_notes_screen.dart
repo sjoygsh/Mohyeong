@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../tide/tide.dart';
+
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
 
@@ -73,29 +75,31 @@ class _MangaNotesScreenState extends ConsumerState<MangaNotesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Edit notes'),
-            Text(
-              widget.manga.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
-      ),
+      backgroundColor: TideColors.ground,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
+        top: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TideHeader(title: 'Notes', subtitle: widget.manga.title),
+            Expanded(
+              child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
-                child: TextField(
+                child: TideGlass(
+                  radius: 18,
+                  tintTop: 0.075,
+                  tintBottom: 0.026,
+                  highlight: 0.14,
+                  border: 0.09,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  child: TextField(
                   controller: _controller,
                   maxLines: null,
                   expands: true,
@@ -109,11 +113,15 @@ class _MangaNotesScreenState extends ConsumerState<MangaNotesScreen> {
                     int? maxLength,
                   }) =>
                       null,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
+                  cursorColor: TideColors.accent,
+                  style: TideText.body().copyWith(color: TideColors.text),
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
                     hintText: 'Enjoyed the part where…',
+                    hintStyle: TideText.body(),
                     alignLabelWithHint: true,
                   ),
+                ),
                 ),
               ),
               const SizedBox(height: 4),
@@ -123,9 +131,9 @@ class _MangaNotesScreenState extends ConsumerState<MangaNotesScreen> {
                   final remaining = _maxLength - value.text.characters.length;
                   return Text(
                     '$remaining',
-                    style: TextStyle(
+                    style: TideText.caption(size: 12, opacity: 0.5).copyWith(
                       color: value.text.characters.length > _warnLength
-                          ? Theme.of(context).colorScheme.error
+                          ? const Color(0xFFE8837F)
                           : null,
                     ),
                   );
@@ -133,6 +141,9 @@ class _MangaNotesScreenState extends ConsumerState<MangaNotesScreen> {
               ),
             ],
           ),
+              ),
+            ),
+          ],
         ),
       ),
     );
