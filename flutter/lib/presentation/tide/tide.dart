@@ -1371,6 +1371,53 @@ Future<T?> showTideSheet<T>(
   );
 }
 
+/// The fade that grows in behind floating chrome once the artwork it was
+/// resting on has scrolled away.
+///
+/// A back control over a cover reads fine — the scrim under the title is
+/// already holding that corner down. Fifteen hundred pixels later the same
+/// control is sitting on body text, and a translucent pane over prose is just
+/// unreadable prose. So the ground comes up to meet it.
+class TideTopScrim extends StatelessWidget {
+  const TideTopScrim({super.key, required this.opacity});
+
+  /// 0 while the chrome is still over artwork, 1 once it is over content.
+  final double opacity;
+
+  /// How far a screen scrolls before the scrim is fully in. Callers pass
+  /// their own start point — it is the height of their artwork.
+  static double progressFor(double pixels, {required double coverHeight}) =>
+      ((pixels - (coverHeight - 150)) / 90).clamp(0.0, 1.0);
+
+  @override
+  Widget build(BuildContext context) {
+    if (opacity <= 0) return const SizedBox.shrink();
+    return IgnorePointer(
+      child: Opacity(
+        opacity: opacity,
+        child: Container(
+          // Tall enough to clear a 42px control at top+8 and still have room
+          // left to fade out in, so the scrim never ends on a hard line.
+          height: MediaQuery.paddingOf(context).top + 96,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                TideColors.ground,
+                TideColors.ground,
+                TideColors.ground.withValues(alpha: 0.82),
+                TideColors.ground.withValues(alpha: 0),
+              ],
+              stops: const [0, 0.42, 0.66, 1],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The head of a pushed screen: a back control, a title, and any actions.
 ///
 /// Tide has no app bars. A screen you pushed into needs a way out and a name,

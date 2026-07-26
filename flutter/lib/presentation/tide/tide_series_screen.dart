@@ -50,6 +50,10 @@ class _TideSeriesScreenState extends ConsumerState<TideSeriesScreen> {
 
   bool _descriptionExpanded = false;
 
+  /// 0 while the back control is still over the cover, 1 once it is over
+  /// the chapter list. Drives [TideTopScrim].
+  double _chromeScrim = 0;
+
   /// Reading order is ascending source order, so the chapter to resume is the
   /// OLDEST unread one — not the newest release.
   Chapter? _next(List<Chapter> chapters) {
@@ -112,7 +116,19 @@ class _TideSeriesScreenState extends ConsumerState<TideSeriesScreen> {
       child: Stack(
         children: [
           Positioned.fill(
-            child: ListView(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (n) {
+                if (n.depth != 0) return false;
+                final next = TideTopScrim.progressFor(
+                  n.metrics.pixels,
+                  coverHeight: 520,
+                );
+                if ((next - _chromeScrim).abs() > 0.01) {
+                  setState(() => _chromeScrim = next);
+                }
+                return false;
+              },
+              child: ListView(
               padding: const EdgeInsets.only(bottom: 108),
               children: [
                 // The cover is the page's head and scrolls WITH it. It used to
@@ -190,6 +206,13 @@ class _TideSeriesScreenState extends ConsumerState<TideSeriesScreen> {
                 ),
               ],
             ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            child: TideTopScrim(opacity: _chromeScrim),
           ),
           Positioned(
             left: 16,

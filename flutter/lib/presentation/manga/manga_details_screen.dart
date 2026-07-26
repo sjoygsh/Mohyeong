@@ -104,6 +104,10 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   /// appears one frame after the transition settles.
   bool _routeSettled = false;
 
+  /// 0 while the back and more controls are still over the cover, 1 once
+  /// they are over the description and chapter rows. Drives [TideTopScrim].
+  double _chromeScrim = 0;
+
   /// Memoised header sliver children + next-unread resolution. Every
   /// chapter-selection tap setStates this whole State; identical cached
   /// widget instances make Element.updateChild skip the header subtrees
@@ -419,7 +423,19 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                     // refresh button. AlwaysScrollable so the gesture works even
                     // when the chapter list is short enough to not fill the view.
                     onRefresh: () => _refreshMangaFromSource(manga),
-                    child: CustomScrollView(
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: (n) {
+                        if (n.depth != 0) return false;
+                        final next = TideTopScrim.progressFor(
+                          n.metrics.pixels,
+                          coverHeight: 430,
+                        );
+                        if ((next - _chromeScrim).abs() > 0.01) {
+                          setState(() => _chromeScrim = next);
+                        }
+                        return false;
+                      },
+                      child: CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
                   SliverToBoxAdapter(child: _infoBox!),
@@ -487,10 +503,16 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                   // Clears the floating chrome at the foot of the screen.
                   const SliverToBoxAdapter(child: SizedBox(height: 112)),
                 ],
-              ))),
+              )))),
               // Floating chrome, in the shape the series screen set: a back
               // control over the artwork, the screen's actions behind one
               // more-button, and the persistent Continue bar.
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: TideTopScrim(opacity: _chromeScrim),
+              ),
               Positioned(
                 left: 16,
                 top: MediaQuery.paddingOf(context).top + 8,
