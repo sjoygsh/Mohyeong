@@ -5,6 +5,7 @@ import '../../data/base/base_preferences.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
+import '../tide/tide.dart';
 
 /// Chapter settings bottom-sheet — filter / sort / display picker for the
 /// per-manga `chapter_flags` bitmask. Mirrors Mihon's
@@ -24,16 +25,9 @@ class ChapterSettingsSheet extends ConsumerStatefulWidget {
       _ChapterSettingsSheetState();
 }
 
-class _ChapterSettingsSheetState extends ConsumerState<ChapterSettingsSheet>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+class _ChapterSettingsSheetState extends ConsumerState<ChapterSettingsSheet> {
+  int _tab = 0;
   late int _flags = widget.manga.chapterFlags;
-
-  @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
-  }
 
   Future<void> _apply() async {
     if (_flags == widget.manga.chapterFlags) return;
@@ -50,36 +44,40 @@ class _ChapterSettingsSheetState extends ConsumerState<ChapterSettingsSheet>
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.55,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TabBar(
-              controller: _tabs,
-              tabs: const [
-                Tab(text: 'Filter'),
-                Tab(text: 'Sort'),
-                Tab(text: 'Display'),
-              ],
-            ),
-            Expanded(
-              child: TabBarView(
-                controller: _tabs,
-                children: [
-                  _FilterTab(flags: _flags, onChange: _updateFlags),
-                  _SortTab(flags: _flags, onChange: _updateFlags),
-                  _DisplayTab(flags: _flags, onChange: _updateFlags),
-                ],
-              ),
-            ),
-          ],
-        ),
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Chapters', style: TideText.display(21)),
+          const SizedBox(height: 16),
+          TideSegmented(
+            labels: const ['Filter', 'Sort', 'Display'],
+            index: _tab,
+            onChanged: (i) => setState(() => _tab = i),
+          ),
+          const SizedBox(height: 16),
+          // The three panels differ in height; animating the panel rather
+          // than letting it jump keeps the sheet from snapping as you move
+          // between tabs.
+          AnimatedSize(
+            duration: const Duration(milliseconds: 240),
+            curve: tideEase,
+            alignment: Alignment.topCenter,
+            child: switch (_tab) {
+              0 => _FilterTab(flags: _flags, onChange: _updateFlags),
+              1 => _SortTab(flags: _flags, onChange: _updateFlags),
+              _ => _DisplayTab(flags: _flags, onChange: _updateFlags),
+            },
+          ),
+        ],
       ),
     );
   }
 }
+
+/// Spacing between rows in any of the three panels.
+const _gap = SizedBox(height: 8);
 
 class _FilterTab extends ConsumerWidget {
   const _FilterTab({required this.flags, required this.onChange});
@@ -128,8 +126,8 @@ class _FilterTab extends ConsumerWidget {
       Manga.chapterShowBookmarked,
       Manga.chapterShowNotBookmarked,
     );
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         _TriStateRow(
           label: 'Unread',
@@ -141,9 +139,11 @@ class _FilterTab extends ConsumerWidget {
             next,
           )),
         ),
+        _gap,
         _TriStateRow(
           label: 'Downloaded',
           value: downloaded,
+          note: downloadedOnly ? 'Pinned by Downloaded only' : null,
           onChanged: downloadedOnly
               ? null
               : (next) => onChange(_writeTri(
@@ -153,6 +153,7 @@ class _FilterTab extends ConsumerWidget {
                     next,
                   )),
         ),
+        _gap,
         _TriStateRow(
           label: 'Bookmarked',
           value: bookmarked,
@@ -173,25 +174,19 @@ class _TriStateRow extends StatelessWidget {
     required this.label,
     required this.value,
     required this.onChanged,
+    this.note,
   });
 
   final String label;
   final TriState value;
 
+  /// Shown instead of the state word when the row is pinned, so a row you
+  /// cannot move explains itself rather than just failing to respond.
+  final String? note;
+
   /// Null renders the row disabled — used while "Downloaded only" mode
   /// pins the Downloaded axis.
   final ValueChanged<TriState>? onChanged;
-
-  IconData _icon() {
-    switch (value) {
-      case TriState.disabled:
-        return Icons.check_box_outline_blank;
-      case TriState.enabledIs:
-        return Icons.check_box;
-      case TriState.enabledNot:
-        return Icons.indeterminate_check_box;
-    }
-  }
 
   TriState _next() {
     switch (value) {
@@ -206,12 +201,21 @@ class _TriStateRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      enabled: onChanged != null,
-      leading: Icon(_icon()),
-      title: Text(label),
+    final (icon, state) = switch (value) {
+      TriState.disabled => (Icons.check_box_outline_blank, 'Off'),
+      TriState.enabledIs => (Icons.check_box, 'Include'),
+      TriState.enabledNot => (Icons.disabled_by_default, 'Exclude'),
+    };
+    final row = TideRow(
+      icon: icon,
+      title: label,
+      subtitle: note ?? state,
+      lit: value != TriState.disabled,
       onTap: onChanged == null ? null : () => onChanged!(_next()),
     );
+    // A disabled row goes quiet rather than staying at full strength and
+    // silently swallowing the tap.
+    return onChanged == null ? Opacity(opacity: 0.45, child: row) : row;
   }
 }
 
@@ -236,12 +240,13 @@ class _SortTab extends StatelessWidget {
   }
 
   Widget _row(String label, int mode) {
+    final selected = _sortMode == mode;
     return _SortRow(
       label: label,
-      selected: _sortMode == mode,
+      selected: selected,
       descending: _descending,
       onSelect: () {
-        if (_sortMode == mode) {
+        if (selected) {
           onChange(_toggleDirection());
         } else {
           onChange(_setSortMode(mode));
@@ -252,12 +257,15 @@ class _SortTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         _row('By source', Manga.chapterSortingSource),
+        _gap,
         _row('By chapter number', Manga.chapterSortingNumber),
+        _gap,
         _row('By upload date', Manga.chapterSortingUploadDate),
+        _gap,
         _row('Alphabetically', Manga.chapterSortingAlphabet),
       ],
     );
@@ -279,11 +287,17 @@ class _SortRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: selected
-          ? Icon(descending ? Icons.arrow_downward : Icons.arrow_upward)
-          : const SizedBox(width: 24),
-      title: Text(label),
+    return TideRow(
+      // The arrow only means anything on the row that is actually sorting,
+      // so the others carry the neutral mark.
+      icon: selected
+          ? (descending ? Icons.arrow_downward : Icons.arrow_upward)
+          : Icons.remove,
+      title: label,
+      subtitle: selected
+          ? (descending ? 'Newest first' : 'Oldest first')
+          : null,
+      lit: selected,
       onTap: onSelect,
     );
   }
@@ -303,24 +317,23 @@ class _DisplayTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RadioGroup<int>(
-      groupValue: _displayMode,
-      onChanged: (v) {
-        if (v != null) onChange(_setMode(v));
-      },
-      child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        children: const [
-          RadioListTile<int>(
-            title: Text('Chapter name'),
-            value: Manga.chapterDisplayName,
-          ),
-          RadioListTile<int>(
-            title: Text('Chapter number'),
-            value: Manga.chapterDisplayNumber,
-          ),
-        ],
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TideRow(
+          icon: Icons.title,
+          title: 'Chapter name',
+          lit: _displayMode == Manga.chapterDisplayName,
+          onTap: () => onChange(_setMode(Manga.chapterDisplayName)),
+        ),
+        _gap,
+        TideRow(
+          icon: Icons.numbers,
+          title: 'Chapter number',
+          lit: _displayMode == Manga.chapterDisplayNumber,
+          onTap: () => onChange(_setMode(Manga.chapterDisplayNumber)),
+        ),
+      ],
     );
   }
 }

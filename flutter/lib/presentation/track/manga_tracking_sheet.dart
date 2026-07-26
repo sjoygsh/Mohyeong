@@ -7,6 +7,7 @@ import '../../data/track/tracker_registry.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/track/model/track.dart';
 import '../../domain/track/model/tracker.dart';
+import '../tide/tide.dart';
 
 /// Bottom sheet that lists every tracker for a given manga, surfacing the
 /// current bound state and letting the user search + bind / unbind.
@@ -22,29 +23,42 @@ class MangaTrackingSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final registry = ref.watch(trackerRegistryProvider);
     final repo = ref.watch(trackRepositoryProvider);
-    return SafeArea(
+    return TideSheetPanel(
       child: StreamBuilder<List<Track>>(
         stream: repo.watchByMangaId(manga.id),
         builder: (context, snap) {
           final tracks = snap.data ?? const <Track>[];
           final byTrackerId = {for (final t in tracks) t.trackerId: t};
-          return ListView(
-            shrinkWrap: true,
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: Text(
-                  'Tracking',
-                  style: Theme.of(context).textTheme.titleMedium,
+              Text('Tracking', style: TideText.display(21)),
+              const SizedBox(height: 6),
+              Text(
+                tracks.isEmpty
+                    ? 'Not tracked anywhere'
+                    : 'Tracked on ${tracks.length} '
+                        '${tracks.length == 1 ? 'service' : 'services'}',
+                style: TideText.caption(size: 13),
+              ),
+              const SizedBox(height: 18),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  itemCount: registry.all.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final tracker = registry.all[i];
+                    return _TrackerRow(
+                      manga: manga,
+                      tracker: tracker,
+                      track: byTrackerId[tracker.id],
+                    );
+                  },
                 ),
               ),
-              for (final tracker in registry.all)
-                _TrackerRow(
-                  manga: manga,
-                  tracker: tracker,
-                  track: byTrackerId[tracker.id],
-                ),
-              const SizedBox(height: 8),
             ],
           );
         },
@@ -85,10 +99,9 @@ class _TrackerRowState extends ConsumerState<_TrackerRow> {
       );
       return;
     }
-    final picked = await showModalBottomSheet<TrackSearchResult>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => _TrackerSearchSheet(
+    final picked = await showTideSheet<TrackSearchResult>(
+      context,
+      (_) => _TrackerSearchSheet(
         tracker: widget.tracker,
         initialQuery: widget.manga.title,
       ),
@@ -118,37 +131,90 @@ class _TrackerRowState extends ConsumerState<_TrackerRow> {
   @override
   Widget build(BuildContext context) {
     final track = widget.track;
-    return ListTile(
-      leading: CircleAvatar(child: Text(widget.tracker.name.substring(0, 1))),
-      title: Text(widget.tracker.name),
-      subtitle: track == null
-          ? Text(
-              widget.tracker.category == TrackerCategory.advanced
-                  ? 'Advanced — not bound'
-                  : 'Not bound',
-            )
-          : Text(
-              '${track.title} • '
-              '${widget.tracker.getStatusName(track.status)} • '
-              'Ch ${track.lastChapterRead.toInt()}'
-              '${track.totalChapters > 0 ? '/${track.totalChapters}' : ''}',
+    final bound = track != null;
+    return TideGlass(
+      radius: 15,
+      // A bound tracker is an ON state, so it takes the accent edge the rest
+      // of the app gives anything that is live.
+      tintTop: bound ? 0.125 : 0.06,
+      tintBottom: bound ? 0.045 : 0.02,
+      highlight: bound ? 0.19 : 0.12,
+      border: bound ? 0.20 : 0.08,
+      onTap: bound ? null : _searchAndBind,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: bound
+                  ? TideColors.accent.withValues(alpha: 0.16)
+                  : Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(
+                color: bound
+                    ? TideColors.accent.withValues(alpha: 0.32)
+                    : Colors.white.withValues(alpha: 0.08),
+              ),
             ),
-      trailing: _working
-          ? const SizedBox(
+            child: Text(
+              widget.tracker.name.substring(0, 1).toUpperCase(),
+              style: TideText.title(
+                size: 14,
+                color: bound ? TideColors.accent : TideColors.textAt(0.7),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(widget.tracker.name, style: TideText.title()),
+                const SizedBox(height: 2),
+                Text(
+                  bound
+                      ? '${widget.tracker.getStatusName(track.status)} · '
+                          'Ch ${track.lastChapterRead.toInt()}'
+                          '${track.totalChapters > 0 ? ' of ${track.totalChapters}' : ''}'
+                      : widget.tracker.category == TrackerCategory.advanced
+                          ? 'Advanced · tap to link'
+                          : 'Tap to link',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TideText.caption(),
+                ),
+                if (bound) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    track.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.caption(size: 11, opacity: 0.32),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (_working)
+            const SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: TideColors.accent,
+              ),
             )
-          : (track == null
-              ? IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: _searchAndBind,
-                )
-              : IconButton(
-                  icon: const Icon(Icons.close),
-                  tooltip: 'Unbind',
-                  onPressed: _unbind,
-                )),
+          else if (bound)
+            TideIconButton(icon: Icons.link_off, onTap: _unbind)
+          else
+            TideIconButton(icon: Icons.add, onTap: _searchAndBind),
+        ],
+      ),
     );
   }
 }
@@ -210,63 +276,118 @@ class _TrackerSearchSheetState extends State<_TrackerSearchSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.7,
-      maxChildSize: 0.95,
-      builder: (_, scrollController) => Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _controller,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search),
-                hintText: 'Search ${widget.tracker.name}',
-                border: const OutlineInputBorder(),
-                isDense: true,
+    return TideSheetPanel(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.62,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Search ${widget.tracker.name}',
+                style: TideText.display(20)),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 44,
+              child: TideGlass(
+                radius: 22,
+                tintTop: 0.09,
+                tintBottom: 0.03,
+                highlight: 0.16,
+                border: 0.11,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(
+                  children: [
+                    Icon(Icons.search,
+                        size: 17, color: TideColors.textAt(0.45)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        textInputAction: TextInputAction.search,
+                        cursorColor: TideColors.accent,
+                        style: TideText.title(size: 14.5),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          hintText: 'Title',
+                          hintStyle: TideText.title(
+                            size: 14.5,
+                            color: TideColors.textAt(0.33),
+                          ),
+                        ),
+                        onSubmitted: (_) => _runSearch(),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              onSubmitted: (_) => _runSearch(),
             ),
-          ),
-          Expanded(
-            child: _buildBody(scrollController),
-          ),
-        ],
+            const SizedBox(height: 14),
+            Expanded(child: _buildBody()),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildBody(ScrollController controller) {
+  Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: TideColors.accent,
+          ),
+        ),
+      );
     }
     final error = _error;
     if (error != null) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Center(child: Text('Search failed: $error')),
+      return Center(
+        child: Text('Search failed: $error',
+            textAlign: TextAlign.center, style: TideText.body()),
       );
     }
     final results = _results;
     if (results == null || results.isEmpty) {
-      return const Center(child: Text('No matches.'));
+      return Center(child: Text('No matches.', style: TideText.body()));
     }
     return ListView.separated(
-      controller: controller,
+      padding: EdgeInsets.zero,
       itemCount: results.length,
-      separatorBuilder: (_, _) => const Divider(height: 0),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (_, i) {
         final r = results[i];
-        return ListTile(
-          title: Text(r.title),
-          subtitle: Text([
-            if (r.publishingStatus != null) r.publishingStatus!,
-            if (r.publishingType != null) r.publishingType!,
-            if (r.totalChapters > 0) '${r.totalChapters} ch',
-          ].join(' • ')),
+        final facts = [
+          if (r.publishingStatus != null) r.publishingStatus!,
+          if (r.publishingType != null) r.publishingType!,
+          if (r.totalChapters > 0) '${r.totalChapters} ch',
+        ].join(' · ');
+        return TideGlass(
+          radius: 14,
+          tintTop: 0.085,
+          tintBottom: 0.03,
+          highlight: 0.15,
+          border: 0.10,
           onTap: () => Navigator.of(context).pop(r),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                r.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TideText.title(size: 14),
+              ),
+              if (facts.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(facts, style: TideText.caption(size: 12)),
+              ],
+            ],
+          ),
         );
       },
     );

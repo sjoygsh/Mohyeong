@@ -21,6 +21,10 @@ import '../../data/preferences/typed_preferences.dart';
 import '../../data/reader/reader_behavior_preferences.dart';
 import '../../data/reader/reader_preferences.dart';
 import '../../domain/reader/model/reading_mode.dart';
+// The reader's sliders are the same control as the ones in Settings →
+// Reader, so they are literally the same widget.
+import '../settings/pref_tiles.dart';
+import '../tide/tide.dart';
 
 /// Best-effort Material equivalents of Mihon's custom reading-mode
 /// drawables (`ic_reader_ltr_24dp` etc. have no Material counterpart).
@@ -98,25 +102,24 @@ class _ModeSelectionSheetState<T> extends State<ModeSelectionSheet<T>> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SafeArea(
+    return TideSheetPanel(
       // Scrollable so landscape (short viewport) doesn't overflow — Kotlin's
       // AdaptiveSheet scrolls its content the same way.
       child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(vertical: 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _SheetHeading(widget.title),
+            Text(widget.title, style: TideText.display(21)),
+            const SizedBox(height: 18),
             GridView.count(
               crossAxisCount: 3,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: EdgeInsets.zero,
               mainAxisSpacing: 8,
               crossAxisSpacing: 8,
-              childAspectRatio: 1.25,
+              childAspectRatio: 1.15,
               children: [
                 for (final option in widget.options)
                   _IconToggleButton(
@@ -127,29 +130,32 @@ class _ModeSelectionSheetState<T> extends State<ModeSelectionSheet<T>> {
                   ),
               ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
-              child: Row(
-                children: [
-                  if (widget.onUseDefault != null)
-                    OutlinedButton(
-                      onPressed: () {
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                if (widget.onUseDefault != null) ...[
+                  Expanded(
+                    child: TideButton(
+                      label: 'Use default',
+                      onTap: () {
                         Navigator.of(context).pop();
                         widget.onUseDefault!();
                       },
-                      child: const Text('Revert to default'),
                     ),
-                  const Spacer(),
-                  FilledButton.tonalIcon(
-                    onPressed: () {
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: TideButton(
+                    label: 'Apply',
+                    primary: true,
+                    onTap: () {
                       Navigator.of(context).pop();
                       widget.onApply(_selected);
                     },
-                    icon: Icon(Icons.check, color: scheme.onSecondaryContainer),
-                    label: const Text('Apply'),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ),
@@ -173,33 +179,34 @@ class _IconToggleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
+    return TideGlass(
+      radius: 16,
+      tintTop: selected ? 0.13 : 0.06,
+      tintBottom: selected ? 0.05 : 0.02,
+      highlight: selected ? 0.20 : 0.12,
+      border: selected ? 0.22 : 0.08,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: selected ? scheme.secondaryContainer : null,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              color: selected ? scheme.primary : scheme.onSurfaceVariant,
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            icon,
+            size: 21,
+            color: selected ? TideColors.accent : TideColors.textAt(0.62),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TideText.caption(
+              size: 11,
+              opacity: selected ? 0.9 : 0.5,
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -241,30 +248,29 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
   late ReadingMode _mode = ReadingMode.fromFlag(widget.viewerFlags);
   late ReaderOrientation? _orientation =
       ReaderOrientation.fromMangaFlags(widget.viewerFlags);
+  int _tab = 0;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.75,
-      child: DefaultTabController(
-        length: 3,
+    return TideSheetPanel(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.62,
         child: Column(
           children: [
-            const TabBar(
-              tabs: [
-                Tab(text: 'Reading mode'),
-                Tab(text: 'General'),
-                Tab(text: 'Custom filter'),
-              ],
+            TideSegmented(
+              labels: const ['Mode', 'General', 'Filter'],
+              index: _tab,
+              onChanged: (i) => setState(() => _tab = i),
             ),
+            const SizedBox(height: 14),
+            // Only the visible tab is built. A TabBarView would build all
+            // three, and two of them watch a dozen pref providers each.
             Expanded(
-              child: TabBarView(
-                children: [
-                  _buildReadingModeTab(),
-                  _buildGeneralTab(),
-                  _buildColorFilterTab(),
-                ],
-              ),
+              child: switch (_tab) {
+                0 => _buildReadingModeTab(),
+                1 => _buildGeneralTab(),
+                _ => _buildColorFilterTab(),
+              },
             ),
           ],
         ),
@@ -288,36 +294,36 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           title: 'Reading mode',
           children: [
             for (final m in ReadingMode.values)
-              FilterChip(
-                selected: m == _mode,
-                label: Text(m.label),
-                onSelected: (_) {
+              TideChip(
+  label: m.label,
+  selected: m == _mode,
+  onTap: () {
                   setState(() => _mode = m);
                   widget.onChangeMode(m);
                 },
-              ),
+),
           ],
         ),
         _ChipRow(
           title: 'Rotation',
           children: [
-            FilterChip(
-              selected: _orientation == null,
-              label: const Text('Default'),
-              onSelected: (_) {
+            TideChip(
+  label: 'Default',
+  selected: _orientation == null,
+  onTap: () {
                 setState(() => _orientation = null);
                 widget.onChangeOrientation(null);
               },
-            ),
+),
             for (final o in ReaderOrientation.values)
-              FilterChip(
-                selected: o == _orientation,
-                label: Text(o.label),
-                onSelected: (_) {
+              TideChip(
+  label: o.label,
+  selected: o == _orientation,
+  onTap: () {
                   setState(() => _orientation = o);
                   widget.onChangeOrientation(o);
                 },
-              ),
+),
           ],
         ),
         if (effective.isPaged)
@@ -337,12 +343,11 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         title: 'Tap zones',
         children: [
           for (final m in ReaderNavMode.values)
-            FilterChip(
-              selected: m == navMode,
-              label: Text(m.label),
-              onSelected: (_) =>
-                  ref.read(readerNavModePagerProvider.notifier).set(m),
-            ),
+            TideChip(
+  label: m.label,
+  selected: m == navMode,
+  onTap: () => ref.read(readerNavModePagerProvider.notifier).set(m),
+),
         ],
       ),
       if (navMode != ReaderNavMode.disabled)
@@ -354,24 +359,22 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         title: 'Scale type',
         children: [
           for (final t in ReaderImageScaleType.values)
-            FilterChip(
-              selected: t == ref.watch(readerImageScaleTypeProvider),
-              label: Text(t.label),
-              onSelected: (_) =>
-                  ref.read(readerImageScaleTypeProvider.notifier).set(t),
-            ),
+            TideChip(
+  label: t.label,
+  selected: t == ref.watch(readerImageScaleTypeProvider),
+  onTap: () => ref.read(readerImageScaleTypeProvider.notifier).set(t),
+),
         ],
       ),
       _ChipRow(
         title: 'Zoom start position',
         children: [
           for (final z in ReaderZoomStart.values)
-            FilterChip(
-              selected: z == ref.watch(readerZoomStartProvider),
-              label: Text(z.label),
-              onSelected: (_) =>
-                  ref.read(readerZoomStartProvider.notifier).set(z),
-            ),
+            TideChip(
+  label: z.label,
+  selected: z == ref.watch(readerZoomStartProvider),
+  onTap: () => ref.read(readerZoomStartProvider.notifier).set(z),
+),
         ],
       ),
       _PrefCheckbox(
@@ -416,12 +419,11 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         title: 'Tap zones',
         children: [
           for (final m in ReaderNavMode.values)
-            FilterChip(
-              selected: m == navMode,
-              label: Text(m.label),
-              onSelected: (_) =>
-                  ref.read(readerNavModeWebtoonProvider.notifier).set(m),
-            ),
+            TideChip(
+  label: m.label,
+  selected: m == navMode,
+  onTap: () => ref.read(readerNavModeWebtoonProvider.notifier).set(m),
+),
         ],
       ),
       if (navMode != ReaderNavMode.disabled)
@@ -468,12 +470,11 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           title: 'Background color',
           children: [
             for (final b in ReaderBackground.pickerOrder)
-              FilterChip(
-                selected: b == background,
-                label: Text(b.label),
-                onSelected: (_) =>
-                    ref.read(readerBackgroundProvider.notifier).set(b),
-              ),
+              TideChip(
+  label: b.label,
+  selected: b == background,
+  onTap: () => ref.read(readerBackgroundProvider.notifier).set(b),
+),
           ],
         ),
         _PrefCheckbox(
@@ -532,12 +533,11 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             title: 'Flash with',
             children: [
               for (final c in ReaderFlashColor.values)
-                FilterChip(
-                  selected: c == flashColor,
-                  label: Text(c.label),
-                  onSelected: (_) =>
-                      ref.read(readerFlashColorProvider.notifier).set(c),
-                ),
+                TideChip(
+  label: c.label,
+  selected: c == flashColor,
+  onTap: () => ref.read(readerFlashColorProvider.notifier).set(c),
+),
             ],
           ),
         ],
@@ -571,13 +571,12 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             onChanged: (v) =>
                 ref.read(readerBrightnessValueProvider.notifier).set(v),
           ),
-        CheckboxListTile(
-          controlAffinity: ListTileControlAffinity.leading,
-          title: const Text('Custom color filter'),
+        // Not a _PrefCheckbox: this one's notifier isn't a plain bool pref.
+        _CheckRow(
+          label: 'Custom color filter',
           value: filterOn,
-          onChanged: (v) => ref
-              .read(readerColorFilterEnabledProvider.notifier)
-              .set(v ?? false),
+          onChanged: (v) =>
+              ref.read(readerColorFilterEnabledProvider.notifier).set(v),
         ),
         if (filterOn) ...[
           _channelSlider('Red', filterValue, 16),
@@ -588,12 +587,11 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             title: 'Color filter blend mode',
             children: [
               for (final m in ReaderColorFilterMode.values)
-                FilterChip(
-                  selected: m == filterMode,
-                  label: Text(m.label),
-                  onSelected: (_) =>
-                      ref.read(readerColorFilterModeProvider.notifier).set(m),
-                ),
+                TideChip(
+  label: m.label,
+  selected: m == filterMode,
+  onTap: () => ref.read(readerColorFilterModeProvider.notifier).set(m),
+),
             ],
           ),
         ],
@@ -636,19 +634,13 @@ class _SheetHeading extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.titleSmall,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => TideSectionHeader(
+        label: label,
+        padding: const EdgeInsets.fromLTRB(2, 18, 2, 10),
+      );
 }
 
-/// Kotlin `SettingsChipRow`: a labelled, horizontally scrolling row of
-/// [FilterChip]s.
+/// Kotlin `SettingsChipRow`: a labelled, horizontally scrolling row of chips.
 class _ChipRow extends StatelessWidget {
   const _ChipRow({required this.title, required this.children});
 
@@ -663,7 +655,9 @@ class _ChipRow extends StatelessWidget {
         _SheetHeading(title),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          // The row bleeds to the panel's edge so a long set of chips reads
+          // as continuing off-screen rather than stopping short.
+          clipBehavior: Clip.none,
           child: Row(
             children: [
               for (final (i, chip) in children.indexed) ...[
@@ -673,6 +667,7 @@ class _ChipRow extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: 4),
       ],
     );
   }
@@ -686,17 +681,45 @@ class _PrefCheckbox extends ConsumerWidget {
   final NotifierProvider<BoolPrefNotifier, bool> provider;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return CheckboxListTile(
-      title: Text(label),
-      value: ref.watch(provider),
-      controlAffinity: ListTileControlAffinity.leading,
-      onChanged: (v) => ref.read(provider.notifier).set(v ?? false),
+  Widget build(BuildContext context, WidgetRef ref) => _CheckRow(
+        label: label,
+        value: ref.watch(provider),
+        onChanged: (v) => ref.read(provider.notifier).set(v),
+      );
+}
+
+/// One checkbox on its own pane of glass. Set rows carry a little more tint
+/// and a brighter edge, so a screen of them shows its state at a glance.
+class _CheckRow extends StatelessWidget {
+  const _CheckRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: TideGlass(
+        radius: 14,
+        tintTop: value ? 0.115 : 0.06,
+        tintBottom: value ? 0.042 : 0.02,
+        highlight: value ? 0.18 : 0.12,
+        border: value ? 0.17 : 0.08,
+        padding: const EdgeInsets.fromLTRB(13, 12, 14, 12),
+        child: TideCheck(label: label, value: value, onChanged: onChanged),
+      ),
     );
   }
 }
 
-/// Kotlin `SliderItem`: label + slider + value pill.
+/// Kotlin `SliderItem`. The same control as Settings → Reader, so the two
+/// surfaces don't disagree about what a slider looks like.
 class _SheetSlider extends StatelessWidget {
   const _SheetSlider({
     required this.label,
@@ -716,27 +739,13 @@ class _SheetSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-          ),
-          Expanded(
-            flex: 3,
-            child: Slider(
-              value: value.clamp(min, max).toDouble(),
-              min: min.toDouble(),
-              max: max.toDouble(),
-              divisions: max - min,
-              onChanged: (v) => onChanged(v.round()),
-            ),
-          ),
-          Text(valueLabel, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
+    return PrefSlider(
+      title: label,
+      subtitle: valueLabel,
+      value: value,
+      min: min,
+      max: max,
+      onChanged: onChanged,
     );
   }
 }

@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/manga/excluded_scanlators_repository.dart';
+import '../tide/tide.dart';
 
 /// Bottom sheet for excluding scanlators from a single manga's chapter
 /// list. Mirrors Mihon's `ScanlatorFilterDialog`.
 ///
-/// Tapping a row toggles it between included (empty box icon) and
-/// excluded (cross-out icon). When at least one scanlator exists, the
-/// header row shows a Select-all / Reset shortcut that flips between
-/// "all included" and "all excluded" states. Pressing Save persists the
-/// resulting set via [ExcludedScanlatorsRepository.setForManga].
+/// Tapping a row toggles it between included and excluded. When at least
+/// one scanlator exists, a shortcut flips between "all included" and "all
+/// excluded". Pressing Save persists the resulting set via
+/// [ExcludedScanlatorsRepository.setForManga].
 class ScanlatorFilterSheet extends ConsumerStatefulWidget {
   const ScanlatorFilterSheet({
     super.key,
@@ -62,81 +62,144 @@ class _ScanlatorFilterSheetState extends ConsumerState<ScanlatorFilterSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Text(
-                'Exclude scanlators',
-                style: Theme.of(context).textTheme.titleMedium,
+    final showing = _ordered.length - _excluded.length;
+    return TideSheetPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Scanlators', style: TideText.display(21)),
+          const SizedBox(height: 6),
+          Text(
+            _ordered.isEmpty
+                ? 'No scanlators are credited on this series.'
+                : '$showing of ${_ordered.length} showing',
+            style: TideText.caption(size: 13),
+          ),
+          if (_ordered.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            // The list is bounded so a series with forty scanlators scrolls
+            // inside the panel instead of growing the panel past the screen.
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: _ordered.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 7),
+                itemBuilder: (_, i) {
+                  final name = _ordered[i];
+                  return _ScanlatorRow(
+                    name: name,
+                    excluded: _excluded.contains(name),
+                    onTap: () => _toggle(name),
+                  );
+                },
               ),
             ),
-            if (_ordered.isEmpty)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child:
-                    Text('No scanlators found in this manga\'s chapter list.'),
-              )
-            else
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _ordered.length,
-                  itemBuilder: (_, i) {
-                    final name = _ordered[i];
-                    final excluded = _excluded.contains(name);
-                    return ListTile(
-                      leading: Icon(
-                        excluded
-                            ? Icons.disabled_by_default
-                            : Icons.check_box_outline_blank,
-                        color: excluded
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
-                      ),
-                      title: Text(name),
-                      onTap: () => _toggle(name),
-                    );
-                  },
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Row(
-                children: [
-                  if (_ordered.isNotEmpty)
-                    TextButton(
-                      onPressed: () => setState(() {
-                        if (_excluded.isEmpty) {
-                          _excluded.addAll(_ordered);
-                        } else {
-                          _excluded.clear();
-                        }
-                      }),
-                      child: Text(
-                        _excluded.isEmpty ? 'Exclude all' : 'Reset',
-                      ),
-                    ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: _ordered.isEmpty ? null : _save,
-                    child: const Text('Save'),
-                  ),
-                ],
+            const SizedBox(height: 14),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() {
+                if (_excluded.isEmpty) {
+                  _excluded.addAll(_ordered);
+                } else {
+                  _excluded.clear();
+                }
+              }),
+              child: Text(
+                _excluded.isEmpty ? 'Hide all' : 'Show all',
+                style: TideText.title(size: 13, color: TideColors.accent),
               ),
             ),
           ],
-        ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: TideButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              if (_ordered.isNotEmpty) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TideButton(
+                    label: 'Save',
+                    primary: true,
+                    onTap: _save,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One scanlator. Excluded reads as struck through and dimmed, so the state
+/// is legible from the text alone — the marker on the left only confirms it.
+class _ScanlatorRow extends StatelessWidget {
+  const _ScanlatorRow({
+    required this.name,
+    required this.excluded,
+    required this.onTap,
+  });
+
+  final String name;
+  final bool excluded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TideGlass(
+      radius: 14,
+      tintTop: excluded ? 0.04 : 0.085,
+      tintBottom: excluded ? 0.015 : 0.03,
+      highlight: excluded ? 0.07 : 0.15,
+      border: excluded ? 0.06 : 0.10,
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(13, 12, 14, 12),
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: tideEase,
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: excluded
+                  ? Colors.transparent
+                  : Colors.white.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(
+                color: Colors.white
+                    .withValues(alpha: excluded ? 0.13 : 0.26),
+              ),
+            ),
+            child: excluded
+                ? null
+                : Icon(Icons.check_rounded,
+                    size: 13, color: TideColors.textAt(0.8)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TideText.title(
+                size: 14,
+                color: TideColors.textAt(excluded ? 0.3 : 0.88),
+              ).copyWith(
+                decoration: excluded ? TextDecoration.lineThrough : null,
+                decorationColor: TideColors.textAt(0.3),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

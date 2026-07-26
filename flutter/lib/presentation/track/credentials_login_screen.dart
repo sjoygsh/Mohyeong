@@ -79,71 +79,71 @@ class _CredentialsLoginScreenState extends State<CredentialsLoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TideColors.ground,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Stack(
         children: [
-          TideHeader(title: widget.title),
-          Expanded(child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: ListView(
-          children: [
-            if (widget.helperText != null) ...[
-              Text(
-                widget.helperText!,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (widget.includeServerUrl) ...[
-              TextField(
-                controller: _server,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                decoration: InputDecoration(
-                  labelText: widget.serverUrlLabel,
-                  hintText: widget.serverUrlHint,
-                  border: const OutlineInputBorder(),
+          const TideAurora(),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TideHeader(title: widget.title),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+                  children: [
+                    if (widget.helperText != null) ...[
+                      Text(widget.helperText!, style: TideText.body()),
+                      const SizedBox(height: 22),
+                    ],
+                    if (widget.includeServerUrl) ...[
+                      TideField(
+                        controller: _server,
+                        label: widget.serverUrlLabel,
+                        hintText: widget.serverUrlHint,
+                        icon: Icons.dns_outlined,
+                        keyboardType: TextInputType.url,
+                        autocorrect: false,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+                    TideField(
+                      controller: _user,
+                      label: widget.usernameLabel,
+                      icon: Icons.person_outline,
+                      autocorrect: false,
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 18),
+                    TideField(
+                      controller: _pass,
+                      label: widget.passwordLabel,
+                      icon: Icons.lock_outline,
+                      obscureText: _obscure,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _submit(),
+                      trailing: TideIconButton(
+                        icon: _obscure
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        onTap: () => setState(() => _obscure = !_obscure),
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    TideButton(
+                      label: 'Log in',
+                      primary: true,
+                      onTap: _submit,
+                    ),
+                    const SizedBox(height: 10),
+                    TideButton(
+                      label: 'Cancel',
+                      onTap: () => Navigator.of(context).pop(),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
             ],
-            TextField(
-              controller: _user,
-              autocorrect: false,
-              decoration: InputDecoration(
-                labelText: widget.usernameLabel,
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _pass,
-              obscureText: _obscure,
-              decoration: InputDecoration(
-                labelText: widget.passwordLabel,
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscure ? Icons.visibility : Icons.visibility_off,
-                  ),
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                ),
-              ),
-              onSubmitted: (_) => _submit(),
-            ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _submit,
-              child: const Text('Log in'),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-          ],
-        ),
-      )),
+          ),
         ],
       ),
     );

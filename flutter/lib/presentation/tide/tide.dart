@@ -1550,6 +1550,106 @@ class TideButton extends StatelessWidget {
   }
 }
 
+/// A single-line text field on a pane of glass.
+///
+/// Tide has no outlined inputs: a Material `OutlineInputBorder` draws a hard
+/// rectangle with a notched label, which is a different design's idea of
+/// where a field begins. Here the pane is the field, and the label sits above
+/// it rather than cutting through its edge.
+class TideField extends StatelessWidget {
+  const TideField({
+    super.key,
+    required this.controller,
+    this.label,
+    this.hintText,
+    this.icon,
+    this.obscureText = false,
+    this.autofocus = false,
+    this.autocorrect = true,
+    this.keyboardType,
+    this.textInputAction,
+    this.onSubmitted,
+    this.trailing,
+  });
+
+  final TextEditingController controller;
+
+  /// Drawn above the pane, in the same kicker the section headers use.
+  final String? label;
+  final String? hintText;
+  final IconData? icon;
+  final bool obscureText;
+  final bool autofocus;
+  final bool autocorrect;
+  final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onSubmitted;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final field = SizedBox(
+      height: 46,
+      child: TideGlass(
+        radius: 23,
+        tintTop: 0.09,
+        tintBottom: 0.03,
+        highlight: 0.16,
+        border: 0.11,
+        padding: EdgeInsets.only(left: icon != null ? 14 : 17, right: 8),
+        child: Row(
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 17, color: TideColors.textAt(0.45)),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: TextField(
+                controller: controller,
+                obscureText: obscureText,
+                autofocus: autofocus,
+                autocorrect: autocorrect,
+                keyboardType: keyboardType,
+                textInputAction: textInputAction,
+                onSubmitted: onSubmitted,
+                cursorColor: TideColors.accent,
+                style: TideText.title(size: 14.5),
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintText: hintText,
+                  hintStyle: TideText.title(
+                    size: 14.5,
+                    color: TideColors.textAt(0.33),
+                  ),
+                ),
+              ),
+            ),
+            ?trailing,
+            if (trailing == null) const SizedBox(width: 9),
+          ],
+        ),
+      ),
+    );
+    if (label == null) return field;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Text(
+            label!.toUpperCase(),
+            style: TideText.kicker(size: 11, color: TideColors.textAt(0.45))
+                .copyWith(letterSpacing: 1.6),
+          ),
+        ),
+        field,
+      ],
+    );
+  }
+}
+
 /// Asks for one line of text and pops it. Pops null on cancel.
 class TideInputSheet extends StatefulWidget {
   const TideInputSheet({

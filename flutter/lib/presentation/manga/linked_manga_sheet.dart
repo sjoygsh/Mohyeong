@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/manga/manga_links_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
-import '../common/source_image.dart';
+import '../tide/tide.dart';
 
 /// Modal sheet for managing the cluster of "linked" alternate sources
 /// attached to a manga (different translations / mirror sources). The
@@ -22,52 +22,69 @@ class LinkedMangaSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(mangaLinksRepositoryProvider);
-    return SafeArea(
+    return TideSheetPanel(
       child: StreamBuilder<List<Manga>>(
         stream: repo.watchLinked(primary.id),
         builder: (context, snap) {
           if (!snap.hasData) {
             return const SizedBox(
-              height: 120,
-              child: Center(child: CircularProgressIndicator()),
+              height: 110,
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: TideColors.accent,
+                  ),
+                ),
+              ),
             );
           }
           final linked = snap.data!;
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Linked sources',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Linked sources', style: TideText.display(21)),
+                        const SizedBox(height: 6),
+                        Text(
+                          linked.isEmpty
+                              ? 'Nothing linked yet'
+                              : '${linked.length} linked',
+                          style: TideText.caption(size: 13),
+                        ),
+                      ],
                     ),
-                    TextButton.icon(
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add'),
-                      onPressed: () => _addLink(context, ref),
-                    ),
-                  ],
-                ),
-              ),
-              if (linked.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  child: Text(
-                    'No linked sources yet. Use Add to attach another '
-                    'manga from your library — chapter updates on it will '
-                    'show under this title in the Updates tab.',
                   ),
+                  TideIconButton(
+                    icon: Icons.add,
+                    onTap: () => _addLink(context, ref),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              if (linked.isEmpty)
+                Text(
+                  'Attach another title from your library and its new '
+                  'chapters will appear under this one.',
+                  style: TideText.body(),
                 )
               else
                 Flexible(
-                  child: ListView.builder(
+                  child: ListView.separated(
                     shrinkWrap: true,
+                    padding: EdgeInsets.zero,
                     itemCount: linked.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (_, i) => _LinkedRow(
                       primaryId: primary.id,
                       linked: linked[i],
@@ -75,6 +92,12 @@ class LinkedMangaSheet extends ConsumerWidget {
                     ),
                   ),
                 ),
+              const SizedBox(height: 20),
+              TideButton(
+                label: 'Done',
+                primary: true,
+                onTap: () => Navigator.of(context).pop(),
+              ),
             ],
           );
         },
@@ -83,11 +106,9 @@ class LinkedMangaSheet extends ConsumerWidget {
   }
 
   Future<void> _addLink(BuildContext context, WidgetRef ref) async {
-    final picked = await showModalBottomSheet<Manga>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _PickFavoriteSheet(excludeId: primary.id),
+    final picked = await showTideSheet<Manga>(
+      context,
+      (_) => _PickFavoriteSheet(excludeId: primary.id),
     );
     if (picked == null) return;
     await ref.read(mangaLinksRepositoryProvider).link(primary.id, picked.id);
@@ -107,35 +128,49 @@ class _LinkedRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final placeholderColor =
-        Theme.of(context).colorScheme.surfaceContainerHighest;
-    return ListTile(
-      leading: SizedBox(
-        width: 40,
-        height: 56,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: linked.thumbnailUrl == null || linked.thumbnailUrl!.isEmpty
-              ? Container(color: placeholderColor)
-              : SourceImage(
-                  cacheWidth: 240,
-                  url: linked.thumbnailUrl!,
-                  fit: BoxFit.cover,
-                  placeholder: (_) => Container(color: placeholderColor),
-                  errorWidget: (_, _) => Container(color: placeholderColor),
+    return TideGlass(
+      radius: 14,
+      tintTop: 0.085,
+      tintBottom: 0.03,
+      highlight: 0.15,
+      border: 0.10,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(7),
+            child: SizedBox(
+              width: 38,
+              height: 52,
+              // TideCover, not a bare image: it resolves the per-source
+              // request headers, which several sources need to serve art.
+              child: TideCover(manga: linked, cacheWidth: 240),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  linked.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TideText.title(size: 14),
                 ),
-        ),
-      ),
-      title: Text(
-        linked.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text('Source ${linked.source}'),
-      trailing: IconButton(
-        icon: const Icon(Icons.link_off),
-        tooltip: 'Unlink',
-        onPressed: () => repo.unlink(primaryId, linked.id),
+                const SizedBox(height: 3),
+                Text('Source ${linked.source}',
+                    style: TideText.caption(size: 12)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TideIconButton(
+            icon: Icons.link_off,
+            onTap: () => repo.unlink(primaryId, linked.id),
+          ),
+        ],
       ),
     );
   }
@@ -149,56 +184,95 @@ class _PickFavoriteSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mangaRepo = ref.watch(mangaRepositoryProvider);
-    return SafeArea(
+    return TideSheetPanel(
       child: StreamBuilder<List<Manga>>(
         stream: mangaRepo.watchFavorites(),
         builder: (context, snap) {
           if (!snap.hasData) {
             return const SizedBox(
-              height: 120,
-              child: Center(child: CircularProgressIndicator()),
+              height: 110,
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: TideColors.accent,
+                  ),
+                ),
+              ),
             );
           }
           final candidates = snap.data!
               .where((m) => m.id != excludeId)
               .toList(growable: false);
-          if (candidates.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'No other manga in your library. Favourite at least one '
-                'more title to link it here.',
-                textAlign: TextAlign.center,
-              ),
-            );
-          }
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: Text(
-                  'Pick a manga to link',
-                  style: Theme.of(context).textTheme.titleMedium,
+              Text('Link a title', style: TideText.display(21)),
+              const SizedBox(height: 18),
+              if (candidates.isEmpty)
+                Text(
+                  'There is nothing else in your library yet. Add another '
+                  'title first and it can be linked here.',
+                  style: TideText.body(),
+                )
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: candidates.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) {
+                      final m = candidates[i];
+                      return TideGlass(
+                        radius: 14,
+                        tintTop: 0.085,
+                        tintBottom: 0.03,
+                        highlight: 0.15,
+                        border: 0.10,
+                        onTap: () => Navigator.of(context).pop(m),
+                        padding: const EdgeInsets.fromLTRB(10, 10, 14, 10),
+                        child: Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(7),
+                              child: SizedBox(
+                                width: 34,
+                                height: 46,
+                                child: TideCover(manga: m, cacheWidth: 200),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    m.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TideText.title(size: 14),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text('Source ${m.source}',
+                                      style: TideText.caption(size: 12)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              ),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: candidates.length,
-                  itemBuilder: (_, i) {
-                    final m = candidates[i];
-                    return ListTile(
-                      title: Text(
-                        m.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text('Source ${m.source}'),
-                      onTap: () => Navigator.of(context).pop(m),
-                    );
-                  },
-                ),
+              const SizedBox(height: 20),
+              TideButton(
+                label: 'Cancel',
+                onTap: () => Navigator.of(context).pop(),
               ),
             ],
           );
