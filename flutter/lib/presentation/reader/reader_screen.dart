@@ -946,20 +946,12 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
 
   /// Kotlin `SetCoverDialog`: confirm before overwriting the cover.
   Future<void> _confirmSetAsCover() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        content: const Text('Use this image as cover art?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('OK'),
-          ),
-        ],
+    final confirmed = await showTideSheet<bool>(
+      context,
+      (_) => const TideConfirmSheet(
+        title: 'Set as cover',
+        message: 'Use this page as the cover art for this entry?',
+        confirmLabel: 'Set cover',
       ),
     );
     if (confirmed == true && mounted) await _setCurrentPageAsCover();
@@ -4565,16 +4557,19 @@ class _MissingChapter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: const Center(
-        child: Text(
-          'Chapter not found.',
-          style: TextStyle(color: Colors.white70),
-        ),
+      // The reader's own ground, not plain black — this is still the reader,
+      // it just has nothing to show.
+      backgroundColor: TideColors.readerGround,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const TideHeader(title: ''),
+          Expanded(
+            child: Center(
+              child: Text('Chapter not found.', style: TideText.body()),
+            ),
+          ),
+        ],
       ),
     );
   }
