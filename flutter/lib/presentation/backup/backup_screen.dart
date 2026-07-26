@@ -16,6 +16,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../settings/pref_tiles.dart';
+
 import '../../data/backup/backup_codec.dart';
 import '../../data/backup/backup_creator.dart';
 import '../../data/backup/backup_preferences.dart';
@@ -35,10 +37,9 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Backup & restore')),
-      body: ListView(
-        children: [
+    return PrefScaffold(
+      title: 'Backup & restore',
+      children: [
           ListTile(
             leading: const Icon(Icons.save_outlined),
             title: const Text('Create backup'),
@@ -77,7 +78,6 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
               ),
             ),
         ],
-      ),
     );
   }
 

@@ -14,10 +14,9 @@ class AppearanceSettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final datePattern = ref.watch(dateFormatProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Appearance')),
-      body: ListView(
-        children: [
+    return PrefScaffold(
+      title: 'Appearance',
+      children: [
           const PrefSectionHeader('Theme'),
           _ThemeColorTile(
             current: AppColorTheme.fromKey(ref.watch(appThemeProvider)),
@@ -51,7 +50,6 @@ class AppearanceSettingsScreen extends ConsumerWidget {
             provider: showImagesInDescriptionProvider,
           ),
         ],
-      ),
     );
   }
 }

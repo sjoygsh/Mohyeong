@@ -23,10 +23,9 @@ class AdvancedSettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final doh = ref.watch(dohProviderProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Advanced')),
-      body: ListView(
-        children: [
+    return PrefScaffold(
+      title: 'Advanced',
+      children: [
           const PrefSectionHeader('Logging'),
           PrefSwitch(
             title: 'Verbose logging',
@@ -76,7 +75,6 @@ class AdvancedSettingsScreen extends ConsumerWidget {
             onTap: () => _clearDatabase(context, ref),
           ),
         ],
-      ),
     );
   }
 

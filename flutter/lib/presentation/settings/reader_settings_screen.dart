@@ -53,10 +53,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
     final colorFilterEnabled = ref.watch(readerColorFilterEnabledProvider);
     final colorFilterMode = ref.watch(readerColorFilterModeProvider);
     final customBrightness = ref.watch(readerCustomBrightnessProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Reader')),
-      body: ListView(
-        children: [
+    return PrefScaffold(
+      title: 'Reader',
+      children: [
           ListTile(
             title: const Text('Default reading mode'),
             subtitle: Text(readerMode.label),
@@ -451,7 +450,6 @@ class ReaderSettingsScreen extends ConsumerWidget {
             provider: readerInvertedColorsProvider,
           ),
         ],
-      ),
     );
   }
 }

@@ -43,10 +43,9 @@ class LibrarySettingsScreen extends ConsumerWidget {
     final showLocalBadge = ref.watch(displayLocalBadgeProvider);
     final showLanguageBadge = ref.watch(displayLanguageBadgeProvider);
     final showContinueReading = ref.watch(showContinueReadingButtonProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Library')),
-      body: ListView(
-        children: [
+    return PrefScaffold(
+      title: 'Library',
+      children: [
           // ── Categories ──────────────────────────────────────────────
           const PrefSectionHeader('Categories'),
           ListTile(
@@ -188,7 +187,6 @@ class LibrarySettingsScreen extends ConsumerWidget {
                 ref.read(displayLanguageBadgeProvider.notifier).setEnabled,
           ),
         ],
-      ),
     );
   }
 }

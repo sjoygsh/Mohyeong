@@ -25,10 +25,9 @@ class DownloadSettingsScreen extends ConsumerWidget {
     final removeSlots = ref.watch(removeAfterReadSlotsProvider);
     final downloadAhead = ref.watch(autoDownloadWhileReadingProvider);
     final downloadNew = ref.watch(downloadNewChaptersProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Downloads')),
-      body: ListView(
-        children: [
+    return PrefScaffold(
+      title: 'Downloads',
+      children: [
           PrefSwitch(
             title: 'Only on Wi-Fi',
             provider: downloadOnlyOverWifiProvider,
@@ -134,7 +133,6 @@ class DownloadSettingsScreen extends ConsumerWidget {
             ),
           ),
         ],
-      ),
     );
   }
 }

@@ -14,10 +14,9 @@ class BrowseSettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Browse')),
-      body: ListView(
-        children: [
+    return PrefScaffold(
+      title: 'Browse',
+      children: [
           const PrefSectionHeader('Sources'),
           PrefSwitch(
             title: 'Hide entries already in library',
@@ -39,7 +38,6 @@ class BrowseSettingsScreen extends ConsumerWidget {
             ),
           ),
         ],
-      ),
     );
   }
 }

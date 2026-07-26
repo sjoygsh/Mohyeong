@@ -34,10 +34,9 @@ class SecuritySettingsScreen extends ConsumerWidget {
     final useBiometric = ref.watch(useBiometricLockProvider);
     final lockAfter = ref.watch(lockAfterMinutesProvider);
     final secureMode = ref.watch(secureScreenModeProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Security and privacy')),
-      body: ListView(
-        children: [
+    return PrefScaffold(
+      title: 'Security and privacy',
+      children: [
           const PrefSectionHeader('Security'),
           PrefSwitch(
             title: 'Require unlock',
@@ -70,7 +69,6 @@ class SecuritySettingsScreen extends ConsumerWidget {
             ),
           ),
         ],
-      ),
     );
   }
 
