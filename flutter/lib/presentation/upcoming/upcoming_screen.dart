@@ -103,11 +103,7 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
                   ),
                   Expanded(
                     child: async.when(
-                      loading: () => const Center(
-                        child: CircularProgressIndicator(
-                          color: TideColors.accent,
-                        ),
-                      ),
+                      loading: () => const Center(child: TideSpinner()),
                       error: (e, _) => _Note('Failed to load: $e'),
                       data: _body,
                     ),

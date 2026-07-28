@@ -196,7 +196,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
   Future<void> _refresh() async {
     if (_updating) return;
     setState(() => _updating = true);
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     try {
       final result = await ref.read(libraryUpdaterProvider).updateAll();
       if (!mounted) return;
@@ -204,10 +204,10 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
           ? 'No new chapters found.'
           : '${result.newChapters} new chapter'
               '${result.newChapters == 1 ? '' : 's'} added.';
-      messenger.showSnackBar(SnackBar(content: Text(msg)));
+      toast.show(msg);
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('Refresh failed: $e')));
+      toast.show('Refresh failed: $e');
     } finally {
       if (mounted) setState(() => _updating = false);
     }
@@ -323,16 +323,14 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
   /// Open the oldest unread chapter — reading order, not release order. Same
   /// resolution the library grid's resume affordance performs.
   Future<void> _resume(int mangaId) async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     final chapters =
         await ref.read(chapterRepositoryProvider).getByMangaId(mangaId);
     final unread = chapters.where((c) => !c.read).toList()
       ..sort((a, b) => b.sourceOrder.compareTo(a.sourceOrder));
     if (!mounted) return;
     if (unread.isEmpty) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('No unread chapters left.')),
-      );
+      toast.show('No unread chapters left.');
       return;
     }
     await _openChapter(mangaId, unread.first.id);
@@ -422,7 +420,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
   }) {
     if (loading) {
       return const Center(
-        child: CircularProgressIndicator(color: TideColors.accent),
+        child: TideSpinner(),
       );
     }
     final heroes = _topRead(items);

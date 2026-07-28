@@ -397,9 +397,7 @@ Future<void> _pickLocalRoot(BuildContext context, WidgetRef ref) async {
   // Bust the FutureProvider cache so the row re-reads the new root.
   ref.invalidate(localSourcePreferencesProvider);
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('Local folder set to $picked')),
-  );
+  TideToast.of(context).show('Local folder set to $picked');
 }
 
 /// Single row in the Sources list. The pin flips `pinned_catalogues`
@@ -663,22 +661,16 @@ Future<void> _runUpdate(
     if (!context.mounted) return;
     Navigator.of(context).pop(); // dismiss progress
     final unchanged = updated.versionCode == beforeVersion;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          unchanged
-              ? '${updated.name} is already up to date.'
-              : 'Updated ${updated.name} '
-                  '(v$beforeVersion → v${updated.versionCode}).',
-        ),
-      ),
+    TideToast.of(context).show(
+      unchanged
+          ? '${updated.name} is already up to date.'
+          : 'Updated ${updated.name} '
+              '(v$beforeVersion → v${updated.versionCode}).',
     );
   } catch (err) {
     if (!context.mounted) return;
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Update failed: $err')),
-    );
+    TideToast.of(context).show('Update failed: $err');
   }
 }
 
@@ -783,15 +775,11 @@ Future<void> _runInstall(
     final extension = await install();
     if (!context.mounted) return;
     Navigator.of(context).pop(); // dismiss progress
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Installed ${extension.name}.')),
-    );
+    TideToast.of(context).show('Installed ${extension.name}.');
   } catch (e) {
     if (!context.mounted) return;
     Navigator.of(context).pop(); // dismiss progress
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Install failed: $e')),
-    );
+    TideToast.of(context).show('Install failed: $e');
   }
 }
 

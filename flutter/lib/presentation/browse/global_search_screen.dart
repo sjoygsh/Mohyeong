@@ -506,7 +506,7 @@ class _ResultCard extends ConsumerWidget {
   Future<void> _openManga(BuildContext context, WidgetRef ref) async {
     final sourceIdInt = sourceNumericId(sourceId);
     final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     try {
       final inserted = await ref
           .read(mangaRepositoryProvider)
@@ -518,9 +518,7 @@ class _ResultCard extends ConsumerWidget {
         ),
       );
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not open manga: $e')),
-      );
+      toast.show('Could not open manga: $e');
     }
   }
 }

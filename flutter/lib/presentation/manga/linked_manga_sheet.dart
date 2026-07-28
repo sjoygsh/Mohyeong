@@ -33,10 +33,7 @@ class LinkedMangaSheet extends ConsumerWidget {
                 child: SizedBox(
                   width: 22,
                   height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: TideColors.accent,
-                  ),
+                  child: TideSpinner(size: 22, strokeWidth: 2),
                 ),
               ),
             );
@@ -195,10 +192,7 @@ class _PickFavoriteSheet extends ConsumerWidget {
                 child: SizedBox(
                   width: 22,
                   height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: TideColors.accent,
-                  ),
+                  child: TideSpinner(size: 22, strokeWidth: 2),
                 ),
               ),
             );

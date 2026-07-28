@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/cover/cover_cache.dart';
 import '../../domain/manga/model/manga.dart';
 import '../common/source_image.dart';
+import '../tide/tide.dart';
 
 /// Fullscreen cover viewer reachable by tapping the cover thumbnail on
 /// the manga details header. Mirrors a stripped-down version of Mihon's
@@ -45,7 +46,7 @@ class MangaCoverViewer extends ConsumerWidget {
                             url: url,
                             fit: BoxFit.contain,
                             placeholder: (_) => const Center(
-                              child: CircularProgressIndicator(),
+                              child: TideSpinner(),
                             ),
                             errorWidget: (_, _) => const Center(
                               child: Icon(

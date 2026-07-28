@@ -228,12 +228,8 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     if (ok == true) {
       final removed = repo.clearQueue();
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            removed == 1 ? 'Removed 1 chapter' : 'Removed $removed chapters',
-          ),
-        ),
+      TideToast.of(context).show(
+        removed == 1 ? 'Removed 1 chapter' : 'Removed $removed chapters',
       );
     }
   }
@@ -487,11 +483,7 @@ class _ProgressLine extends StatelessWidget {
           child: progress == null
               // No progress reported yet: an indeterminate sliver rather
               // than a full bar claiming completion.
-              ? const LinearProgressIndicator(
-                  minHeight: 3,
-                  backgroundColor: Colors.transparent,
-                  color: TideColors.accent,
-                )
+              ? const TideProgressBar(value: null, height: 3)
               : Row(
                   children: [
                     Expanded(

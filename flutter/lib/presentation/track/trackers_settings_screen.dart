@@ -159,14 +159,12 @@ class _TrackerTileState extends State<_TrackerTile> {
   Future<void> _login() async {
     if (_working) return;
     setState(() => _working = true);
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     try {
       await widget.tracker.login();
-      messenger.showSnackBar(
-        SnackBar(content: Text('Logged in to ${widget.tracker.name}')),
-      );
+      toast.show('Logged in to ${widget.tracker.name}');
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('$e')));
+      toast.show('$e');
     } finally {
       if (mounted) {
         setState(() => _working = false);
@@ -197,10 +195,7 @@ class _TrackerTileState extends State<_TrackerTile> {
             ? const SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: TideColors.accent,
-                ),
+                child: TideSpinner(size: 18, strokeWidth: 2),
               )
             : Text(
                 loggedIn == true ? 'Log out' : 'Log in',

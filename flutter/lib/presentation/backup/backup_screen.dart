@@ -24,6 +24,8 @@ import '../../data/backup/backup_preferences.dart';
 import '../../data/backup/backup_restorer.dart';
 import '../../data/backup/backup_scheduler.dart';
 
+import '../tide/tide.dart';
+
 class BackupScreen extends ConsumerStatefulWidget {
   const BackupScreen({super.key});
 
@@ -56,7 +58,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
           if (_busy)
             const Padding(
               padding: EdgeInsets.all(24),
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: TideSpinner()),
             ),
           if (_statusMessage != null)
             Padding(

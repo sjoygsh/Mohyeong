@@ -59,9 +59,7 @@ class AboutScreen extends ConsumerWidget {
                       builder: (context, snap) {
                         if (!snap.hasData) {
                           return const Center(
-                            child: CircularProgressIndicator(
-                              color: TideColors.accent,
-                            ),
+                            child: TideSpinner(),
                           );
                         }
                         final info = snap.data!;
@@ -99,9 +97,7 @@ class AboutScreen extends ConsumerWidget {
                   Clipboard.setData(
                     ClipboardData(text: 'Mohyeong $version'),
                   );
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Copied to clipboard')),
-                  );
+                  TideToast.of(context).show('Copied to clipboard');
                 },
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -203,15 +199,18 @@ class AboutScreen extends ConsumerWidget {
     );
   }
 
-  /// Runs a forced update check and reports the outcome via a SnackBar.
+  /// Runs a forced update check and reports the outcome.
   /// `forceCheck: true` bypasses Mihon's 3-day throttle since the user
   /// explicitly asked. On a newer release, offers a button that opens the
   /// GitHub release page in the browser.
+  ///
+  /// The old SnackBar version had to hide the in-progress message before
+  /// showing the result, or the two would queue and the outcome would appear
+  /// seconds after the check finished. A toast replaces whatever is on screen,
+  /// so the result simply takes the place of "Checking…".
   Future<void> _checkForUpdates(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Checking for updates...')),
-    );
+    final toast = TideToast.of(context);
+    toast.show('Checking for updates...');
 
     AppUpdateResult result;
     try {
@@ -219,31 +218,22 @@ class AboutScreen extends ConsumerWidget {
           .read(appUpdateCheckerProvider)
           .checkForUpdate(forceCheck: true);
     } catch (_) {
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('Update check failed')),
-        );
+      toast.show('Update check failed');
       return;
     }
 
-    messenger.hideCurrentSnackBar();
     switch (result) {
       case NewUpdate(:final release):
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('New version available: ${release.version}'),
-            action: SnackBarAction(
-              label: 'View',
-              onPressed: () => _open(release.releaseLink),
-            ),
-            duration: const Duration(seconds: 8),
-          ),
+        toast.show(
+          'New version available: ${release.version}',
+          actionLabel: 'View',
+          onAction: () => _open(release.releaseLink),
+          // Kept from the SnackBar it replaces: long enough to read a version
+          // number and decide, which the default action dwell is not.
+          duration: const Duration(seconds: 8),
         );
       case NoNewUpdate():
-        messenger.showSnackBar(
-          const SnackBar(content: Text('No new updates available')),
-        );
+        toast.show('No new updates available');
     }
   }
 

@@ -164,7 +164,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
     // no feedback at all — the screen sat on "No chapters" looking frozen
     // until the source answered. [silent] only suppresses the snackbars.
     setState(() => _refreshingDetails = true);
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     try {
       final extRepo = ref.read(extensionRepositoryProvider);
       final mangaRepo = ref.read(mangaRepositoryProvider);
@@ -204,14 +204,14 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
           ? 'Refreshed. No new chapters.'
           : 'Refreshed. ${added.length} new chapter'
               '${added.length == 1 ? '' : 's'}.';
-      messenger.showSnackBar(SnackBar(content: Text(msg)));
+      toast.show(msg);
     } catch (e) {
       if (!mounted || silent) return;
       // Kotlin MangaScreenModel maps NoChaptersException to its own copy
       // ("No chapters found") instead of the generic failure message.
       final msg =
           e is NoChaptersException ? 'No chapters found' : 'Refresh failed: $e';
-      messenger.showSnackBar(SnackBar(content: Text(msg)));
+      toast.show(msg);
     } finally {
       if (mounted) {
         setState(() => _refreshingDetails = false);
@@ -447,7 +447,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                     const SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.all(24),
-                        child: Center(child: CircularProgressIndicator()),
+                        child: Center(child: TideSpinner()),
                       ),
                     )
                   else ...[
@@ -462,7 +462,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                     const SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.all(24),
-                        child: Center(child: CircularProgressIndicator()),
+                        child: Center(child: TideSpinner()),
                       ),
                     )
                   else if (chapters.isEmpty &&
@@ -474,7 +474,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                     const SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.all(24),
-                        child: Center(child: CircularProgressIndicator()),
+                        child: Center(child: TideSpinner()),
                       ),
                     )
                   else if (chapters.isEmpty)
@@ -635,10 +635,7 @@ class _DetailsActions extends StatelessWidget {
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: TideColors.accent,
-                  ),
+                  child: TideSpinner(size: 16, strokeWidth: 2),
                 )
               : Icon(Icons.more_horiz, size: 18, color: TideColors.textAt(0.8)),
         ),
@@ -1665,7 +1662,7 @@ Future<void> _openInBrowser(
   WidgetRef ref,
   Manga manga,
 ) async {
-  final messenger = ScaffoldMessenger.of(context);
+  final toast = TideToast.of(context);
   String full = manga.url;
   if (!full.startsWith('http')) {
     try {
@@ -1682,16 +1679,12 @@ Future<void> _openInBrowser(
   }
   final uri = Uri.tryParse(full);
   if (uri == null || !uri.hasScheme) {
-    messenger.showSnackBar(
-      const SnackBar(content: Text('No URL available for this entry')),
-    );
+    toast.show('No URL available for this entry');
     return;
   }
   final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
   if (!ok) {
-    messenger.showSnackBar(
-      SnackBar(content: Text('Could not open $uri')),
-    );
+    toast.show('Could not open $uri');
   }
 }
 
@@ -1849,12 +1842,8 @@ Future<void> _editCategories(
       all.where((c) => !c.isSystemCategory).toList(growable: false);
   if (!context.mounted) return;
   if (userCategories.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'No categories yet. Create one in More -> Categories first.',
-        ),
-      ),
+    TideToast.of(context).show(
+      'No categories yet. Create one in More -> Categories first.',
     );
     return;
   }
@@ -3216,7 +3205,7 @@ class _LoadingScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(child: CircularProgressIndicator());
+    return const Center(child: TideSpinner());
   }
 }
 

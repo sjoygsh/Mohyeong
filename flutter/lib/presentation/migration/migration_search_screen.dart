@@ -201,7 +201,7 @@ class _MigrationSearchScreenState
   Future<void> _onPickTarget(SourceManga candidate) async {
     final ext = _selectedExt;
     if (ext == null) return;
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     final options = await showTideSheet<MigrationOptions>(
       context,
       (_) => _MigrationConfirmDialog(
@@ -227,13 +227,11 @@ class _MigrationSearchScreenState
           );
       if (!mounted) return;
       Navigator.of(context).pop();
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Migration complete.')),
-      );
+      toast.show('Migration complete.');
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(content: Text('Migration failed: $e')));
+      toast.show('Migration failed: $e');
     }
   }
 

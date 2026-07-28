@@ -72,9 +72,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                         }
                         if (!snap.hasData) {
                           return const Center(
-                            child: CircularProgressIndicator(
-                              color: TideColors.accent,
-                            ),
+                            child: TideSpinner(),
                           );
                         }
                         return _body(snap.data!);

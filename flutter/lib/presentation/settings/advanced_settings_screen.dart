@@ -85,9 +85,7 @@ class AdvancedSettingsScreen extends ConsumerWidget {
       // TODO apply DoH to http client (rewiring Dio's resolver is out of
       // scope here; Mihon applies this on the next app restart).
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Requires an app restart.')),
-        );
+        TideToast.of(context).show('Requires an app restart.');
       }
     }
   }
@@ -95,9 +93,7 @@ class AdvancedSettingsScreen extends ConsumerWidget {
   Future<void> _clearCookies(BuildContext context, WidgetRef ref) async {
     await ref.read(appHttpClientProvider).cookies.deleteAll();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cookies cleared.')),
-      );
+      TideToast.of(context).show('Cookies cleared.');
     }
   }
 
@@ -124,9 +120,7 @@ class AdvancedSettingsScreen extends ConsumerWidget {
     }
     if (context.mounted) {
       final mb = (bytesFreed / (1024 * 1024)).toStringAsFixed(1);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Chapter cache cleared ($mb MB).')),
-      );
+      TideToast.of(context).show('Chapter cache cleared ($mb MB).');
     }
   }
 
@@ -136,9 +130,7 @@ class AdvancedSettingsScreen extends ConsumerWidget {
     await appImageCacheManager.emptyCache();
     await DefaultCacheManager().emptyCache();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cover cache cleared.')),
-      );
+      TideToast.of(context).show('Cover cache cleared.');
     }
   }
 
@@ -157,9 +149,7 @@ class AdvancedSettingsScreen extends ConsumerWidget {
     final removed =
         await ref.read(mangaRepositoryProvider).clearNonLibraryEntries();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Removed $removed entries.')),
-      );
+      TideToast.of(context).show('Removed $removed entries.');
     }
   }
 }

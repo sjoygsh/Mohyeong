@@ -252,7 +252,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   /// `DownloadRepository.enqueue` being idempotent for already-queued or
   /// already-downloaded chapters.
   Future<void> _selectionDownloadNext(int? count) async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     final mangaRepo = ref.read(mangaRepositoryProvider);
     final chapterRepo = ref.read(chapterRepositoryProvider);
     final downloadRepo = ref.read(downloadRepositoryProvider);
@@ -274,11 +274,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     }
     if (!mounted) return;
     _clearSelection();
-    messenger.showSnackBar(SnackBar(
-      content: Text(enqueued == 0
-          ? 'No unread chapters to download.'
-          : 'Enqueued $enqueued chapter${enqueued == 1 ? '' : 's'}.'),
-    ));
+    toast.show(enqueued == 0
+        ? 'No unread chapters to download.'
+        : 'Enqueued $enqueued chapter${enqueued == 1 ? '' : 's'}.');
   }
 
   Future<void> _openDownloadSheet() async {
@@ -313,7 +311,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   Future<void> _selectionRemoveFromLibrary() async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     final result = await showTideSheet<_RemoveResult>(
       context,
       (_) => _RemoveLibrarySheet(count: _selected.length),
@@ -343,7 +341,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         : result.remove
             ? '${ids.length} removed from library'
             : 'Downloads deleted for ${ids.length} manga';
-    messenger.showSnackBar(SnackBar(content: Text(msg)));
+    toast.show(msg);
   }
 
   Future<void> _selectionMoveToCategory() async {
@@ -353,12 +351,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         allCats.where((c) => !c.isSystemCategory).toList(growable: false);
     if (!mounted) return;
     if (userCats.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No categories yet. Create one in More → Categories first.',
-          ),
-        ),
+      TideToast.of(context).show(
+        'No categories yet. Create one in More → Categories first.',
       );
       return;
     }
@@ -391,7 +385,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   /// "Open random entry": pick a random favourite from the active category
   /// (respecting the current search query) and open its details.
   Future<void> _openRandomEntry() async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     final navigator = Navigator.of(context);
     final items = await ref.read(libraryRepositoryProvider).watchAll().first;
     final inCategory = items
@@ -399,9 +393,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         .toList(growable: false);
     final pool = inCategory.isEmpty ? items : inCategory;
     if (pool.isEmpty) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('No entries found.')),
-      );
+      toast.show('No entries found.');
       return;
     }
     final pick = (pool.toList()..shuffle()).first;
@@ -441,7 +433,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   Future<void> _refreshLibrary({int? categoryId}) async {
     if (_updating) return;
     setState(() => _updating = true);
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     final notifications = NotificationService.instance;
     try {
       final updater = ref.read(libraryUpdaterProvider);
@@ -477,11 +469,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           ? 'No new chapters found.'
           : '${result.newChapters} new chapter'
               '${result.newChapters == 1 ? '' : 's'} added.';
-      messenger.showSnackBar(SnackBar(content: Text(msg)));
+      toast.show(msg);
     } catch (e) {
       await notifications.cancelLibraryProgress();
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('Refresh failed: $e')));
+      toast.show('Refresh failed: $e');
     } finally {
       // New chapters may have been auto-downloaded — let the memoised
       // downloaded/tracked filter sets re-resolve on the next build.
@@ -1059,7 +1051,7 @@ Future<void> _resumeNextUnread(
   WidgetRef ref,
   int mangaId,
 ) async {
-  final messenger = ScaffoldMessenger.of(context);
+  final toast = TideToast.of(context);
   final navigator = Navigator.of(context);
   final chapters =
       await ref.read(chapterRepositoryProvider).getByMangaId(mangaId);
@@ -1069,9 +1061,7 @@ Future<void> _resumeNextUnread(
   final unread = chapters.where((c) => !c.read).toList()
     ..sort((a, b) => b.sourceOrder.compareTo(a.sourceOrder));
   if (unread.isEmpty) {
-    messenger.showSnackBar(
-      const SnackBar(content: Text('No unread chapters left.')),
-    );
+    toast.show('No unread chapters left.');
     return;
   }
   await navigator.push(

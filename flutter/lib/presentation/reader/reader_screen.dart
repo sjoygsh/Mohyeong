@@ -920,27 +920,19 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   /// (Kotlin's AddToLibraryFirst result). `cover_last_modified` is bumped so
   /// every cover surface repaints.
   Future<void> _setCurrentPageAsCover() async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     final manga = widget.data.manga;
     if (!manga.favorite && manga.source != 0) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Please add the entry to your library before doing this'),
-        ),
-      );
+      toast.show('Please add the entry to your library before doing this');
       return;
     }
     try {
       final bytes = await _currentPageBytes();
       await ref.read(coverCacheProvider).setCustomCover(manga.id, bytes);
       await ref.read(mangaRepositoryProvider).bumpCoverLastModified(manga.id);
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Cover updated')),
-      );
+      toast.show('Cover updated');
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Couldn\'t set cover: $e')),
-      );
+      toast.show('Couldn\'t set cover: $e');
     }
   }
 
@@ -958,7 +950,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   }
 
   Future<void> _shareCurrentPage() async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     try {
       final bytes = await _currentPageBytes();
       // Mihon `share_page_info`: "%1$s: %2$s, page %3$d".
@@ -969,14 +961,12 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
             'page ${_currentPage.value + 1}',
       );
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Couldn\'t share page: $e')),
-      );
+      toast.show('Couldn\'t share page: $e');
     }
   }
 
   Future<void> _copyCurrentPage() async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     try {
       final bytes = await _currentPageBytes();
       // No success toast — Kotlin relies on the Android 13+ system clip
@@ -986,27 +976,21 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
         filename: '${_pageFilename()}.png',
       );
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Couldn\'t copy page: $e')),
-      );
+      toast.show('Couldn\'t copy page: $e');
     }
   }
 
   Future<void> _saveCurrentPage() async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     try {
       final bytes = await _currentPageBytes();
       await ReaderImageActions.saveToPictures(
         bytes,
         displayName: _pageFilename(),
       );
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Picture saved')),
-      );
+      toast.show('Picture saved');
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Couldn\'t save page: $e')),
-      );
+      toast.show('Couldn\'t save page: $e');
     }
   }
 

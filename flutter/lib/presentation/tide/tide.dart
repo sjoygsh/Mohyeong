@@ -13,6 +13,7 @@
 // from. Nothing here reads app state — it is presentation only.
 // ===========================================================================
 
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -1141,6 +1142,25 @@ class _TabIcon extends StatelessWidget {
 /// Height a tab's scrollable must leave clear at its foot so the floating bar
 /// never covers its last row.
 const double tideBarInset = 110;
+
+/// How much aurora a screen carries.
+///
+/// The light behind the glass is the design's ground, and it was being dialled
+/// in per screen — five different values across the app, none of them chosen
+/// against the others. It is one decision with three answers, and the answer
+/// follows from how much ground the screen actually shows.
+abstract final class TideAuroraLevel {
+  /// Screens built around artwork, where the ground is most of what you see.
+  static const hero = 0.72;
+
+  /// Ordinary list and grid pages: enough that the ground is lit, not so much
+  /// that it competes with the rows sitting on it.
+  static const page = 0.5;
+
+  /// Screens that are wall-to-wall content — long settings runs, dense feeds —
+  /// where the aurora is a hint at the edges rather than a wash.
+  static const dense = 0.32;
+}
 
 /// Switches between peer views: a glass pill with one lit segment that slides.
 ///
@@ -2427,4 +2447,381 @@ class _RingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RingPainter old) => old.progress != progress;
+}
+
+/// Tide's transient message — the app's answer to a SnackBar.
+///
+/// Material's SnackBar is a squared-off slab in its own scheme's colour, with
+/// its own type and its own slide, docked to the very bottom edge where this
+/// app's floating navigation already lives. It was the single most-used
+/// unthemed thing in the app: fifty-odd sites, every one of them announcing a
+/// result in another design's voice.
+///
+/// This is the same job done in Tide's terms — a pane of glass that rises just
+/// above the tab bar, holds, and fades.
+///
+/// It is obtained rather than called on purpose. Almost every message in this
+/// app is reported AFTER an await, and reaching for a BuildContext across an
+/// async gap is the bug that pattern invites. [TideToast.of] captures the
+/// overlay up front, exactly the way the old code captured a
+/// `ScaffoldMessenger`, and stays safe to call once the await returns.
+class TideToast {
+  const TideToast._(this._overlay);
+
+  final OverlayState _overlay;
+
+  /// Captures the overlay for later. Call this BEFORE the await, then
+  /// [show] after it.
+  static TideToast of(BuildContext context) =>
+      TideToast._(Overlay.of(context, rootOverlay: true));
+
+  /// Clearance for the floating navigation: the bar sits at bottom 26 and is
+  /// 58 tall, so this lands a toast just above it. On a pushed screen with no
+  /// bar it simply floats a little higher than the edge, which is where a
+  /// message belongs anyway.
+  static const _bottomInset = 96.0;
+
+  /// Rise and fade, either side of the dwell.
+  static const _riseMs = 320;
+  static const _fadeMs = 260;
+
+  static OverlayEntry? _current;
+
+  /// Shows [message]. A second call replaces the first rather than stacking —
+  /// two messages on screen at once is never what the caller meant, and it is
+  /// why none of the call sites need an equivalent of `hideCurrentSnackBar`.
+  ///
+  /// [duration] overrides the default dwell for the few messages that were
+  /// given an explicit one as SnackBars.
+  void show(
+    String message, {
+    String? actionLabel,
+    VoidCallback? onAction,
+    Duration? duration,
+  }) {
+    if (message.isEmpty || !_overlay.mounted) return;
+    _dismiss();
+    // Dwell: long enough to read a sentence, and longer when there is
+    // something to tap — mirrors the SnackBar durations this replaces.
+    final dwell =
+        duration ?? Duration(milliseconds: actionLabel == null ? 3200 : 5000);
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (context) => _TideToastHost(
+        message: message,
+        actionLabel: actionLabel,
+        onAction: onAction,
+        lifetime: Duration(milliseconds: _riseMs + _fadeMs) + dwell,
+        onFinished: () => _remove(entry),
+      ),
+    );
+    _current = entry;
+    _overlay.insert(entry);
+  }
+
+  /// Takes [entry] away, if it is still the one on screen.
+  ///
+  /// The guard matters: a toast that has been REPLACED still runs its last
+  /// frames out before its host is disposed, and without this the old one's
+  /// finish would take the new one down with it.
+  static void _remove(OverlayEntry entry) {
+    if (_current == entry) _current = null;
+    if (entry.mounted) entry.remove();
+  }
+
+  static void _dismiss() {
+    final entry = _current;
+    if (entry != null) _remove(entry);
+  }
+
+  /// Drops any toast on screen. For a screen going away under one.
+  static void clear() => _dismiss();
+}
+
+class _TideToastHost extends StatefulWidget {
+  const _TideToastHost({
+    required this.message,
+    required this.lifetime,
+    required this.onFinished,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String message;
+
+  /// Rise, dwell and fade, end to end.
+  final Duration lifetime;
+
+  /// Called once the fade has finished, to take the overlay entry away.
+  final VoidCallback onFinished;
+
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  State<_TideToastHost> createState() => _TideToastHostState();
+}
+
+/// The toast's whole life is one [AnimationController] rather than a rise plus
+/// a `Timer` for the dwell.
+///
+/// A bare Timer outlives the tree it belongs to: it kept firing after the
+/// screen was gone, held the overlay entry alive in its closure, and made every
+/// widget test that happened to trigger a message fail with "a Timer is still
+/// pending even after the widget tree was disposed". A controller is owned by
+/// this State and dies with it.
+class _TideToastHostState extends State<_TideToastHost>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: widget.lifetime,
+  )
+    ..addStatusListener(_onStatus)
+    ..forward();
+
+  void _onStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    // Removing an OverlayEntry re-parents the overlay's children, so it must
+    // not happen inside the animation tick that is mid-frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) => widget.onFinished());
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  /// Opacity over the whole lifetime: in over [_riseMs], hold, out over
+  /// [_fadeMs].
+  double _opacityAt(double v) {
+    final total = widget.lifetime.inMilliseconds;
+    final riseEnd = TideToast._riseMs / total;
+    final fadeStart = (total - TideToast._fadeMs) / total;
+    if (v <= riseEnd) return (v / riseEnd).clamp(0.0, 1.0);
+    if (v >= fadeStart) {
+      return (1 - (v - fadeStart) / (1 - fadeStart)).clamp(0.0, 1.0);
+    }
+    return 1;
+  }
+
+  /// The rise is only the entry; once up, it stays put.
+  double _offsetAt(double v) {
+    final riseEnd = TideToast._riseMs / widget.lifetime.inMilliseconds;
+    if (v >= riseEnd) return 0;
+    return ui.lerpDouble(18, 0, tideEase.transform((v / riseEnd).clamp(0, 1)))!;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: MediaQuery.paddingOf(context).bottom + TideToast._bottomInset,
+      child: IgnorePointer(
+        ignoring: widget.onAction == null,
+        child: AnimatedBuilder(
+          animation: _c,
+          builder: (context, child) => Opacity(
+            opacity: _opacityAt(_c.value),
+            child: Transform.translate(
+              offset: Offset(0, _offsetAt(_c.value)),
+              child: child,
+            ),
+          ),
+          child: TideGlass(
+            radius: 22,
+            // Genuinely over content, so the blur has something to reveal.
+            blur: true,
+            tintTop: 0.14,
+            tintBottom: 0.05,
+            highlight: 0.28,
+            border: 0.16,
+            saturation: 1.9,
+            padding: EdgeInsets.fromLTRB(
+              18,
+              13,
+              widget.actionLabel == null ? 18 : 8,
+              13,
+            ),
+            shadows: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.55),
+                blurRadius: 36,
+                offset: const Offset(0, 14),
+              ),
+            ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.message,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.title(size: 13.5),
+                  ),
+                ),
+                if (widget.actionLabel != null) ...[
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      TideToast._dismiss();
+                      widget.onAction?.call();
+                    },
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      child: Text(
+                        widget.actionLabel!.toUpperCase(),
+                        style: TideText.kicker(
+                          size: 11,
+                          color: TideColors.accent,
+                        ).copyWith(letterSpacing: 1.4),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A determinate bar, for the few places something has a known length: cache
+/// size against its cap, a download's progress, a batch migration.
+///
+/// Material's LinearProgressIndicator is a square-ended bar in the scheme's
+/// colour; this is the same reading as a lit track in the design's.
+class TideProgressBar extends StatelessWidget {
+  const TideProgressBar({super.key, required this.value, this.height = 5});
+
+  /// 0–1, or null for indeterminate work of unknown length.
+  final double? value;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(height),
+      child: SizedBox(
+        height: height,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(color: Colors.white.withValues(alpha: 0.08)),
+            if (value != null)
+              FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: value!.clamp(0.0, 1.0),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: TideColors.accent,
+                    boxShadow: [
+                      BoxShadow(
+                        color: TideColors.accent.withValues(alpha: 0.45),
+                        blurRadius: 10,
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              const _IndeterminateSweep(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The travelling band an indeterminate [TideProgressBar] shows.
+class _IndeterminateSweep extends StatefulWidget {
+  const _IndeterminateSweep();
+
+  @override
+  State<_IndeterminateSweep> createState() => _IndeterminateSweepState();
+}
+
+class _IndeterminateSweepState extends State<_IndeterminateSweep>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, child) => FractionalTranslation(
+        translation: Offset(ui.lerpDouble(-0.45, 1.0, _c.value)!, 0),
+        child: child,
+      ),
+      child: FractionallySizedBox(
+        widthFactor: 0.45,
+        alignment: Alignment.centerLeft,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                TideColors.accent.withValues(alpha: 0),
+                TideColors.accent,
+                TideColors.accent.withValues(alpha: 0),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pull-to-refresh in Tide's terms.
+///
+/// This one WRAPS Material's [RefreshIndicator] instead of replacing it, and
+/// that is a deliberate exception to the rule the rest of this file follows.
+/// The visual is trivial; the machinery is not — overscroll behaves differently
+/// under each platform's scroll physics, and drag cancellation, the settle
+/// animation and nested scrollables are several hundred lines of edge cases in
+/// the framework. Reimplementing that for a pull affordance would trade a real
+/// risk of breaking refresh against a small visual gain, which is a bad trade.
+///
+/// What it does remove is the part that actually looked borrowed: the Material
+/// puck. No elevation, no surface, no slab — just the accent arc on the
+/// ground, which is the same mark [TideSpinner] draws.
+class TideRefresh extends StatelessWidget {
+  const TideRefresh({
+    super.key,
+    required this.onRefresh,
+    required this.child,
+  });
+
+  final Future<void> Function() onRefresh;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      color: TideColors.accent,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      strokeWidth: 2,
+      // The design's own curve, so a pull settles the way everything else in
+      // the app moves.
+      displacement: 46,
+      child: child,
+    );
+  }
 }

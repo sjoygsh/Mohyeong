@@ -66,10 +66,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           child: SizedBox(
             width: 24,
             height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: TideColors.accent,
-            ),
+            child: TideSpinner(size: 24, strokeWidth: 2),
           ),
         ),
         error: (e, _) => Center(

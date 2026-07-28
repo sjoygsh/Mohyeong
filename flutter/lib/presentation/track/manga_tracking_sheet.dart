@@ -88,14 +88,10 @@ class _TrackerRowState extends ConsumerState<_TrackerRow> {
   Future<void> _searchAndBind() async {
     final loggedIn = await widget.tracker.isLoggedIn;
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     if (!loggedIn) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Log in to ${widget.tracker.name} from Settings → Trackers first.',
-          ),
-        ),
+      toast.show(
+        'Log in to ${widget.tracker.name} from Settings → Trackers first.',
       );
       return;
     }
@@ -111,11 +107,9 @@ class _TrackerRowState extends ConsumerState<_TrackerRow> {
     try {
       final track = await widget.tracker.bind(widget.manga.id, picked);
       await ref.read(trackRepositoryProvider).upsert(track);
-      messenger.showSnackBar(
-        SnackBar(content: Text('Bound to ${widget.tracker.name}.')),
-      );
+      toast.show('Bound to ${widget.tracker.name}.');
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Bind failed: $e')));
+      toast.show('Bind failed: $e');
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -204,10 +198,7 @@ class _TrackerRowState extends ConsumerState<_TrackerRow> {
             const SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: TideColors.accent,
-              ),
+              child: TideSpinner(size: 18, strokeWidth: 2),
             )
           else if (bound)
             TideIconButton(icon: Icons.link_off, onTap: _unbind)
@@ -335,10 +326,7 @@ class _TrackerSearchSheetState extends State<_TrackerSearchSheet> {
         child: SizedBox(
           width: 22,
           height: 22,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: TideColors.accent,
-          ),
+          child: TideSpinner(size: 22, strokeWidth: 2),
         ),
       );
     }

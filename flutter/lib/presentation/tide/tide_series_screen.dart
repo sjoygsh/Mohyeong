@@ -91,7 +91,7 @@ class _TideSeriesScreenState extends ConsumerState<TideSeriesScreen> {
           final manga = mangaSnap.data;
           if (manga == null) {
             return const Center(
-              child: CircularProgressIndicator(color: TideColors.accent),
+              child: TideSpinner(),
             );
           }
           return StreamBuilder<List<Chapter>>(

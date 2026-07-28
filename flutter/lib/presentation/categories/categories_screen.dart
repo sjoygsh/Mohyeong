@@ -54,10 +54,7 @@ class CategoriesScreen extends ConsumerWidget {
                     );
                   }
                   if (!snap.hasData) {
-                    return const Center(
-                      child:
-                          CircularProgressIndicator(color: TideColors.accent),
-                    );
+                    return const Center(child: TideSpinner());
                   }
                   final categories = snap.data!
                       .where((c) => !c.isSystemCategory)
@@ -277,12 +274,8 @@ class CategoriesScreen extends ConsumerWidget {
   }
 
   void _showCycleError(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          "Can't make a category a child of itself or its descendants",
-        ),
-      ),
+    TideToast.of(context).show(
+      "Can't make a category a child of itself or its descendants",
     );
   }
 

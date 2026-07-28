@@ -480,11 +480,7 @@ class _ProgressDialog extends StatelessWidget {
               SizedBox(
                 height: 3,
                 child: value == 0
-                    ? const LinearProgressIndicator(
-                        minHeight: 3,
-                        backgroundColor: Colors.transparent,
-                        color: TideColors.accent,
-                      )
+                    ? const TideProgressBar(value: null, height: 3)
                     : Row(
                         children: [
                           Expanded(

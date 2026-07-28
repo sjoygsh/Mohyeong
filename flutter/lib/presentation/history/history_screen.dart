@@ -133,9 +133,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     }
                     if (!snap.hasData) {
                       return const Center(
-                        child: CircularProgressIndicator(
-                          color: TideColors.accent,
-                        ),
+                        child: TideSpinner(),
                       );
                     }
                     final (entries, totalReadMs) = snap.data!;

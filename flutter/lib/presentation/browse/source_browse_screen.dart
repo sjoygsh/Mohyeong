@@ -984,7 +984,7 @@ class _MangaCard extends ConsumerWidget {
   Future<void> _openManga(BuildContext context, WidgetRef ref) async {
     final sourceIdInt = sourceNumericId(sourceId);
     final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     try {
       final inserted = await ref
           .read(mangaRepositoryProvider)
@@ -996,9 +996,7 @@ class _MangaCard extends ConsumerWidget {
         ),
       );
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not open manga: $e')),
-      );
+      toast.show('Could not open manga: $e');
     }
   }
 
@@ -1009,7 +1007,7 @@ class _MangaCard extends ConsumerWidget {
     bool inLibrary,
   ) async {
     final repo = ref.read(mangaRepositoryProvider);
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     if (inLibrary) {
       final confirmed = await showTideSheet<bool>(
         context,
@@ -1026,16 +1024,9 @@ class _MangaCard extends ConsumerWidget {
           await repo.insertFromSource(candidate: manga, sourceId: sourceIdInt);
       await repo.setFavorite(row.id, !inLibrary);
       ref.invalidate(favoritedUrlsForSourceProvider(sourceIdInt));
-      messenger.showSnackBar(
-        SnackBar(
-          content:
-              Text(inLibrary ? 'Removed from library' : 'Added to library'),
-        ),
-      );
+      toast.show(inLibrary ? 'Removed from library' : 'Added to library');
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not update library: $e')),
-      );
+      toast.show('Could not update library: $e');
     }
   }
 }

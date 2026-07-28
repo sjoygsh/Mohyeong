@@ -108,9 +108,9 @@ class _StorageUsageBarState extends State<_StorageUsageBar> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
+            child: TideProgressBar(
               value: total == 0 ? 0 : used / total,
-              minHeight: 8,
+              height: 8,
             ),
           ),
           const SizedBox(height: 6),
@@ -153,16 +153,12 @@ class _ClearCacheTileState extends State<_ClearCacheTile> {
   Future<void> _clear() async {
     if (_clearing) return;
     setState(() => _clearing = true);
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     try {
       final deleted = await AppCache.clear();
-      messenger.showSnackBar(
-        SnackBar(content: Text('Cache cleared, $deleted files deleted')),
-      );
+      toast.show('Cache cleared, $deleted files deleted');
     } catch (_) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Error occurred while clearing')),
-      );
+      toast.show('Error occurred while clearing');
     } finally {
       if (mounted) setState(() => _clearing = false);
       await _refresh();
@@ -224,7 +220,7 @@ class _ExportLibraryTile extends ConsumerWidget {
   }
 
   Future<void> _export(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
+    final toast = TideToast.of(context);
     final options = await showTideSheet<(bool, bool)>(
       context,
       (_) => const _ColumnSelectionDialog(),
@@ -240,9 +236,7 @@ class _ExportLibraryTile extends ConsumerWidget {
     );
     if (saved == null) return;
     // Verbatim Mihon string library_exported.
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Library Exported')),
-    );
+    toast.show('Library Exported');
   }
 
   @override
@@ -404,10 +398,7 @@ class _StorageLocationTileState extends ConsumerState<_StorageLocationTile> {
           ? const SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: TideColors.accent,
-              ),
+              child: TideSpinner(size: 18, strokeWidth: 2),
             )
           : null,
       onTap: _picking ? null : _pick,
