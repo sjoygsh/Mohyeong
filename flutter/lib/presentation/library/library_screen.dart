@@ -161,6 +161,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   bool _searching = false;
   bool _updating = false;
   int _selectedCategoryId = Category.uncategorizedId;
+
+  /// How far the masthead has folded away, 0–1. A [ValueNotifier] rather than
+  /// screen state on purpose: the grid must not rebuild once per scrolled
+  /// frame just so a title can shrink.
+  final ValueNotifier<double> _collapse = ValueNotifier<double>(0);
+
+  /// Scroll distance over which the masthead folds. Roughly its own height —
+  /// it should be gone by the time the first row of covers reaches the top.
+  static const double _collapseDistance = 88;
+
   // Manga ids the user has multi-selected via long-press. Empty set
   // means selection mode is off.
   final Set<int> _selected = <int>{};
@@ -213,7 +223,27 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _collapse.dispose();
     super.dispose();
+  }
+
+  /// Vertical scrolling in the grid folds the masthead away. The category strip
+  /// is a scrollable too and must not drive it, hence the axis test.
+  bool _onScroll(ScrollNotification notification) =>
+      _fold(notification.metrics);
+
+  /// The grid can also change height without anyone scrolling — a search that
+  /// narrows it to three results, a category with fewer entries than the one
+  /// you left. Without this the masthead would stay folded away above a list
+  /// that no longer scrolls, with no gesture left that could bring it back.
+  bool _onScrollMetrics(ScrollMetricsNotification notification) =>
+      _fold(notification.metrics);
+
+  bool _fold(ScrollMetrics metrics) {
+    if (metrics.axis != Axis.vertical) return false;
+    final next = (metrics.pixels / _collapseDistance).clamp(0.0, 1.0);
+    if ((next - _collapse.value).abs() > 0.005) _collapse.value = next;
+    return false;
   }
 
   /// Bulk download for selected manga: for each, fetch its chapters, sort
@@ -486,7 +516,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         backgroundColor: TideColors.ground,
         body: Stack(
           children: [
-            const Positioned.fill(child: TideAurora(opacity: 0.28)),
+            // The shelf shows a lot of ground between and behind its covers,
+            // and at a quarter opacity the light behind it read as flat black
+            // — the screen looked like the design's palette rather than the
+            // design.
+            const Positioned.fill(child: TideAurora(opacity: 0.55)),
             Positioned.fill(
               child: TideRise(
                 child: Column(
@@ -495,10 +529,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     _header(),
                     if (_searching) _searchField(),
                     Expanded(
-                      child: _content(
-                        displayMode,
-                        sortPref,
-                        effectiveFilters,
+                      child: NotificationListener<ScrollMetricsNotification>(
+                        onNotification: _onScrollMetrics,
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: _onScroll,
+                          child: _content(
+                            displayMode,
+                            sortPref,
+                            effectiveFilters,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -559,47 +599,117 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ),
       );
     }
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        MediaQuery.paddingOf(context).top + 12,
-        20,
-        12,
-      ),
-      child: Row(
-        children: [
-          TideIconButton(
-            icon: Icons.arrow_back_ios_new_rounded,
-            iconSize: 15,
-            onTap: () => Navigator.of(context).maybePop(),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _LibraryTitle(
-              selectedCategoryId: _selectedCategoryId,
-              libraryStream: _libraryStream,
-              categoryStream: _categoryStream,
+    // A masthead, not a toolbar. The shelf's name gets the display size the
+    // rest of Tide gives a page's subject, with the state of the shelf as a
+    // kicker over it — and it folds into the control row as you scroll, so the
+    // covers get the screen back the moment you start reading the grid.
+    //
+    // The name is resolved ONCE and handed to both forms. Two independent
+    // readers of the same library stream would be a second subscription for a
+    // string, and would only work at all because the repository's stream
+    // happens to be a broadcast one.
+    return _LibraryHeading(
+      selectedCategoryId: _selectedCategoryId,
+      libraryStream: _libraryStream,
+      categoryStream: _categoryStream,
+      builder: (context, name, kicker) => Padding(
+      padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 12),
+      child: ValueListenableBuilder<double>(
+        valueListenable: _collapse,
+        builder: (context, t, _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 20, 0),
+              child: Row(
+                children: [
+                  TideIconButton(
+                    icon: Icons.arrow_back_ios_new_rounded,
+                    iconSize: 15,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Opacity(
+                      // Held back until the masthead is nearly gone: the same
+                      // name twice on one screen is the thing a collapsing
+                      // header exists to avoid.
+                      opacity: ((t - 0.62) / 0.38).clamp(0.0, 1.0),
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          height: 1.15,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: -0.4,
+                          color: TideColors.text,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TideIconButton(
+                    icon: _searching ? Icons.close_rounded : Icons.search,
+                    onTap: () => setState(() {
+                      if (_searching) {
+                        _closeSearch();
+                      } else {
+                        _searching = true;
+                      }
+                    }),
+                  ),
+                  const SizedBox(width: 9),
+                  _FilterButton(
+                    active: _filters.isActive,
+                    onTap: _showSettingsSheet,
+                  ),
+                  const SizedBox(width: 9),
+                  _OverflowButton(updating: _updating, onTap: _openOverflow),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          TideIconButton(
-            icon: _searching ? Icons.close_rounded : Icons.search,
-            onTap: () => setState(() {
-              if (_searching) {
-                _closeSearch();
-              } else {
-                _searching = true;
-              }
-            }),
-          ),
-          const SizedBox(width: 9),
-          _FilterButton(
-            active: _filters.isActive,
-            onTap: _showSettingsSheet,
-          ),
-          const SizedBox(width: 9),
-          _OverflowButton(updating: _updating, onTap: _openOverflow),
-        ],
+            ClipRect(
+              child: Align(
+                alignment: Alignment.topLeft,
+                heightFactor: 1 - t,
+                child: Opacity(
+                  // Fades out ahead of the fold so the last thing to go is
+                  // empty space rather than half a letterform.
+                  opacity: (1 - t * 1.5).clamp(0.0, 1.0),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 2),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          kicker,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TideText.kicker(
+                            size: 11,
+                            color: TideColors.accent,
+                          ).copyWith(letterSpacing: 2.0),
+                        ),
+                        const SizedBox(height: 9),
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TideText.display(32),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
       ),
     );
   }
@@ -657,9 +767,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       builder: (context, snapshot) {
         if (snapshot.hasError) return _ErrorView(error: snapshot.error!);
         if (!snapshot.hasData) {
-          return const Center(
-            child: CircularProgressIndicator(color: TideColors.accent),
-          );
+          return const Center(child: TideSpinner());
         }
         final items = snapshot.data!;
         if (items.isEmpty) return const _EmptyLibrary();
@@ -691,10 +799,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 future: _asyncSets,
                 builder: (context, snap) {
                   if (!snap.hasData) {
-                    return const Center(
-                      child:
-                          CircularProgressIndicator(color: TideColors.accent),
-                    );
+                    return const Center(child: TideSpinner());
                   }
                   return _body(
                     items,
@@ -807,10 +912,7 @@ class _OverflowButton extends StatelessWidget {
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: TideColors.accent,
-                  ),
+                  child: TideSpinner(size: 16, strokeWidth: 2),
                 )
               : Icon(
                   Icons.more_horiz,
@@ -1446,88 +1548,93 @@ class _MangaCard extends ConsumerWidget {
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            TideCover(manga: manga),
-            if (overlayTitle) ...[
-              const Positioned.fill(child: TideScrim()),
-              Positioned(
-                left: 8,
-                // Clear of the resume disc when one is showing — the title
-                // used to run underneath it.
-                right: prefs.resume && !selecting && item.unreadCount > 0
-                    ? 48
-                    : 8,
-                bottom: 8,
-                child: Text(
-                  manga.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TideText.title(size: 12.5).copyWith(
-                    color: TideColors.brightAt(0.92),
-                    height: 1.2,
+      // Set into glass rather than laid on the ground: the same top-lit bevel
+      // every pane in the app has, so a cover belongs to the surface instead
+      // of being a photograph dropped onto it.
+      child: TideEdge(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              TideCover(manga: manga),
+              if (overlayTitle) ...[
+                const Positioned.fill(child: TideScrim()),
+                Positioned(
+                  left: 8,
+                  // Clear of the resume disc when one is showing — the title
+                  // used to run underneath it.
+                  right: prefs.resume && !selecting && item.unreadCount > 0
+                      ? 48
+                      : 8,
+                  bottom: 8,
+                  child: Text(
+                    manga.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TideText.title(size: 12.5).copyWith(
+                      color: TideColors.brightAt(0.92),
+                      height: 1.2,
+                    ),
                   ),
+                ),
+              ],
+              // Top-start: unread is the number you are looking for, so it
+              // takes the accent; Local / language sit back beneath it.
+              Positioned(
+                top: 7,
+                left: 7,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (prefs.unread && item.unreadCount > 0)
+                      _UnreadBadge(count: item.unreadCount),
+                    if (prefs.local && isLocal) ...[
+                      const SizedBox(height: 4),
+                      const _QuietBadge(text: 'LOCAL'),
+                    ],
+                    if (lang != null && lang.isNotEmpty && lang != 'all') ...[
+                      const SizedBox(height: 4),
+                      _QuietBadge(text: lang.toUpperCase()),
+                    ],
+                  ],
+                ),
+              ),
+              if (prefs.download)
+                Positioned(
+                  top: 7,
+                  right: 7,
+                  child: _DownloadCountBadge(
+                    sourceId: manga.source,
+                    mangaId: manga.id,
+                  ),
+                ),
+              if (prefs.resume && !selecting && item.unreadCount > 0)
+                Positioned(
+                  right: 7,
+                  bottom: 7,
+                  child: _ResumeButton(
+                    onTap: () => _resumeNextUnread(context, ref, manga.id),
+                  ),
+                ),
+              if (isSelected)
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: TideColors.accent.withValues(alpha: 0.22),
+                    child: const Center(child: _SelectMark(selected: true)),
+                  ),
+                ),
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => selecting
+                      ? onToggleSelected(manga.id)
+                      : _open(context),
+                  onLongPress: () => onToggleSelected(manga.id),
                 ),
               ),
             ],
-            // Top-start: unread is the number you are looking for, so it
-            // takes the accent; Local / language sit back beneath it.
-            Positioned(
-              top: 7,
-              left: 7,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (prefs.unread && item.unreadCount > 0)
-                    _UnreadBadge(count: item.unreadCount),
-                  if (prefs.local && isLocal) ...[
-                    const SizedBox(height: 4),
-                    const _QuietBadge(text: 'LOCAL'),
-                  ],
-                  if (lang != null && lang.isNotEmpty && lang != 'all') ...[
-                    const SizedBox(height: 4),
-                    _QuietBadge(text: lang.toUpperCase()),
-                  ],
-                ],
-              ),
-            ),
-            if (prefs.download)
-              Positioned(
-                top: 7,
-                right: 7,
-                child: _DownloadCountBadge(
-                  sourceId: manga.source,
-                  mangaId: manga.id,
-                ),
-              ),
-            if (prefs.resume && !selecting && item.unreadCount > 0)
-              Positioned(
-                right: 7,
-                bottom: 7,
-                child: _ResumeButton(
-                  onTap: () => _resumeNextUnread(context, ref, manga.id),
-                ),
-              ),
-            if (isSelected)
-              Positioned.fill(
-                child: ColoredBox(
-                  color: TideColors.accent.withValues(alpha: 0.22),
-                  child: const Center(child: _SelectMark(selected: true)),
-                ),
-              ),
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => selecting
-                    ? onToggleSelected(manga.id)
-                    : _open(context),
-                onLongPress: () => onToggleSelected(manga.id),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1903,21 +2010,40 @@ class _EmptyLibrary extends StatelessWidget {
   const _EmptyLibrary();
 
   @override
+  Widget build(BuildContext context) => const _EmptyPanel(
+        title: 'Your library is empty',
+        message: 'Find something on Browse and add it, and it will live here.',
+      );
+}
+
+/// A state with nothing to show still gets a pane to show it on — a line of
+/// grey text floating in the middle of an empty screen is the shape a page
+/// takes when nobody designed what happens when it is empty.
+class _EmptyPanel extends StatelessWidget {
+  const _EmptyPanel({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(28),
         child: TideGlass(
-          radius: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 44),
+          radius: 26,
+          padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Your library is empty',
-                  textAlign: TextAlign.center, style: TideText.display(23)),
-              const SizedBox(height: 10),
               Text(
-                'Find something on Browse and add it, and it will live here.',
+                title,
+                textAlign: TextAlign.center,
+                style: TideText.display(21),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
                 textAlign: TextAlign.center,
                 style: TideText.body(),
               ),
@@ -1936,17 +2062,12 @@ class _EmptyMatches extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Text(
-          query.isEmpty
-              ? 'Nothing in this category yet.'
-              : 'No matches for "$query".',
-          textAlign: TextAlign.center,
-          style: TideText.body(),
-        ),
-      ),
+    return _EmptyPanel(
+      title: query.isEmpty ? 'Nothing here' : 'No matches',
+      message: query.isEmpty
+          ? 'This category has no entries, or your filters have narrowed them '
+              'all away.'
+          : 'Nothing in your library matches "$query".',
     );
   }
 }
@@ -1958,36 +2079,39 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Text(
-          'Failed to load library: $error',
-          textAlign: TextAlign.center,
-          style: TideText.body(),
-        ),
-      ),
+    return _EmptyPanel(
+      title: 'Could not open the library',
+      message: '$error',
     );
   }
 }
 
-/// Header title: "Library" while category chips are on, or the active
-/// category's name when they're off, with a trailing count when the
-/// "Show number of items" preference is on.
-class _LibraryTitle extends ConsumerWidget {
-  const _LibraryTitle({
+/// Resolves what the head of the library should say — the shelf's name and the
+/// kicker stating what is on it — and hands both to [builder].
+///
+/// A builder rather than two widgets because the masthead and the compact line
+/// that replaces it live in different places in the header, and each opening
+/// its own [StreamBuilder] would be a second subscription to the library for
+/// the sake of a string. It would also only work at all because the
+/// repository's stream happens to be broadcast.
+class _LibraryHeading extends ConsumerWidget {
+  const _LibraryHeading({
     required this.selectedCategoryId,
     required this.libraryStream,
     required this.categoryStream,
+    required this.builder,
   });
 
   final int selectedCategoryId;
 
-  /// The screen's shared streams — the title must NOT open its own
+  /// The screen's shared streams — the heading must NOT open its own
   /// `watchAll()` (a second live library query) or re-issue a categories
   /// fetch per rebuild, as it used to.
   final Stream<List<LibraryItem>> libraryStream;
   final Stream<List<Category>> categoryStream;
+
+  final Widget Function(BuildContext context, String name, String kicker)
+      builder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1999,11 +2123,13 @@ class _LibraryTitle extends ConsumerWidget {
       builder: (context, snap) {
         final items = snap.data ?? const <LibraryItem>[];
         if (showTabs) {
-          return _row('Library', showCount ? items.length : null);
+          return builder(context, 'Library', kickerFor(items, showCount));
         }
-        final count = showCount
-            ? items.where((it) => it.inCategory(selectedCategoryId)).length
-            : null;
+        // Without chips the header IS the category indicator, so it has to
+        // narrow the stats to that category too.
+        final scoped = items
+            .where((it) => it.inCategory(selectedCategoryId))
+            .toList(growable: false);
         return StreamBuilder<List<Category>>(
           stream: categoryStream,
           builder: (context, catSnap) {
@@ -2013,35 +2139,31 @@ class _LibraryTitle extends ConsumerWidget {
                 selectedCategoryId == Category.uncategorizedId || match.isEmpty
                     ? 'Default'
                     : match.first.name;
-            return _row(name, count);
+            return builder(context, name, kickerFor(scoped, showCount));
           },
         );
       },
     );
   }
 
-  Widget _row(String text, int? count) {
-    const style = TextStyle(
-      fontSize: 21,
-      height: 1.15,
-      fontWeight: FontWeight.w500,
-      letterSpacing: -0.5,
-      color: TideColors.text,
-    );
-    if (count == null) {
-      return Text(text, maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: style);
+  /// What is actually on the shelf, in the design's eyebrow voice.
+  ///
+  /// The entry count is gated on Mihon's "Show number of items" preference,
+  /// which is what that preference means. The unread total is not covered by
+  /// it — it's the number this screen is really about — so it stands on its
+  /// own, and when there is nothing waiting the line says so rather than
+  /// leaving a gap where a fact should be.
+  static String kickerFor(List<LibraryItem> scope, bool showCount) {
+    if (scope.isEmpty) return 'NOTHING HERE YET';
+    var unread = 0;
+    for (final item in scope) {
+      unread += item.unreadCount;
     }
-    return Row(
-      children: [
-        Flexible(
-          child: Text(text,
-              maxLines: 1, overflow: TextOverflow.ellipsis, style: style),
-        ),
-        const SizedBox(width: 9),
-        Text('$count', style: TideText.caption(size: 13, opacity: 0.4)),
-      ],
-    );
+    final parts = <String>[
+      if (showCount) '${scope.length} ${scope.length == 1 ? 'ENTRY' : 'ENTRIES'}',
+      if (unread > 0) '$unread UNREAD',
+    ];
+    return parts.isEmpty ? 'ALL CAUGHT UP' : parts.join(' · ');
   }
 }
 

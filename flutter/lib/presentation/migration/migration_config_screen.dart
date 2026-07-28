@@ -233,7 +233,7 @@ class _MigrationConfigScreenState extends ConsumerState<MigrationConfigScreen> {
             Expanded(child:
       sources == null
           ? const Center(
-              child: CircularProgressIndicator(color: TideColors.accent),
+              child: TideSpinner(),
             )
           : _buildList(sources)),
           ],

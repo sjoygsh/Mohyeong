@@ -35,7 +35,7 @@ class SourcesFilterScreen extends ConsumerWidget {
             Expanded(
               child: prefsAsync.when(
                 loading: () => const Center(
-                  child: CircularProgressIndicator(color: TideColors.accent),
+                  child: TideSpinner(),
                 ),
                 error: (e, _) => _Note('Failed to load preferences: $e'),
                 data: (prefs) => _Body(prefs: prefs),
@@ -61,7 +61,7 @@ class _Body extends ConsumerWidget {
       builder: (context, extSnap) {
         if (!extSnap.hasData) {
           return const Center(
-            child: CircularProgressIndicator(color: TideColors.accent),
+            child: TideSpinner(),
           );
         }
         final extensions = extSnap.data!;

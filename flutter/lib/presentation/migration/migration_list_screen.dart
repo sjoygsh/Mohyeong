@@ -298,9 +298,7 @@ class _MigrationListScreenState extends ConsumerState<MigrationListScreen> {
                 : null,
           ),
           Expanded(child: !_initialized
-          ? const Center(
-              child: CircularProgressIndicator(color: TideColors.accent),
-            )
+          ? const Center(child: TideSpinner())
           : _items.isEmpty
               ? Center(
                   child: Text(
@@ -391,7 +389,7 @@ class _ItemTile extends StatelessWidget {
         trailing = const SizedBox(
           width: 20,
           height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: TideSpinner(size: 18, strokeWidth: 2),
         );
       case _Status.notFound:
         trailing = Text(

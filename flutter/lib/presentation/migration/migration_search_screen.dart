@@ -264,7 +264,7 @@ class _SourcePickerBar extends StatelessWidget {
         if (!snap.hasData) {
           return const SizedBox(
             height: 56,
-            child: Center(child: CircularProgressIndicator()),
+            child: Center(child: TideSpinner()),
           );
         }
         final exts = snap.data!;
@@ -335,7 +335,7 @@ class _ResultsArea extends StatelessWidget {
           );
         }
         if (!snap.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: TideSpinner());
         }
         final results = snap.data!;
         if (results.isEmpty) {
@@ -434,7 +434,7 @@ class _MigratingOverlay extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircularProgressIndicator(color: TideColors.accent),
+          TideSpinner(),
           SizedBox(height: 12),
           Text('Migrating...'),
         ],

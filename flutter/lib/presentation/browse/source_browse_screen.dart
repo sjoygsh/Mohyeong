@@ -1063,7 +1063,7 @@ class _Spinner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Center(
-        child: CircularProgressIndicator(color: TideColors.accent),
+        child: TideSpinner(),
       );
 }
 
@@ -1076,10 +1076,7 @@ class _TailSpinner extends StatelessWidget {
         child: SizedBox(
           width: 22,
           height: 22,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: TideColors.accent,
-          ),
+          child: TideSpinner(size: 16, strokeWidth: 2),
         ),
       );
 }

@@ -203,7 +203,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
         }
         if (!snap.hasData) {
           return const Center(
-            child: CircularProgressIndicator(color: TideColors.accent),
+            child: TideSpinner(),
           );
         }
         var sources = snap.data!;
@@ -332,10 +332,7 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
                   child: SizedBox(
                     width: 22,
                     height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: TideColors.accent,
-                    ),
+                    child: TideSpinner(size: 16, strokeWidth: 2),
                   ),
                 );
               }
