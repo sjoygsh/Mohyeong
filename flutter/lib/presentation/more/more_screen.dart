@@ -80,7 +80,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
         backgroundColor: TideColors.ground,
         body: Stack(
           children: [
-            const Positioned.fill(child: TideAurora(opacity: 0.3)),
+            const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.page)),
             Positioned.fill(
               child: TideRise(
                 child: ListView(
@@ -93,18 +93,9 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     // No logo slab. The app does not need to introduce itself
                     // on a settings hub any more than it did on the home feed;
                     // its identity lives on the About screen.
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
-                      child: Text(
-                        'More',
-                        style: TextStyle(
-                          fontSize: 26,
-                          height: 1.15,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: -0.65,
-                          color: TideColors.text,
-                        ),
-                      ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                      child: Text('More', style: TideText.display(32)),
                     ),
                     const TideSectionHeader(
                       label: 'Modes',

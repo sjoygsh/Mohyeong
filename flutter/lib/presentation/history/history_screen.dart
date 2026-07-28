@@ -123,7 +123,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             children: [
               // Dimmer than the home feed's: this screen is a record, and the
               // light behind it should stay behind it.
-              const Positioned.fill(child: TideAurora(opacity: 0.3)),
+              const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.page)),
               Positioned.fill(
                 child: StreamBuilder<_Feed>(
                   stream: _feed,
@@ -252,17 +252,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             )
           : Row(
               children: [
-                const Expanded(
-                  child: Text(
-                    'History',
-                    style: TextStyle(
-                      fontSize: 26,
-                      height: 1.15,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: -0.65,
-                      color: TideColors.text,
-                    ),
-                  ),
+                Expanded(
+                  child: Text('History', style: TideText.display(32)),
                 ),
                 TideIconButton(icon: Icons.search, onTap: _openSearch),
                 const SizedBox(width: 9),

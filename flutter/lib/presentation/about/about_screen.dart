@@ -46,7 +46,7 @@ class AboutScreen extends ConsumerWidget {
       backgroundColor: TideColors.ground,
       body: Stack(
         children: [
-          const Positioned.fill(child: TideAurora(opacity: 0.34)),
+          const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.dense)),
           Positioned.fill(
             child: TideRise(
               child: Column(

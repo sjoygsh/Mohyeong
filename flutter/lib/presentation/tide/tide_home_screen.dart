@@ -429,12 +429,10 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
     _recomputeRows(updates, filters);
 
     return TideRise(
-      child: RefreshIndicator(
+      child: TideRefresh(
         // Pull-to-refresh runs the same library update the header control
         // does — the gesture the Updates tab had, kept.
         onRefresh: _refresh,
-        color: TideColors.accent,
-        backgroundColor: const Color(0xFF1A1E2C),
         child: CustomScrollView(
           controller: _scroll,
           physics: const AlwaysScrollableScrollPhysics(),

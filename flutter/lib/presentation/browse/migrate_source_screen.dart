@@ -155,10 +155,8 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
                   setState(() => _ascending = !_ascending),
             ),
             Expanded(
-              child: RefreshIndicator(
+              child: TideRefresh(
                 onRefresh: _refresh,
-                color: TideColors.accent,
-                backgroundColor: const Color(0xFF1A1E2C),
                 child: ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 2, 16, tideBarInset),
                   itemCount: sorted.length,
@@ -446,10 +444,8 @@ class _MigrateSourceMangaListScreenState
         if (mangas.isEmpty) {
           return const _Note('No favourited manga on this source anymore.');
         }
-        return RefreshIndicator(
+        return TideRefresh(
           onRefresh: _refresh,
-          color: TideColors.accent,
-          backgroundColor: const Color(0xFF1A1E2C),
           child: ListView.builder(
             padding: EdgeInsets.fromLTRB(16, 2, 16, _selectionMode ? 104 : 28),
             itemCount: mangas.length,

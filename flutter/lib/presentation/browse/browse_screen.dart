@@ -95,7 +95,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
         backgroundColor: TideColors.ground,
         body: Stack(
           children: [
-            const Positioned.fill(child: TideAurora(opacity: 0.45)),
+            const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.page)),
             Positioned.fill(
               child: TideRise(
                 child: Column(

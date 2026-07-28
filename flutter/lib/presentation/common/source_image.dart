@@ -627,15 +627,30 @@ class _CrossfadeFrameState extends State<_CrossfadeFrame> {
   }
 }
 
+/// What a cover that would not load leaves behind.
+///
+/// This is the most-seen failure state in the app — every grid, every browse
+/// result, every reader page that 403s — and it was a flat slab out of the
+/// Material scheme with an untinted glyph on it. Held to the same ground and
+/// the same quiet ink as the rest of Tide, a missing cover reads as an empty
+/// slot rather than as a piece of a different app.
 class _DefaultErrorBox extends StatelessWidget {
   const _DefaultErrorBox();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      alignment: Alignment.center,
-      child: const Icon(Icons.broken_image_outlined, size: 36),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF161A28),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.broken_image_outlined,
+          size: 30,
+          color: Colors.white.withValues(alpha: 0.22),
+        ),
+      ),
     );
   }
 }

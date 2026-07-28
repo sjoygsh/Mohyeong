@@ -223,24 +223,13 @@ class _BackupIntervalTile extends ConsumerWidget {
           title: 'Automatic backup frequency',
           subtitle: _labelFor(interval),
           onTap: () async {
-            final picked = await showDialog<int>(
-              context: context,
-              builder: (ctx) => PrefChoiceDialog(
-                title: const Text('Automatic backup frequency'),
-                children: [
-                  RadioGroup<int>(
-                    groupValue: interval,
-                    onChanged: (v) => Navigator.of(ctx).pop(v),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (final (hours, label) in _entries)
-                          RadioListTile<int>(title: Text(label), value: hours),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+            final picked = await pickPref<int>(
+              context,
+              title: 'Automatic backup frequency',
+              selected: interval,
+              options: [
+                for (final (hours, label) in _entries) (hours, label),
+              ],
             );
             if (picked == null) return;
             await ref.read(backupIntervalProvider.notifier).set(picked);

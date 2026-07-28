@@ -65,9 +65,13 @@ class LibrarySettingsScreen extends ConsumerWidget {
             title: 'Automatic updates',
             subtitle: interval.label,
             onTap: () async {
-              final picked = await showDialog<LibraryUpdateInterval>(
-                context: context,
-                builder: (_) => _IntervalPickerDialog(current: interval),
+              final picked = await pickPref<LibraryUpdateInterval>(
+                context,
+                title: 'Automatic updates',
+                selected: interval,
+                options: [
+                  for (final v in LibraryUpdateInterval.values) (v, v.label),
+                ],
               );
               if (picked != null) {
                 await intervalNotifier.setInterval(picked);
@@ -296,35 +300,6 @@ class _MarkDuplicateReadSection extends ConsumerWidget {
   }
 }
 
-class _IntervalPickerDialog extends StatelessWidget {
-  const _IntervalPickerDialog({required this.current});
-
-  final LibraryUpdateInterval current;
-
-  @override
-  Widget build(BuildContext context) {
-    return PrefChoiceDialog(
-      title: const Text('Automatic updates'),
-      children: [
-        RadioGroup<LibraryUpdateInterval>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final v in LibraryUpdateInterval.values)
-                RadioListTile<LibraryUpdateInterval>(
-                  value: v,
-                  title: Text(v.label),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 /// "Default category" picker (Kotlin SettingsLibraryScreen's ListPreference
 /// over `defaultCategory`): "Always ask" (-1), "Default" (0 — the implicit
 /// uncategorized bucket), or any user category by id.
@@ -354,32 +329,15 @@ class _DefaultCategoryTile extends ConsumerWidget {
       title: 'Default category',
       subtitle: label,
       onTap: () async {
-        final picked = await showDialog<int>(
-          context: context,
-          builder: (ctx) => PrefChoiceDialog(
-            title: const Text('Default category'),
-            children: [
-              RadioGroup<int>(
-                groupValue: current,
-                onChanged: (v) => Navigator.of(ctx).pop(v),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const RadioListTile<int>(
-                      title: Text('Always ask'),
-                      value: -1,
-                    ),
-                    const RadioListTile<int>(
-                      title: Text('Default'),
-                      value: 0,
-                    ),
-                    for (final c in categories)
-                      RadioListTile<int>(title: Text(c.name), value: c.id),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        final picked = await pickPref<int>(
+          context,
+          title: 'Default category',
+          selected: current,
+          options: [
+            (-1, 'Always ask'),
+            (0, 'Default'),
+            for (final c in categories) (c.id, c.name),
+          ],
         );
         if (picked != null) {
           await ref.read(defaultCategoryProvider.notifier).set(picked);
@@ -412,27 +370,13 @@ class _SwipeActionTile extends ConsumerWidget {
       title: title,
       subtitle: current.label,
       onTap: () async {
-        final picked = await showDialog<ChapterSwipeAction>(
-          context: context,
-          builder: (ctx) => PrefChoiceDialog(
-            title: Text(title),
-            children: [
-              RadioGroup<ChapterSwipeAction>(
-                groupValue: current,
-                onChanged: (v) => Navigator.of(ctx).pop(v),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final a in _order)
-                      RadioListTile<ChapterSwipeAction>(
-                        title: Text(a.label),
-                        value: a,
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        final picked = await pickPref<ChapterSwipeAction>(
+          context,
+          title: title,
+          selected: current,
+          options: [
+            for (final a in _order) (a, a.label),
+          ],
         );
         if (picked != null) {
           await ref.read(provider.notifier).set(picked.storageName);

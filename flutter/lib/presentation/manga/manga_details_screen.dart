@@ -415,9 +415,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                   // persistent actions over the content as glass, the way the
                   // series screen and the library do.
                   body: Stack(children: [
-                  Positioned.fill(child: RefreshIndicator(
-                    color: TideColors.accent,
-                    backgroundColor: const Color(0xFF1A1E2C),
+                  Positioned.fill(child: TideRefresh(
                     // Pull-to-refresh (Mihon parity): re-fetch details +
                     // chapters from the source, same action as the app-bar
                     // refresh button. AlwaysScrollable so the gesture works even

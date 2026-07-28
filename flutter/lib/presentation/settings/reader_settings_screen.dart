@@ -61,9 +61,14 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Default reading mode',
             subtitle: readerMode.label,
             onTap: () async {
-              final picked = await showDialog<ReadingMode>(
-                context: context,
-                builder: (_) => _ReadingModePickerDialog(current: readerMode),
+              final picked = await pickPref<ReadingMode>(
+                context,
+                title: 'Default reading mode',
+                selected: readerMode,
+                options: [
+                  for (final m in ReadingMode.values)
+                    if (m != ReadingMode.defaultMode) (m, m.label),
+                ],
               );
               if (picked != null) {
                 await ref
@@ -76,10 +81,17 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Double tap animation speed',
             subtitle: _animSpeedLabel(doubleTapSpeed),
             onTap: () async {
-              final picked = await showDialog<int>(
-                context: context,
-                builder: (_) =>
-                    _DoubleTapSpeedPickerDialog(current: doubleTapSpeed),
+              final picked = await pickPref<int>(
+                context,
+                title: 'Double tap animation speed',
+                selected: doubleTapSpeed <= 1
+                    ? 1
+                    : (doubleTapSpeed == 250 ? 250 : 500),
+                options: [
+                  // Kotlin entry order: No animation (1), Normal (500),
+                  // Fast (250).
+                  for (final v in const [1, 500, 250]) (v, _animSpeedLabel(v)),
+                ],
               );
               if (picked != null) {
                 await ref
@@ -107,9 +119,13 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Default rotation',
             subtitle: orientation.label,
             onTap: () async {
-              final picked = await showDialog<ReaderOrientation>(
-                context: context,
-                builder: (_) => _OrientationPickerDialog(current: orientation),
+              final picked = await pickPref<ReaderOrientation>(
+                context,
+                title: 'Default rotation',
+                selected: orientation,
+                options: [
+                  for (final o in ReaderOrientation.values) (o, o.label),
+                ],
               );
               if (picked != null) {
                 await ref.read(readerOrientationProvider.notifier).set(picked);
@@ -120,10 +136,13 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Background color',
             subtitle: background.label,
             onTap: () async {
-              final picked = await showDialog<ReaderBackground>(
-                context: context,
-                builder: (_) =>
-                    _ReaderBackgroundPickerDialog(current: background),
+              final picked = await pickPref<ReaderBackground>(
+                context,
+                title: 'Background color',
+                selected: background,
+                options: [
+                  for (final b in ReaderBackground.pickerOrder) (b, b.label),
+                ],
               );
               if (picked != null) {
                 await ref.read(readerBackgroundProvider.notifier).set(picked);
@@ -152,10 +171,14 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Auto-hide chrome',
             subtitle: _autoHideLabel(autoHideSeconds),
             onTap: () async {
-              final picked = await showDialog<int>(
-                context: context,
-                builder: (_) =>
-                    _ReaderAutoHideChromePickerDialog(current: autoHideSeconds),
+              final picked = await pickPref<int>(
+                context,
+                title: 'Auto-hide chrome',
+                selected: autoHideSeconds,
+                options: [
+                  for (final s in ReaderAutoHideChromeNotifier.presets)
+                    (s, _autoHideLabel(s)),
+                ],
               );
               if (picked != null) {
                 await ref
@@ -197,10 +220,13 @@ class ReaderSettingsScreen extends ConsumerWidget {
             onTap: !flashEnabled
                 ? null
                 : () async {
-                    final picked = await showDialog<ReaderFlashColor>(
-                      context: context,
-                      builder: (_) =>
-                          _FlashColorPickerDialog(current: flashColor),
+                    final picked = await pickPref<ReaderFlashColor>(
+                      context,
+                      title: 'Flash with',
+                      selected: flashColor,
+                      options: [
+                        for (final c in ReaderFlashColor.values) (c, c.label),
+                      ],
                     );
                     if (picked != null) {
                       await ref
@@ -233,12 +259,13 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Tap zones',
             subtitle: navModePager.label,
             onTap: () async {
-              final picked = await showDialog<ReaderNavMode>(
-                context: context,
-                builder: (_) => _NavModePickerDialog(
-                  title: 'Tap zones',
-                  current: navModePager,
-                ),
+              final picked = await pickPref<ReaderNavMode>(
+                context,
+                title: 'Tap zones',
+                selected: navModePager,
+                options: [
+                  for (final m in ReaderNavMode.values) (m, m.label),
+                ],
               );
               if (picked != null) {
                 await ref.read(readerNavModePagerProvider.notifier).set(picked);
@@ -254,9 +281,13 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Scale type',
             subtitle: scaleType.label,
             onTap: () async {
-              final picked = await showDialog<ReaderImageScaleType>(
-                context: context,
-                builder: (_) => _ScaleTypePickerDialog(current: scaleType),
+              final picked = await pickPref<ReaderImageScaleType>(
+                context,
+                title: 'Scale type',
+                selected: scaleType,
+                options: [
+                  for (final t in ReaderImageScaleType.values) (t, t.label),
+                ],
               );
               if (picked != null) {
                 await ref
@@ -271,27 +302,13 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Zoom start position',
             subtitle: zoomStart.label,
             onTap: () async {
-              final picked = await showDialog<ReaderZoomStart>(
-                context: context,
-                builder: (ctx) => PrefChoiceDialog(
-                  title: const Text('Zoom start position'),
-                  children: [
-                    RadioGroup<ReaderZoomStart>(
-                      groupValue: zoomStart,
-                      onChanged: (picked) => Navigator.of(ctx).pop(picked),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (final v in ReaderZoomStart.values)
-                            RadioListTile<ReaderZoomStart>(
-                              title: Text(v.label),
-                              value: v,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+              final picked = await pickPref<ReaderZoomStart>(
+                context,
+                title: 'Zoom start position',
+                selected: zoomStart,
+                options: [
+                  for (final v in ReaderZoomStart.values) (v, v.label),
+                ],
               );
               if (picked != null) {
                 await ref.read(readerZoomStartProvider.notifier).set(picked);
@@ -336,12 +353,13 @@ class ReaderSettingsScreen extends ConsumerWidget {
             title: 'Tap zones',
             subtitle: navModeWebtoon.label,
             onTap: () async {
-              final picked = await showDialog<ReaderNavMode>(
-                context: context,
-                builder: (_) => _NavModePickerDialog(
-                  title: 'Tap zones',
-                  current: navModeWebtoon,
-                ),
+              final picked = await pickPref<ReaderNavMode>(
+                context,
+                title: 'Tap zones',
+                selected: navModeWebtoon,
+                options: [
+                  for (final m in ReaderNavMode.values) (m, m.label),
+                ],
               );
               if (picked != null) {
                 await ref
@@ -417,10 +435,14 @@ class ReaderSettingsScreen extends ConsumerWidget {
               title: 'Color filter blend mode',
               subtitle: colorFilterMode.label,
               onTap: () async {
-                final picked = await showDialog<ReaderColorFilterMode>(
-                  context: context,
-                  builder: (_) =>
-                      _ColorFilterModePickerDialog(current: colorFilterMode),
+                final picked = await pickPref<ReaderColorFilterMode>(
+                  context,
+                  title: 'Color filter blend mode',
+                  selected: colorFilterMode,
+                  options: [
+                    for (final m in ReaderColorFilterMode.values)
+                      (m, m.label),
+                  ],
                 );
                 if (picked != null) {
                   await ref
@@ -525,38 +547,6 @@ String _animSpeedLabel(int ms) {
   return 'Normal';
 }
 
-class _DoubleTapSpeedPickerDialog extends StatelessWidget {
-  const _DoubleTapSpeedPickerDialog({required this.current});
-
-  final int current;
-
-  // Kotlin entry order: No animation (1), Normal (500), Fast (250).
-  static const _options = <int>[1, 500, 250];
-
-  @override
-  Widget build(BuildContext context) {
-    return PrefChoiceDialog(
-      title: const Text('Double tap animation speed'),
-      children: [
-        RadioGroup<int>(
-          groupValue: current <= 1 ? 1 : (current == 250 ? 250 : 500),
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final v in _options)
-                RadioListTile<int>(
-                  value: v,
-                  title: Text(_animSpeedLabel(v)),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 String _autoHideLabel(int seconds) {
   if (seconds <= 0) return 'Off';
   return 'After $seconds second${seconds == 1 ? '' : 's'}';
@@ -626,236 +616,3 @@ class _ColorFilterChannelSliders extends ConsumerWidget {
   }
 }
 
-class _ReadingModePickerDialog extends StatelessWidget {
-  const _ReadingModePickerDialog({required this.current});
-
-  final ReadingMode current;
-
-  @override
-  Widget build(BuildContext context) {
-    return PrefChoiceDialog(
-      title: const Text('Default reading mode'),
-      children: [
-        RadioGroup<ReadingMode>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final m in ReadingMode.values)
-                if (m != ReadingMode.defaultMode)
-                  RadioListTile<ReadingMode>(
-                    value: m,
-                    title: Text(m.label),
-                  ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _OrientationPickerDialog extends StatelessWidget {
-  const _OrientationPickerDialog({required this.current});
-
-  final ReaderOrientation current;
-
-  @override
-  Widget build(BuildContext context) {
-    return PrefChoiceDialog(
-      title: const Text('Default rotation'),
-      children: [
-        RadioGroup<ReaderOrientation>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final o in ReaderOrientation.values)
-                RadioListTile<ReaderOrientation>(
-                  value: o,
-                  title: Text(o.label),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ReaderBackgroundPickerDialog extends StatelessWidget {
-  const _ReaderBackgroundPickerDialog({required this.current});
-
-  final ReaderBackground current;
-
-  @override
-  Widget build(BuildContext context) {
-    return PrefChoiceDialog(
-      title: const Text('Background color'),
-      children: [
-        RadioGroup<ReaderBackground>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final b in ReaderBackground.pickerOrder)
-                RadioListTile<ReaderBackground>(
-                  value: b,
-                  title: Text(b.label),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _FlashColorPickerDialog extends StatelessWidget {
-  const _FlashColorPickerDialog({required this.current});
-
-  final ReaderFlashColor current;
-
-  @override
-  Widget build(BuildContext context) {
-    return PrefChoiceDialog(
-      title: const Text('Flash with'),
-      children: [
-        RadioGroup<ReaderFlashColor>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final c in ReaderFlashColor.values)
-                RadioListTile<ReaderFlashColor>(
-                  value: c,
-                  title: Text(c.label),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _NavModePickerDialog extends StatelessWidget {
-  const _NavModePickerDialog({required this.title, required this.current});
-
-  final String title;
-  final ReaderNavMode current;
-
-  @override
-  Widget build(BuildContext context) {
-    return PrefChoiceDialog(
-      title: Text(title),
-      children: [
-        RadioGroup<ReaderNavMode>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final m in ReaderNavMode.values)
-                RadioListTile<ReaderNavMode>(
-                  value: m,
-                  title: Text(m.label),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ScaleTypePickerDialog extends StatelessWidget {
-  const _ScaleTypePickerDialog({required this.current});
-
-  final ReaderImageScaleType current;
-
-  @override
-  Widget build(BuildContext context) {
-    return PrefChoiceDialog(
-      title: const Text('Scale type'),
-      children: [
-        RadioGroup<ReaderImageScaleType>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final t in ReaderImageScaleType.values)
-                RadioListTile<ReaderImageScaleType>(
-                  value: t,
-                  title: Text(t.label),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ColorFilterModePickerDialog extends StatelessWidget {
-  const _ColorFilterModePickerDialog({required this.current});
-
-  final ReaderColorFilterMode current;
-
-  @override
-  Widget build(BuildContext context) {
-    return PrefChoiceDialog(
-      title: const Text('Color filter blend mode'),
-      children: [
-        RadioGroup<ReaderColorFilterMode>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final m in ReaderColorFilterMode.values)
-                RadioListTile<ReaderColorFilterMode>(
-                  value: m,
-                  title: Text(m.label),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ReaderAutoHideChromePickerDialog extends StatelessWidget {
-  const _ReaderAutoHideChromePickerDialog({required this.current});
-
-  final int current;
-
-  @override
-  Widget build(BuildContext context) {
-    return PrefChoiceDialog(
-      title: const Text('Auto-hide chrome'),
-      children: [
-        RadioGroup<int>(
-          groupValue: current,
-          onChanged: (picked) => Navigator.of(context).pop(picked),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final s in ReaderAutoHideChromeNotifier.presets)
-                RadioListTile<int>(
-                  value: s,
-                  title: Text(_autoHideLabel(s)),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}

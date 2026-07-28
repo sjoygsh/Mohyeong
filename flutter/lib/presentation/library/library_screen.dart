@@ -512,7 +512,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             // and at a quarter opacity the light behind it read as flat black
             // — the screen looked like the design's palette rather than the
             // design.
-            const Positioned.fill(child: TideAurora(opacity: 0.55)),
+            const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.page)),
             Positioned.fill(
               child: TideRise(
                 child: Column(
@@ -1254,10 +1254,8 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
         Expanded(
           child: sorted.isEmpty
               ? _EmptyMatches(query: query)
-              : RefreshIndicator(
+              : TideRefresh(
                   onRefresh: widget.onRefresh,
-                  color: TideColors.accent,
-                  backgroundColor: const Color(0xFF1A1E2C),
                   child: _LibraryGrid(
                     items: sorted,
                     displayMode: widget.displayMode,

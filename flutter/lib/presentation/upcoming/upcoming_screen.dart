@@ -81,7 +81,7 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
       backgroundColor: TideColors.ground,
       body: Stack(
         children: [
-          const Positioned.fill(child: TideAurora(opacity: 0.3)),
+          const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.page)),
           Positioned.fill(
             child: TideRise(
               child: Column(

@@ -502,7 +502,7 @@ typedef _BlobSpec = ({
 /// on a dark ground. Nothing reacts to it and it never repeats visibly — it
 /// exists to keep the ground from reading as flat black behind glass.
 class TideAurora extends StatelessWidget {
-  const TideAurora({super.key, this.opacity = 0.72});
+  const TideAurora({super.key, this.opacity = TideAuroraLevel.hero});
 
   final double opacity;
 
