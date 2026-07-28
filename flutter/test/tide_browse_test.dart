@@ -101,16 +101,27 @@ void main() {
     expect(repo.checkedForUpdates, isTrue);
     expect(find.text('Install extension'), findsOneWidget);
     expect(find.text('INSTALLED'), findsOneWidget);
-    // Language and version ride the row's caption.
-    expect(find.text('EN · v12'), findsOneWidget);
-    expect(find.text('ALL · v7'), findsOneWidget);
+    // Language, version and the site ride the row's caption.
+    expect(find.text('EN · v12 · asura.example'), findsOneWidget);
+    expect(find.text('ALL · v7 · mangadex.example'), findsOneWidget);
   });
 
-  testWidgets('a source keeps its sigil colour between builds',
+  testWidgets('a source row names the site it reads from',
       (WidgetTester tester) async {
     await _pumpBrowse(tester);
 
-    // The sigil is the source's initial over a gradient derived from its id.
+    // "EN" alone was a two-letter caption; the domain is what actually tells
+    // two similarly-named sources apart.
+    expect(find.text('EN · asura.example'), findsOneWidget);
+    expect(find.text('ALL · mangadex.example'), findsOneWidget);
+  });
+
+  testWidgets('a source with no reachable logo keeps its sigil',
+      (WidgetTester tester) async {
+    await _pumpBrowse(tester);
+
+    // No network (and no support directory) under test, so every row falls
+    // back to the sigil: the source's initial over a gradient from its id.
     // Two different sources, two different letters.
     expect(find.text('A'), findsOneWidget);
     expect(find.text('M'), findsOneWidget);

@@ -79,6 +79,9 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
       String name;
       String? lang;
       bool installed;
+      String? extensionId;
+      String? baseUrl;
+      String? userAgent;
       if (sourceId.toString() == LocalSource.sourceId) {
         name = 'Local source';
         installed = true;
@@ -88,6 +91,9 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
           name = ext.name;
           lang = ext.lang.toUpperCase();
           installed = true;
+          extensionId = ext.id;
+          baseUrl = ext.baseUrl;
+          userAgent = ext.userAgent;
         } else {
           name = 'Source $sourceId';
           installed = false;
@@ -99,6 +105,9 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
         lang: lang,
         count: entry.value,
         installed: installed,
+        extensionId: extensionId,
+        baseUrl: baseUrl,
+        userAgent: userAgent,
       );
     }).toList(growable: false);
     return _MigrateSourcesData(entries);
@@ -117,7 +126,7 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const Center(
-            child: CircularProgressIndicator(color: TideColors.accent),
+            child: TideSpinner(),
           );
         }
         if (snap.hasError) {
@@ -155,17 +164,30 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
                   itemCount: sorted.length,
                   itemBuilder: (_, i) {
                     final e = sorted[i];
+                    final host = tideSourceHost(e.baseUrl);
+                    final facts = [?e.lang, ?host].join(' · ');
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: TideRow(
                         icon: e.installed
                             ? Icons.swap_horiz
                             : Icons.extension_off_outlined,
+                        leading: e.extensionId == null
+                            ? null
+                            : TideSourceLogo(
+                                seed: e.extensionId!,
+                                label: e.name,
+                                baseUrl: e.baseUrl,
+                                userAgent: e.userAgent,
+                                size: 36,
+                              ),
                         title: e.name,
-                        subtitle: e.installed
-                            ? e.lang
-                            : 'Extension not installed — reinstall it to '
-                                'migrate from this source.',
+                        subtitle: !e.installed
+                            ? 'Extension not installed — reinstall it to '
+                                'migrate from this source.'
+                            : facts.isEmpty
+                                ? null
+                                : facts,
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -280,6 +302,9 @@ class _MigrateSourceEntry {
     required this.lang,
     required this.count,
     required this.installed,
+    this.extensionId,
+    this.baseUrl,
+    this.userAgent,
   });
 
   final int sourceId;
@@ -287,6 +312,13 @@ class _MigrateSourceEntry {
   final String? lang;
   final int count;
   final bool installed;
+
+  /// Present only while the extension is still installed — the manifest is
+  /// where the site (and so its logo) comes from. A source whose extension is
+  /// gone still holds favourites, and still gets listed, wearing a glyph.
+  final String? extensionId;
+  final String? baseUrl;
+  final String? userAgent;
 }
 
 /// Lists every favourited manga that belongs to [sourceId]. Tapping a
@@ -403,7 +435,7 @@ class _MigrateSourceMangaListScreenState
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const Center(
-            child: CircularProgressIndicator(color: TideColors.accent),
+            child: TideSpinner(),
           );
         }
         if (snap.hasError) {

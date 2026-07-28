@@ -3,12 +3,13 @@
 //
 // Three peer views — the sources you read from, the extensions that provide
 // them, and migration — behind a glass segmented control rather than a
-// Material TabBar. Each view is a run of glass rows, and each source carries a
-// deterministic sigil instead of a generic icon: a list of thirty identical
-// glyphs is a list you have to read every line of.
+// Material TabBar. Each view is a run of glass rows.
 //
-// The Migrate view's own body is still Material under the dark theme; every
-// other screen reachable from here has been converted.
+// Every source is a website, so every row wears that website's own logo, read
+// once off the site and cached to disk (see data/source/source_icon.dart). A
+// list of thirty identical glyphs is a list you have to read every line of;
+// with the real marks it becomes one you recognise. Sites that publish nothing
+// usable keep the old deterministic sigil, so no row is ever blank.
 // ===========================================================================
 
 import 'dart:io';
@@ -48,6 +49,11 @@ class BrowseScreen extends ConsumerStatefulWidget {
 
 class _BrowseScreenState extends ConsumerState<BrowseScreen> {
   int _view = 0;
+
+  /// Held rather than opened in build(): a stream created per rebuild
+  /// re-subscribes every frame, and the header rebuilds on every view switch.
+  late final Stream<List<InstalledExtension>> _installed =
+      ref.read(extensionRepositoryProvider).watchInstalled();
 
   /// Views build on first visit and stay alive after, so switching back keeps
   /// scroll position. Lazily, though: the Extensions view probes every origin
@@ -89,7 +95,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
         backgroundColor: TideColors.ground,
         body: Stack(
           children: [
-            const Positioned.fill(child: TideAurora(opacity: 0.3)),
+            const Positioned.fill(child: TideAurora(opacity: 0.45)),
             Positioned.fill(
               child: TideRise(
                 child: Column(
@@ -130,6 +136,30 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
     );
   }
 
+  /// What the current view holds, in the design's eyebrow voice — the count is
+  /// the one fact worth stating before the list itself says anything.
+  Widget _kicker() {
+    return StreamBuilder<List<InstalledExtension>>(
+      stream: _installed,
+      builder: (context, snap) {
+        final count = snap.data?.length;
+        final text = switch (_view) {
+          2 => 'MOVE YOUR LIBRARY',
+          _ when count == null => 'CATALOGUE',
+          1 => '$count INSTALLED',
+          _ => '$count ${count == 1 ? 'SOURCE' : 'SOURCES'}',
+        };
+        return Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TideText.kicker(size: 11, color: TideColors.accent)
+              .copyWith(letterSpacing: 2.0),
+        );
+      },
+    );
+  }
+
   Widget _header() {
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -139,17 +169,17 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
         14,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          const Expanded(
-            child: Text(
-              'Browse',
-              style: TextStyle(
-                fontSize: 26,
-                height: 1.15,
-                fontWeight: FontWeight.w500,
-                letterSpacing: -0.65,
-                color: TideColors.text,
-              ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _kicker(),
+                const SizedBox(height: 9),
+                Text('Browse', style: TideText.display(32)),
+              ],
             ),
           ),
           // Kotlin MigrateSourceTab's help action — shown only on that view,
@@ -421,10 +451,13 @@ class _SourceRowState extends ConsumerState<_SourceRow> {
     final extension = widget.extension;
     final pinned = widget.pinned;
     final sourcePrefs = widget.sourcePrefs;
-    return _SigilRow(
+    final host = tideSourceHost(extension.baseUrl);
+    return _LogoRow(
       seed: extension.id,
       title: extension.name,
-      subtitle: extension.lang.toUpperCase(),
+      subtitle: [extension.lang.toUpperCase(), ?host].join(' · '),
+      baseUrl: extension.baseUrl,
+      userAgent: extension.userAgent,
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => SourceBrowseScreen(sourceId: extension.id),
@@ -561,11 +594,14 @@ class _ExtensionRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canUpdate = extension.installUrl != null;
-    return _SigilRow(
+    final host = tideSourceHost(extension.baseUrl);
+    return _LogoRow(
       seed: extension.id,
       title: extension.name,
       subtitle: '${extension.lang.toUpperCase()} · v${extension.versionCode}'
-          '${hasUpdate ? ' · Update available' : ''}',
+          '${hasUpdate ? ' · Update available' : host != null ? ' · $host' : ''}',
+      baseUrl: extension.baseUrl,
+      userAgent: extension.userAgent,
       // A row with an update waiting is the one row on this screen worth
       // finding at a glance.
       lit: hasUpdate,
@@ -766,7 +802,7 @@ void _showProgress(BuildContext context) {
     barrierDismissible: false,
     barrierColor: Colors.black.withValues(alpha: 0.62),
     builder: (_) => const Center(
-      child: CircularProgressIndicator(color: TideColors.accent),
+      child: TideSpinner(),
     ),
   );
 }
@@ -775,18 +811,20 @@ void _showProgress(BuildContext context) {
 // Shared pieces
 // ---------------------------------------------------------------------------
 
-/// A glass row led by a sigil rather than an icon.
+/// A glass row led by the source's own logo.
 ///
 /// Every source would otherwise present the same generic glyph, which makes a
-/// list of thirty a list you have to read line by line. The sigil is the
-/// source's initial over a gradient derived from its id, so a given source
-/// keeps the same colour between sessions and becomes findable by shape.
-class _SigilRow extends StatelessWidget {
-  const _SigilRow({
+/// list of thirty a list you have to read line by line. Each of these sources
+/// is a website with a mark of its own, so the row wears it — falling back to
+/// [TideSigil] while it resolves and for the sites that publish nothing.
+class _LogoRow extends StatelessWidget {
+  const _LogoRow({
     required this.seed,
     required this.title,
     required this.subtitle,
     required this.trailing,
+    this.baseUrl,
+    this.userAgent,
     this.onTap,
     this.lit = false,
   });
@@ -794,6 +832,10 @@ class _SigilRow extends StatelessWidget {
   final String seed;
   final String title;
   final String subtitle;
+
+  /// The site whose logo leads the row.
+  final String? baseUrl;
+  final String? userAgent;
 
   /// Null on an extension row: managing an extension is what the trailing
   /// controls are for, and the row itself goes nowhere — same as before.
@@ -813,7 +855,12 @@ class _SigilRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(11, 11, 8, 11),
       child: Row(
         children: [
-          _Sigil(seed: seed, label: title),
+          TideSourceLogo(
+            seed: seed,
+            label: title,
+            baseUrl: baseUrl,
+            userAgent: userAgent,
+          ),
           const SizedBox(width: 13),
           Expanded(
             child: Column(
@@ -841,48 +888,6 @@ class _SigilRow extends StatelessWidget {
           const SizedBox(width: 6),
           trailing,
         ],
-      ),
-    );
-  }
-}
-
-class _Sigil extends StatelessWidget {
-  const _Sigil({required this.seed, required this.label});
-
-  final String seed;
-  final String label;
-
-  /// Stable across sessions and platforms — String.hashCode is not something
-  /// to lean on for anything the user would notice changing.
-  static int _seedOf(String s) {
-    var sum = 0;
-    for (final unit in s.codeUnits) {
-      sum = (sum * 31 + unit) & 0x7fffffff;
-    }
-    return sum;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final trimmed = label.trim();
-    final initial = trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
-    return Container(
-      width: 38,
-      height: 38,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        gradient: TideCover.fallbackGradient(_seedOf(seed)),
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-      ),
-      child: Text(
-        initial,
-        style: TextStyle(
-          fontSize: 16,
-          height: 1,
-          fontWeight: FontWeight.w500,
-          color: TideColors.brightAt(0.9),
-        ),
       ),
     );
   }
@@ -936,6 +941,6 @@ class _Spinner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Center(
-        child: CircularProgressIndicator(color: TideColors.accent),
+        child: TideSpinner(),
       );
 }

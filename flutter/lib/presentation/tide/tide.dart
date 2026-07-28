@@ -21,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/cover/cover_cache.dart';
 import '../../data/source/extension_repository.dart';
+import '../../data/source/source_icon.dart';
 import '../../domain/manga/model/manga.dart';
 import '../common/source_image.dart';
 
@@ -278,6 +279,125 @@ class TideGlass extends StatelessWidget {
     }
     return pane;
   }
+}
+
+/// The lit edge of [TideGlass], on something that paints its own surface.
+///
+/// Artwork in this design is never a bare rectangle sitting on the ground — it
+/// is set into the same glass everything else is made of, so a cover picks up
+/// the same top-lit bevel a panel does. Without it a grid of covers is a grid
+/// of photographs, which is what every other reader looks like.
+class TideEdge extends StatelessWidget {
+  const TideEdge({
+    super.key,
+    required this.child,
+    this.radius = 14,
+    this.highlight = 0.22,
+    this.border = 0.10,
+  });
+
+  final Widget child;
+  final double radius;
+  final double highlight;
+  final double border;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      foregroundPainter: _GlassEdge(
+        radius: radius,
+        highlight: highlight,
+        border: border,
+      ),
+      child: child,
+    );
+  }
+}
+
+/// Tide's "working on it": one accent arc travelling around a faint ring.
+///
+/// Material's [CircularProgressIndicator] draws a thick sweeping bar in its own
+/// scheme's colour with its own easing — on a glass screen it is the most
+/// obviously borrowed thing on it. This is the same idea in the design's terms,
+/// and the same ring the chapter rows already use for progress.
+class TideSpinner extends StatefulWidget {
+  const TideSpinner({super.key, this.size = 28, this.strokeWidth = 2});
+
+  final double size;
+  final double strokeWidth;
+
+  @override
+  State<TideSpinner> createState() => _TideSpinnerState();
+}
+
+class _TideSpinnerState extends State<TideSpinner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: widget.size,
+      height: widget.size,
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _c,
+          builder: (context, _) => CustomPaint(
+            painter: _SpinnerPainter(
+              turn: _c.value,
+              strokeWidth: widget.strokeWidth,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SpinnerPainter extends CustomPainter {
+  const _SpinnerPainter({required this.turn, required this.strokeWidth});
+
+  final double turn;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final radius = size.width / 2 - strokeWidth / 2;
+    final centre = (Offset.zero & size).center;
+    canvas.drawCircle(
+      centre,
+      radius,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..color = TideColors.accent.withValues(alpha: 0.16),
+    );
+    canvas.drawArc(
+      Rect.fromCircle(center: centre, radius: radius),
+      turn * 2 * math.pi - math.pi / 2,
+      // Just under a third of the ring: long enough to read as motion, short
+      // enough that the gap never closes into a plain circle.
+      2 * math.pi * 0.3,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round
+        ..color = TideColors.accent,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SpinnerPainter old) => old.turn != turn;
 }
 
 /// One drifting wash of colour behind the home screen. Sized by its parent —
@@ -810,6 +930,7 @@ class TideRow extends StatelessWidget {
     required this.icon,
     required this.title,
     this.subtitle,
+    this.leading,
     this.trailing,
     this.onTap,
     this.lit = false,
@@ -818,6 +939,12 @@ class TideRow extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? subtitle;
+
+  /// Takes the icon tile's place. For a row that stands for something with a
+  /// face of its own — a source and its logo — where a glyph would be the
+  /// same shape on every line.
+  final Widget? leading;
+
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool lit;
@@ -834,7 +961,10 @@ class TideRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(11, 11, 14, 11),
       child: Row(
         children: [
-          AnimatedContainer(
+          if (leading != null)
+            SizedBox(width: 36, height: 36, child: Center(child: leading))
+          else
+            AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             curve: tideEase,
             width: 36,
@@ -1222,6 +1352,160 @@ class TideCover extends ConsumerWidget {
       errorWidget: (_, _) => fallback,
     );
   }
+}
+
+/// A source's own mark, on a tile of glass.
+///
+/// Sources are websites, and every website publishes a logo — so a browse row
+/// wears the real one rather than a generic glyph. The mark is resolved once
+/// per source and painted from a local file after that; until it lands (and
+/// forever, for a site that publishes nothing usable) the row falls back to
+/// [TideSigil], so a list is never a column of empty tiles.
+class TideSourceLogo extends ConsumerWidget {
+  const TideSourceLogo({
+    super.key,
+    required this.seed,
+    required this.label,
+    this.baseUrl,
+    this.userAgent,
+    this.size = 38,
+    this.radius = 11,
+  });
+
+  /// Stable identity for the fallback's colour — the extension id.
+  final String seed;
+
+  /// The source's name; its initial is the fallback's glyph.
+  final String label;
+
+  /// The site to ask. Null or empty (Local source, a manifest with no
+  /// `base_url`) skips the lookup entirely and stays on the sigil.
+  final String? baseUrl;
+
+  /// Manifest `user_agent`, for the hosts that reject the browser one.
+  final String? userAgent;
+
+  final double size;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fallback = TideSigil(
+      seed: seed,
+      label: label,
+      size: size,
+      radius: radius,
+    );
+    final base = baseUrl;
+    if (base == null || base.isEmpty) return fallback;
+
+    final path = ref
+        .watch(sourceIconProvider((
+          id: seed,
+          baseUrl: base,
+          userAgent: userAgent,
+        )))
+        .valueOrNull;
+    if (path == null || path.isEmpty) return fallback;
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+      ),
+      child: Padding(
+        // A favicon is drawn to its own edges; inset so it reads as a mark on
+        // a tile rather than as a full-bleed square fighting the row's radius.
+        padding: EdgeInsets.all(size * 0.16),
+        child: SourceImage(
+          url: path,
+          fit: BoxFit.contain,
+          placeholder: (_) => const SizedBox.shrink(),
+          errorWidget: (_, _) => Center(
+            child: Text(
+              _initialOf(label),
+              style: TextStyle(
+                fontSize: size * 0.42,
+                height: 1,
+                fontWeight: FontWeight.w500,
+                color: TideColors.brightAt(0.9),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The source's initial over a gradient derived from its id — the mark for a
+/// source that has none of its own. Deterministic, so a given source keeps the
+/// same colour between sessions and stays findable by shape.
+class TideSigil extends StatelessWidget {
+  const TideSigil({
+    super.key,
+    required this.seed,
+    required this.label,
+    this.size = 38,
+    this.radius = 11,
+  });
+
+  final String seed;
+  final String label;
+  final double size;
+  final double radius;
+
+  /// Stable across sessions and platforms — String.hashCode is not something
+  /// to lean on for anything the user would notice changing.
+  static int seedOf(String s) {
+    var sum = 0;
+    for (final unit in s.codeUnits) {
+      sum = (sum * 31 + unit) & 0x7fffffff;
+    }
+    return sum;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        gradient: TideCover.fallbackGradient(seedOf(seed)),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+      ),
+      child: Text(
+        _initialOf(label),
+        style: TextStyle(
+          fontSize: size * 0.42,
+          height: 1,
+          fontWeight: FontWeight.w500,
+          color: TideColors.brightAt(0.9),
+        ),
+      ),
+    );
+  }
+}
+
+String _initialOf(String label) {
+  final trimmed = label.trim();
+  return trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
+}
+
+/// `https://www.asuracomic.net/` → `asuracomic.net`. What a source row says
+/// under the name: "EN" on its own was a two-letter subtitle on an empty line,
+/// and the domain is the thing that actually distinguishes two sources with
+/// near-identical names.
+String? tideSourceHost(String? baseUrl) {
+  if (baseUrl == null || baseUrl.isEmpty) return null;
+  final host = Uri.tryParse(baseUrl)?.host;
+  if (host == null || host.isEmpty) return null;
+  return host.startsWith('www.') ? host.substring(4) : host;
 }
 
 /// Bottom-of-artwork scrim. The design layers the same four-stop fade under
