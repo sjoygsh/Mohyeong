@@ -115,6 +115,12 @@ class _TideSeriesScreenState extends ConsumerState<TideSeriesScreen> {
     return TideRise(
       child: Stack(
         children: [
+          // Behind the list, not the cover: the artwork fills the first 520px
+          // and the ground only shows once you are past it, which is exactly
+          // where this screen used to go flat against its neighbours.
+          const Positioned.fill(
+            child: TideAurora(opacity: TideAuroraLevel.page),
+          ),
           Positioned.fill(
             child: NotificationListener<ScrollNotification>(
               onNotification: (n) {

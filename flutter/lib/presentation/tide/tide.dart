@@ -1334,9 +1334,11 @@ abstract final class TideAuroraLevel {
   /// that it competes with the rows sitting on it.
   static const page = 0.5;
 
-  /// Screens that are wall-to-wall content — long settings runs, dense feeds —
-  /// where the aurora is a hint at the edges rather than a wash.
-  static const dense = 0.32;
+  /// Screens that are wall-to-wall content — long settings runs, dense feeds.
+  /// Still the quietest of the three, but no longer a rumour: at 0.32 these
+  /// pages read as flat black beside the home and history tabs, which is the
+  /// whole reason the ground is lit in the first place.
+  static const dense = 0.46;
 }
 
 /// Switches between peer views: a glass pill with one lit segment that slides.
