@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Kotlin Mohyeong's splash background (presentation-core colors.xml:
-         splash), so the Flutter app's launch matches the Kotlin app. Night
-         variant in values-night/colors.xml. -->
-    <color name="splash_background">#D85B62</color>
+    <!-- Tide's ground (TideColors.ground) and its accent (TideColors.accent),
+         both from lib/presentation/tide/tide.dart. The launch screen is the
+         first frame of the app, so it is painted in the app's own two colours.
+
+         There is deliberately no light variant: main.dart hard-wires
+         `themeMode: ThemeMode.dark`, so the app is dark whatever the system is
+         set to. This file used to carry the inherited Tachiyomi splash red
+         (#D85B62), which meant a phone in light mode flashed salmon and then
+         opened into near-black — a colour that appears nowhere else in the app.
+         values-night/colors.xml is identical to this for the same reason; keep
+         the two in step. -->
+    <color name="splash_background">#0D1019</color>
 </resources>

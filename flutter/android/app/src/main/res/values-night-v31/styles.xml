@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Dark-mode variant of the v31 splash: same glyph on the night
-     splash_background (values-night/colors.xml), dark parent to match
-     values-night. -->
+<!-- Byte-identical to values-v31/styles.xml, because the app is dark-only and
+     the launch must not change with the system setting. The folder still has
+     to exist: without it the platform would fall back to values-night/, whose
+     LaunchTheme has no windowSplashScreen* attrs. -->
 <resources>
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_mihon_splash</item>
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>

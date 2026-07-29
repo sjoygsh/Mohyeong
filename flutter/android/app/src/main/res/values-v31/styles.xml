@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 12+ system splash, matching the Kotlin app's
-     Theme.Tachiyomi.SplashScreen: the Mohyeong glyph on @color/splash_background
-     instead of the default (launcher icon on a themed background).
-     windowBackground still covers the gap between the system splash dismissing
-     and Flutter's first frame. -->
+<!-- Android 12+ system splash.
+
+     There is deliberately NO windowSplashScreenAnimatedIcon here. Setting one
+     was tried and reverted: the platform scales whatever drawable you give it
+     to fill its icon slot and masks the result to a circle, so a hand-built
+     layer-list came out several times oversized and clipped on both edges
+     (verified on device, twice, including with an explicit 288dp canvas).
+
+     Left unset, the platform falls back to the app's own adaptive launcher
+     icon — the 모형 roundel — which it sizes and masks correctly by
+     construction. That is also the better bridge: the splash now shows the
+     icon you just tapped, sitting on the ground the app opens onto. -->
 <resources>
-    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_mihon_splash</item>
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>

@@ -1,18 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Both parents are Theme.Black even in the non-night folder, and that is not
+     a mistake: main.dart hard-wires `themeMode: ThemeMode.dark`, so the app is
+     dark on a light-mode phone too. These used to be Theme.Light, which gave
+     the window a WHITE background for the frames between the splash dismissing
+     and Flutter's first frame — a white flash on the way into a near-black app. -->
 <resources>
-    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
-    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <!-- Show a splash screen on the activity. Automatically removed when
-             the Flutter engine draws its first frame -->
+    <!-- Applied while the process is starting. windowBackground covers the gap
+         between the system splash dismissing and the Flutter engine's first
+         frame. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>
-    <!-- Theme applied to the Android Window as soon as the process has started.
-         This theme determines the color of the Android Window while your
-         Flutter UI initializes, as well as behind your Flutter UI while its
-         running.
-
-         This Theme is only used starting with V2 of Flutter's Android embedding. -->
-    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowBackground">?android:colorBackground</item>
+    <!-- Applied once the process has started: the colour behind the Flutter UI
+         while it initialises, and behind it while it runs. Pinned to Tide's
+         ground rather than ?android:colorBackground, so any moment the
+         framework has not painted looks like the app instead of like a hole. -->
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@color/splash_background</item>
     </style>
 </resources>

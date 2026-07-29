@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Pre-Android-12 splash: the Mohyeong glyph centred on splash_background,
-     matching the Kotlin app (Theme.Tachiyomi.SplashScreen). Android 12+
-     ignores this and uses the windowSplashScreen* attrs in values-v31. -->
+<!-- Pre-Android-12 splash, and on every version the window background that
+     covers the gap between the system splash dismissing and Flutter's first
+     frame — which is why the colour must match the app's ground exactly
+     rather than approximately.
+
+     The launcher icon rather than a bespoke glyph, matching what the v31
+     system splash shows (see values-v31/styles.xml). -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/splash_background" />
     <item
-        android:width="192dp"
-        android:height="192dp"
-        android:drawable="@drawable/ic_mihon_splash"
+        android:width="144dp"
+        android:height="144dp"
+        android:drawable="@mipmap/ic_launcher"
         android:gravity="center" />
 </layer-list>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Kotlin Mohyeong's night splash background (presentation-core
-         values-night/colors.xml: splash). -->
-    <color name="splash_background">#202125</color>
+    <!-- Identical to values/colors.xml by design: the app is dark-only, so the
+         launch must not change with the system setting. See the comment there. -->
+    <color name="splash_background">#0D1019</color>
 </resources>
