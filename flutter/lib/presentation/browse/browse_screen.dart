@@ -646,7 +646,7 @@ class _ExtensionRow extends ConsumerWidget {
 }
 
 /// Re-fetches the JS from [e.installUrl] and reinstalls. Surfaces
-/// success/failure via SnackBar so the user gets feedback either way.
+/// success/failure via [TideToast] so the user gets feedback either way.
 /// Compares the manifest version code before/after to tell "Updated"
 /// vs "Already up to date" — matches Mihon's update flow wording.
 Future<void> _runUpdate(

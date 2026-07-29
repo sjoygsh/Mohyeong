@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/track/model/track.dart';
 import '../../domain/track/model/tracker.dart';
+import '../../presentation/tide/tide.dart';
 import 'track_preferences.dart';
 import 'track_repository.dart';
 import 'tracker_registry.dart';
@@ -115,28 +116,21 @@ Future<void> trackOnMarkRead(
       volumeNumber: volumeNumber,
     );
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Trackers updated to chapter ${chapterNumber.toInt()}'),
-      ),
-    );
+    TideToast.of(context)
+        .show('Trackers updated to chapter ${chapterNumber.toInt()}');
     return;
   }
 
   // AutoTrackState.ask
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text('Update trackers to chapter ${chapterNumber.toInt()}?'),
-      action: SnackBarAction(
-        label: 'OK',
-        onPressed: () => unawaited(
-          updater.setLastChapterRead(
-            mangaId: mangaId,
-            chapterNumber: chapterNumber,
-            volumeNumber: volumeNumber,
-          ),
-        ),
+  TideToast.of(context).show(
+    'Update trackers to chapter ${chapterNumber.toInt()}?',
+    actionLabel: 'OK',
+    onAction: () => unawaited(
+      updater.setLastChapterRead(
+        mangaId: mangaId,
+        chapterNumber: chapterNumber,
+        volumeNumber: volumeNumber,
       ),
     ),
   );

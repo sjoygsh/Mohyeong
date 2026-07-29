@@ -156,25 +156,12 @@ class AppTheme {
         backgroundColor: raised,
         surfaceTintColor: Colors.transparent,
       ),
-      listTileTheme: const ListTileThemeData(iconColor: Color(0xFF9397AB)),
-      // Tide's toast: a floating rounded pane with a hairline edge, not a
-      // full-width slab welded to the bottom of the screen. It shares the
-      // shape language of the sheets and the nav bar, which is what stops it
-      // reading as a piece of a different app arriving for two seconds.
-      snackBarTheme: base.snackBarTheme.copyWith(
-        backgroundColor: raised,
-        contentTextStyle: TextStyle(color: text, fontSize: 13.5),
-        behavior: SnackBarBehavior.floating,
-        elevation: 0,
-        insetPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
-        ),
-        actionTextColor: accent,
-      ),
+      // No snackBarTheme / listTileTheme / progressIndicatorTheme: the app
+      // builds none of those widgets any more. `TideToast`, `TideRow` and
+      // `TideSpinner`/`TideProgressBar` replaced them outright, and a theme
+      // for a widget that is never constructed is a dead switch — it reads
+      // as "the app still shows SnackBars" to whoever edits this next.
       switchTheme: base.switchTheme,
-      progressIndicatorTheme: const ProgressIndicatorThemeData(color: accent),
     );
   }
 
