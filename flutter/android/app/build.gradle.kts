@@ -41,6 +41,19 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
         }
+        // `flutter build apk --profile` had NO buildType here, so it fell back
+        // to the bare applicationId — `app.mohyeong` — which is the Kotlin fork
+        // installed on the test device as reference. A profile build would have
+        // silently overwritten it. Profile is the build the optimization pass
+        // wants (AOT like release, but with the timeline/DevTools left in), so
+        // it gets the same .dev id and debug keys as the other two.
+        // (The Flutter Gradle plugin creates `profile` itself, so this
+        // configures it rather than declaring it.)
+        getByName("profile") {
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+        }
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
