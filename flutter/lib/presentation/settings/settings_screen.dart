@@ -143,49 +143,15 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-/// Lays a group out two per row. Rows of `Expanded` pairs rather than a
-/// GridView: every group here is short and already in a ListView, so a grid
-/// would only add a scroll-inside-a-scroll and an aspect ratio to keep in
-/// sync with the tallest tile.
+/// Wraps [TideTileGrid]; the tile itself is Tide vocabulary now, shared with
+/// the More screen.
 class _Group extends StatelessWidget {
   const _Group(this.entries);
 
   final List<_Entry> entries;
 
   @override
-  Widget build(BuildContext context) {
-    final rows = <Widget>[];
-    for (var i = 0; i < entries.length; i += 2) {
-      final left = entries[i];
-      final right = i + 1 < entries.length ? entries[i + 1] : null;
-      rows.add(
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: left),
-              const SizedBox(width: 8),
-              // An odd entry takes half the width and leaves the other half
-              // empty, rather than stretching to full width and reading as a
-              // different kind of thing than its neighbours.
-              Expanded(child: right ?? const SizedBox.shrink()),
-            ],
-          ),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          for (final (i, row) in rows.indexed) ...[
-            if (i > 0) const SizedBox(height: 8),
-            row,
-          ],
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => TideTileGrid(tiles: entries);
 }
 
 class _Entry extends StatelessWidget {
@@ -207,42 +173,12 @@ class _Entry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TideGlass(
-      radius: TideRadius.panel,
-      padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+    return TideTile(
+      icon: icon,
+      title: title,
+      hint: hint,
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => destination),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.055),
-              borderRadius: BorderRadius.circular(TideRadius.chip),
-              border: Border.all(color: TideColors.hairline),
-            ),
-            child: Icon(icon, size: 18, color: TideColors.textAt(0.75)),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TideText.title(size: 15),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            hint,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TideText.caption(size: 12, opacity: 0.38),
-          ),
-        ],
       ),
     );
   }

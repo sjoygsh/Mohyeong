@@ -134,76 +134,84 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                       ),
                     ]),
                     const TideSectionHeader(label: 'Library'),
-                    _group([
-                      TideRow(
-                        icon: Icons.get_app,
-                        title: 'Download queue',
-                        // The one row on this screen with live state behind it:
-                        // whether anything is downloading right now is worth
-                        // knowing before you tap.
-                        trailing: const _QueueCount(),
-                        onTap: () => _push(const DownloadQueueScreen()),
-                      ),
-                      TideRow(
-                        icon: Icons.label_outlined,
-                        title: 'Categories',
-                        trailing: const TideChevron(),
-                        onTap: () => _push(const CategoriesScreen()),
-                      ),
-                      TideRow(
-                        icon: Icons.query_stats,
-                        title: 'Statistics',
-                        trailing: const TideChevron(),
-                        onTap: () => _push(const StatsScreen()),
-                      ),
-                    ]),
+                    TideTileGrid(
+                      tiles: [
+                        TideTile(
+                          icon: Icons.get_app,
+                          title: 'Download queue',
+                          hint: 'In progress, paused',
+                          // The one destination here with live state behind it:
+                          // whether anything is downloading right now is worth
+                          // knowing before you tap.
+                          trailing: const _QueueCount(),
+                          onTap: () => _push(const DownloadQueueScreen()),
+                        ),
+                        TideTile(
+                          icon: Icons.label_outlined,
+                          title: 'Categories',
+                          hint: 'Shelves, sorting',
+                          onTap: () => _push(const CategoriesScreen()),
+                        ),
+                        TideTile(
+                          icon: Icons.query_stats,
+                          title: 'Statistics',
+                          hint: 'Time read, totals',
+                          onTap: () => _push(const StatsScreen()),
+                        ),
+                      ],
+                    ),
                     const TideSectionHeader(label: 'App'),
-                    _group([
-                      TideRow(
-                        icon: Icons.storage_outlined,
-                        title: 'Data and storage',
-                        trailing: const TideChevron(),
-                        onTap: () => _push(const DataStorageSettingsScreen()),
-                      ),
-                      TideRow(
-                        icon: Icons.settings_outlined,
-                        title: 'Settings',
-                        trailing: const TideChevron(),
-                        onTap: () => _push(const SettingsScreen()),
-                      ),
-                      TideRow(
-                        icon: Icons.info_outlined,
-                        title: 'About',
-                        trailing: const TideChevron(),
-                        onTap: () => _push(const AboutScreen()),
-                      ),
-                      TideRow(
-                        icon: Icons.help_outlined,
-                        title: 'Help',
-                        trailing: Icon(
-                          Icons.open_in_new,
-                          size: 15,
-                          color: TideColors.textAt(0.3),
+                    TideTileGrid(
+                      tiles: [
+                        TideTile(
+                          icon: Icons.storage_outlined,
+                          title: 'Data and storage',
+                          hint: 'Backups, space',
+                          onTap: () => _push(const DataStorageSettingsScreen()),
                         ),
-                        onTap: () => launchUrl(
-                          Uri.parse(MoreScreen._urlHelp),
-                          mode: LaunchMode.externalApplication,
+                        TideTile(
+                          icon: Icons.settings_outlined,
+                          title: 'Settings',
+                          hint: 'Everything else',
+                          onTap: () => _push(const SettingsScreen()),
                         ),
-                      ),
-                    ]),
+                        TideTile(
+                          icon: Icons.info_outlined,
+                          title: 'About',
+                          hint: 'Version, links',
+                          onTap: () => _push(const AboutScreen()),
+                        ),
+                        TideTile(
+                          icon: Icons.help_outlined,
+                          title: 'Help',
+                          hint: 'Opens in browser',
+                          trailing: Icon(
+                            Icons.open_in_new,
+                            size: 15,
+                            color: TideColors.textAt(0.3),
+                          ),
+                          onTap: () => launchUrl(
+                            Uri.parse(MoreScreen._urlHelp),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                        ),
+                      ],
+                    ),
                     // TEMP developer tool for authoring source extensions —
                     // remove before release. Dumps a Cloudflare-cleared,
                     // JS-rendered page's DOM to a file for off-device
                     // inspection.
                     const TideSectionHeader(label: 'Developer'),
-                    _group([
-                      TideRow(
-                        icon: Icons.bug_report_outlined,
-                        title: 'Dev: page source',
-                        trailing: const TideChevron(),
-                        onTap: () => _push(const DevPageSourceScreen()),
-                      ),
-                    ]),
+                    TideTileGrid(
+                      tiles: [
+                        TideTile(
+                          icon: Icons.bug_report_outlined,
+                          title: 'Dev: page source',
+                          hint: 'Dump rendered DOM',
+                          onTap: () => _push(const DevPageSourceScreen()),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),

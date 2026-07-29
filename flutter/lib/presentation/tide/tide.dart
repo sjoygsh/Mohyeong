@@ -1188,6 +1188,138 @@ class TideRow extends StatelessWidget {
   }
 }
 
+/// A destination as a tile rather than a row: icon, name, and a couple of
+/// words on what is behind it.
+///
+/// The counterpart to [TideRow], for screens that are purely a directory. A
+/// column of ten full-width rows — every one the same height, shape and weight
+/// — is a wall you have to read top to bottom; two-up, the icon does the
+/// identifying and the whole list fits the eye at once. Use rows when a line
+/// carries a CONTROL (a switch, a value you can change) and tiles when it
+/// simply leads somewhere: a toggle laid out as a tile stops looking like a
+/// toggle.
+class TideTile extends StatelessWidget {
+  const TideTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.hint,
+    this.trailing,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+
+  /// Two or three words on what is actually behind the tile — not a list of
+  /// every control on the far side of it.
+  final String? hint;
+
+  /// Sits opposite the icon: a live count, an external-link glyph. Nothing
+  /// that needs its own tap target.
+  final Widget? trailing;
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TideGlass(
+      radius: TideRadius.panel,
+      padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.055),
+                  borderRadius: BorderRadius.circular(TideRadius.chip),
+                  border: Border.all(color: TideColors.hairline),
+                ),
+                child: Icon(icon, size: 18, color: TideColors.textAt(0.75)),
+              ),
+              const Spacer(),
+              ?trailing,
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TideText.title(size: 15),
+          ),
+          if (hint != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              hint!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TideText.caption(size: 12, opacity: 0.38),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Lays [TideTile]s out two per row.
+///
+/// Rows of `Expanded` pairs rather than a GridView: these groups are short and
+/// already inside a scroll view, so a grid would add a scroll-within-a-scroll
+/// and an aspect ratio to keep in sync with the tallest tile.
+class TideTileGrid extends StatelessWidget {
+  const TideTileGrid({
+    super.key,
+    required this.tiles,
+    this.padding = const EdgeInsets.symmetric(horizontal: 16),
+  });
+
+  final List<Widget> tiles;
+  final EdgeInsets padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < tiles.length; i += 2) {
+      final right = i + 1 < tiles.length ? tiles[i + 1] : null;
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: tiles[i]),
+              const SizedBox(width: 8),
+              // An odd tile keeps its half-width and leaves the other half
+              // empty; stretched full-width it would read as a different kind
+              // of thing than the tiles above it.
+              Expanded(child: right ?? const SizedBox.shrink()),
+            ],
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: padding,
+      child: Column(
+        children: [
+          for (final (i, row) in rows.indexed) ...[
+            if (i > 0) const SizedBox(height: 8),
+            row,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// The chevron that marks a [TideRow] as leading somewhere.
 class TideChevron extends StatelessWidget {
   const TideChevron({super.key});
