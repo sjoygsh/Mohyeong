@@ -85,26 +85,35 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
   @override
   void initState() {
     super.initState();
-    // Defer until first frame so the workmanager engine doesn't race the
-    // platform channel init.
+    // Deferred until after the first frame so the workmanager engine doesn't
+    // race the platform channel init — and then held until the launch wordmark
+    // is done. None of this is urgent: it registers background tasks and can
+    // kick off a whole network sync, and running it under the intro left the
+    // animation fighting that sync for the same isolate. `whenIntroDone` fires
+    // immediately when the intro isn't playing, so a warm start is unaffected.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final scheduler = ref.read(libraryUpdateSchedulerProvider);
-      final interval = ref.read(libraryUpdatePreferenceProvider);
-      scheduler.reschedule(interval);
-      // Schedule cross-device sync if enabled, and optionally trigger a
-      // one-off sync on app start. Mirrors Mihon's App.onCreate.
-      _setupSync();
-      // Re-register the periodic auto-backup from the saved interval
-      // (Mihon calls BackupCreateJob.setupTask the same way).
-      ref
-          .read(backupSchedulerProvider)
-          .reschedule(ref.read(backupIntervalProvider));
-      // Register launcher shortcuts; selecting one jumps to that home tab
-      // (also handles the cold-start shortcut that launched the app).
-      ShortcutService.instance.init(
-        (tabIndex) => ref.read(homeTabIndexProvider.notifier).set(tabIndex),
-      );
+      TideSplashGate.whenIntroDone(_startBackgroundWork);
     });
+  }
+
+  void _startBackgroundWork() {
+    if (!mounted) return;
+    final scheduler = ref.read(libraryUpdateSchedulerProvider);
+    final interval = ref.read(libraryUpdatePreferenceProvider);
+    scheduler.reschedule(interval);
+    // Schedule cross-device sync if enabled, and optionally trigger a
+    // one-off sync on app start. Mirrors Mihon's App.onCreate.
+    _setupSync();
+    // Re-register the periodic auto-backup from the saved interval
+    // (Mihon calls BackupCreateJob.setupTask the same way).
+    ref
+        .read(backupSchedulerProvider)
+        .reschedule(ref.read(backupIntervalProvider));
+    // Register launcher shortcuts; selecting one jumps to that home tab
+    // (also handles the cold-start shortcut that launched the app).
+    ShortcutService.instance.init(
+      (tabIndex) => ref.read(homeTabIndexProvider.notifier).set(tabIndex),
+    );
   }
 
   /// Re-registers the periodic sync task from the saved auto-sync prefs and,

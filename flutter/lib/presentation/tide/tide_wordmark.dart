@@ -208,6 +208,33 @@ class TideSplashGate extends StatefulWidget {
   /// reload — must not replay the introduction.
   static bool _played = false;
 
+  /// False only while the introduction is actually on screen.
+  ///
+  /// Deliberately starts TRUE: a widget test that builds a screen without the
+  /// gate, or any launch where the intro is skipped, must not sit waiting for
+  /// something that will never happen.
+  static final ValueNotifier<bool> introDone = ValueNotifier<bool>(true);
+
+  /// Runs [action] once the introduction is off the screen, or immediately if
+  /// it is not playing.
+  ///
+  /// Startup work that would otherwise land mid-animation uses this. The
+  /// animation and the first-build storm were measured fighting on the same
+  /// isolate: two ~1s main-thread stalls (63 and 62 skipped frames) inside the
+  /// intro's own window, which is what made the word appear frozen.
+  static void whenIntroDone(VoidCallback action) {
+    if (introDone.value) {
+      action();
+      return;
+    }
+    void listener() {
+      if (!introDone.value) return;
+      introDone.removeListener(listener);
+      action();
+    }
+    introDone.addListener(listener);
+  }
+
   @override
   State<TideSplashGate> createState() => _TideSplashGateState();
 }
@@ -249,7 +276,11 @@ class _TideSplashGateState extends State<TideSplashGate>
     );
     if (!_done) {
       TideSplashGate._played = true;
+      TideSplashGate.introDone.value = false;
       _c.forward().whenComplete(() {
+        // Released even if this State was disposed mid-animation — anything
+        // parked on `whenIntroDone` would otherwise never run at all.
+        TideSplashGate.introDone.value = true;
         if (mounted) setState(() => _done = true);
       });
     }

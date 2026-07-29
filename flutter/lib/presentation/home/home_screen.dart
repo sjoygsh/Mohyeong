@@ -8,6 +8,7 @@ import '../../data/source/incognito_preferences.dart';
 import '../library/library_screen.dart';
 import '../tide/tide.dart';
 import '../tide/tide_home_screen.dart';
+import '../tide/tide_wordmark.dart';
 import '../history/history_screen.dart';
 import '../browse/browse_screen.dart';
 import '../more/more_screen.dart';
@@ -438,8 +439,15 @@ class _FadeThroughIndexedStackState extends State<_FadeThroughIndexedStack>
     // 200ms fade. Lazy-build keeps the cold-start critical path short; this
     // moves the deferred cost into idle time shortly after instead of into
     // the user's first tap.
+    // …but not while the launch wordmark is still on screen. Building four
+    // screens, each opening its own DB streams, is the heaviest thing the app
+    // does after boot, and doing it under the intro put two ~1s stalls (63 and
+    // 62 skipped frames, measured) right through the animation. Idle means
+    // idle: the intro gets the main thread, then the warm-up starts.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future<void>.delayed(const Duration(milliseconds: 600), _warmNextTab);
+      TideSplashGate.whenIntroDone(() {
+        Future<void>.delayed(const Duration(milliseconds: 600), _warmNextTab);
+      });
     });
   }
 
