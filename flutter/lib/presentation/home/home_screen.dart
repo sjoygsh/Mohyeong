@@ -301,30 +301,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 }
 
-/// Persistent strip shown while "Downloaded only" mode is active. Mirrors
-/// Kotlin `DownloadedOnlyModeBanner`: `tertiary` strip with centred
-/// `onTertiary` "Downloaded only" text. Tapping turns the mode off (same
-/// convenience as the incognito banner below).
-class _DownloadedOnlyBanner extends ConsumerWidget {
-  const _DownloadedOnlyBanner();
+/// A mode the whole app is running in, said once across the top.
+///
+/// Kotlin's `AppStateBanners` fills the strip with `tertiary` / `primary` and
+/// writes on it in the matching `on-` colour. Held to Tide's rule — the accent
+/// draws lines and glows, never floods — that would be the largest wash of
+/// colour anywhere in the app, sitting permanently above every screen. So it
+/// is a lit hairline under a quiet label instead: the same "this is on"
+/// reading the lit [TideRow]s in More already use for these two modes.
+class _ModeBanner extends StatelessWidget {
+  const _ModeBanner({required this.label, required this.onTap});
+
+  final String label;
+
+  /// Tapping turns the mode off — an invisible convenience over Kotlin's
+  /// non-interactive banner.
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.tertiary,
-      child: InkWell(
-        onTap: () => ref.read(downloadedOnlyProvider.notifier).set(false),
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: TideColors.accent.withValues(alpha: 0.10),
+          border: Border(
+            bottom: BorderSide(
+              color: TideColors.accent.withValues(alpha: 0.55),
+            ),
+          ),
+        ),
         child: SafeArea(
           bottom: false,
           child: Padding(
-            padding: const EdgeInsets.all(4),
+            padding: const EdgeInsets.symmetric(vertical: 6),
             child: Text(
-              'Downloaded only',
+              label.toUpperCase(),
               textAlign: TextAlign.center,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onTertiary,
-              ),
+              style: TideText.kicker(color: TideColors.accentLight),
             ),
           ),
         ),
@@ -333,37 +348,31 @@ class _DownloadedOnlyBanner extends ConsumerWidget {
   }
 }
 
+/// Persistent strip shown while "Downloaded only" mode is active. Mirrors
+/// Kotlin `DownloadedOnlyModeBanner`.
+class _DownloadedOnlyBanner extends ConsumerWidget {
+  const _DownloadedOnlyBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _ModeBanner(
+      label: 'Downloaded only',
+      onTap: () => ref.read(downloadedOnlyProvider.notifier).set(false),
+    );
+  }
+}
+
 /// Persistent strip shown while global incognito mode is active. Mirrors the
-/// Kotlin `IncognitoModeBanner` (Banners.kt): a thin, full-width strip in the
-/// `primary` colour with centred `onPrimary` text reading "Incognito mode"
-/// (`MR.strings.pref_incognito_mode`), `labelMedium`, 4dp padding.
-///
-/// Tapping it turns incognito off — an invisible convenience over Kotlin's
-/// non-interactive banner; the appearance is unchanged.
+/// Kotlin `IncognitoModeBanner` (Banners.kt), whose label is
+/// `MR.strings.pref_incognito_mode`.
 class _IncognitoBanner extends ConsumerWidget {
   const _IncognitoBanner();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.primary,
-      child: InkWell(
-        onTap: () => ref.read(incognitoModeProvider.notifier).set(false),
-        child: SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.all(4),
-            child: Text(
-              'Incognito mode',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onPrimary,
-              ),
-            ),
-          ),
-        ),
-      ),
+    return _ModeBanner(
+      label: 'Incognito mode',
+      onTap: () => ref.read(incognitoModeProvider.notifier).set(false),
     );
   }
 }

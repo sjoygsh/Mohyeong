@@ -118,7 +118,7 @@ class _StorageUsageBarState extends State<_StorageUsageBar> {
           Text(
             'Available: ${AppCache.readableSize(available)} / '
             'Total: ${AppCache.readableSize(total)}',
-            style: Theme.of(context).textTheme.bodySmall,
+            style: TideText.caption(size: 12),
           ),
         ],
       ),

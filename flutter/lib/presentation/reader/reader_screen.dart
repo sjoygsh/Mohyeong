@@ -369,9 +369,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           }
           if (!snap.hasData || !_routeSettled) {
             return Center(
-              child: CircularProgressIndicator(
-                color: background.resolveOnColor(brightness),
-              ),
+              child: TideSpinner(color: background.resolveOnColor(brightness)),
             );
           }
           final data = snap.data;
@@ -1234,18 +1232,16 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     });
   }
 
-  /// Chrome bar colour — Kotlin's `surfaceColorAtElevation(3.dp)` with
-  /// 0.9 (dark) / 0.95 (light) alpha, shared by the top bar, the chapter
-  /// navigator's buttons/pill and the bottom action bar.
-  Color _barColor(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return ElevationOverlay.applySurfaceTint(
-      scheme.surface,
-      scheme.surfaceTint,
-      3,
-    ).withValues(alpha: theme.brightness == Brightness.dark ? 0.9 : 0.95);
-  }
+  /// Chrome bar colour, shared by the top bar, the chapter navigator's
+  /// buttons/pill and the bottom action bar.
+  ///
+  /// Was Kotlin's `surfaceColorAtElevation(3.dp)` read off the Material
+  /// scheme. The reader's chrome floats over the page rather than sitting in
+  /// the app's own surfaces, so it takes the reader ground directly — held
+  /// just off opaque so the art stays faintly visible through it, the way
+  /// every other pane of Tide glass does.
+  Color _barColor(BuildContext context) =>
+      TideColors.readerGround.withValues(alpha: 0.9);
 
   /// Bottom-bar crop toggle. Kotlin toasts "On"/"Off" via
   /// `menuToggleToast`; we flash the same label centre-screen. Toggles the
@@ -1591,6 +1587,13 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
         ? ref.watch(readerCropBordersProvider)
         : ref.watch(readerCropBordersWebtoonProvider);
     final barColor = _barColor(context);
+    // The reader's ink. `ReaderBackground` genuinely resolves against the app
+    // brightness (its `automatic` entry is gray in the dark, white otherwise),
+    // so this is one of the few `Theme.of` reads that is logic rather than a
+    // leftover Material style. Everything the reader draws OVER the page —
+    // placeholders, failure lines, the transition page — takes it, because
+    // the page can be on a white background and white-on-white is invisible.
+    final ink = widget.background.resolveOnColor(Theme.of(context).brightness);
     // Chapter transition page (Kotlin ChapterTransition, gated by
     // `always_show_chapter_transition`): an info page after the last page —
     // "Finished" + what's next — that swiping/tapping forward from triggers
@@ -1606,8 +1609,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                 : (next.name.isEmpty
                     ? 'Chapter ${next.chapterNumber}'
                     : next.name),
-            textColor: widget.background
-                .resolveOnColor(Theme.of(context).brightness),
+            textColor: ink,
             onNextChapter:
                 next == null ? null : () => widget.onJumpToChapter(next.id),
           )
@@ -1676,8 +1678,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
               scrollForward: _scrollForward,
             ),
             alwaysShowTransition: alwaysShowTransition,
-            textColor:
-                widget.background.resolveOnColor(Theme.of(context).brightness),
+            textColor: ink,
             onActiveChapter: _onStripChapter,
             onPageChanged: _onStripPage,
             onPagesResolved: _onPagesResolved,
@@ -1687,6 +1688,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       data: data,
       mode: widget.mode,
       fit: fit,
+      ink: ink,
       sidePaddingFraction: sidePaddingPct / 100,
       cropBorders: cropEnabled,
       // Rotate-to-fit applies to the paged viewer only (Mihon parity); the
@@ -1827,8 +1829,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                     // Clamped: the transition page isn't a numbered page.
                     current: page.clamp(0, _totalPages > 0 ? _totalPages - 1 : 0),
                     total: _totalPages,
-                    color: widget.background
-                        .resolveOnColor(Theme.of(context).brightness),
+                    color: ink,
                   ),
                 ),
               ),
@@ -2234,7 +2235,6 @@ class _PageActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Expanded(
       child: InkWell(
         onTap: onTap,
@@ -2244,14 +2244,14 @@ class _PageActionButton extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: scheme.primary),
+              Icon(icon, color: TideColors.accent),
               const SizedBox(height: 4),
               Text(
                 label,
                 maxLines: 2,
                 textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall,
+                style: TideText.caption(size: 11, opacity: 0.6),
               ),
             ],
           ),
@@ -2288,12 +2288,11 @@ class _ChapterNavigator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final buttonStyle = IconButton.styleFrom(
       backgroundColor: barColor,
       disabledBackgroundColor: barColor,
-      foregroundColor: scheme.onSurface,
-      disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.38),
+      foregroundColor: TideColors.text,
+      disabledForegroundColor: TideColors.textAt(0.38),
     );
     // Match Kotlin: left button skips backward in reading order, so on an
     // R2L pager it is the *next* chapter.
@@ -2382,6 +2381,7 @@ class _ReaderViewport extends StatelessWidget {
     required this.data,
     required this.mode,
     required this.fit,
+    required this.ink,
     required this.sidePaddingFraction,
     required this.cropBorders,
     required this.rotateToFit,
@@ -2397,6 +2397,10 @@ class _ReaderViewport extends StatelessWidget {
   final _ReaderData data;
   final ReadingMode mode;
   final BoxFit fit;
+
+  /// The reader's foreground colour — see `_ReaderBody.build`. Placeholders
+  /// and failure lines take it so they stay legible on a white page.
+  final Color ink;
   final double sidePaddingFraction;
   final bool cropBorders;
   final bool rotateToFit;
@@ -2424,6 +2428,7 @@ class _ReaderViewport extends StatelessWidget {
         paths: data.localPagePaths!,
         mode: mode,
         fit: fit,
+        ink: ink,
         sidePaddingFraction: sidePaddingFraction,
         cropBorders: cropBorders,
         rotateToFit: rotateToFit,
@@ -2454,6 +2459,7 @@ class _ReaderViewport extends StatelessWidget {
       chapter: data.chapter,
       mode: mode,
       fit: fit,
+      ink: ink,
       sidePaddingFraction: sidePaddingFraction,
       cropBorders: cropBorders,
       rotateToFit: rotateToFit,
@@ -2475,6 +2481,7 @@ class _PageList extends StatefulWidget {
     required this.chapter,
     required this.mode,
     required this.fit,
+    required this.ink,
     required this.sidePaddingFraction,
     required this.cropBorders,
     required this.rotateToFit,
@@ -2491,6 +2498,7 @@ class _PageList extends StatefulWidget {
   final Chapter chapter;
   final ReadingMode mode;
   final BoxFit fit;
+  final Color ink;
   final double sidePaddingFraction;
   final bool cropBorders;
   final bool rotateToFit;
@@ -2533,11 +2541,12 @@ class _PageListState extends State<_PageList> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.error_outline, color: Colors.white54, size: 64),
+                  Icon(Icons.error_outline,
+                      color: widget.ink.withValues(alpha: 0.54), size: 64),
                   const SizedBox(height: 12),
                   Text(
                     'Failed to load pages: ${snap.error}',
-                    style: const TextStyle(color: Colors.white70),
+                    style: TextStyle(color: widget.ink.withValues(alpha: 0.7)),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 20),
@@ -2555,9 +2564,7 @@ class _PageListState extends State<_PageList> {
           );
         }
         if (!snap.hasData) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.white),
-          );
+          return Center(child: TideSpinner(color: widget.ink));
         }
         final pages = snap.data!;
         // Report total + page handles once we know them. Routed through a
@@ -2571,13 +2578,17 @@ class _PageListState extends State<_PageList> {
           ]);
         });
         if (pages.isEmpty) {
-          return const Center(
-            child: Text('No pages.', style: TextStyle(color: Colors.white70)),
+          return Center(
+            child: Text(
+              'No pages.',
+              style: TextStyle(color: widget.ink.withValues(alpha: 0.7)),
+            ),
           );
         }
         return _PagesView(
           count: pages.length,
           mode: widget.mode,
+          ink: widget.ink,
           sidePaddingFraction: widget.sidePaddingFraction,
           initialPage: widget.chapter.lastPageRead,
           onPageChanged: widget.onPageChanged,
@@ -2602,18 +2613,16 @@ class _PageListState extends State<_PageList> {
               cropBorders: widget.cropBorders,
               rotateToFit: widget.rotateToFit,
               rotateInvert: widget.rotateInvert,
-              placeholder: (_) => const SizedBox(
+              placeholder: (_) => SizedBox(
                 height: 400,
-                child: Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
+                child: Center(child: TideSpinner(color: widget.ink)),
               ),
               errorWidget: (_, error) => SizedBox(
                 height: 400,
                 child: Center(
                   child: Text(
                     'Page ${i + 1} failed: $error',
-                    style: const TextStyle(color: Colors.white70),
+                    style: TextStyle(color: widget.ink.withValues(alpha: 0.7)),
                   ),
                 ),
               ),
@@ -3066,16 +3075,16 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
       // opacity, exempt from the global cover fade.
       fadeIn: false,
       cropBorders: widget.cropBorders,
-      placeholder: (_) => const SizedBox(
+      placeholder: (_) => SizedBox(
         height: 400,
-        child: Center(child: CircularProgressIndicator(color: Colors.white)),
+        child: Center(child: TideSpinner(color: widget.textColor)),
       ),
       errorWidget: (_, error) => SizedBox(
         height: 400,
         child: Center(
           child: Text(
             'Page ${item.pageIdx + 1} failed: $error',
-            style: const TextStyle(color: Colors.white70),
+            style: TextStyle(color: widget.textColor.withValues(alpha: 0.7)),
           ),
         ),
       ),
@@ -3089,11 +3098,12 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: Colors.white54, size: 64),
+            Icon(Icons.error_outline,
+                color: widget.textColor.withValues(alpha: 0.54), size: 64),
             const SizedBox(height: 12),
             Text(
               'Failed to load pages: $_initError',
-              style: const TextStyle(color: Colors.white70),
+              style: TextStyle(color: widget.textColor.withValues(alpha: 0.7)),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
@@ -3116,11 +3126,14 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
       );
     }
     if (_loadingInitial) {
-      return const Center(child: CircularProgressIndicator(color: Colors.white));
+      return Center(child: TideSpinner(color: widget.textColor));
     }
     if (_items.isEmpty) {
-      return const Center(
-        child: Text('No pages.', style: TextStyle(color: Colors.white70)),
+      return Center(
+        child: Text(
+          'No pages.',
+          style: TextStyle(color: widget.textColor.withValues(alpha: 0.7)),
+        ),
       );
     }
     return NotificationListener<ScrollMetricsNotification>(
@@ -3138,6 +3151,7 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
         child: _PagesView(
           count: _items.length,
           mode: widget.mode,
+          ink: widget.textColor,
           sidePaddingFraction: widget.sidePaddingFraction,
           initialPage: _initialItem,
           onPageChanged: _onItem,
@@ -3236,6 +3250,7 @@ class _LocalPageList extends StatelessWidget {
     required this.paths,
     required this.mode,
     required this.fit,
+    required this.ink,
     required this.sidePaddingFraction,
     required this.cropBorders,
     required this.rotateToFit,
@@ -3251,6 +3266,7 @@ class _LocalPageList extends StatelessWidget {
   final List<String> paths;
   final ReadingMode mode;
   final BoxFit fit;
+  final Color ink;
   final double sidePaddingFraction;
   final bool cropBorders;
   final bool rotateToFit;
@@ -3265,8 +3281,11 @@ class _LocalPageList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (paths.isEmpty) {
-      return const Center(
-        child: Text('No pages.', style: TextStyle(color: Colors.white70)),
+      return Center(
+        child: Text(
+          'No pages.',
+          style: TextStyle(color: ink.withValues(alpha: 0.7)),
+        ),
       );
     }
     // Local pages are already enumerated — report their handles so the
@@ -3277,6 +3296,7 @@ class _LocalPageList extends StatelessWidget {
     return _PagesView(
       count: paths.length,
       mode: mode,
+      ink: ink,
       sidePaddingFraction: sidePaddingFraction,
       initialPage: initialPage,
       onPageChanged: onPageChanged,
@@ -3301,7 +3321,7 @@ class _LocalPageList extends StatelessWidget {
           child: Center(
             child: Text(
               'Page ${i + 1} failed: $error',
-              style: const TextStyle(color: Colors.white70),
+              style: TextStyle(color: ink.withValues(alpha: 0.7)),
             ),
           ),
         ),
@@ -3319,6 +3339,7 @@ class _PagesView extends ConsumerStatefulWidget {
   const _PagesView({
     required this.count,
     required this.mode,
+    required this.ink,
     required this.sidePaddingFraction,
     required this.initialPage,
     required this.onPageChanged,
@@ -3334,6 +3355,10 @@ class _PagesView extends ConsumerStatefulWidget {
 
   final int count;
   final ReadingMode mode;
+
+  /// The reader's foreground colour — the dual-page splitter builds its own
+  /// half-page images, so it needs the ink its callers' placeholders use.
+  final Color ink;
   final double sidePaddingFraction;
   final int initialPage;
   final ValueChanged<int> onPageChanged;
@@ -3938,16 +3963,15 @@ class _PagesViewState extends ConsumerState<_PagesView> {
                       // Image with no message.
                       frameBuilder: (ctx, child, frame, wasSync) {
                         if (frame != null || wasSync) return child;
-                        return const Center(
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                          ),
+                        return Center(
+                          child: TideSpinner(color: widget.ink),
                         );
                       },
                       errorBuilder: (ctx, error, _) => Center(
                         child: Text(
                           'Page ${i + 1} failed: $error',
-                          style: const TextStyle(color: Colors.white70),
+                          style:
+                              TextStyle(color: widget.ink.withValues(alpha: 0.7)),
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -4436,15 +4460,51 @@ class _ReaderHeaderState extends ConsumerState<_ReaderHeader> {
         .setBookmark(widget.chapter.id, next);
   }
 
+  /// Kotlin ReaderTopBar overflow: WebView / browser / share. A Material
+  /// popup menu is the one surface that cannot be made to look like the rest
+  /// of this app — it drops an opaque scheme-coloured card wherever it is
+  /// anchored — so the same three actions arrive on the sheet every other
+  /// overflow in the app uses.
+  Future<void> _openOverflow(BuildContext context) async {
+    final url = widget.chapterUrl;
+    if (url == null) return;
+    final picked = await showTideSheet<String>(
+      context,
+      (_) => TideOptionSheet(
+        title: widget.chapter.name.isEmpty
+            ? 'Chapter ${widget.chapter.chapterNumber}'
+            : widget.chapter.name,
+        options: const [
+          ('webview', 'Open in WebView'),
+          ('browser', 'Open in browser'),
+          ('share', 'Share'),
+        ],
+        selected: '',
+      ),
+    );
+    if (picked == null || !context.mounted) return;
+    switch (picked) {
+      case 'webview':
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => WebViewScreen(url: url, title: widget.manga.title),
+          ),
+        );
+      case 'browser':
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      case 'share':
+        await ReaderImageActions.shareText(url);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.close),
+            icon: const Icon(Icons.close, color: TideColors.text),
             onPressed: () => Navigator.of(context).maybePop(),
           ),
           const SizedBox(width: 8),
@@ -4456,7 +4516,7 @@ class _ReaderHeaderState extends ConsumerState<_ReaderHeader> {
                   widget.manga.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: scheme.onSurface),
+                  style: TideText.title(),
                 ),
                 Text(
                   widget.chapter.name.isEmpty
@@ -4464,56 +4524,26 @@ class _ReaderHeaderState extends ConsumerState<_ReaderHeader> {
                       : widget.chapter.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                      TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+                  style: TideText.caption(size: 12),
                 ),
               ],
             ),
           ),
-          // Bookmark toggle — Kotlin's primary reader top-bar action.
+          // Bookmark toggle — Kotlin's primary reader top-bar action. Lit
+          // when on, the way every other Tide control marks its state.
           IconButton(
             icon: Icon(
               _bookmarked ? Icons.bookmark : Icons.bookmark_border,
+              color: _bookmarked ? TideColors.accent : TideColors.text,
             ),
             tooltip: _bookmarked ? 'Remove bookmark' : 'Bookmark',
             onPressed: _toggleBookmark,
           ),
-          // Kotlin ReaderTopBar overflow: WebView / browser / share, only
-          // when the source yields an http(s) chapter URL.
           if (widget.chapterUrl != null)
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                final url = widget.chapterUrl!;
-                switch (value) {
-                  case 'webview':
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => WebViewScreen(
-                          url: url,
-                          title: widget.manga.title,
-                        ),
-                      ),
-                    );
-                  case 'browser':
-                    launchUrl(
-                      Uri.parse(url),
-                      mode: LaunchMode.externalApplication,
-                    );
-                  case 'share':
-                    ReaderImageActions.shareText(url);
-                }
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: 'webview',
-                  child: Text('Open in WebView'),
-                ),
-                PopupMenuItem(
-                  value: 'browser',
-                  child: Text('Open in browser'),
-                ),
-                PopupMenuItem(value: 'share', child: Text('Share')),
-              ],
+            IconButton(
+              icon: const Icon(Icons.more_vert, color: TideColors.text),
+              tooltip: 'More',
+              onPressed: () => _openOverflow(context),
             ),
         ],
       ),

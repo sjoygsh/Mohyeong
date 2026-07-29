@@ -1130,7 +1130,12 @@ class _MissingCountRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = count == 1 ? 'Missing 1 chapter' : 'Missing $count chapters';
-    final rule = Divider(color: Colors.white.withValues(alpha: 0.09));
+    // One of the two places in the app a real rule beats a label: the gap in
+    // a chapter list is the point, and the rules are what draw it.
+    const rule = SizedBox(
+      height: 1,
+      child: ColoredBox(color: TideColors.hairline),
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
       child: Row(
@@ -2060,7 +2065,9 @@ class _CoverImage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final placeholder = Theme.of(context).colorScheme.surfaceContainerHighest;
+    // A cover slot is part of the composition — an empty one is a faint pane
+    // of the same glass, not a grey Material surface (see [TideCover]).
+    const placeholder = Color(0x14FFFFFF);
     final resolved = ref.watch(coverCacheProvider).coverUrlFor(mangaId, url);
     if (resolved == null || resolved.isEmpty) {
       return Container(color: placeholder);
@@ -2329,7 +2336,6 @@ class _NotesPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return InkWell(
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
@@ -2343,28 +2349,25 @@ class _NotesPreview extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.edit_note,
-                    size: 18, color: theme.colorScheme.primary),
+                const Icon(Icons.edit_note,
+                    size: 18, color: TideColors.accent),
                 const SizedBox(width: 6),
-                Text(
-                  'Notes',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text('NOTES', style: TideText.kicker(color: TideColors.accent)),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
               manga.notes,
               maxLines: 4,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium,
+              style: TideText.body(),
             ),
             const Padding(
               padding: EdgeInsets.only(top: 8),
-              child: Divider(height: 1),
+              child: SizedBox(
+                height: 1,
+                child: ColoredBox(color: TideColors.hairline),
+              ),
             ),
           ],
         ),
@@ -2416,7 +2419,7 @@ class _DescriptionAndTagsState extends State<_DescriptionAndTags> {
                   overflow: _expanded
                       ? TextOverflow.visible
                       : TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium,
+                  style: TideText.body(),
                 ),
                 const SizedBox(height: 4),
                 Center(
@@ -2425,7 +2428,7 @@ class _DescriptionAndTagsState extends State<_DescriptionAndTags> {
                         ? Icons.keyboard_arrow_up
                         : Icons.keyboard_arrow_down,
                     size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    color: TideColors.textAt(0.45),
                   ),
                 ),
               ],
@@ -3168,14 +3171,10 @@ class _DownloadIndicator extends StatelessWidget {
       case DownloadState.downloading:
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              value: progress,
-              strokeWidth: 2,
-            ),
-          ),
+          // Determinate once the download reports a fraction, travelling
+          // until then — one ring either way, so a row doesn't change shape
+          // the moment the first byte lands.
+          child: TideSpinner(size: 18, value: progress),
         );
       case DownloadState.completed:
         return const Padding(
@@ -3185,7 +3184,7 @@ class _DownloadIndicator extends StatelessWidget {
       case DownloadState.failed:
         return const Padding(
           padding: EdgeInsets.symmetric(horizontal: 4),
-          child: Icon(Icons.error_outline, size: 18, color: Colors.redAccent),
+          child: Icon(Icons.error_outline, size: 18, color: TideColors.danger),
         );
       case DownloadState.deleted:
       // Whole-queue lifecycle events don't carry a chapterId — never

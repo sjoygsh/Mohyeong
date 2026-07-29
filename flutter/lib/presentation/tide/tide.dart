@@ -55,6 +55,20 @@ abstract final class TideColors {
   static const accentLight = Color(0xFFD2CEFD); // --color-accent-300
   static const accentDeep = Color(0xFF8D81D6);
 
+  /// Something went wrong, or is about to. A rose held at the accent's own
+  /// lightness so a failure reads as a different hue rather than as a
+  /// brighter, louder thing — Material's `error` red is the most saturated
+  /// colour any screen would carry, and on this ground it shouts.
+  ///
+  /// This is a *label* colour, not a fill: the same rule the accent follows.
+  static const danger = Color(0xFFEE8FA0);
+
+  /// The one-pixel edge, for the few places a real rule is the only option —
+  /// a swatch outline, or the flanking rules Mihon's missing-chapter row is
+  /// made of. Tide separates groups with a [TideSectionHeader] rather than a
+  /// divider, so reach for a label first and this second.
+  static const hairline = Color(0x24FFFFFF); // white @ 14%
+
   /// Text at [opacity] — the design expresses muted type as alpha over the
   /// one text colour rather than as separate greys.
   static Color textAt(double opacity) => text.withValues(alpha: opacity);
@@ -321,11 +335,32 @@ class TideEdge extends StatelessWidget {
 /// scheme's colour with its own easing — on a glass screen it is the most
 /// obviously borrowed thing on it. This is the same idea in the design's terms,
 /// and the same ring the chapter rows already use for progress.
+///
+/// Pass [value] and the arc stops travelling and simply fills, so a download
+/// with a known length reads on the same ring as work of unknown length —
+/// [TideProgressBar]'s circular twin, for a slot too small for a bar.
+///
+/// [color] exists for the reader, and only for the reader: page chrome sits on
+/// whichever background the reader is set to (which can be white), so there it
+/// takes the reader's own ink rather than the accent. Everywhere else the
+/// default is the right answer.
 class TideSpinner extends StatefulWidget {
-  const TideSpinner({super.key, this.size = 28, this.strokeWidth = 2});
+  const TideSpinner({
+    super.key,
+    this.size = 28,
+    this.strokeWidth = 2,
+    this.color,
+    this.value,
+  });
 
   final double size;
   final double strokeWidth;
+
+  /// Overrides the accent. Null everywhere except the reader.
+  final Color? color;
+
+  /// 0–1 for a known length; null for indeterminate work, which travels.
+  final double? value;
 
   @override
   State<TideSpinner> createState() => _TideSpinnerState();
@@ -336,7 +371,26 @@ class _TideSpinnerState extends State<TideSpinner>
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1100),
-  )..repeat();
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.value == null) _c.repeat();
+  }
+
+  @override
+  void didUpdateWidget(TideSpinner old) {
+    super.didUpdateWidget(old);
+    // A determinate ring has nothing to animate — don't hold a ticker (and a
+    // frame callback) open behind every download row in a chapter list.
+    if ((widget.value == null) == (old.value == null)) return;
+    if (widget.value == null) {
+      _c.repeat();
+    } else {
+      _c.stop();
+    }
+  }
 
   @override
   void dispose() {
@@ -346,6 +400,7 @@ class _TideSpinnerState extends State<TideSpinner>
 
   @override
   Widget build(BuildContext context) {
+    final color = widget.color ?? TideColors.accent;
     return SizedBox(
       width: widget.size,
       height: widget.size,
@@ -356,6 +411,8 @@ class _TideSpinnerState extends State<TideSpinner>
             painter: _SpinnerPainter(
               turn: _c.value,
               strokeWidth: widget.strokeWidth,
+              color: color,
+              value: widget.value,
             ),
           ),
         ),
@@ -365,10 +422,17 @@ class _TideSpinnerState extends State<TideSpinner>
 }
 
 class _SpinnerPainter extends CustomPainter {
-  const _SpinnerPainter({required this.turn, required this.strokeWidth});
+  const _SpinnerPainter({
+    required this.turn,
+    required this.strokeWidth,
+    required this.color,
+    required this.value,
+  });
 
   final double turn;
   final double strokeWidth;
+  final Color color;
+  final double? value;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -380,25 +444,31 @@ class _SpinnerPainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth
-        ..color = TideColors.accent.withValues(alpha: 0.16),
+        ..color = color.withValues(alpha: 0.16),
     );
+    final progress = value;
     canvas.drawArc(
       Rect.fromCircle(center: centre, radius: radius),
-      turn * 2 * math.pi - math.pi / 2,
-      // Just under a third of the ring: long enough to read as motion, short
-      // enough that the gap never closes into a plain circle.
-      2 * math.pi * 0.3,
+      // Determinate fills from twelve o'clock; indeterminate starts there and
+      // travels.
+      (progress == null ? turn * 2 * math.pi : 0) - math.pi / 2,
+      progress == null
+          // Just under a third of the ring: long enough to read as motion,
+          // short enough that the gap never closes into a plain circle.
+          ? 2 * math.pi * 0.3
+          : 2 * math.pi * progress.clamp(0.0, 1.0),
       false,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth
         ..strokeCap = StrokeCap.round
-        ..color = TideColors.accent,
+        ..color = color,
     );
   }
 
   @override
-  bool shouldRepaint(_SpinnerPainter old) => old.turn != turn;
+  bool shouldRepaint(_SpinnerPainter old) =>
+      old.turn != turn || old.value != value || old.color != color;
 }
 
 /// One drifting wash of colour behind the home screen. Sized by its parent —

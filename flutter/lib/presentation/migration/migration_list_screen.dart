@@ -394,7 +394,7 @@ class _ItemTile extends StatelessWidget {
       case _Status.notFound:
         trailing = Text(
           'No match',
-          style: TextStyle(color: Theme.of(context).colorScheme.error),
+          style: TideText.title(size: 13, color: TideColors.danger),
         );
       case _Status.found:
         trailing = Text('${item.targetChapterCount} ch');

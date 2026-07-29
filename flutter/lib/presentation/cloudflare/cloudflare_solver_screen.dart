@@ -179,21 +179,21 @@ class _CloudflareSolverScreenState
               ),
             ],
           ),
-          Expanded(child: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            color: Theme.of(context).colorScheme.surfaceContainerHigh,
-            padding: const EdgeInsets.all(8),
-            child: Text(
-              'Complete any challenge shown below. The page will close '
-              'automatically once the Cloudflare cookie is set.',
-              style: Theme.of(context).textTheme.bodySmall,
+          // The instruction is a note on the ground, not a tinted Material
+          // strip welded to the top of the web view.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: TideGlass(
+              radius: 14,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              child: Text(
+                'Complete any challenge shown below. The page will close '
+                'automatically once the Cloudflare cookie is set.',
+                style: TideText.caption(size: 12),
+              ),
             ),
           ),
           Expanded(child: WebViewWidget(controller: _controller)),
-        ],
-      ),),
         ],
       ),
     );

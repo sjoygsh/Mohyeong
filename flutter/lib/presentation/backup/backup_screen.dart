@@ -66,10 +66,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                 horizontal: 16,
                 vertical: 8,
               ),
-              child: Text(
-                _statusMessage!,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+              child: Text(_statusMessage!, style: TideText.body()),
             ),
         ],
     );
@@ -244,7 +241,7 @@ class _BackupIntervalTile extends ConsumerWidget {
             'Backups may contain sensitive data including any stored '
             'passwords; be careful if sharing.\n\n'
             '${_lastBackupText(lastBackup)}',
-            style: Theme.of(context).textTheme.bodySmall,
+            style: TideText.caption(size: 12),
           ),
         ),
       ],
