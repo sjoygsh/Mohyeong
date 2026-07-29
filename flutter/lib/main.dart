@@ -26,6 +26,7 @@ import 'presentation/theme/app_theme.dart';
 import 'presentation/home/home_screen.dart';
 import 'presentation/onboarding/onboarding_screen.dart';
 import 'presentation/security/auth_gate.dart';
+import 'presentation/tide/tide_wordmark.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -170,8 +171,13 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
       theme: amoled ? AppTheme.darkAmoled() : AppTheme.dark(),
       darkTheme: amoled ? AppTheme.darkAmoled() : AppTheme.dark(),
       themeMode: ThemeMode.dark,
-      home: const AuthGate(
-        child: OnboardingGate(child: HomeScreen()),
+      // The wordmark sits OUTSIDE the auth gate on purpose: the lock screen is
+      // the app already talking to you, and being asked to unlock before the
+      // app has said its own name reads backwards.
+      home: const TideSplashGate(
+        child: AuthGate(
+          child: OnboardingGate(child: HomeScreen()),
+        ),
       ),
       // Mount the shared hidden WebView (Cloudflare fingerprint fetch path)
       // full-size but BEHIND the app: a real viewport is needed for Cloudflare's

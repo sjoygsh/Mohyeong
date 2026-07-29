@@ -4,13 +4,12 @@
      frame — which is why the colour must match the app's ground exactly
      rather than approximately.
 
-     The launcher icon rather than a bespoke glyph, matching what the v31
-     system splash shows (see values-v31/styles.xml). -->
+     No icon layer. The launcher roundel used to be centred here, and a logo
+     dropped whole onto a flat panel was the one moment the app looked like
+     someone else's asset. The app introduces itself in Flutter now, by
+     writing its own name (TideSplashGate / TideWordmark), so everything the
+     platform draws beforehand should be nothing but the ground that word gets
+     written on. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/splash_background" />
-    <item
-        android:width="144dp"
-        android:height="144dp"
-        android:drawable="@mipmap/ic_launcher"
-        android:gravity="center" />
 </layer-list>

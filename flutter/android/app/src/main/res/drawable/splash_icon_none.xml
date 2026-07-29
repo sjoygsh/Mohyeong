@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A deliberately empty icon for the Android 12+ system splash.
+
+     The platform ALWAYS draws something in its icon slot: hand it nothing and
+     it falls back to the adaptive launcher icon. Since the app now writes its
+     own name on the way in, the roundel appearing first — then being replaced
+     by a word a third of a second later — was two introductions in a row.
+     A fully transparent drawable is the supported way to opt out; the
+     platform still sizes and masks it, which costs nothing when there are no
+     pixels to mask. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+</shape>
