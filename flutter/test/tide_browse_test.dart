@@ -101,9 +101,18 @@ void main() {
     expect(repo.checkedForUpdates, isTrue);
     expect(find.text('Install extension'), findsOneWidget);
     expect(find.text('INSTALLED'), findsOneWidget);
-    // Language, version and the site ride the row's caption.
-    expect(find.text('EN · v12 · asura.example'), findsOneWidget);
-    expect(find.text('ALL · v7 · mangadex.example'), findsOneWidget);
+    // Language and version are separate tags now, with the host as plain text
+    // beside them — one run of `EN · v12 · asura.example` read as a single
+    // grey string rather than as three independent facts.
+    expect(find.text('EN'), findsOneWidget);
+    expect(find.text('v12'), findsOneWidget);
+    expect(find.text('asura.example'), findsWidgets);
+    expect(find.text('ALL'), findsOneWidget);
+    expect(find.text('v7'), findsOneWidget);
+    expect(find.text('mangadex.example'), findsWidgets);
+    // Nothing is waiting, so the actionable section stays off the screen
+    // entirely rather than showing an empty header.
+    expect(find.text('UPDATE AVAILABLE'), findsNothing);
   });
 
   testWidgets('a source row names the site it reads from',

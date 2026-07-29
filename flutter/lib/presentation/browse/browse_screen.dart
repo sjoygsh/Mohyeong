@@ -521,6 +521,14 @@ class _ExtensionsViewState extends ConsumerState<_ExtensionsView> {
       builder: (context, snap) {
         if (!snap.hasData) return const _Spinner();
         final extensions = snap.data!;
+        // Anything with an update waiting is lifted into its own section at
+        // the top. Being `lit` in place was easy to miss in a list of
+        // twenty-five: the one thing on this screen you can act on should not
+        // need finding.
+        final pending =
+            extensions.where((e) => updatable.contains(e.id)).toList();
+        final settled =
+            extensions.where((e) => !updatable.contains(e.id)).toList();
         return ListView(
           padding: const EdgeInsets.only(bottom: tideBarInset),
           children: [
@@ -547,31 +555,69 @@ class _ExtensionsViewState extends ConsumerState<_ExtensionsView> {
                 ),
               )
             else ...[
+              if (pending.isNotEmpty) ...[
+                TideSectionHeader(
+                  label: 'Update available',
+                  trailing: '${pending.length}',
+                  padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
+                ),
+                _ExtensionGroup(
+                  extensions: pending,
+                  updatable: updatable,
+                  incognitoExtensions: incognitoExtensions,
+                  repo: repo,
+                ),
+              ],
               TideSectionHeader(
                 label: 'Installed',
-                trailing: '${extensions.length}',
+                trailing: '${settled.length}',
                 padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  children: [
-                    for (final (i, e) in extensions.indexed) ...[
-                      if (i > 0) const SizedBox(height: 8),
-                      _ExtensionRow(
-                        extension: e,
-                        hasUpdate: updatable.contains(e.id),
-                        incognito: incognitoExtensions.contains(e.id),
-                        repo: repo,
-                      ),
-                    ],
-                  ],
-                ),
+              _ExtensionGroup(
+                extensions: settled,
+                updatable: updatable,
+                incognitoExtensions: incognitoExtensions,
+                repo: repo,
               ),
             ],
           ],
         );
       },
+    );
+  }
+}
+
+/// A run of extension rows under one section header.
+class _ExtensionGroup extends StatelessWidget {
+  const _ExtensionGroup({
+    required this.extensions,
+    required this.updatable,
+    required this.incognitoExtensions,
+    required this.repo,
+  });
+
+  final List<InstalledExtension> extensions;
+  final Set<String> updatable;
+  final Set<String> incognitoExtensions;
+  final ExtensionRepository repo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          for (final (i, e) in extensions.indexed) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _ExtensionRow(
+              extension: e,
+              hasUpdate: updatable.contains(e.id),
+              incognito: incognitoExtensions.contains(e.id),
+              repo: repo,
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -596,8 +642,28 @@ class _ExtensionRow extends ConsumerWidget {
     return _LogoRow(
       seed: extension.id,
       title: extension.name,
-      subtitle: '${extension.lang.toUpperCase()} · v${extension.versionCode}'
-          '${hasUpdate ? ' · Update available' : host != null ? ' · $host' : ''}',
+      subtitle: '',
+      // Language and version are two facts, not one sentence, so they are two
+      // tags. The host stays plain text behind them: it identifies the row
+      // when the logo fails to resolve, but nobody scans a list for it.
+      subtitleChild: Row(
+        children: [
+          _MetaTag(extension.lang.toUpperCase()),
+          const SizedBox(width: 5),
+          _MetaTag('v${extension.versionCode}'),
+          if (host != null) ...[
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                host,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TideText.caption(size: 11, opacity: 0.36),
+              ),
+            ),
+          ],
+        ],
+      ),
       baseUrl: extension.baseUrl,
       userAgent: extension.userAgent,
       // A row with an update waiting is the one row on this screen worth
@@ -607,9 +673,11 @@ class _ExtensionRow extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _RowAction(
-            icon: incognito
-                ? Icons.no_encryption_gmailerrorred_outlined
-                : Icons.no_encryption_gmailerrorred_outlined,
+            // One icon, both states. This used to be a ternary whose two
+            // branches were the same constant — the `lit` flag was already
+            // carrying the state, and the conditional only looked like it
+            // meant something.
+            icon: Icons.no_encryption_gmailerrorred_outlined,
             lit: incognito,
             // Verbatim Mihon string pref_incognito_mode_extension_summary.
             onTap: () {
@@ -811,6 +879,7 @@ class _LogoRow extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.trailing,
+    this.subtitleChild,
     this.baseUrl,
     this.userAgent,
     this.onTap,
@@ -820,6 +889,12 @@ class _LogoRow extends StatelessWidget {
   final String seed;
   final String title;
   final String subtitle;
+
+  /// Replaces [subtitle] when a row has more to say than one line of text —
+  /// an extension carries a language, a version and sometimes an update, and
+  /// running those together as `EN · v12 · Update available` reads as one
+  /// grey string rather than three separate facts.
+  final Widget? subtitleChild;
 
   /// The site whose logo leads the row.
   final String? baseUrl;
@@ -861,21 +936,47 @@ class _LogoRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TideText.title(),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TideText.caption(
-                    opacity: lit ? 0.62 : 0.45,
-                  ).copyWith(color: lit ? TideColors.accent : null),
-                ),
+                const SizedBox(height: 3),
+                subtitleChild ??
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TideText.caption(
+                        opacity: lit ? 0.62 : 0.45,
+                      ).copyWith(color: lit ? TideColors.accent : null),
+                    ),
               ],
             ),
           ),
           const SizedBox(width: 6),
           trailing,
         ],
+      ),
+    );
+  }
+}
+
+/// One fact, boxed. Small enough to sit two or three to a line under a row's
+/// title without competing with it.
+class _MetaTag extends StatelessWidget {
+  const _MetaTag(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.055),
+        borderRadius: BorderRadius.circular(TideRadius.tag),
+        border: Border.all(color: TideColors.hairline),
+      ),
+      child: Text(
+        label,
+        style: TideText.caption(size: 10, opacity: 0.62)
+            .copyWith(letterSpacing: 0.6),
       ),
     );
   }
