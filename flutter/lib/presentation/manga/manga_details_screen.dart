@@ -625,7 +625,7 @@ class _DetailsActions extends StatelessWidget {
       width: 42,
       height: 42,
       child: TideGlass(
-        radius: 21,
+        radius: TideRadius.panel,
         tintTop: 0.09,
         tintBottom: 0.03,
         highlight: 0.16,
@@ -691,7 +691,7 @@ class _SelectionHeader extends StatelessWidget {
     return SizedBox(
       height: 42,
       child: TideGlass(
-        radius: 21,
+        radius: TideRadius.panel,
         blur: true,
         tintTop: 0.13,
         tintBottom: 0.05,
@@ -1263,7 +1263,7 @@ class _ChapterSelectionBar extends StatelessWidget {
     return SizedBox(
       height: 58,
       child: TideGlass(
-        radius: 29,
+        radius: TideRadius.sheet,
         blur: true,
         tintTop: 0.13,
         tintBottom: 0.05,
@@ -1321,7 +1321,7 @@ class _ChapterSelectionBar extends StatelessWidget {
               onTap: onDownload,
             ),
             _BarAction(
-              icon: Icons.delete_outline,
+              icon: Icons.delete_outlined,
               label: 'Delete',
               onTap: onDelete,
             ),
@@ -1384,7 +1384,7 @@ class _ContinueReadingFab extends StatelessWidget {
     return SizedBox(
       height: 60,
       child: TideGlass(
-        radius: 30,
+        radius: TideRadius.sheet,
         blur: true,
         tintTop: 0.14,
         tintBottom: 0.05,
@@ -1552,7 +1552,7 @@ class _DuplicateMangaDialog extends StatelessWidget {
           const SizedBox(height: 18),
           for (final d in shown) ...[
             TideGlass(
-              radius: 14,
+              radius: TideRadius.row,
               tintTop: 0.085,
               tintBottom: 0.03,
               highlight: 0.15,
@@ -1571,7 +1571,7 @@ class _DuplicateMangaDialog extends StatelessWidget {
               child: Row(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
+                    borderRadius: BorderRadius.circular(TideRadius.tag),
                     child: SizedBox(
                       width: 36,
                       height: 50,
@@ -1909,7 +1909,7 @@ class _CategorySelectorState extends State<_CategorySelector> {
                 final c = widget.categories[i];
                 final checked = _selected.contains(c.id);
                 return TideGlass(
-                  radius: 14,
+                  radius: TideRadius.row,
                   tintTop: checked ? 0.115 : 0.06,
                   tintBottom: checked ? 0.042 : 0.02,
                   highlight: checked ? 0.18 : 0.12,
@@ -2117,7 +2117,7 @@ class _StatusRow extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.only(right: 4),
               child: Icon(
-                Icons.warning_amber_rounded,
+                Icons.warning_amber_outlined,
                 size: 14,
                 color: Color(0xFFE8837F),
               ),
@@ -2239,7 +2239,7 @@ class _ActionButton extends StatelessWidget {
       child: SizedBox(
         height: 62,
         child: TideGlass(
-          radius: 16,
+          radius: TideRadius.pane,
           tintTop: _lit ? 0.13 : 0.065,
           tintBottom: _lit ? 0.05 : 0.022,
           highlight: _lit ? 0.20 : 0.13,
@@ -2350,7 +2350,7 @@ class _NotesPreview extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.edit_note,
+                const Icon(Icons.edit_note_outlined,
                     size: 18, color: TideColors.accent),
                 const SizedBox(width: 6),
                 Text('NOTES', style: TideText.kicker(color: TideColors.accent)),
@@ -2497,7 +2497,7 @@ String _statusLabel(int status) {
 IconData _statusIcon(int status) {
   switch (status) {
     case 1:
-      return Icons.schedule;
+      return Icons.schedule_outlined;
     case 2:
       return Icons.done_all;
     case 3:
@@ -2507,7 +2507,7 @@ IconData _statusIcon(int status) {
     case 5:
       return Icons.close;
     case 6:
-      return Icons.pause_circle_outline;
+      return Icons.pause_circle_outlined;
     default:
       return Icons.block_outlined;
   }
@@ -2830,7 +2830,7 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
     final selected = widget.isSelected;
 
     final tile = TideGlass(
-      radius: 16,
+      radius: TideRadius.pane,
       tintTop: selected ? 0.16 : (read ? 0.042 : 0.07),
       tintBottom: selected ? 0.05 : (read ? 0.016 : 0.024),
       highlight: selected ? 0.20 : (read ? 0.09 : 0.13),
@@ -3000,7 +3000,7 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
     return Container(
       decoration: BoxDecoration(
         color: TideColors.accent.withValues(alpha: 0.20),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TideRadius.pane),
         border: Border.all(
           color: TideColors.accent.withValues(alpha: 0.45),
         ),
@@ -3103,7 +3103,7 @@ Future<String?> showBookmarkNoteDialog(
             const SizedBox(height: 16),
             // Taller than a TideField: a note is a few lines, not a value.
             TideGlass(
-              radius: 18,
+              radius: TideRadius.panel,
               tintTop: 0.09,
               tintBottom: 0.03,
               highlight: 0.16,
@@ -3180,12 +3180,12 @@ class _DownloadIndicator extends StatelessWidget {
       case DownloadState.completed:
         return const Padding(
           padding: EdgeInsets.symmetric(horizontal: 4),
-          child: Icon(Icons.download_done, size: 18),
+          child: Icon(Icons.download_done_outlined, size: 18),
         );
       case DownloadState.failed:
         return const Padding(
           padding: EdgeInsets.symmetric(horizontal: 4),
-          child: Icon(Icons.error_outline, size: 18, color: TideColors.danger),
+          child: Icon(Icons.error_outlined, size: 18, color: TideColors.danger),
         );
       case DownloadState.deleted:
       // Whole-queue lifecycle events don't carry a chapterId — never

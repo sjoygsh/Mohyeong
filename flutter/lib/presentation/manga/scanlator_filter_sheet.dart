@@ -155,7 +155,7 @@ class _ScanlatorRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TideGlass(
-      radius: 14,
+      radius: TideRadius.row,
       tintTop: excluded ? 0.04 : 0.085,
       tintBottom: excluded ? 0.015 : 0.03,
       highlight: excluded ? 0.07 : 0.15,
@@ -173,7 +173,7 @@ class _ScanlatorRow extends StatelessWidget {
               color: excluded
                   ? Colors.transparent
                   : Colors.white.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(TideRadius.tag),
               border: Border.all(
                 color: Colors.white
                     .withValues(alpha: excluded ? 0.13 : 0.26),

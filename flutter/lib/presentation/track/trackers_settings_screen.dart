@@ -29,7 +29,7 @@ class TrackersSettingsScreen extends ConsumerWidget {
       title: 'Tracking',
       actions: [
         TideIconButton(
-          icon: Icons.help_outline,
+          icon: Icons.help_outlined,
           onTap: () => launchUrl(
             Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html#tracking'),
             mode: LaunchMode.externalApplication,

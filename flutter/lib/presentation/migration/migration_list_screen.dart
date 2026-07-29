@@ -408,7 +408,7 @@ class _ItemTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: TideGlass(
-        radius: 16,
+        radius: TideRadius.pane,
         onTap: item.status == _Status.searching ? null : onTap,
         padding: const EdgeInsets.fromLTRB(11, 11, 14, 11),
         child: Row(
@@ -417,7 +417,7 @@ class _ItemTile extends StatelessWidget {
               width: 44,
               height: 58,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(TideRadius.chip),
                 child: TideCover(manga: item.manga, cacheWidth: 360),
               ),
             ),
@@ -466,7 +466,7 @@ class _ProgressDialog extends StatelessWidget {
       backgroundColor: Colors.transparent,
       elevation: 0,
       child: TideGlass(
-        radius: 26,
+        radius: TideRadius.sheet,
         blur: true,
         tintTop: 0.13,
         tintBottom: 0.05,

@@ -355,7 +355,7 @@ class _StorageStepState extends ConsumerState<_StorageStep> {
         // The chosen folder is the state of this step, so it takes the lit
         // row rather than being buried in a paragraph.
         TideRow(
-          icon: chosen ? Icons.folder : Icons.folder_off_outlined,
+          icon: chosen ? Icons.folder_outlined : Icons.folder_off_outlined,
           title: chosen ? (_displayName ?? uri) : 'No folder yet',
           subtitle: chosen ? 'Tap to change' : 'Required to continue',
           lit: chosen,
@@ -470,7 +470,7 @@ class _PermissionRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TideGlass(
-        radius: 16,
+        radius: TideRadius.pane,
         tintTop: granted ? 0.125 : 0.06,
         tintBottom: granted ? 0.045 : 0.02,
         highlight: granted ? 0.19 : 0.12,

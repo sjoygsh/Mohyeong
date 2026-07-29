@@ -184,7 +184,7 @@ class _CloudflareSolverScreenState
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: TideGlass(
-              radius: 14,
+              radius: TideRadius.row,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
               child: Text(
                 'Complete any challenge shown below. The page will close '

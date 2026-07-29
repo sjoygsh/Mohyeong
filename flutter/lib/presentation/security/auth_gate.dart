@@ -175,7 +175,7 @@ class _AuthGateState extends ConsumerState<AuthGate>
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.lock_outline,
+                    child: const Icon(Icons.lock_outlined,
                         size: 30, color: TideColors.accent),
                   ),
                   const SizedBox(height: 26),

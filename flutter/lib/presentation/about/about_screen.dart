@@ -109,7 +109,7 @@ class AboutScreen extends ConsumerWidget {
                     ),
                     const SizedBox(width: 8),
                     Icon(
-                      Icons.copy_rounded,
+                      Icons.content_copy_outlined,
                       size: 14,
                       color: TideColors.textAt(0.3),
                     ),
@@ -183,13 +183,13 @@ class AboutScreen extends ConsumerWidget {
               SizedBox(width: 8),
               _LinkTile(
                 label: 'Help',
-                icon: Icons.help_outline,
+                icon: Icons.help_outlined,
                 url: _helpUrl,
               ),
               SizedBox(width: 8),
               _LinkTile(
                 label: 'GitHub',
-                icon: Icons.code,
+                icon: Icons.code_outlined,
                 url: _githubUrl,
               ),
             ],
@@ -260,7 +260,7 @@ class _LinkTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: TideGlass(
-        radius: 16,
+        radius: TideRadius.pane,
         padding: const EdgeInsets.symmetric(vertical: 16),
         onTap: () => launchUrl(
           Uri.parse(url),

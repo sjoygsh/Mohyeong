@@ -561,7 +561,7 @@ class _ConfigSwitch extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: TideGlass(
-        radius: 15,
+        radius: TideRadius.row,
         tintTop: value ? 0.115 : 0.06,
         tintBottom: value ? 0.042 : 0.02,
         highlight: value ? 0.18 : 0.12,
@@ -604,7 +604,7 @@ class _ContinueBar extends StatelessWidget {
     return SizedBox(
       height: 60,
       child: TideGlass(
-        radius: 30,
+        radius: TideRadius.sheet,
         blur: true,
         tintTop: 0.14,
         tintBottom: 0.05,

@@ -473,7 +473,7 @@ class _TotalStrip extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
       child: TideGlass(
-        radius: 18,
+        radius: TideRadius.panel,
         tintTop: 0.075,
         tintBottom: 0.026,
         highlight: 0.14,
@@ -605,7 +605,7 @@ class _EntryTile extends StatelessWidget {
     final e = row.entry;
     final stamp = _stamp(e.readAt, relative: relative, pattern: pattern);
     return TideGlass(
-      radius: 18,
+      radius: TideRadius.panel,
       onTap: () => onOpenChapter(e),
       padding: const EdgeInsets.fromLTRB(11, 11, 6, 11),
       child: Row(
@@ -619,7 +619,7 @@ class _EntryTile extends StatelessWidget {
               width: 44,
               height: 58,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(TideRadius.chip),
                 child: _HistoryCover(entry: e),
               ),
             ),
@@ -845,7 +845,7 @@ class _SearchField extends StatelessWidget {
     return SizedBox(
       height: 40,
       child: TideGlass(
-        radius: 20,
+        radius: TideRadius.panel,
         tintTop: 0.09,
         tintBottom: 0.03,
         highlight: 0.16,

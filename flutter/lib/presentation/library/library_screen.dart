@@ -712,7 +712,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       child: SizedBox(
         height: 42,
         child: TideGlass(
-          radius: 21,
+          radius: TideRadius.panel,
           tintTop: 0.09,
           tintBottom: 0.03,
           highlight: 0.16,
@@ -862,7 +862,7 @@ class _FilterButton extends StatelessWidget {
       width: 40,
       height: 40,
       child: TideGlass(
-        radius: 20,
+        radius: TideRadius.panel,
         tintTop: active ? 0.14 : 0.09,
         tintBottom: active ? 0.05 : 0.03,
         highlight: active ? 0.24 : 0.16,
@@ -893,7 +893,7 @@ class _OverflowButton extends StatelessWidget {
       width: 40,
       height: 40,
       child: TideGlass(
-        radius: 20,
+        radius: TideRadius.panel,
         tintTop: updating ? 0.14 : 0.09,
         tintBottom: updating ? 0.05 : 0.03,
         highlight: updating ? 0.24 : 0.16,
@@ -939,7 +939,7 @@ class _SelectionBar extends StatelessWidget {
     return SizedBox(
       height: 58,
       child: TideGlass(
-        radius: 29,
+        radius: TideRadius.sheet,
         blur: true,
         tintTop: 0.13,
         tintBottom: 0.05,
@@ -957,7 +957,7 @@ class _SelectionBar extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _BarAction(
-              icon: Icons.label_outline,
+              icon: Icons.label_outlined,
               label: 'Category',
               onTap: onCategory,
             ),
@@ -973,7 +973,7 @@ class _SelectionBar extends StatelessWidget {
               onTap: onDownload,
             ),
             _BarAction(
-              icon: Icons.delete_outline,
+              icon: Icons.delete_outlined,
               label: 'Remove',
               onTap: onRemove,
             ),
@@ -1470,7 +1470,7 @@ class _DownloadCountBadge extends ConsumerWidget {
     final count =
         counts?[DownloadRepository.encodeMangaKey(sourceId, mangaId)] ?? 0;
     if (count <= 0) return const SizedBox.shrink();
-    return _QuietBadge(text: '$count', icon: Icons.download_done_rounded);
+    return _QuietBadge(text: '$count', icon: Icons.download_done_outlined);
   }
 }
 
@@ -1527,7 +1527,7 @@ class _MangaCard extends ConsumerWidget {
 
     final cover = Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TideRadius.row),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.42),
@@ -1541,7 +1541,7 @@ class _MangaCard extends ConsumerWidget {
       // of being a photograph dropped onto it.
       child: TideEdge(
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(TideRadius.row),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -1630,7 +1630,7 @@ class _MangaCard extends ConsumerWidget {
     final lit = isSelected
         ? Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(TideRadius.row),
               border: Border.all(
                 color: TideColors.accent.withValues(alpha: 0.9),
                 width: 2,
@@ -1691,7 +1691,7 @@ class _MangaRow extends ConsumerWidget {
         (sourceLangs != null && !isLocal) ? sourceLangs[manga.source] : null;
 
     return TideGlass(
-      radius: 16,
+      radius: TideRadius.pane,
       tintTop: isSelected ? 0.16 : 0.075,
       tintBottom: isSelected ? 0.05 : 0.026,
       highlight: isSelected ? 0.20 : 0.14,
@@ -1708,7 +1708,7 @@ class _MangaRow extends ConsumerWidget {
               width: 44,
               height: 58,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(TideRadius.chip),
                 child: TideCover(manga: manga, cacheWidth: 180),
               ),
             ),
@@ -1789,7 +1789,7 @@ class _UnreadBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: TideColors.accent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(TideRadius.tag),
         boxShadow: [
           BoxShadow(
             color: TideColors.accent.withValues(alpha: 0.5),
@@ -1824,7 +1824,7 @@ class _QuietBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(TideRadius.tag),
         border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
       ),
       child: Row(
@@ -2245,7 +2245,7 @@ class _TriRow extends StatelessWidget {
     final (icon, word) = switch (state) {
       TriState.disabled => (Icons.check_box_outline_blank, 'Off'),
       TriState.enabledIs => (Icons.check_box, 'Include'),
-      TriState.enabledNot => (Icons.disabled_by_default, 'Exclude'),
+      TriState.enabledNot => (Icons.disabled_by_default_outlined, 'Exclude'),
     };
     final row = TideRow(
       icon: icon,
@@ -2457,7 +2457,7 @@ class _Toggle extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: TideRow(
-        icon: value ? Icons.visibility : Icons.visibility_off_outlined,
+        icon: value ? Icons.visibility_outlined : Icons.visibility_off_outlined,
         title: label,
         lit: value,
         onTap: () => onChanged(!value),

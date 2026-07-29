@@ -191,7 +191,7 @@ void main() {
     // other three was the app's loudest split personality.
     expect(find.byType(TideTabBar), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
-    expect(find.byIcon(Icons.home), findsOneWidget);
+    expect(find.byIcon(Icons.home_outlined), findsOneWidget);
     expect(find.byIcon(Icons.collections_bookmark_outlined), findsOneWidget);
     expect(find.byIcon(Icons.explore_outlined), findsOneWidget);
     expect(find.byIcon(Icons.more_horiz), findsOneWidget);

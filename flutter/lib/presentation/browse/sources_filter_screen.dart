@@ -128,7 +128,7 @@ class _Body extends ConsumerWidget {
                         padding: const EdgeInsets.only(left: 22),
                         child: TideRow(
                           icon: enabled
-                              ? Icons.check_circle
+                              ? Icons.check_circle_outlined
                               : Icons.circle_outlined,
                           title: ext.name,
                           subtitle:

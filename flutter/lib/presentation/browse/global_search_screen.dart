@@ -115,7 +115,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
             child: SizedBox(
               height: 42,
               child: TideGlass(
-                radius: 21,
+                radius: TideRadius.panel,
                 tintTop: 0.09,
                 tintBottom: 0.03,
                 highlight: 0.16,
@@ -461,7 +461,7 @@ class _ResultCard extends ConsumerWidget {
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TideRadius.row),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.42),
@@ -471,7 +471,7 @@ class _ResultCard extends ConsumerWidget {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TideRadius.row),
         child: Stack(
           fit: StackFit.expand,
           children: [

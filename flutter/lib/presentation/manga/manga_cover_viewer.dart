@@ -38,7 +38,7 @@ class MangaCoverViewer extends ConsumerWidget {
                   child: Center(
                     child: url == null || url.isEmpty
                         ? const Icon(
-                            Icons.menu_book,
+                            Icons.menu_book_outlined,
                             size: 96,
                             color: Colors.white54,
                           )
@@ -88,7 +88,7 @@ class _ActionsPill extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(TideRadius.sheet),
       ),
       child: child,
     );

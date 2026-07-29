@@ -36,7 +36,7 @@ class PrefSwitch extends ConsumerWidget {
     final row = Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: TideRow(
-        icon: value ? Icons.check_circle : Icons.circle_outlined,
+        icon: value ? Icons.check_circle_outlined : Icons.circle_outlined,
         title: title,
         subtitle: subtitle,
         lit: enabled && value,
@@ -139,7 +139,7 @@ class PrefSlider extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: TideGlass(
-        radius: 16,
+        radius: TideRadius.pane,
         tintTop: 0.075,
         tintBottom: 0.026,
         highlight: 0.14,
@@ -343,7 +343,7 @@ class PrefSwitchRaw extends StatelessWidget {
     final row = Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: TideRow(
-        icon: value ? Icons.check_circle : Icons.circle_outlined,
+        icon: value ? Icons.check_circle_outlined : Icons.circle_outlined,
         title: title,
         subtitle: subtitle,
         lit: enabled && value,
@@ -408,7 +408,7 @@ class PrefRowShell extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: TideGlass(
-        radius: 16,
+        radius: TideRadius.pane,
         tintTop: lit ? 0.13 : 0.075,
         tintBottom: lit ? 0.05 : 0.026,
         highlight: lit ? 0.20 : 0.14,

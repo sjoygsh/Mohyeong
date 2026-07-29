@@ -496,7 +496,7 @@ class _ValueSlider extends StatelessWidget {
     final row = Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: TideGlass(
-        radius: 16,
+        radius: TideRadius.pane,
         tintTop: 0.075,
         tintBottom: 0.026,
         highlight: 0.14,

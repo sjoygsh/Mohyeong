@@ -97,7 +97,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
           child: TideGlass(
-            radius: 22,
+            radius: TideRadius.panel,
             tintTop: 0.085,
             tintBottom: 0.03,
             highlight: 0.15,
@@ -441,7 +441,7 @@ class _Panel extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: TideGlass(
-        radius: 20,
+        radius: TideRadius.panel,
         tintTop: 0.085,
         tintBottom: 0.03,
         highlight: 0.15,

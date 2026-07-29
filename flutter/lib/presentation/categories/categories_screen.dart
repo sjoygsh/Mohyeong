@@ -323,7 +323,7 @@ class _CategoryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final nested = entry.depth > 0;
     return TideGlass(
-      radius: 16,
+      radius: TideRadius.pane,
       tintTop: nested ? 0.055 : 0.075,
       tintBottom: nested ? 0.02 : 0.026,
       highlight: nested ? 0.11 : 0.14,
@@ -364,7 +364,7 @@ class _CategoryRow extends StatelessWidget {
           ),
           _RowAction(icon: Icons.account_tree_outlined, onTap: onSetParent),
           _RowAction(icon: Icons.edit_outlined, onTap: onRename),
-          _RowAction(icon: Icons.delete_outline, onTap: onDelete),
+          _RowAction(icon: Icons.delete_outlined, onTap: onDelete),
         ],
       ),
     );
@@ -408,7 +408,7 @@ class _LiftedRow extends StatelessWidget {
           scale: 1 + 0.02 * t,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(TideRadius.pane),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.5 * t),
@@ -604,7 +604,7 @@ class _ParentOption extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(left: depth * 16.0),
       child: TideGlass(
-        radius: 14,
+        radius: TideRadius.row,
         tintTop: selected ? 0.13 : 0.06,
         tintBottom: selected ? 0.05 : 0.02,
         highlight: selected ? 0.20 : 0.12,
@@ -702,7 +702,7 @@ class _NameSheetState extends State<_NameSheet> {
           SizedBox(
             height: 44,
             child: TideGlass(
-              radius: 22,
+              radius: TideRadius.panel,
               tintTop: 0.09,
               tintBottom: 0.03,
               highlight: 0.16,

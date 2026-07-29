@@ -93,7 +93,7 @@ class _MangaNotesScreenState extends ConsumerState<MangaNotesScreen> {
             children: [
               Expanded(
                 child: TideGlass(
-                  radius: 18,
+                  radius: TideRadius.panel,
                   tintTop: 0.075,
                   tintBottom: 0.026,
                   highlight: 0.14,

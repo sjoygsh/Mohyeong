@@ -467,7 +467,7 @@ class _SearchListingState extends State<_SearchListing>
                 child: SizedBox(
                   height: 42,
                   child: TideGlass(
-                    radius: 21,
+                    radius: TideRadius.panel,
                     tintTop: 0.09,
                     tintBottom: 0.03,
                     highlight: 0.16,
@@ -580,7 +580,7 @@ class _SourceFilterSheetState extends State<_SourceFilterSheet> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
         child: TideGlass(
-          radius: 26,
+          radius: TideRadius.sheet,
           blur: true,
           tintTop: 0.13,
           tintBottom: 0.05,
@@ -640,7 +640,7 @@ class _SourceFilterSheetState extends State<_SourceFilterSheet> {
                     child: SizedBox(
                       height: 46,
                       child: TideGlass(
-                        radius: 23,
+                        radius: TideRadius.panel,
                         tintTop: 0.09,
                         tintBottom: 0.03,
                         highlight: 0.16,
@@ -671,7 +671,7 @@ class _SourceFilterSheetState extends State<_SourceFilterSheet> {
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: TideColors.accent,
-                          borderRadius: BorderRadius.circular(23),
+                          borderRadius: BorderRadius.circular(TideRadius.panel),
                           boxShadow: [
                             BoxShadow(
                               color: TideColors.accent.withValues(alpha: 0.45),
@@ -880,7 +880,7 @@ class _MangaCard extends ConsumerWidget {
 
     if (style == SourceDisplayMode.list) {
       return TideGlass(
-        radius: 16,
+        radius: TideRadius.pane,
         onTap: onTap,
         padding: const EdgeInsets.fromLTRB(11, 11, 14, 11),
         child: GestureDetector(
@@ -892,7 +892,7 @@ class _MangaCard extends ConsumerWidget {
                 width: 44,
                 height: 58,
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(TideRadius.chip),
                   child: coverImage,
                 ),
               ),
@@ -917,7 +917,7 @@ class _MangaCard extends ConsumerWidget {
 
     final coverStack = Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TideRadius.row),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.42),
@@ -927,7 +927,7 @@ class _MangaCard extends ConsumerWidget {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TideRadius.row),
         child: Stack(
           fit: StackFit.expand,
           children: [

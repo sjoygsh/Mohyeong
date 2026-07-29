@@ -52,7 +52,7 @@ class CategoryFilterTile extends ConsumerWidget {
     }
 
     return PrefRow(
-      icon: Icons.label_outline,
+      icon: Icons.label_outlined,
       title: title,
       subtitle: subtitle,
       onTap: categories.isEmpty
@@ -108,7 +108,7 @@ class CategoryTriStateTile extends ConsumerWidget {
     final categories =
         ref.watch(userCategoriesProvider).valueOrNull ?? const <Category>[];
     return PrefRow(
-      icon: Icons.label_outline,
+      icon: Icons.label_outlined,
       title: title,
       subtitle: categoriesLabel(categories, included, excluded),
       onTap: !(enabled && categories.isNotEmpty)

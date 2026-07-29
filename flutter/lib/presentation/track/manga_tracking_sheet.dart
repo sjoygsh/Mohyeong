@@ -127,7 +127,7 @@ class _TrackerRowState extends ConsumerState<_TrackerRow> {
     final track = widget.track;
     final bound = track != null;
     return TideGlass(
-      radius: 15,
+      radius: TideRadius.row,
       // A bound tracker is an ON state, so it takes the accent edge the rest
       // of the app gives anything that is live.
       tintTop: bound ? 0.125 : 0.06,
@@ -146,7 +146,7 @@ class _TrackerRowState extends ConsumerState<_TrackerRow> {
               color: bound
                   ? TideColors.accent.withValues(alpha: 0.16)
                   : Colors.white.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(11),
+              borderRadius: BorderRadius.circular(TideRadius.chip),
               border: Border.all(
                 color: bound
                     ? TideColors.accent.withValues(alpha: 0.32)
@@ -279,7 +279,7 @@ class _TrackerSearchSheetState extends State<_TrackerSearchSheet> {
             SizedBox(
               height: 44,
               child: TideGlass(
-                radius: 22,
+                radius: TideRadius.panel,
                 tintTop: 0.09,
                 tintBottom: 0.03,
                 highlight: 0.16,
@@ -353,7 +353,7 @@ class _TrackerSearchSheetState extends State<_TrackerSearchSheet> {
           if (r.totalChapters > 0) '${r.totalChapters} ch',
         ].join(' · ');
         return TideGlass(
-          radius: 14,
+          radius: TideRadius.row,
           tintTop: 0.085,
           tintBottom: 0.03,
           highlight: 0.15,

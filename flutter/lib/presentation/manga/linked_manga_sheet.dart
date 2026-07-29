@@ -126,7 +126,7 @@ class _LinkedRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TideGlass(
-      radius: 14,
+      radius: TideRadius.row,
       tintTop: 0.085,
       tintBottom: 0.03,
       highlight: 0.15,
@@ -135,7 +135,7 @@ class _LinkedRow extends StatelessWidget {
       child: Row(
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(TideRadius.tag),
             child: SizedBox(
               width: 38,
               height: 52,
@@ -222,7 +222,7 @@ class _PickFavoriteSheet extends ConsumerWidget {
                     itemBuilder: (_, i) {
                       final m = candidates[i];
                       return TideGlass(
-                        radius: 14,
+                        radius: TideRadius.row,
                         tintTop: 0.085,
                         tintBottom: 0.03,
                         highlight: 0.15,
@@ -232,7 +232,7 @@ class _PickFavoriteSheet extends ConsumerWidget {
                         child: Row(
                           children: [
                             ClipRRect(
-                              borderRadius: BorderRadius.circular(7),
+                              borderRadius: BorderRadius.circular(TideRadius.tag),
                               child: SizedBox(
                                 width: 34,
                                 height: 46,

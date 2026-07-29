@@ -870,7 +870,7 @@ class TideTag extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(TideRadius.pill),
         border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
       ),
       child: Text(
@@ -916,7 +916,7 @@ class TideChip extends StatelessWidget {
           color: selected
               ? TideColors.accent.withValues(alpha: 0.18)
               : Colors.white.withValues(alpha: 0.07),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(TideRadius.pill),
           border: Border.all(
             color: selected
                 ? TideColors.accent.withValues(alpha: 0.55)
@@ -952,7 +952,7 @@ class TideLibraryMark extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: TideColors.accent,
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(TideRadius.tag),
         boxShadow: [
           BoxShadow(
             color: TideColors.accent.withValues(alpha: 0.5),
@@ -961,7 +961,7 @@ class TideLibraryMark extends StatelessWidget {
         ],
       ),
       child: const Icon(
-        Icons.collections_bookmark,
+        Icons.collections_bookmark_outlined,
         size: 13,
         color: TideColors.ground,
       ),
@@ -982,7 +982,7 @@ class TideBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: TideColors.accent,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(TideRadius.pill),
       ),
       child: Text(
         label.toUpperCase(),
@@ -1120,7 +1120,7 @@ class TideRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TideGlass(
-      radius: 16,
+      radius: TideRadius.pane,
       tintTop: lit ? 0.13 : 0.075,
       tintBottom: lit ? 0.05 : 0.026,
       highlight: lit ? 0.20 : 0.14,
@@ -1141,7 +1141,7 @@ class TideRow extends StatelessWidget {
               color: lit
                   ? TideColors.accent.withValues(alpha: 0.16)
                   : Colors.white.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(11),
+              borderRadius: BorderRadius.circular(TideRadius.chip),
               border: Border.all(
                 color: lit
                     ? TideColors.accent.withValues(alpha: 0.32)
@@ -1231,7 +1231,7 @@ class TideTabBar extends StatelessWidget {
     return SizedBox(
       height: 58,
       child: TideGlass(
-        radius: 29,
+        radius: TideRadius.sheet,
         // The bar genuinely floats over scrolling covers, so there is
         // something behind it worth blurring.
         blur: true,
@@ -1362,7 +1362,7 @@ class TideSegmented extends StatelessWidget {
     return SizedBox(
       height: 42,
       child: TideGlass(
-        radius: 21,
+        radius: TideRadius.panel,
         tintTop: 0.075,
         tintBottom: 0.026,
         highlight: 0.14,
@@ -1384,7 +1384,7 @@ class TideSegmented extends StatelessWidget {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(TideRadius.panel),
                         border: Border.all(
                           color: TideColors.accent.withValues(alpha: 0.38),
                         ),
@@ -1466,7 +1466,7 @@ class TideSwitch extends StatelessWidget {
           color: value
               ? TideColors.accent
               : Colors.white.withValues(alpha: 0.09),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(TideRadius.pill),
           border: Border.all(
             color: value
                 ? TideColors.accent
@@ -2000,7 +2000,7 @@ class TideSheetPanel extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
           child: TideGlass(
-            radius: 26,
+            radius: TideRadius.sheet,
             // Genuinely floats over the screen it was called from, so the blur
             // has something to reveal.
             blur: true,
@@ -2050,7 +2050,7 @@ class TideButton extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: TideColors.accent,
-            borderRadius: BorderRadius.circular(23),
+            borderRadius: BorderRadius.circular(TideRadius.panel),
             boxShadow: [
               BoxShadow(
                 color: TideColors.accent.withValues(alpha: 0.45),
@@ -2069,7 +2069,7 @@ class TideButton extends StatelessWidget {
     return SizedBox(
       height: 46,
       child: TideGlass(
-        radius: 23,
+        radius: TideRadius.panel,
         tintTop: 0.09,
         tintBottom: 0.03,
         highlight: 0.16,
@@ -2127,7 +2127,7 @@ class TideField extends StatelessWidget {
     final field = SizedBox(
       height: 46,
       child: TideGlass(
-        radius: 23,
+        radius: TideRadius.panel,
         tintTop: 0.09,
         tintBottom: 0.03,
         highlight: 0.16,
@@ -2231,7 +2231,7 @@ class _TideInputSheetState extends State<TideInputSheet> {
           SizedBox(
             height: 44,
             child: TideGlass(
-              radius: 22,
+              radius: TideRadius.panel,
               tintTop: 0.09,
               tintBottom: 0.03,
               highlight: 0.16,
@@ -2345,7 +2345,7 @@ class _Option extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TideGlass(
-      radius: 14,
+      radius: TideRadius.row,
       tintTop: selected ? 0.13 : 0.06,
       tintBottom: selected ? 0.05 : 0.02,
       highlight: selected ? 0.20 : 0.12,
@@ -2404,7 +2404,7 @@ class _TideConfirmSheetState extends State<TideConfirmSheet> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
         child: TideGlass(
-          radius: 26,
+          radius: TideRadius.sheet,
           // Genuinely floats over the screen it was called from, so the blur
           // has something to reveal.
           blur: true,
@@ -2481,7 +2481,7 @@ class _SheetButton extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: TideColors.accent,
-            borderRadius: BorderRadius.circular(23),
+            borderRadius: BorderRadius.circular(TideRadius.panel),
             boxShadow: [
               BoxShadow(
                 color: TideColors.accent.withValues(alpha: 0.45),
@@ -2502,7 +2502,7 @@ class _SheetButton extends StatelessWidget {
     return SizedBox(
       height: 46,
       child: TideGlass(
-        radius: 23,
+        radius: TideRadius.panel,
         tintTop: 0.09,
         tintBottom: 0.03,
         highlight: 0.16,
@@ -2549,7 +2549,7 @@ class TideCheck extends StatelessWidget {
             height: 21,
             decoration: BoxDecoration(
               color: value ? TideColors.accent : Colors.white.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(TideRadius.tag),
               border: Border.all(
                 color: value
                     ? TideColors.accent
@@ -2670,7 +2670,7 @@ class TideEmpty extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: TideGlass(
-          radius: 26,
+          radius: TideRadius.sheet,
           padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 38),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -2886,7 +2886,7 @@ class _TideToastHostState extends State<_TideToastHost>
             ),
           ),
           child: TideGlass(
-            radius: 22,
+            radius: TideRadius.panel,
             // Genuinely over content, so the blur has something to reveal.
             blur: true,
             tintTop: 0.14,

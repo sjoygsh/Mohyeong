@@ -27,7 +27,7 @@ class DataStorageSettingsScreen extends StatelessWidget {
       title: 'Data and storage',
       actions: [
         TideIconButton(
-          icon: Icons.help_outline,
+          icon: Icons.help_outlined,
           onTap: () => launchUrl(
             Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html#storage'),
             mode: LaunchMode.externalApplication,
@@ -51,7 +51,7 @@ class DataStorageSettingsScreen extends StatelessWidget {
             ),
           ),
           PrefRow(
-            icon: Icons.sync,
+            icon: Icons.sync_outlined,
             title: 'Sync',
             subtitle: 'SyncYomi, WebDAV, Google Drive, or Dropbox',
             onTap: () => Navigator.of(context).push(

@@ -132,7 +132,7 @@ class _MigrationSearchScreenState
                   child: SizedBox(
                     height: 42,
                     child: TideGlass(
-                      radius: 21,
+                      radius: TideRadius.panel,
                       tintTop: 0.09,
                       tintBottom: 0.03,
                       highlight: 0.16,
@@ -384,7 +384,7 @@ class _ResultTile extends StatelessWidget {
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(TideRadius.row),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.42),
@@ -394,7 +394,7 @@ class _ResultTile extends StatelessWidget {
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(TideRadius.row),
                 child: Builder(
                   builder: (context) {
                     final url = manga.thumbnailUrl;

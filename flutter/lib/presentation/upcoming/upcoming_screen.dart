@@ -91,7 +91,7 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
                     title: 'Upcoming',
                     actions: [
                       TideIconButton(
-                        icon: Icons.help_outline,
+                        icon: Icons.help_outlined,
                         onTap: () => launchUrl(
                           Uri.parse(
                             'https://sjoygsh.github.io/Mohyeong/help.html',
@@ -229,7 +229,7 @@ class _MonthCalendar extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
       child: TideGlass(
-        radius: 22,
+        radius: TideRadius.panel,
         tintTop: 0.085,
         tintBottom: 0.03,
         highlight: 0.15,
@@ -426,7 +426,7 @@ class _UpcomingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TideGlass(
-      radius: 16,
+      radius: TideRadius.pane,
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => TideSeriesScreen(mangaId: manga.id),
@@ -439,7 +439,7 @@ class _UpcomingTile extends StatelessWidget {
             width: 44,
             height: 58,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(TideRadius.chip),
               child: TideCover(manga: manga, cacheWidth: 240),
             ),
           ),

@@ -1879,7 +1879,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                         MediaQuery.paddingOf(context).bottom + 12,
                       ),
                       child: TideGlass(
-                        radius: 26,
+                        radius: TideRadius.sheet,
                         blur: true,
                         tintTop: 0.13,
                         tintBottom: 0.045,
@@ -1942,7 +1942,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                     ),
                     decoration: BoxDecoration(
                       color: const Color(0xCC000000),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(TideRadius.panel),
                     ),
                     child: Text(
                       _overlayText,
@@ -2238,7 +2238,7 @@ class _PageActionButton extends StatelessWidget {
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TideRadius.pane),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
           child: Column(
@@ -2315,7 +2315,7 @@ class _ChapterNavigator extends StatelessWidget {
                     child: Container(
                       decoration: BoxDecoration(
                         color: barColor,
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(TideRadius.sheet),
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Directionality(
@@ -2541,7 +2541,7 @@ class _PageListState extends State<_PageList> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.error_outline,
+                  Icon(Icons.error_outlined,
                       color: widget.ink.withValues(alpha: 0.54), size: 64),
                   const SizedBox(height: 12),
                   Text(
@@ -2992,7 +2992,7 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
               height: 56,
               width: 280,
               child: TideGlass(
-                radius: 28,
+                radius: TideRadius.sheet,
                 blur: true,
                 tintTop: 0.12,
                 tintBottom: 0.04,
@@ -3098,7 +3098,7 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline,
+            Icon(Icons.error_outlined,
                 color: widget.textColor.withValues(alpha: 0.54), size: 64),
             const SizedBox(height: 12),
             Text(

@@ -180,7 +180,7 @@ class _IconToggleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TideGlass(
-      radius: 16,
+      radius: TideRadius.pane,
       tintTop: selected ? 0.13 : 0.06,
       tintBottom: selected ? 0.05 : 0.02,
       highlight: selected ? 0.20 : 0.12,
@@ -706,7 +706,7 @@ class _CheckRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 7),
       child: TideGlass(
-        radius: 14,
+        radius: TideRadius.row,
         tintTop: value ? 0.115 : 0.06,
         tintBottom: value ? 0.042 : 0.02,
         highlight: value ? 0.18 : 0.12,

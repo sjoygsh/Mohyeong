@@ -160,7 +160,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     const TideSectionHeader(label: 'App'),
                     _group([
                       TideRow(
-                        icon: Icons.storage,
+                        icon: Icons.storage_outlined,
                         title: 'Data and storage',
                         trailing: const TideChevron(),
                         onTap: () => _push(const DataStorageSettingsScreen()),
@@ -172,13 +172,13 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                         onTap: () => _push(const SettingsScreen()),
                       ),
                       TideRow(
-                        icon: Icons.info_outline,
+                        icon: Icons.info_outlined,
                         title: 'About',
                         trailing: const TideChevron(),
                         onTap: () => _push(const AboutScreen()),
                       ),
                       TideRow(
-                        icon: Icons.help_outline,
+                        icon: Icons.help_outlined,
                         title: 'Help',
                         trailing: Icon(
                           Icons.open_in_new,

@@ -146,13 +146,13 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
                     ),
                   if (repo.isPaused)
                     const _QueueBanner(
-                      icon: Icons.pause_circle_outline,
+                      icon: Icons.pause_circle_outlined,
                       text: 'Queue paused — the running chapter will finish, '
                           'but no further jobs will start.',
                     )
                   else if (repo.isWaitingForNetwork)
                     const _QueueBanner(
-                      icon: Icons.wifi_off,
+                      icon: Icons.wifi_off_outlined,
                       text: 'Waiting for an allowed network — downloads only '
                           'run over Wi-Fi while that setting is on.',
                     ),
@@ -358,7 +358,7 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     // that failed.
     final lit = item.current || item.errored;
     return TideGlass(
-      radius: 16,
+      radius: TideRadius.pane,
       tintTop: lit ? 0.13 : 0.06,
       tintBottom: lit ? 0.05 : 0.022,
       highlight: lit ? 0.20 : 0.12,
@@ -372,7 +372,7 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
               children: [
                 Icon(
                   item.errored
-                      ? Icons.error_outline
+                      ? Icons.error_outlined
                       : item.current
                           ? Icons.downloading
                           : Icons.hourglass_empty,
@@ -568,7 +568,7 @@ class _PauseBar extends StatelessWidget {
     return SizedBox(
       height: 60,
       child: TideGlass(
-        radius: 30,
+        radius: TideRadius.sheet,
         blur: true,
         tintTop: 0.14,
         tintBottom: 0.05,
@@ -645,7 +645,7 @@ class _QueueBanner extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: TideGlass(
-        radius: 16,
+        radius: TideRadius.pane,
         tintTop: 0.09,
         tintBottom: 0.03,
         highlight: 0.15,

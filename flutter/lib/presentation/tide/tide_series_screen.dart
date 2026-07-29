@@ -262,7 +262,7 @@ class _Stats extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: TideGlass(
-        radius: 20,
+        radius: TideRadius.panel,
         tintTop: 0.085,
         tintBottom: 0.03,
         highlight: 0.15,
@@ -467,7 +467,7 @@ class _ChapterRow extends StatelessWidget {
 
     if (highlighted) {
       return TideGlass(
-        radius: 16,
+        radius: TideRadius.pane,
         tintTop: 0.16,
         tintBottom: 0.05,
         highlight: 0.18,
@@ -484,7 +484,7 @@ class _ChapterRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: read ? 0.025 : 0.04),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(TideRadius.pane),
           border: Border.all(
             color: Colors.white.withValues(alpha: read ? 0.055 : 0.07),
           ),
@@ -522,7 +522,7 @@ class _ContinueBar extends StatelessWidget {
     return SizedBox(
       height: 60,
       child: TideGlass(
-        radius: 30,
+        radius: TideRadius.sheet,
         blur: true,
         tintTop: 0.14,
         tintBottom: 0.05,

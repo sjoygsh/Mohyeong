@@ -99,7 +99,7 @@ class SettingsScreen extends StatelessWidget {
                       destination: AdvancedSettingsScreen(),
                     ),
                     _Entry(
-                      icon: Icons.info_outline,
+                      icon: Icons.info_outlined,
                       title: 'About',
                       subtitle: 'Version and links',
                       destination: AboutScreen(),

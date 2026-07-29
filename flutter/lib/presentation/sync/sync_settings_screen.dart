@@ -146,7 +146,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               TideField(
                 controller: _usernameCtl,
                 label: 'Username',
-                icon: Icons.person_outline,
+                icon: Icons.person_outlined,
                 autocorrect: false,
               ),
             ),

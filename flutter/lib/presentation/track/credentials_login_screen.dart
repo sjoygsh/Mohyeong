@@ -109,7 +109,7 @@ class _CredentialsLoginScreenState extends State<CredentialsLoginScreen> {
                     TideField(
                       controller: _user,
                       label: widget.usernameLabel,
-                      icon: Icons.person_outline,
+                      icon: Icons.person_outlined,
                       autocorrect: false,
                       textInputAction: TextInputAction.next,
                     ),
@@ -117,7 +117,7 @@ class _CredentialsLoginScreenState extends State<CredentialsLoginScreen> {
                     TideField(
                       controller: _pass,
                       label: widget.passwordLabel,
-                      icon: Icons.lock_outline,
+                      icon: Icons.lock_outlined,
                       obscureText: _obscure,
                       textInputAction: TextInputAction.done,
                       onSubmitted: (_) => _submit(),

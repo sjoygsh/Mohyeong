@@ -186,7 +186,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
           // the way Kotlin scopes toolbar actions per tab.
           if (_view == 2) ...[
             TideIconButton(
-              icon: Icons.help_outline,
+              icon: Icons.help_outlined,
               onTap: () => launchUrl(
                 Uri.parse(BrowseScreen._migrationHelp),
                 mode: LaunchMode.externalApplication,
@@ -608,7 +608,7 @@ class _ExtensionRow extends ConsumerWidget {
         children: [
           _RowAction(
             icon: incognito
-                ? Icons.no_encryption_gmailerrorred
+                ? Icons.no_encryption_gmailerrorred_outlined
                 : Icons.no_encryption_gmailerrorred_outlined,
             lit: incognito,
             // Verbatim Mihon string pref_incognito_mode_extension_summary.
@@ -633,7 +633,7 @@ class _ExtensionRow extends ConsumerWidget {
               },
             ),
           _RowAction(
-            icon: Icons.delete_outline,
+            icon: Icons.delete_outlined,
             onTap: () async {
               await _confirmUninstall(context, repo, extension);
               clearExtensionUpdate(ref, extension.id);
@@ -834,7 +834,7 @@ class _LogoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TideGlass(
-      radius: 16,
+      radius: TideRadius.pane,
       tintTop: lit ? 0.13 : 0.075,
       tintBottom: lit ? 0.05 : 0.026,
       highlight: lit ? 0.20 : 0.14,

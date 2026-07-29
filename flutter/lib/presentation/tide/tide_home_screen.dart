@@ -706,7 +706,7 @@ class _RefreshButtonState extends State<_RefreshButton>
       width: 40,
       height: 40,
       child: TideGlass(
-        radius: 20,
+        radius: TideRadius.panel,
         tintTop: widget.updating ? 0.14 : 0.09,
         tintBottom: widget.updating ? 0.05 : 0.03,
         highlight: widget.updating ? 0.24 : 0.16,
@@ -775,7 +775,7 @@ class _TonightHeader extends StatelessWidget {
             lit: filtersActive,
             onTap: onFilter,
           ),
-          _HeaderAction(icon: Icons.calendar_month, onTap: onUpcoming),
+          _HeaderAction(icon: Icons.calendar_month_outlined, onTap: onUpcoming),
         ],
       ),
     );
@@ -827,7 +827,7 @@ class _UpdatesSearchField extends StatelessWidget {
       child: SizedBox(
         height: 40,
         child: TideGlass(
-          radius: 20,
+          radius: TideRadius.panel,
           tintTop: 0.09,
           tintBottom: 0.03,
           highlight: 0.16,
@@ -890,7 +890,7 @@ class _Hero extends StatelessWidget {
         child: Container(
           height: 404,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(TideRadius.sheet),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.55),
@@ -900,7 +900,7 @@ class _Hero extends StatelessWidget {
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(TideRadius.sheet),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -1009,7 +1009,7 @@ class _HeroDots extends StatelessWidget {
                     height: 4,
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(9),
+                      borderRadius: BorderRadius.circular(TideRadius.tag),
                     ),
                   ),
                 ],
@@ -1024,7 +1024,7 @@ class _HeroDots extends StatelessWidget {
                 height: 4,
                 decoration: BoxDecoration(
                   color: TideColors.accentLight,
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(TideRadius.tag),
                   boxShadow: [
                     BoxShadow(
                       color: TideColors.accent.withValues(alpha: 0.8),
@@ -1051,7 +1051,7 @@ class _ReadButton extends StatelessWidget {
     return SizedBox(
       height: 42,
       child: TideGlass(
-        radius: 21,
+        radius: TideRadius.panel,
         // Sits on the hero's own scrim, which is already a flat wash — see
         // TideIconButton for why that means no BackdropFilter.
         blur: false,
@@ -1141,7 +1141,7 @@ class _ContinueRail extends StatelessWidget {
                   Container(
                     height: 182,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(TideRadius.pane),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.45),
@@ -1151,7 +1151,7 @@ class _ContinueRail extends StatelessWidget {
                       ],
                     ),
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(TideRadius.pane),
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
@@ -1255,7 +1255,7 @@ class _UpdateTile extends StatelessWidget {
     ].join(' · ');
 
     return TideGlass(
-      radius: 18,
+      radius: TideRadius.panel,
       tintTop: selected ? 0.16 : (dim ? 0.05 : 0.075),
       tintBottom: selected ? 0.05 : (dim ? 0.02 : 0.026),
       highlight: selected ? 0.20 : (dim ? 0.10 : 0.13),
@@ -1277,7 +1277,7 @@ class _UpdateTile extends StatelessWidget {
                 width: 44,
                 height: 58,
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(TideRadius.chip),
                   child: Opacity(
                     opacity: dim ? 0.55 : 1,
                     child: _UpdateCover(update: update),
@@ -1426,7 +1426,7 @@ class _SelectionBar extends StatelessWidget {
     return SizedBox(
       height: 58,
       child: TideGlass(
-        radius: 29,
+        radius: TideRadius.sheet,
         blur: true,
         tintTop: 0.13,
         tintBottom: 0.05,
@@ -1586,7 +1586,7 @@ class _TriRow extends StatelessWidget {
     final (icon, state) = switch (value) {
       TriState.disabled => (Icons.check_box_outline_blank, 'Off'),
       TriState.enabledIs => (Icons.check_box, 'Include'),
-      TriState.enabledNot => (Icons.disabled_by_default, 'Exclude'),
+      TriState.enabledNot => (Icons.disabled_by_default_outlined, 'Exclude'),
     };
     return TideRow(
       icon: icon,

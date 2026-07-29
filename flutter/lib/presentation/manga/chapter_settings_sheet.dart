@@ -204,7 +204,7 @@ class _TriStateRow extends StatelessWidget {
     final (icon, state) = switch (value) {
       TriState.disabled => (Icons.check_box_outline_blank, 'Off'),
       TriState.enabledIs => (Icons.check_box, 'Include'),
-      TriState.enabledNot => (Icons.disabled_by_default, 'Exclude'),
+      TriState.enabledNot => (Icons.disabled_by_default_outlined, 'Exclude'),
     };
     final row = TideRow(
       icon: icon,

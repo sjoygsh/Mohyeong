@@ -228,7 +228,7 @@ class _CountPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(TideRadius.pill),
         border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
       ),
       child: Text(
@@ -458,7 +458,7 @@ class _MigrateSourceMangaListScreenState
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: TideGlass(
-                  radius: 16,
+                  radius: TideRadius.pane,
                   tintTop: selected ? 0.15 : 0.075,
                   tintBottom: selected ? 0.05 : 0.026,
                   highlight: selected ? 0.20 : 0.14,
@@ -484,7 +484,7 @@ class _MigrateSourceMangaListScreenState
                           width: 44,
                           height: 58,
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(TideRadius.chip),
                             child: TideCover(manga: m, cacheWidth: 240),
                           ),
                         ),
@@ -572,7 +572,7 @@ class _ContinueBar extends StatelessWidget {
     return SizedBox(
       height: 60,
       child: TideGlass(
-        radius: 30,
+        radius: TideRadius.sheet,
         blur: true,
         tintTop: 0.14,
         tintBottom: 0.05,
