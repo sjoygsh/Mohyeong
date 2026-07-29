@@ -37,8 +37,10 @@ class AdvancedSettingsScreen extends ConsumerWidget {
           const PrefSectionHeader('Logging'),
           PrefSwitch(
             title: 'Verbose logging',
-            subtitle: 'Log request and response headers to the system log '
-                '(reduces app performance). Applies on next restart.',
+            // TideRow clamps subtitles to one line, so this has to say the
+            // thing that stops the switch looking broken — it is sampled when
+            // the shared Dio is built — inside about thirty characters.
+            subtitle: 'Logs headers; needs a restart',
             provider: verboseLoggingProvider,
           ),
           const PrefSectionHeader('Networking'),
