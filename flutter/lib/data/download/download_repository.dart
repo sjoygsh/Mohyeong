@@ -13,6 +13,7 @@ import '../../domain/chapter/model/chapter.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/source/model/source_chapter.dart';
 import '../network/app_http_client.dart';
+import '../notification/notification_service.dart';
 import '../source/local_archive.dart';
 import '../source/extension_repository.dart';
 
@@ -509,6 +510,49 @@ class DownloadRepository {
     }
   }
 
+  /// Every notification this repository posts goes through one chain, and the
+  /// drain's closing cancel is the last link in it. Posting them loose would
+  /// let a page's `show` land *after* the queue-finished `cancel` and pin a
+  /// dead progress bar to the shade — the foreground library update hit
+  /// exactly that bug and serialises for the same reason.
+  Future<void> _notifChain = Future<void>.value();
+  DateTime _lastProgressNotif = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _queueNotification(Future<void> Function() op) {
+    // A notification failing (channel gone, permission revoked mid-run) must
+    // never take a download down with it.
+    _notifChain = _notifChain.then((_) => op()).catchError((_) {});
+  }
+
+  /// Mirrors Kotlin's `DownloadNotifier`: one ongoing notification tracking
+  /// whatever is downloading now. Throttled because several jobs each
+  /// finishing pages would otherwise post dozens of updates a second, and the
+  /// bar only has to look alive. The last page of a chapter always posts so
+  /// the count never rests on a stale number.
+  void _notifyProgress(_DownloadJob job, int done, int total) {
+    final now = DateTime.now();
+    if (done < total &&
+        now.difference(_lastProgressNotif) < const Duration(milliseconds: 500)) {
+      return;
+    }
+    _lastProgressNotif = now;
+    // Kotlin strips a leading series title off the chapter name before
+    // joining the two, so a source that names chapters "<Series> Chapter 12"
+    // doesn't produce "<Series> - <Series> Chapter 12".
+    final title = job.manga.title;
+    final chapterName = job.chapter.name.replaceFirst(
+      RegExp('^${RegExp.escape(title)}\\s*[-–]?\\s*', caseSensitive: false),
+      '',
+    );
+    _queueNotification(
+      () => NotificationService.instance.showDownloadProgress(
+        title: '$title · $chapterName',
+        downloaded: done,
+        total: total,
+      ),
+    );
+  }
+
   Future<void> _drain() async {
     if (_running || _paused) return;
     _running = true;
@@ -551,6 +595,11 @@ class DownloadRepository {
       }
     } finally {
       _running = false;
+      // Nothing left running: take the progress notification down. Queued as
+      // the final link so a page that posted just before this still loses.
+      _queueNotification(
+        NotificationService.instance.cancelDownloadProgress,
+      );
     }
   }
 
@@ -600,6 +649,7 @@ class DownloadRepository {
                 totalPages: pages.length,
               ),
             );
+            _notifyProgress(job, completed, pages.length);
           }).catchError((Object e, StackTrace s) {
             firstError ??= e;
             firstStack ??= s;
@@ -647,6 +697,11 @@ class DownloadRepository {
           error: e.toString(),
         ),
       );
+      // The job stays registered for retry, so the notification is the only
+      // sign a background download died — the queue screen may never be open.
+      _queueNotification(
+        () => NotificationService.instance.showDownloadError(chapter.name),
+      );
     } catch (e) {
       job.errored = true;
       _events.add(
@@ -655,6 +710,11 @@ class DownloadRepository {
           state: DownloadState.failed,
           error: e.toString(),
         ),
+      );
+      // The job stays registered for retry, so the notification is the only
+      // sign a background download died — the queue screen may never be open.
+      _queueNotification(
+        () => NotificationService.instance.showDownloadError(chapter.name),
       );
     }
   }

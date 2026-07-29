@@ -478,7 +478,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       // New chapters may have been auto-downloaded — let the memoised
       // downloaded/tracked filter sets re-resolve on the next build.
       _asyncSets = null;
-      if (mounted) setState(() => _updating = false);
+      // Clear the guard whether or not we are still mounted. This State
+      // survives in the shell's IndexedStack, so a refresh the user navigated
+      // away from used to leave `_updating` true forever — and `_refreshLibrary`
+      // opens with `if (_updating) return`, silently killing every later
+      // refresh from this tab for the rest of the process.
+      _updating = false;
+      if (mounted) setState(() {});
     }
   }
 
