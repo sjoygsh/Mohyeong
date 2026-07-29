@@ -58,33 +58,22 @@ final tideBarSuppressedProvider = StateProvider<bool>((_) => false);
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
-  static const _tabs = <_HomeTab>[
-    // Tab 0 is Tide: a reading queue rather than a shelf. The full library
-    // grid is still one tap away, from Tide's own glass bar.
-    _HomeTab(
-      label: 'Home',
-      icon: Icons.home_outlined,
-      selectedIcon: Icons.home,
-      child: TideHomeScreen(),
-    ),
-    _HomeTab(
-      label: 'History',
-      icon: Icons.history_outlined,
-      selectedIcon: Icons.history,
-      child: HistoryScreen(),
-    ),
-    _HomeTab(
-      label: 'Browse',
-      icon: Icons.explore_outlined,
-      selectedIcon: Icons.explore,
-      child: BrowseScreen(),
-    ),
-    _HomeTab(
-      label: 'More',
-      icon: Icons.more_horiz_outlined,
-      selectedIcon: Icons.more_horiz,
-      child: MoreScreen(),
-    ),
+  /// The four tab bodies, in bar order.
+  ///
+  /// These used to be `_HomeTab` records carrying a label, an icon and a
+  /// selectedIcon as well. Nothing had read any of those three since the
+  /// Material `NavigationBar` was deleted — `TideTabBar` owns the glyphs
+  /// (they are the app's own shapes, not generic destination icons, so they
+  /// belong with the bar). Only the child was ever used, so that is all this
+  /// is now.
+  ///
+  /// Tab 0 is Tide: a reading queue rather than a shelf. The full library
+  /// grid is still one tap away, from Tide's own glass bar.
+  static const _tabs = <Widget>[
+    TideHomeScreen(),
+    HistoryScreen(),
+    BrowseScreen(),
+    MoreScreen(),
   ];
 
   @override
@@ -210,9 +199,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   onNotification: _onScroll,
                   child: _FadeThroughIndexedStack(
                     index: index,
-                    children: HomeScreen._tabs
-                        .map((t) => t.child)
-                        .toList(growable: false),
+                    children: HomeScreen._tabs,
                   ),
                 ),
               ),
@@ -513,16 +500,3 @@ class _FadeThroughIndexedStackState extends State<_FadeThroughIndexedStack>
   }
 }
 
-class _HomeTab {
-  const _HomeTab({
-    required this.label,
-    required this.icon,
-    required this.selectedIcon,
-    required this.child,
-  });
-
-  final String label;
-  final IconData icon;
-  final IconData selectedIcon;
-  final Widget child;
-}

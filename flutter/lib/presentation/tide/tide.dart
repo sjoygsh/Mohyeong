@@ -128,6 +128,41 @@ abstract final class TideText {
       );
 }
 
+/// The corner scale.
+///
+/// The app had grown TWENTY-TWO distinct radii — 2, 4, 7, 8, 9, 10, 11, 14,
+/// 15, 16, 18, 20, 21, 22, 23, 24, 26, 28, 29, 30, 32, 999 — which is not a
+/// design, it is an accumulation. Nobody can tell 22 from 23, so the
+/// difference carried no meaning while still costing a decision every time
+/// something new got built.
+///
+/// Six steps and a pill, named for what they wrap rather than by t-shirt
+/// size, because the question at a call site is "what am I drawing" and not
+/// "how big should the corner be". The values are the modes of the clusters
+/// that were already there, so almost nothing moves more than a pixel or two.
+abstract final class TideRadius {
+  /// Tiny marks: badges, library ticks, the smallest tags.
+  static const tag = 8.0;
+
+  /// Chips, segments, small controls.
+  static const chip = 11.0;
+
+  /// List rows and tiles — the most common shape in the app.
+  static const row = 14.0;
+
+  /// A pane of glass. [TideGlass]'s own default.
+  static const pane = 16.0;
+
+  /// Cards, covers, and the larger inset panels.
+  static const panel = 21.0;
+
+  /// Sheets and full-width panels — the biggest curves in the app.
+  static const sheet = 28.0;
+
+  /// Fully round. Anything using this wants a capsule, not a corner.
+  static const pill = 999.0;
+}
+
 /// The one haptic in the app.
 ///
 /// Deliberately narrow: it fires when a control CHANGES STATE under your
@@ -1215,8 +1250,11 @@ class TideTabBar extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
+            // Outlined throughout. The bar had `Icons.home` filled next to
+            // four outlined peers — the single most-looked-at row in the app
+            // and it was the one that gave the family away.
             _TabIcon(
-              icon: Icons.home,
+              icon: Icons.home_outlined,
               active: activeTab == 0,
               onTap: () => onSelect(0),
             ),

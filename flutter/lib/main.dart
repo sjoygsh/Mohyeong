@@ -126,7 +126,6 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
   @override
   Widget build(BuildContext context) {
     final amoled = ref.watch(amoledProvider);
-    final seed = AppColorTheme.fromKey(ref.watch(appThemeProvider)).seed;
     // Keep the periodic task in sync with the preference.
     ref.listen<LibraryUpdateInterval>(
       libraryUpdatePreferenceProvider,
@@ -168,8 +167,8 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
       // same app with paler colours, it would be a different design. Handing
       // Material a light theme just made every screen the new UI has not
       // reached yet flash white, which is exactly the seam this removes.
-      theme: amoled ? AppTheme.darkAmoled(seed) : AppTheme.dark(seed),
-      darkTheme: amoled ? AppTheme.darkAmoled(seed) : AppTheme.dark(seed),
+      theme: amoled ? AppTheme.darkAmoled() : AppTheme.dark(),
+      darkTheme: amoled ? AppTheme.darkAmoled() : AppTheme.dark(),
       themeMode: ThemeMode.dark,
       home: const AuthGate(
         child: OnboardingGate(child: HomeScreen()),
