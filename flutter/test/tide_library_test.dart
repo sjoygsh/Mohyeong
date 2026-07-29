@@ -11,7 +11,6 @@ import 'package:mohyeong/domain/library/model/library_item.dart';
 import 'package:mohyeong/domain/manga/model/manga.dart';
 import 'package:mohyeong/domain/manga/model/update_strategy.dart';
 import 'package:mohyeong/presentation/library/library_screen.dart';
-import 'package:mohyeong/presentation/tide/tide.dart';
 
 /// The library's head is a masthead rather than a toolbar: the shelf's name at
 /// display size over a kicker stating what is on it, folding into the control

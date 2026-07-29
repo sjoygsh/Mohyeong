@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mohyeong/presentation/tide/tide.dart';
 import 'package:mohyeong/presentation/tide/tide_wordmark.dart';
 
 /// Counts how many times its State was created, so a remount is visible.
@@ -47,7 +46,11 @@ void main() {
     // Explicit pumps, never pumpAndSettle: the aurora behind the wordmark is a
     // continuous animation by design, so the frame queue never drains and
     // pumpAndSettle would simply time out.
-    for (var i = 0; i < 40; i++) {
+    // Comfortably past write + hold + fade (~2.5s). Explicit pumps, never
+    // pumpAndSettle: the aurora behind the wordmark is a continuous animation
+    // by design, so the frame queue never drains and pumpAndSettle would
+    // simply time out.
+    for (var i = 0; i < 55; i++) {
       await tester.pump(const Duration(milliseconds: 60));
     }
 

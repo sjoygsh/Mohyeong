@@ -214,9 +214,16 @@ class TideSplashGate extends StatefulWidget {
 
 class _TideSplashGateState extends State<TideSplashGate>
     with SingleTickerProviderStateMixin {
-  static const _write = Duration(milliseconds: 1050);
-  static const _hold = Duration(milliseconds: 220);
-  static const _fade = Duration(milliseconds: 360);
+  // The write is the cheap part; the HOLD is what makes it register. A debug
+  // engine takes ~3.8s to first paint, so by the time the word starts you have
+  // been looking at bare ground for four seconds — a word that then appears
+  // and leaves inside 1.6s is genuinely easy to miss, which is exactly what
+  // happened. Verified with a logged initState: the gate always fires, it was
+  // only ever too brief to notice. Release paints far sooner, so this is a
+  // ceiling rather than a typical wait.
+  static const _write = Duration(milliseconds: 1150);
+  static const _hold = Duration(milliseconds: 900);
+  static const _fade = Duration(milliseconds: 420);
 
   late final AnimationController _c;
   late final Animation<double> _stroke;
@@ -295,7 +302,7 @@ class _TideSplashGateState extends State<TideSplashGate>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TideWordmark(progress: _stroke.value),
+                  TideWordmark(progress: _stroke.value, size: 46),
                   const SizedBox(height: 10),
                   // The Korean the roundel used to carry, kept as a kicker so
                   // dropping the logo does not drop the identity with it.
