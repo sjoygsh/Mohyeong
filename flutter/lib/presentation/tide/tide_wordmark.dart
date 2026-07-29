@@ -206,34 +206,17 @@ class TideSplashGate extends StatefulWidget {
 
   /// Cold start only. A rebuild of the app root — a theme change, a hot
   /// reload — must not replay the introduction.
+  ///
+  /// There is deliberately no hook for deferring startup work until this
+  /// finishes. One existed briefly, because a debug build stalls the main
+  /// thread twice for ~1s during cold start and the animation visibly jumps.
+  /// An A/B on RELEASE settled it: three cold starts each, with the deferral
+  /// and without, and zero skipped frames either way. The stalls are debug JIT
+  /// compiling the widget tree, which no amount of scheduling removes, so the
+  /// hook was buying nothing in the shipping build and delaying the tab
+  /// pre-warm by the length of the intro. Measure in release before adding it
+  /// back.
   static bool _played = false;
-
-  /// False only while the introduction is actually on screen.
-  ///
-  /// Deliberately starts TRUE: a widget test that builds a screen without the
-  /// gate, or any launch where the intro is skipped, must not sit waiting for
-  /// something that will never happen.
-  static final ValueNotifier<bool> introDone = ValueNotifier<bool>(true);
-
-  /// Runs [action] once the introduction is off the screen, or immediately if
-  /// it is not playing.
-  ///
-  /// Startup work that would otherwise land mid-animation uses this. The
-  /// animation and the first-build storm were measured fighting on the same
-  /// isolate: two ~1s main-thread stalls (63 and 62 skipped frames) inside the
-  /// intro's own window, which is what made the word appear frozen.
-  static void whenIntroDone(VoidCallback action) {
-    if (introDone.value) {
-      action();
-      return;
-    }
-    void listener() {
-      if (!introDone.value) return;
-      introDone.removeListener(listener);
-      action();
-    }
-    introDone.addListener(listener);
-  }
 
   @override
   State<TideSplashGate> createState() => _TideSplashGateState();
@@ -276,11 +259,7 @@ class _TideSplashGateState extends State<TideSplashGate>
     );
     if (!_done) {
       TideSplashGate._played = true;
-      TideSplashGate.introDone.value = false;
       _c.forward().whenComplete(() {
-        // Released even if this State was disposed mid-animation — anything
-        // parked on `whenIntroDone` would otherwise never run at all.
-        TideSplashGate.introDone.value = true;
         if (mounted) setState(() => _done = true);
       });
     }

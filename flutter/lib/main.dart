@@ -86,13 +86,11 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
   void initState() {
     super.initState();
     // Deferred until after the first frame so the workmanager engine doesn't
-    // race the platform channel init — and then held until the launch wordmark
-    // is done. None of this is urgent: it registers background tasks and can
-    // kick off a whole network sync, and running it under the intro left the
-    // animation fighting that sync for the same isolate. `whenIntroDone` fires
-    // immediately when the intro isn't playing, so a warm start is unaffected.
+    // race the platform channel init. It is NOT additionally held back for the
+    // launch wordmark: that was tried and measured, and release cold starts
+    // skipped zero frames either way (see TideSplashGate).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      TideSplashGate.whenIntroDone(_startBackgroundWork);
+      _startBackgroundWork();
     });
   }
 

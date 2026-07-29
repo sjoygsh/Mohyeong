@@ -199,12 +199,10 @@ void main() {
     expect(find.text('Updates'), findsNothing);
 
     // The remaining tabs pre-warm during post-launch idle (600ms after the
-    // launch wordmark finishes, then one per ~250ms) so the first visit
-    // doesn't pay the screen's first build inside the tab fade. The wordmark
-    // is ~2.5s and the warm-up now waits for it — building four screens under
-    // the intro animation was measured stalling the main thread twice for
-    // ~1s — so pump past the intro AND the chain before expecting Browse.
-    for (var i = 0; i < 20; i++) {
+    // first frame, then one per ~250ms) so the first visit doesn't pay the
+    // screen's first build inside the tab fade. Pump past the warm-up chain
+    // and the never-visited Browse tab should already be built offstage.
+    for (var i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 300));
     }
     expect(find.text('Browse', skipOffstage: false), findsWidgets);
