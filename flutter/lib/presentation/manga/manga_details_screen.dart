@@ -415,6 +415,9 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                   // persistent actions over the content as glass, the way the
                   // series screen and the library do.
                   body: Stack(children: [
+                  const Positioned.fill(
+                    child: TideAurora(opacity: TideAuroraLevel.dense),
+                  ),
                   Positioned.fill(child: TideRefresh(
                     // Pull-to-refresh (Mihon parity): re-fetch details +
                     // chapters from the source, same action as the app-bar
@@ -1038,11 +1041,9 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
         ),
         if (sorted.isEmpty)
           const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(
-                child: Text('No chapters match the current filter.'),
-              ),
+            child: TideEmpty(
+              title: 'Nothing matches',
+              message: 'No chapters match the current filter.',
             ),
           )
         else

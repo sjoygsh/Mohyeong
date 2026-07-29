@@ -108,7 +108,10 @@ class _MigrationSearchScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TideColors.ground,
-      body: Column(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.dense)),
+          Column(
         children: [
           Padding(
             padding: EdgeInsets.fromLTRB(
@@ -193,6 +196,8 @@ class _MigrationSearchScreenState
                     onPickTarget: _onPickTarget,
                   ),
           ),
+        ],
+      ),
         ],
       ),
     );
@@ -337,7 +342,11 @@ class _ResultsArea extends StatelessWidget {
         }
         final results = snap.data!;
         if (results.isEmpty) {
-          return const Center(child: Text('No matches on this source.'));
+          return const TideEmpty(
+            title: 'No matches',
+            message:
+                'This source has nothing that looks like the same series.',
+          );
         }
         return GridView.builder(
           padding: const EdgeInsets.all(8),

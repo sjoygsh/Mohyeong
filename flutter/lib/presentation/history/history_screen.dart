@@ -185,13 +185,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 40, 16, tideBarInset),
                 child: entries.isEmpty
-                    ? const _EmptyCard(
+                    ? const TideEmpty(
                         title: 'Nothing read recently',
                         message: 'Chapters you read show up here, newest '
                             'first — with where each sitting started and how '
                             'long it ran.',
                       )
-                    : const _EmptyCard(
+                    : const TideEmpty(
                         title: 'No results found',
                         message: 'No series in your history matches that.',
                       ),
@@ -877,29 +877,6 @@ class _SearchField extends StatelessWidget {
               _QuietX(onTap: onClear!, size: 32),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _EmptyCard extends StatelessWidget {
-  const _EmptyCard({required this.title, required this.message});
-
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return TideGlass(
-      radius: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 44),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(title, textAlign: TextAlign.center, style: TideText.display(23)),
-          const SizedBox(height: 10),
-          Text(message, textAlign: TextAlign.center, style: TideText.body()),
-        ],
       ),
     );
   }

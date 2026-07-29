@@ -18,6 +18,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/cover/cover_cache.dart';
@@ -126,6 +127,18 @@ abstract final class TideText {
         color: TideColors.textAt(0.68),
       );
 }
+
+/// The one haptic in the app.
+///
+/// Deliberately narrow: it fires when a control CHANGES STATE under your
+/// thumb — a switch, a checkbox, a chip, a segment, a tab — and nowhere else.
+/// Not on navigation taps and not on buttons, because those already answer
+/// visually with a whole new screen or a pressed state, and an app that
+/// buzzes on every touch stops meaning anything by it.
+///
+/// `selectionClick` rather than an impact: these are selections, and it is
+/// the lightest tick the platform offers.
+void tideTick() => unawaited(HapticFeedback.selectionClick());
 
 /// Backdrop saturation boost, matching the design's `saturate(160–190%)` on
 /// every glass panel: what shows through a pane comes back richer, not just
@@ -284,15 +297,61 @@ class TideGlass extends StatelessWidget {
       );
     }
     if (onTap != null) {
-      // Transparent rather than opaque: the pane paints its own surface, and
-      // a Material ink splash would fight the glass.
-      pane = GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: pane,
-      );
+      // A Material ink splash would fight the glass, so this pane never had
+      // one — but it had nothing in its place either, and a tappable pane
+      // that does not move under your thumb is the difference between an app
+      // that feels built and one that feels drawn. There are ~370 of these.
+      pane = _TidePressable(onTap: onTap!, child: pane);
     }
     return pane;
+  }
+}
+
+/// Press feedback for glass: the pane settles a little into the ground and
+/// dims, then springs back.
+///
+/// Scale rather than a colour flash, because glass is a surface — the reading
+/// is "you pushed it", not "it lit up". The numbers are small on purpose: at
+/// row size anything past ~2% reads as the list flinching. Release runs
+/// slower than press (the design's own `tideEase`), so it settles rather than
+/// snapping, and a cancelled drag returns the same way.
+class _TidePressable extends StatefulWidget {
+  const _TidePressable({required this.onTap, required this.child});
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  State<_TidePressable> createState() => _TidePressableState();
+}
+
+class _TidePressableState extends State<_TidePressable> {
+  bool _down = false;
+
+  void _set(bool down) {
+    if (_down != down && mounted) setState(() => _down = down);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap,
+      onTapDown: (_) => _set(true),
+      onTapUp: (_) => _set(false),
+      onTapCancel: () => _set(false),
+      child: AnimatedScale(
+        scale: _down ? 0.982 : 1,
+        duration: Duration(milliseconds: _down ? 90 : 220),
+        curve: tideEase,
+        child: AnimatedOpacity(
+          opacity: _down ? 0.78 : 1,
+          duration: Duration(milliseconds: _down ? 90 : 220),
+          curve: tideEase,
+          child: widget.child,
+        ),
+      ),
+    );
   }
 }
 
@@ -810,7 +869,10 @@ class TideChip extends StatelessWidget {
         selected ? TideColors.accentLight : TideColors.textAt(0.75);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: onTap,
+      onTap: () {
+        tideTick();
+        onTap();
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         curve: tideEase,
@@ -1195,7 +1257,14 @@ class _TabIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: onTap,
+      onTap: onTap == null
+          ? null
+          : () {
+              // Not when you re-tap the tab you are on: that is the
+              // scroll-to-top / open-search gesture, not a destination change.
+              if (!active) tideTick();
+              onTap!();
+            },
       child: SizedBox(
         width: 52,
         height: 58,
@@ -1297,7 +1366,12 @@ class TideSegmented extends StatelessWidget {
                       Expanded(
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: () => onChanged(i),
+                          // Only when the segment actually moves — re-tapping
+                          // the one you are on changes nothing to feel.
+                          onTap: () {
+                            if (i != index) tideTick();
+                            onChanged(i);
+                          },
                           child: Center(
                             child: Text(
                               label,
@@ -1340,7 +1414,10 @@ class TideSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => onChanged(!value),
+      onTap: () {
+        tideTick();
+        onChanged(!value);
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         curve: tideEase,
@@ -2421,7 +2498,10 @@ class TideCheck extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => onChanged(!value),
+      onTap: () {
+        tideTick();
+        onChanged(!value);
+      },
       child: Row(
         children: [
           AnimatedContainer(
@@ -2517,6 +2597,74 @@ class _RingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RingPainter old) => old.progress != progress;
+}
+
+/// Nothing to show, said properly.
+///
+/// Four screens had grown their own private copy of this — `_EmptyPanel`,
+/// `_EmptyCard`, and two inline ones — at radius 26/28, display 21/23/24 and
+/// four different paddings, while two other screens said nothing but a bare
+/// unstyled `Text`. An empty screen is the one a new user sees FIRST and the
+/// one a search dead-ends on, so it is worth having exactly one of.
+///
+/// Type only, no illustration: Tide's ground and glass already carry the mood,
+/// and a spot drawing would be the only illustration in the app.
+///
+/// [action] is for the empty states that can offer a way out — an empty
+/// library should point at Browse rather than just stating the obvious.
+class TideEmpty extends StatelessWidget {
+  const TideEmpty({
+    super.key,
+    required this.title,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String title;
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: TideGlass(
+          radius: 26,
+          padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 38),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TideText.display(22),
+              ),
+              const SizedBox(height: 9),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TideText.body(),
+              ),
+              if (actionLabel != null && onAction != null) ...[
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: 190,
+                  child: TideButton(
+                    label: actionLabel!,
+                    primary: true,
+                    onTap: onAction!,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Tide's transient message — the app's answer to a SnackBar.

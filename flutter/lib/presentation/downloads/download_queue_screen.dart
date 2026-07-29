@@ -106,6 +106,9 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
       body: TideRise(
         child: Stack(
           children: [
+            const Positioned.fill(
+              child: TideAurora(opacity: TideAuroraLevel.dense),
+            ),
             Positioned.fill(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -155,7 +158,11 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
                     ),
                   Expanded(
                     child: items.isEmpty
-                        ? const _EmptyQueue()
+                        ? const TideEmpty(
+                            title: 'No downloads',
+                            message: 'Chapters you queue for offline reading '
+                                'appear here while they download.',
+                          )
                         : _list(repo, items),
                   ),
                 ],
@@ -654,32 +661,6 @@ class _QueueBanner extends StatelessWidget {
                 style: TideText.caption(size: 12.5, opacity: 0.6)
                     .copyWith(height: 1.45),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyQueue extends StatelessWidget {
-  const _EmptyQueue();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('No downloads', style: TideText.display(23)),
-            const SizedBox(height: 10),
-            Text(
-              'Chapters you queue for offline reading appear here while they '
-              'download.',
-              textAlign: TextAlign.center,
-              style: TideText.body(),
             ),
           ],
         ),

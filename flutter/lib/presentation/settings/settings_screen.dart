@@ -30,7 +30,16 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TideColors.ground,
-      body: TideRise(
+      // The settings HUB builds its own scaffold rather than PrefScaffold
+      // (it is a list of destinations, not of preferences), so it does not
+      // inherit the aurora the way its eleven sub-screens do — it has to
+      // carry its own, or it is the one flat screen in the branch.
+      body: Stack(
+        children: [
+          const Positioned.fill(
+            child: TideAurora(opacity: TideAuroraLevel.dense),
+          ),
+          TideRise(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -116,6 +125,8 @@ class SettingsScreen extends StatelessWidget {
             ),
           ],
         ),
+          ),
+        ],
       ),
     );
   }

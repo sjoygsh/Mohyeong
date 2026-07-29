@@ -288,7 +288,10 @@ class _MigrationListScreenState extends ConsumerState<MigrationListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TideColors.ground,
-      body: Column(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.dense)),
+          Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           TideHeader(
@@ -350,6 +353,8 @@ class _MigrationListScreenState extends ConsumerState<MigrationListScreen> {
                 ),
               ),
             ),
+        ],
+      ),
         ],
       ),
     );

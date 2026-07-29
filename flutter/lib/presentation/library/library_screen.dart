@@ -1998,49 +1998,10 @@ class _EmptyLibrary extends StatelessWidget {
   const _EmptyLibrary();
 
   @override
-  Widget build(BuildContext context) => const _EmptyPanel(
+  Widget build(BuildContext context) => const TideEmpty(
         title: 'Your library is empty',
         message: 'Find something on Browse and add it, and it will live here.',
       );
-}
-
-/// A state with nothing to show still gets a pane to show it on — a line of
-/// grey text floating in the middle of an empty screen is the shape a page
-/// takes when nobody designed what happens when it is empty.
-class _EmptyPanel extends StatelessWidget {
-  const _EmptyPanel({required this.title, required this.message});
-
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: TideGlass(
-          radius: 26,
-          padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: TideText.display(21),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: TideText.body(),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _EmptyMatches extends StatelessWidget {
@@ -2050,7 +2011,7 @@ class _EmptyMatches extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _EmptyPanel(
+    return TideEmpty(
       title: query.isEmpty ? 'Nothing here' : 'No matches',
       message: query.isEmpty
           ? 'This category has no entries, or your filters have narrowed them '
@@ -2067,7 +2028,7 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _EmptyPanel(
+    return TideEmpty(
       title: 'Could not open the library',
       message: '$error',
     );

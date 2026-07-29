@@ -229,6 +229,9 @@ class PrefScaffold extends StatelessWidget {
       body: TideRise(
         child: Stack(
           children: [
+            const Positioned.fill(
+              child: TideAurora(opacity: TideAuroraLevel.dense),
+            ),
             Positioned.fill(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,

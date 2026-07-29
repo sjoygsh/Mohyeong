@@ -218,6 +218,9 @@ class _MigrationConfigScreenState extends ConsumerState<MigrationConfigScreen> {
     return Scaffold(
       backgroundColor: TideColors.ground,
       body: Stack(children: [
+        const Positioned.fill(
+          child: TideAurora(opacity: TideAuroraLevel.dense),
+        ),
         Positioned.fill(child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

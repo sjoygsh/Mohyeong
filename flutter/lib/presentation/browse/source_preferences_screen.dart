@@ -119,7 +119,10 @@ class _SourcePreferencesScreenState
     final defs = _defs;
     return Scaffold(
       backgroundColor: TideColors.ground,
-      body: TideRise(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.dense)),
+          TideRise(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -127,6 +130,8 @@ class _SourcePreferencesScreenState
             Expanded(child: _body(defs)),
           ],
         ),
+      ),
+        ],
       ),
     );
   }

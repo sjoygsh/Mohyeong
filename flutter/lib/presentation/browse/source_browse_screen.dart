@@ -83,7 +83,10 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TideColors.ground,
-      body: FutureBuilder<MangaSource>(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.dense)),
+          FutureBuilder<MangaSource>(
         future: _sourceFuture,
         builder: (context, snap) {
           if (snap.hasError) {
@@ -97,6 +100,8 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen> {
           }
           return _body(snap.data!);
         },
+      ),
+        ],
       ),
     );
   }

@@ -70,7 +70,10 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
     final extRepo = ref.watch(extensionRepositoryProvider);
     return Scaffold(
       backgroundColor: TideColors.ground,
-      body: TideRise(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.dense)),
+          TideRise(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -86,6 +89,8 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
             ),
           ],
         ),
+      ),
+        ],
       ),
     );
   }

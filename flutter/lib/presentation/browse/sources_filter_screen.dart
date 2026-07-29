@@ -27,7 +27,10 @@ class SourcesFilterScreen extends ConsumerWidget {
     final prefsAsync = ref.watch(sourcePreferencesProvider);
     return Scaffold(
       backgroundColor: TideColors.ground,
-      body: TideRise(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.dense)),
+          TideRise(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -43,6 +46,8 @@ class SourcesFilterScreen extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+        ],
       ),
     );
   }

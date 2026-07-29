@@ -56,7 +56,10 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final asyncPrefs = ref.watch(syncPreferencesProvider);
     return Scaffold(
       backgroundColor: TideColors.ground,
-      body: TideRise(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.dense)),
+          TideRise(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -97,6 +100,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       )),
           ],
         ),
+      ),
+        ],
       ),
     );
   }

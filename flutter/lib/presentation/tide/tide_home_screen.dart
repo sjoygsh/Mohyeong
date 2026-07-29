@@ -1630,23 +1630,13 @@ class _EmptyLibraryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: TideGlass(
-        radius: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 48),
-        child: Column(
-          children: [
-            Text('Nothing here yet', style: TideText.display(24)),
-            const SizedBox(height: 10),
-            Text(
-              'Add a series to your library and it will surface here — what '
-              'you are part-way through, and what arrived overnight.',
-              textAlign: TextAlign.center,
-              style: TideText.body(),
-            ),
-          ],
-        ),
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16),
+      child: TideEmpty(
+        title: 'Nothing here yet',
+        message:
+            'Add a series to your library and it will surface here — what '
+            'you are part-way through, and what arrived overnight.',
       ),
     );
   }

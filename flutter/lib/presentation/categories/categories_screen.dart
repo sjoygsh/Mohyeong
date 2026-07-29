@@ -31,7 +31,10 @@ class CategoriesScreen extends ConsumerWidget {
     final repo = ref.watch(categoryRepositoryProvider);
     return Scaffold(
       backgroundColor: TideColors.ground,
-      body: TideRise(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.dense)),
+          TideRise(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -107,6 +110,8 @@ class CategoriesScreen extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+        ],
       ),
     );
   }

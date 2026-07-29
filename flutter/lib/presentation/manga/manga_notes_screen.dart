@@ -76,7 +76,10 @@ class _MangaNotesScreenState extends ConsumerState<MangaNotesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TideColors.ground,
-      body: SafeArea(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: TideAurora(opacity: TideAuroraLevel.dense)),
+          SafeArea(
         top: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -145,6 +148,8 @@ class _MangaNotesScreenState extends ConsumerState<MangaNotesScreen> {
             ),
           ],
         ),
+      ),
+        ],
       ),
     );
   }

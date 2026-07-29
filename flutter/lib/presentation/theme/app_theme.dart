@@ -86,14 +86,21 @@ class AppTheme {
     return _tide(base);
   }
 
-  /// Pull a dark theme onto Tide's ground so the screens that are still plain
-  /// Material — Updates, History, Browse, More, every settings page — sit on
-  /// the same near-black blue as Tide's own surfaces instead of Material's
-  /// default violet-grey, and pick up the blurple accent.
+  /// Pull the Material scheme onto Tide's ground and accent.
   ///
-  /// This is deliberately a theme pass rather than a rewrite: it makes the
-  /// whole app coherent in one place, and each screen can then be taken over
-  /// properly without the app looking like two apps in the meantime.
+  /// This began as scaffolding — a way to stop the not-yet-converted screens
+  /// (Updates, History, Browse, More, every settings page) reading as a second
+  /// app while they waited their turn. Every one of those is now Tide in its
+  /// own right and this theme no longer dresses any screen.
+  ///
+  /// It stays because Flutter itself still reaches for the scheme: the text
+  /// selection handles and cursor, the platform's own dialogs and menus, the
+  /// scrollbar, the WebView-adjacent Material bits, and anything a plugin
+  /// builds. Those should be blurple-on-ground rather than Material's default
+  /// violet-grey. Do not read the presence of a rich theme here as evidence
+  /// that some screen still depends on it — see the deleted snackBar /
+  /// listTile / progressIndicator blocks below for what "no longer built"
+  /// looks like.
   static ThemeData _tide(ThemeData base) {
     const ground = Color(0xFF0D1019);
     const raised = Color(0xFF161A26);
