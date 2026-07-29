@@ -6,6 +6,7 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'network_preferences.dart';
 import 'webview_cookie_sync.dart';
@@ -41,8 +42,11 @@ class AppHttpClient {
         ignoreExpires: false,
       ),
     );
-    // TODO(doh): the `doh_provider` pref (network_preferences.dart) is stored
-    // but not yet applied. To honour it, swap the plain `Dio()` for
+    // TODO(doh): no DoH resolver yet. The ids + label table survive in
+    // network_preferences.dart for this work, but there is deliberately no
+    // settings picker writing `doh_provider` until the resolver exists — a
+    // picker that stores a provider nobody dials tells the user their DNS is
+    // private when it is not. To honour it, swap the plain `Dio()` for
     // `Dio()..httpClientAdapter = IOHttpClientAdapter(createHttpClient: ...)`
     // here (the single shared Dio, so this one site covers the whole app).
     // The factory resolves the host via a DoH JSON GET (provider URL +
@@ -76,6 +80,26 @@ class AppHttpClient {
         },
       ),
     );
+    // Mirrors NetworkHelper: verbose logging attaches OkHttp's
+    // HttpLoggingInterceptor at Level.HEADERS, so headers are logged but
+    // bodies are not — page blobs would drown logcat. Read straight from
+    // SharedPreferences because this runs in `main()` before the Riverpod
+    // container exists, and because the download manager touches the same
+    // client from the background isolate. Like Kotlin's, the level is fixed
+    // for the life of the client: the toggle needs a restart, which its
+    // subtitle in Advanced settings says.
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(verboseLoggingKey) ?? false) {
+      dio.interceptors.add(
+        LogInterceptor(
+          request: true,
+          requestHeader: true,
+          responseHeader: true,
+          requestBody: false,
+          responseBody: false,
+        ),
+      );
+    }
     return AppHttpClient._(dio, jar);
   }
 }

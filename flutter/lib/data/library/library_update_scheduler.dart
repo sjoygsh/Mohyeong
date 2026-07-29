@@ -84,15 +84,11 @@ Future<bool> runLibraryUpdateTask() async {
         mangaCount: result.mangaWithNewChapters,
         chapterCount: result.newChapters,
       );
-      // Bump the Updates-tab badge count (Mihon LibraryUpdateJob:
-      // `newUpdatesCount.getAndSet { it + newChapters.size }`). Written
-      // straight to SharedPreferences — this isolate has no Riverpod; the
-      // UI provider picks the value up on next launch.
-      if (result.newChapters > 0) {
-        const key = '__APP_STATE_library_unseen_updates_count';
-        await prefs.reload();
-        await prefs.setInt(key, (prefs.getInt(key) ?? 0) + result.newChapters);
-      }
+      // Kotlin bumps an unseen-chapter counter here (LibraryUpdateJob:
+      // `newUpdatesCount.getAndSet { it + newChapters.size }`) to badge the
+      // Updates tab. This build has no Updates tab — it became the home
+      // feed's Tonight section — so there is nothing to badge, and the write
+      // (a `prefs.reload()` plus a set, every sweep) fed no reader.
       await notifications.showLibraryErrors(result.failures.length);
       // Auto-downloads (if enabled) were enqueued during the sweep; wait
       // for them to finish before tearing down the DB/HTTP client this

@@ -1,4 +1,5 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Central notification surface, ported from the Kotlin `Notifications` object
 /// plus the per-feature `*Notifier` classes. Channel ids and notification ids
@@ -62,6 +63,21 @@ class NotificationService {
   AndroidFlutterLocalNotificationsPlugin? get _android => _plugin
       .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
+
+  /// Whether the user asked for manga titles to be kept off the lock screen
+  /// (Settings → Security → "Hide notification content", Mihon key
+  /// `hide_notification_content`).
+  ///
+  /// Read by key rather than through `securityPreferences` because the
+  /// library sweep and the downloader both post from the workmanager isolate,
+  /// where there is no Riverpod container — the same reason
+  /// `LibraryUpdater` reads `auto_update_metadata` this way. Redaction
+  /// follows Kotlin's notifiers: the generic progress/summary line stays, only
+  /// the title is dropped, so a hidden notification is still informative.
+  Future<bool> _hideContent() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('hide_notification_content') ?? false;
+  }
 
   Future<void> _createChannels() async {
     final android = _android;
@@ -149,7 +165,7 @@ class NotificationService {
     await _plugin.show(
       idLibraryProgress,
       'Updating library',
-      title,
+      await _hideContent() ? null : title,
       NotificationDetails(
         android: AndroidNotificationDetails(
           channelLibraryProgress,
@@ -246,7 +262,10 @@ class NotificationService {
     await _plugin.show(
       idDownloadProgress,
       'Downloading',
-      title,
+      // Kotlin swaps the "<manga> - <chapter>" line for the bare page count
+      // when content is hidden rather than blanking it, so the notification
+      // still shows the download moving.
+      await _hideContent() ? '$downloaded/$total' : title,
       NotificationDetails(
         android: AndroidNotificationDetails(
           channelDownloaderProgress,
@@ -270,7 +289,7 @@ class NotificationService {
     await _plugin.show(
       idDownloadError,
       'Download error',
-      title,
+      await _hideContent() ? 'A chapter failed to download' : title,
       const NotificationDetails(
         android: AndroidNotificationDetails(
           channelDownloaderError,

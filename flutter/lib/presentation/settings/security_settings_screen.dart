@@ -50,6 +50,7 @@ class SecuritySettingsScreen extends ConsumerWidget {
           ),
           PrefSwitch(
             title: 'Hide notification content',
+            subtitle: 'Keep manga and chapter titles out of notifications',
             provider: hideNotificationContentProvider,
           ),
           PrefRow(

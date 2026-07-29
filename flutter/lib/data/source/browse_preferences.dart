@@ -3,9 +3,13 @@
 /// import carries across.
 ///
 /// [hideInLibraryItemsProvider] is wired into the per-source browse grid
-/// (already-favourited results are dropped). [showNsfwSourceProvider] is
-/// persisted + shown but stored-only — the installed-source model carries
-/// no NSFW flag yet, so there is nothing to filter on.
+/// (already-favourited results are dropped).
+///
+/// Mihon's `pref_show_nsfw_source` has no provider here: it gates on a flag
+/// read from each extension APK's manifest metadata, and the JS extension
+/// contract carries nothing equivalent. A backup still round-trips the key —
+/// the creator dumps every SharedPreferences entry and the restorer replays
+/// them by key, neither one working from a list of names.
 library;
 
 import '../preferences/typed_preferences.dart';
@@ -14,9 +18,6 @@ import '../preferences/typed_preferences.dart';
 /// result grids.
 final hideInLibraryItemsProvider =
     boolPref('pref_hide_in_library_items', false);
-
-/// Surface sources flagged NSFW. Stored-only — no source NSFW flag yet.
-final showNsfwSourceProvider = boolPref('pref_show_nsfw_source', true);
 
 /// How source browse / search results render. Mirrors Kotlin's
 /// `sourceDisplayMode` (`pref_display_mode_catalogue`), which serialises

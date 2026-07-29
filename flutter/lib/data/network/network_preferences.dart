@@ -54,8 +54,14 @@ const defaultUserAgent =
     'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
 
-/// Selected DoH provider id. Mihon key `doh_provider`, default -1 (off).
-final dohProviderProvider = intPref(dohProviderKey, dohOff);
+// No provider for `doh_provider`: nothing applies a DoH resolver yet (the
+// plan lives in the `TODO(doh)` in `AppHttpClient._create()`). The ids, the
+// [dohProviderLabels] table and [dohProviderKey] are kept for that work; what
+// is deliberately absent is the settings picker, which would otherwise let
+// someone choose a provider and believe their lookups were private.
 
-/// Verbose HTTP logging toggle. Mihon key `verbose_logging`.
+/// Verbose HTTP logging toggle. Mihon key `verbose_logging`. Read by
+/// `AppHttpClient._create()`, which attaches a header-level Dio
+/// `LogInterceptor` when set — mirroring Kotlin `NetworkHelper`. Sampled once
+/// as the shared client is built, so a change lands on the next restart.
 final verboseLoggingProvider = boolPref(verboseLoggingKey, false);

@@ -14,8 +14,10 @@
 /// [removeExcludeCategoriesProvider]) hooks the read-path via `SetReadStatus`,
 /// CBZ ([saveChaptersAsCbzProvider]) is applied at finalize time, and
 /// [autoDownloadWhileReadingProvider] drives the reader's download-ahead.
-/// Split-tall ([splitTallImagesProvider]) is persisted but its image-slicing
-/// pipeline is not yet wired.
+///
+/// Kotlin's split-tall toggle (`split_tall_images`) has no provider here: the
+/// image-slicing pipeline it depends on was never built, so it would only be a
+/// switch that wrote to storage.
 library;
 
 import '../preferences/typed_preferences.dart';
@@ -74,10 +76,6 @@ final removeExcludeCategoriesProvider =
 /// Archive each downloaded chapter as a single CBZ file instead of a
 /// folder of page images.
 final saveChaptersAsCbzProvider = boolPref('save_chapter_as_cbz', false);
-
-/// Split tall (webtoon-strip) images into screen-height slices on
-/// download for smoother paging.
-final splitTallImagesProvider = boolPref('split_tall_images', false);
 
 /// Number of chapters to keep downloaded ahead of the one currently being
 /// read. 0 disables download-ahead. Consumed by the reader, which enqueues

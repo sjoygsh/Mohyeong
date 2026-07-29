@@ -26,6 +26,11 @@ import 'pref_tiles.dart';
 ///     that Kotlin item is omitted rather than shipped as a dead switch.
 ///   * The keep-downloaded-removed item is omitted for the same reason —
 ///     its subsystem doesn't exist yet.
+///   * Kotlin's "Show unread count on Updates icon"
+///     (`pref_library_update_show_tab_badge`) is gone: it badged the Updates
+///     tab, and this build folded Updates into the home feed's Tonight
+///     section and deleted both the tab and the nav bar it sat in. With no
+///     icon to badge it could only have been a dead switch.
 ///   * The Display/Badges section is a Mohyeong addition: the Flutter build
 ///     has no separate library display bottom-sheet, so these live here.
 class LibrarySettingsScreen extends ConsumerWidget {
@@ -94,11 +99,6 @@ class LibrarySettingsScreen extends ConsumerWidget {
             provider: autoUpdateMetadataProvider,
           ),
           const _SmartUpdateSection(),
-          // Verbatim Mihon string pref_library_update_show_tab_badge.
-          PrefSwitch(
-            title: 'Show unread count on Updates icon',
-            provider: newShowUpdatesCountProvider,
-          ),
 
           // ── Behavior ────────────────────────────────────────────────
           const PrefSectionHeader('Behavior'),

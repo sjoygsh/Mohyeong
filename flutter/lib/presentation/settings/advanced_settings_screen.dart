@@ -14,33 +14,34 @@ import '../tide/tide.dart';
 import 'pref_tiles.dart';
 
 /// Advanced sub-screen. Mirror of the blind-executable parts of Mihon's
-/// `SettingsAdvancedScreen` — DoH provider selection, verbose logging, and
-/// data-maintenance actions (clear cookies, chapter cache, cover cache,
-/// non-library database entries). Mihon's battery/crash-dump/Shizuku groups
-/// need platform plumbing not yet built and are omitted.
+/// `SettingsAdvancedScreen` — verbose logging and data-maintenance actions
+/// (clear cookies, chapter cache, cover cache, non-library database entries).
+/// Mihon's battery/crash-dump/Shizuku groups need platform plumbing not yet
+/// built and are omitted.
+///
+/// Kotlin's DoH provider picker is omitted too, and that one is deliberate
+/// rather than pending: the resolver work is planned but unbuilt (see the
+/// `TODO(doh)` in `AppHttpClient._create()`, which keeps the plan and the
+/// provider table alive). Shipping the picker meanwhile would have let
+/// someone select Mullvad and believe their DNS was private while every
+/// lookup still went to the system resolver — a dead control that lies about
+/// privacy is worse than an absent one.
 class AdvancedSettingsScreen extends ConsumerWidget {
   const AdvancedSettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final doh = ref.watch(dohProviderProvider);
     return PrefScaffold(
       title: 'Advanced',
       children: [
           const PrefSectionHeader('Logging'),
           PrefSwitch(
             title: 'Verbose logging',
-            subtitle:
-                'Print verbose logs to system log (reduces app performance)',
+            subtitle: 'Log request and response headers to the system log '
+                '(reduces app performance). Applies on next restart.',
             provider: verboseLoggingProvider,
           ),
           const PrefSectionHeader('Networking'),
-          PrefRow(
-            icon: Icons.dns_outlined,
-            title: 'DNS over HTTPS (DoH)',
-            subtitle: dohProviderLabels[doh] ?? 'Disabled',
-            onTap: () => _pickDoh(context, ref),
-          ),
           PrefRow(
             icon: Icons.cookie_outlined,
             title: 'Clear cookies',
@@ -68,26 +69,6 @@ class AdvancedSettingsScreen extends ConsumerWidget {
           ),
         ],
     );
-  }
-
-  Future<void> _pickDoh(BuildContext context, WidgetRef ref) async {
-    final current = ref.read(dohProviderProvider);
-    final picked = await pickPref<int>(
-      context,
-      title: 'DNS over HTTPS (DoH)',
-      selected: current,
-      options: [
-        for (final e in dohProviderLabels.entries) (e.key, e.value),
-      ],
-    );
-    if (picked != null) {
-      await ref.read(dohProviderProvider.notifier).set(picked);
-      // TODO apply DoH to http client (rewiring Dio's resolver is out of
-      // scope here; Mihon applies this on the next app restart).
-      if (context.mounted) {
-        TideToast.of(context).show('Requires an app restart.');
-      }
-    }
   }
 
   Future<void> _clearCookies(BuildContext context, WidgetRef ref) async {

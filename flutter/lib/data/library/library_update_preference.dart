@@ -147,18 +147,13 @@ final autoClearChapterCacheProvider =
 /// user category id.
 final defaultCategoryProvider = intPref('default_category', -1);
 
-/// "Show unread count on Updates icon" (Settings → Library). Gates the
-/// bottom-nav Updates badge. Mihon `newShowUpdatesCount`,
-/// key `library_show_updates_count`, default true.
-final newShowUpdatesCountProvider =
-    boolPref('library_show_updates_count', true);
-
-/// Running count of chapters found by library updates that the user hasn't
-/// looked at yet — the number on the Updates nav badge. Incremented by the
-/// updater per new chapter, reset to 0 when the Updates tab is opened.
-/// Mihon `newUpdatesCount`, app-state key (excluded from backups).
-final newUpdatesCountProvider =
-    intPref('__APP_STATE_library_unseen_updates_count', 0);
+// Mihon's `newShowUpdatesCount` (`library_show_updates_count`) and
+// `newUpdatesCount` (`__APP_STATE_library_unseen_updates_count`) have no
+// providers here. Both existed to badge the Updates tab with a count of
+// unseen chapters; this build folded Updates into the home feed's Tonight
+// section and deleted the tab along with the nav bar that carried it. The
+// toggle had no icon left to gate and the counter had no reader — the sweep
+// was incrementing a number nothing displayed.
 
 /// Categories to include in the global library update (empty = all).
 final libraryUpdateCategoriesProvider =

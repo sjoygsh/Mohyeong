@@ -142,7 +142,9 @@ final flagSecureProvider = Provider<bool>((ref) {
 final lockAfterMinutesProvider = intPref(lockAppAfterKey, 0);
 
 /// Hide sensitive content in notifications. Mihon key
-/// `hide_notification_content`. Behavioral wiring (applying this when posting
-/// notifications) is handled where notifications are built.
+/// `hide_notification_content`. Applied by `NotificationService`, which reads
+/// the key directly (it posts from the background isolate) and drops the manga
+/// or chapter title from the library-update, download-progress and
+/// download-error notifications, keeping their generic line.
 final hideNotificationContentProvider =
     boolPref(hideNotificationContentKey, false);

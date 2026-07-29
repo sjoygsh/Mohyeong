@@ -36,11 +36,6 @@ class DownloadSettingsScreen extends ConsumerWidget {
             title: 'Save as CBZ archive',
             provider: saveChaptersAsCbzProvider,
           ),
-          PrefSwitch(
-            title: 'Split tall images',
-            subtitle: 'Improves reader performance',
-            provider: splitTallImagesProvider,
-          ),
           PrefSlider(
             title: 'Concurrent source downloads',
             value: sourceLimit,
