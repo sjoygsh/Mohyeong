@@ -165,18 +165,10 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
           },
         ),
         if (manga.isEmpty)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(28, 34, 28, 0),
-            child: Text(
-              'No upcoming releases. Library entries get a predicted '
-              'next-update date after a library update runs.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.62,
-                color: Color(0x8AE9E9ED),
-              ),
-            ),
+          const TideEmpty(
+            title: 'Nothing scheduled',
+            message: 'Library entries get a predicted next-update date '
+                'after a library update runs.',
           )
         else
           ...rows,

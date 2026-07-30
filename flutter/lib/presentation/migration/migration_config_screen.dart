@@ -195,11 +195,9 @@ class _MigrationConfigScreenState extends ConsumerState<MigrationConfigScreen> {
       );
       return;
     }
-    final config = await showModalBottomSheet<MigrationRunConfig>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _MigrationConfigSheet(prefs: _prefs!),
+    final config = await showTideSheet<MigrationRunConfig>(
+      context,
+      (_) => _MigrationConfigSheet(prefs: _prefs!),
     );
     if (config == null || !mounted) return;
     Navigator.of(context).pushReplacement(

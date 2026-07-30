@@ -291,10 +291,10 @@ class _SourcePickerBar extends StatelessWidget {
             itemBuilder: (_, i) {
               final ext = exts[i];
               return Center(
-                child: ChoiceChip(
+                child: TideChip(
+                  label: ext.name,
                   selected: ext.id == selected?.id,
-                  label: Text(ext.name),
-                  onSelected: (_) => onPicked(ext),
+                  onTap: () => onPicked(ext),
                 ),
               );
             },

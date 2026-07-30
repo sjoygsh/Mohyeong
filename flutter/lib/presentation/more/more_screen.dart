@@ -11,6 +11,7 @@
 // different"; a label says what they are.
 // ===========================================================================
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -197,21 +198,23 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                         ),
                       ],
                     ),
-                    // TEMP developer tool for authoring source extensions —
-                    // remove before release. Dumps a Cloudflare-cleared,
-                    // JS-rendered page's DOM to a file for off-device
-                    // inspection.
-                    const TideSectionHeader(label: 'Developer'),
-                    TideTileGrid(
-                      tiles: [
-                        TideTile(
-                          icon: Icons.bug_report_outlined,
-                          title: 'Dev: page source',
-                          hint: 'Dump rendered DOM',
-                          onTap: () => _push(const DevPageSourceScreen()),
-                        ),
-                      ],
-                    ),
+                    // Developer tool for authoring source extensions: dumps a
+                    // Cloudflare-cleared, JS-rendered page's DOM to a file for
+                    // off-device inspection. It harvests live cookies, so it
+                    // is compiled out of release builds rather than shipped.
+                    if (kDebugMode) ...[
+                      const TideSectionHeader(label: 'Developer'),
+                      TideTileGrid(
+                        tiles: [
+                          TideTile(
+                            icon: Icons.bug_report_outlined,
+                            title: 'Dev: page source',
+                            hint: 'Dump rendered DOM',
+                            onTap: () => _push(const DevPageSourceScreen()),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
