@@ -256,7 +256,13 @@ class _MigrationListScreenState extends ConsumerState<MigrationListScreen> {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _ProgressDialog(progress: progress),
+      // The back button would otherwise pop this dialog, and the two
+      // unconditional pops below would then walk two screens past where the
+      // user expected to land.
+      builder: (_) => PopScope(
+        canPop: false,
+        child: _ProgressDialog(progress: progress),
+      ),
     );
 
     for (final item in found) {

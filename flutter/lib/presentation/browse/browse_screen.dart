@@ -852,13 +852,21 @@ Future<void> _runInstall(
 }
 
 /// Blocking spinner over a dimmed screen, dismissed by its caller popping.
+///
+/// `barrierDismissible: false` only stops taps on the scrim — the system back
+/// button would still pop it, and the caller's later unconditional pop would
+/// then take the Browse screen down with it. [PopScope] closes that hole so
+/// the only way out stays the caller's own pop.
 void _showProgress(BuildContext context) {
   showDialog<void>(
     context: context,
     barrierDismissible: false,
     barrierColor: Colors.black.withValues(alpha: 0.62),
-    builder: (_) => const Center(
-      child: TideSpinner(),
+    builder: (_) => const PopScope(
+      canPop: false,
+      child: Center(
+        child: TideSpinner(),
+      ),
     ),
   );
 }
