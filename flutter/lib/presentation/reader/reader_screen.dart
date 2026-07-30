@@ -1219,8 +1219,30 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         setState(() => _totalPages = total);
+        _seedInitialPosition(total);
       });
     }
+  }
+
+  /// Announce the position the viewer OPENED at.
+  ///
+  /// Neither PageView nor the scroll controller reports the page it was
+  /// constructed at — `onPageChanged` only fires for positions the reader
+  /// *moves* to. Everything downstream of that callback therefore missed the
+  /// resumed page entirely: the indicator opened on "1" no matter where the
+  /// chapter resumed, and a chapter whose final page is also its opening one
+  /// (a single-page chapter, or one resumed at its end) never reached the
+  /// last slot, so it never auto-marked read, never pushed to the tracker,
+  /// and never triggered the download-ahead pass.
+  ///
+  /// Runs once the page count is known, which is the first moment either
+  /// answer can be computed.
+  void _seedInitialPosition(int total) {
+    if (total <= 0) return;
+    final resume = _chapter.lastPageRead.clamp(0, total - 1);
+    if (_currentPage.value == 0 && resume > 0) _currentPage.value = resume;
+    // Guarded inside — paging back and forth past the end can't re-fire it.
+    if (_currentPage.value >= total - 1) _onReachedLastSlot();
   }
 
   void _seekTo(int page, {bool animate = false}) {
