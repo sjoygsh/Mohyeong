@@ -136,7 +136,7 @@ class _MangaNotesScreenState extends ConsumerState<MangaNotesScreen> {
                     '$remaining',
                     style: TideText.caption(size: 12, opacity: 0.5).copyWith(
                       color: value.text.characters.length > _warnLength
-                          ? const Color(0xFFE8837F)
+                          ? TideColors.danger
                           : null,
                     ),
                   );

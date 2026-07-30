@@ -587,7 +587,7 @@ class _ContinueBar extends StatelessWidget {
               child: const Icon(
                 Icons.play_arrow_rounded,
                 size: 22,
-                color: Color(0xFF12141F),
+                color: TideColors.onAccent,
               ),
             ),
           ],

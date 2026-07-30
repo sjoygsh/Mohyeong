@@ -740,30 +740,23 @@ class _MangaGrid extends ConsumerWidget {
       // Local source empty state carries the guide link (Kotlin
       // BrowseSourceScreen's EmptyScreen action for LocalSource).
       if (sourceId == '0') {
-        return Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('No results found', style: TideText.body()),
-              const SizedBox(height: 14),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => launchUrl(
-                  Uri.parse(
-                    'https://sjoygsh.github.io/Mohyeong/help.html#local-source',
-                  ),
-                  mode: LaunchMode.externalApplication,
-                ),
-                child: Text(
-                  'Local source guide',
-                  style: TideText.title(size: 13.5, color: TideColors.accent),
-                ),
-              ),
-            ],
+        return TideEmpty(
+          title: 'No results found',
+          message: 'Point the local source at a folder of comics and they '
+              'show up here.',
+          actionLabel: 'Local source guide',
+          onAction: () => launchUrl(
+            Uri.parse(
+              'https://sjoygsh.github.io/Mohyeong/help.html#local-source',
+            ),
+            mode: LaunchMode.externalApplication,
           ),
         );
       }
-      return const _Note('No results found');
+      return const TideEmpty(
+        title: 'No results found',
+        message: 'Nothing in this catalogue matched.',
+      );
     }
     // Kotlin sourceDisplayMode: compact grid (title over cover),
     // comfortable grid (title under cover), or list rows.

@@ -63,9 +63,10 @@ class CategoriesScreen extends ConsumerWidget {
                       .where((c) => !c.isSystemCategory)
                       .toList(growable: false);
                   if (categories.isEmpty) {
-                    return const _Message(
-                      text: 'You have no categories. Add one to organise your '
-                          'library into shelves.',
+                    return const TideEmpty(
+                      title: 'No categories yet',
+                      message: 'Add one to organise your library into '
+                          'shelves.',
                     );
                   }
                   final flattened = _flattenHierarchy(categories);
@@ -737,7 +738,7 @@ class _NameSheetState extends State<_NameSheet> {
             Text(
               error,
               style: TideText.caption(size: 12, opacity: 0.9)
-                  .copyWith(color: const Color(0xFFE8837F)),
+                  .copyWith(color: TideColors.danger),
             ),
           ],
           const SizedBox(height: 20),

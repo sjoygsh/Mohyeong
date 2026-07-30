@@ -378,7 +378,7 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
                           : Icons.hourglass_empty,
                   size: 18,
                   color: item.errored
-                      ? const Color(0xFFE8837F)
+                      ? TideColors.danger
                       : item.current
                           ? TideColors.accent
                           : TideColors.textAt(0.4),
@@ -409,7 +409,7 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
                         Text(
                           'Download error',
                           style: TideText.caption(size: 11.5, opacity: 0.75)
-                              .copyWith(color: const Color(0xFFE8837F)),
+                              .copyWith(color: TideColors.danger),
                         ),
                       ] else if (item.current)
                         _ProgressLabel(
@@ -624,7 +624,7 @@ class _PauseBar extends StatelessWidget {
               child: Icon(
                 paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
                 size: 22,
-                color: const Color(0xFF12141F),
+                color: TideColors.onAccent,
               ),
             ),
           ],

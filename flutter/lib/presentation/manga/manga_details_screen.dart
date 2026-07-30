@@ -1447,7 +1447,7 @@ class _ContinueReadingFab extends StatelessWidget {
               child: const Icon(
                 Icons.play_arrow_rounded,
                 size: 22,
-                color: Color(0xFF12141F),
+                color: TideColors.onAccent,
               ),
             ),
           ],
@@ -2119,7 +2119,7 @@ class _StatusRow extends StatelessWidget {
               child: Icon(
                 Icons.warning_amber_outlined,
                 size: 14,
-                color: Color(0xFFE8837F),
+                color: TideColors.danger,
               ),
             ),
           Flexible(
@@ -3234,9 +3234,10 @@ class _NoChapters extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(28),
-      child: Center(child: Text('No chapters yet.', style: TideText.body())),
+    return const TideEmpty(
+      title: 'No chapters yet',
+      message: 'Nothing has been published here, or the source is not '
+          'listing any.',
     );
   }
 }

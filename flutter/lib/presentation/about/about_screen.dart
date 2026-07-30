@@ -177,7 +177,7 @@ class AboutScreen extends ConsumerWidget {
             children: [
               _LinkTile(
                 label: 'Website',
-                icon: Icons.language,
+                icon: Icons.language_outlined,
                 url: _websiteUrl,
               ),
               SizedBox(width: 8),

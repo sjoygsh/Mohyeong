@@ -56,6 +56,11 @@ abstract final class TideColors {
   static const accentLight = Color(0xFFD2CEFD); // --color-accent-300
   static const accentDeep = Color(0xFF8D81D6);
 
+  /// What sits ON a filled accent shape — the glyph inside a play or pause
+  /// disc. Darker than [ground] so it reads as ink on the accent rather than
+  /// as a hole punched through to the background behind it.
+  static const onAccent = Color(0xFF12141F);
+
   /// Something went wrong, or is about to. A rose held at the accent's own
   /// lightness so a failure reads as a different hue rather than as a
   /// brighter, louder thing — Material's `error` red is the most saturated

@@ -1884,7 +1884,7 @@ class _ResumeButton extends StatelessWidget {
         child: Icon(
           Icons.play_arrow_rounded,
           size: size * 0.62,
-          color: const Color(0xFF12141F),
+          color: TideColors.onAccent,
         ),
       ),
     );
