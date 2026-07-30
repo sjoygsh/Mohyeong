@@ -119,7 +119,7 @@ class SettingsScreen extends StatelessWidget {
                   TideSectionHeader(label: 'Data'),
                   _Group([
                     _Entry(
-                      icon: Icons.get_app,
+                      icon: Icons.download_outlined,
                       title: 'Downloads',
                       hint: 'Auto, removal',
                       destination: DownloadSettingsScreen(),

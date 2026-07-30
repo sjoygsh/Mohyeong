@@ -220,8 +220,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     });
   }
 
+  /// Keeps the memoised Downloaded filter set honest. Opened lazily by
+  /// [build], only once a downloaded/tracked filter is actually engaged —
+  /// resolving the download repository eagerly would drag in ExtensionRepository
+  /// on every library mount, including contexts that never initialise it.
+  StreamSubscription<DownloadEvent>? _downloadEvents;
+
   @override
   void dispose() {
+    _downloadEvents?.cancel();
     _searchController.dispose();
     _collapse.dispose();
     super.dispose();
@@ -782,6 +789,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             if (needsDownloaded || needsTracked) {
               final downloadRepo = ref.watch(downloadRepositoryProvider);
               final trackRepo = ref.watch(trackRepositoryProvider);
+              // This State outlives navigation — it sits in the shell's
+              // IndexedStack — so downloading or deleting a chapter over in
+              // Manga details and coming back left the grid filtering against
+              // the set resolved before you left. Only a full library refresh
+              // cleared it. Drop the memo whenever the downloads change.
+              _downloadEvents ??= downloadRepo.events.listen((_) {
+                if (!mounted || _asyncSets == null) return;
+                setState(() => _asyncSets = null);
+              });
               // Memoised: re-resolving on every rebuild walked the whole
               // downloads tree per frame while a downloaded/tracked filter
               // was active.

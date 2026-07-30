@@ -268,6 +268,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final mangaRepo = ref.read(mangaRepositoryProvider);
     final extRepo = ref.read(extensionRepositoryProvider);
     final downloadRepo = ref.read(downloadRepositoryProvider);
+    final loadingChapterId = _chapterId;
     final future = _loadReaderData(
       chapterRepo,
       mangaRepo,
@@ -283,10 +284,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // Mihon's "open == read" behaviour — unless the source is incognito, in
     // which case nothing is recorded for the whole session.
     future.then((data) {
-      if (data != null && mounted) {
-        _incognito = data.incognito;
-        if (!_incognito) _startHistorySession(data.chapter.id);
-      }
+      // Two jumps in quick succession can resolve out of order — a
+      // downloaded chapter answers off disk while a source-fetched one is
+      // still on the network. A load that is no longer the one on screen
+      // must not reopen the previous chapter's history session or apply its
+      // incognito answer to the chapter the reader actually moved to.
+      if (data == null || !mounted || _chapterId != loadingChapterId) return;
+      _incognito = data.incognito;
+      if (!_incognito) _startHistorySession(data.chapter.id);
     });
     setState(() {
       _data = future;
@@ -888,6 +893,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   /// uninstalled extension, or no producible web URL.
   Future<void> _resolveChapterUrl() async {
     final source = widget.data.source;
+    final resolvingFor = _chapter.id;
     String? url;
     if (source != null) {
       try {
@@ -898,7 +904,11 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
         url = null;
       }
     }
-    if (mounted && url != _chapterUrl) {
+    // The chapter can change while the source is answering; a stale resolve
+    // would leave the overflow menu's "Open in browser" / share pointing at
+    // the chapter the reader has already left.
+    if (!mounted || _chapter.id != resolvingFor) return;
+    if (url != _chapterUrl) {
       setState(() => _chapterUrl = url);
     }
   }

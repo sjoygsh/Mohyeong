@@ -190,8 +190,7 @@ class SyncPreferences {
   }
 }
 
-/// Loads SharedPreferences lazily — matches the pattern in
-/// `theme_preference.dart` and avoids forcing every entry point to
+/// Loads SharedPreferences lazily, which avoids forcing every entry point to
 /// pre-init the provider override.
 final syncPreferencesProvider = FutureProvider<SyncPreferences>((ref) async {
   final prefs = await SharedPreferences.getInstance();

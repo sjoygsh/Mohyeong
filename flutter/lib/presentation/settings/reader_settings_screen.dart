@@ -12,15 +12,8 @@ import 'pref_tiles.dart';
 /// Paged / Long strip / Navigation / Actions groups, with verbatim labels.
 ///
 /// Intentional divergences from Mihon:
-/// - "Show content in cutout area" omitted (cutout drawing not wired).
-/// - "Always show chapter transition" omitted — the Flutter reader has no
-///   chapter-transition page (it auto-advances), so the pref would be a
-///   dead switch.
-/// - "Zoom start position" and "Automatically zoom into wide images"
-///   omitted — the paged viewer doesn't consume them yet (deferred viewer
-///   work); exposing them would be dishonest.
-/// - "Navigate to pan", "Split tall images", dual-page split/invert, and
-///   "Hide menu on scroll" threshold omitted — features absent.
+/// - "Split tall images" and the "Hide menu on scroll" threshold omitted —
+///   features absent.
 /// - "Invert tap zones" is a single shared on/off (Mihon has a per-viewer
 ///   4-way list); it appears in both Paged and Long strip bound to the
 ///   same pref because it genuinely affects both viewers.
@@ -596,10 +589,12 @@ class _ColorFilterChannelSliders extends ConsumerWidget {
 
     return Column(
       children: [
-        _channel('Alpha', a, (v) => setChannel(24, v)),
+        // Same order as the in-reader sheet, which is the surface Mihon
+        // itself puts this on: colour first, then how much of it.
         _channel('Red', r, (v) => setChannel(16, v)),
         _channel('Green', g, (v) => setChannel(8, v)),
         _channel('Blue', b, (v) => setChannel(0, v)),
+        _channel('Alpha', a, (v) => setChannel(24, v)),
       ],
     );
   }

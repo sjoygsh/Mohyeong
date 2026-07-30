@@ -144,9 +144,8 @@ final readerDualPageInvertProvider =
 
 
 /// Auto-zoom wide (landscape) pages to fill the viewport on display.
-/// Default `true` to match Mihon's `landscape_zoom` (the auto-zoom
-/// behaviour itself is not yet applied in the paged viewer — the
-/// InteractiveViewer permits manual zoom regardless).
+/// Default `true` to match Mihon's `landscape_zoom`. Applied by the paged
+/// viewer's `_maybeApplyInitialZoom`; manual zoom still works either way.
 final readerLandscapeZoomProvider = boolPref('landscape_zoom', true);
 
 /// Rotate a wide (double-spread) page 90° so it fills the portrait screen

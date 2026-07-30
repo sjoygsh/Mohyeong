@@ -138,7 +138,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     TideTileGrid(
                       tiles: [
                         TideTile(
-                          icon: Icons.get_app,
+                          icon: Icons.download_outlined,
                           title: 'Download queue',
                           hint: 'In progress, paused',
                           // The one destination here with live state behind it:
@@ -154,7 +154,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                           onTap: () => _push(const CategoriesScreen()),
                         ),
                         TideTile(
-                          icon: Icons.query_stats,
+                          icon: Icons.query_stats_outlined,
                           title: 'Statistics',
                           hint: 'Time read, totals',
                           onTap: () => _push(const StatsScreen()),

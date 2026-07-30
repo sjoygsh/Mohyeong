@@ -361,6 +361,13 @@ class DownloadRepository {
     int mangaId,
     int chapterId,
   ) async {
+    // Delete is offered for a chapter in any state, including one being
+    // written right now. Left running, that job keeps writing pages into a
+    // directory that no longer exists, and the FileSystemException it dies
+    // of is not a cancel — so it registers as a retryable "errored" queue
+    // entry for a chapter the user just deleted. Stop it first; its cancel
+    // branch is idempotent about the directory already being gone.
+    cancel(chapterId);
     final dir = await _chapterDir(sourceId, mangaId, chapterId);
     if (await dir.exists()) {
       await dir.delete(recursive: true);
@@ -380,6 +387,16 @@ class DownloadRepository {
     final mangaDir = Directory(
       p.join(root.path, sourceId.toString(), mangaId.toString()),
     );
+    // Same reasoning as deleteDownload, for every job belonging to this
+    // manga — queued ones included, since they would otherwise start writing
+    // into the tree moments after it was removed.
+    final doomed = _byChapter.values
+        .where((j) => j.manga.id == mangaId && j.manga.source == sourceId)
+        .map((j) => j.chapter.id)
+        .toList();
+    for (final id in doomed) {
+      cancel(id);
+    }
     if (!await mangaDir.exists()) return 0;
     var count = 0;
     await for (final entity in mangaDir.list()) {
