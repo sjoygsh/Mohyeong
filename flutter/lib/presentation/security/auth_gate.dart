@@ -107,6 +107,10 @@ class _AuthGateState extends ConsumerState<AuthGate>
     final pausedAt = _pausedAt;
     if (pausedAt == null) return false;
     final graceMinutes = ref.read(lockAfterMinutesProvider);
+    // Mihon's sentinel: -1 is "never re-lock on idle". Without this the
+    // negative Duration compares as already-elapsed, so "Never" re-locked
+    // the instant the app was backgrounded — the exact opposite of itself.
+    if (graceMinutes < 0) return false;
     final elapsed = DateTime.now().difference(pausedAt);
     return elapsed >= Duration(minutes: graceMinutes);
   }
