@@ -133,21 +133,4 @@ class AppTheme {
     );
   }
 
-  /// Pure-black dark variant for OLED screens. Same accent as [dark], but
-  /// surfaces/background collapse to black so dark pixels draw no power.
-  /// Selected when the AMOLED pref is on — the one appearance switch in the
-  /// app that something actually reads.
-  static ThemeData darkAmoled() {
-    final base = dark();
-    return base.copyWith(
-      scaffoldBackgroundColor: Colors.black,
-      canvasColor: Colors.black,
-      colorScheme: base.colorScheme.copyWith(
-        surface: Colors.black,
-        surfaceContainerLowest: Colors.black,
-        surfaceContainerLow: const Color(0xFF0A0A0A),
-        surfaceContainer: const Color(0xFF101010),
-      ),
-    );
-  }
 }

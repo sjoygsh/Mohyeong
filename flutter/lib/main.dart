@@ -12,7 +12,6 @@ import 'data/library/library_update_scheduler.dart';
 import 'data/network/app_http_client.dart';
 import 'data/network/webview_http_client.dart';
 import 'data/notification/notification_service.dart';
-import 'data/preferences/appearance_preferences.dart';
 import 'data/shortcuts/shortcut_service.dart';
 import 'data/source/extension_repository.dart';
 import 'data/source/incognito_preferences.dart';
@@ -133,7 +132,6 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
 
   @override
   Widget build(BuildContext context) {
-    final amoled = ref.watch(amoledProvider);
     // Keep the periodic task in sync with the preference.
     ref.listen<LibraryUpdateInterval>(
       libraryUpdatePreferenceProvider,
@@ -175,8 +173,8 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
       // same app with paler colours, it would be a different design. Handing
       // Material a light theme just made every screen the new UI has not
       // reached yet flash white, which is exactly the seam this removes.
-      theme: amoled ? AppTheme.darkAmoled() : AppTheme.dark(),
-      darkTheme: amoled ? AppTheme.darkAmoled() : AppTheme.dark(),
+      theme: AppTheme.dark(),
+      darkTheme: AppTheme.dark(),
       themeMode: ThemeMode.dark,
       // The wordmark sits OUTSIDE the auth gate on purpose: the lock screen is
       // the app already talking to you, and being asked to unlock before the

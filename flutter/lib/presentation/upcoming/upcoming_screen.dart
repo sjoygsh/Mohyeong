@@ -15,7 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
 import '../tide/tide.dart';
-import '../tide/tide_series_screen.dart';
+import '../manga/manga_details_screen.dart';
 
 /// Library manga whose next chapter is expected on/after today, soonest
 /// first. Mirrors Mihon's `GetUpcomingManga`.
@@ -421,7 +421,7 @@ class _UpcomingTile extends StatelessWidget {
       radius: TideRadius.pane,
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => TideSeriesScreen(mangaId: manga.id),
+          builder: (_) => MangaDetailsScreen(mangaId: manga.id),
         ),
       ),
       padding: const EdgeInsets.fromLTRB(11, 11, 14, 11),

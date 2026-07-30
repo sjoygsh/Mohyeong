@@ -31,7 +31,7 @@ import '../common/source_image.dart';
 import '../home/home_screen.dart';
 import '../reader/reader_screen.dart';
 import '../tide/tide.dart';
-import '../tide/tide_series_screen.dart';
+import '../manga/manga_details_screen.dart';
 import '../util/timestamp_format.dart';
 
 /// The feed this screen renders: the recent-history join, paired with the
@@ -279,7 +279,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Future<void> _openSeries(HistoryWithContext entry) =>
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => TideSeriesScreen(mangaId: entry.mangaId),
+          builder: (_) => MangaDetailsScreen(mangaId: entry.mangaId),
         ),
       );
 

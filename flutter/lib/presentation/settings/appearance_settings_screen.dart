@@ -16,12 +16,6 @@ class AppearanceSettingsScreen extends ConsumerWidget {
     return PrefScaffold(
       title: 'Appearance',
       children: [
-          const PrefSectionHeader('Theme'),
-          PrefSwitch(
-            title: 'Pure black',
-            subtitle: 'Collapse surfaces to black on OLED screens.',
-            provider: amoledProvider,
-          ),
           const PrefSectionHeader('Display'),
           _DateFormatTile(
             current: datePattern,

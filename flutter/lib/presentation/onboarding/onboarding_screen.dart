@@ -27,7 +27,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/onboarding/onboarding_preferences.dart';
-import '../../data/preferences/appearance_preferences.dart';
 import '../../data/source/local_source_preferences.dart';
 import '../../data/source/saf.dart';
 import '../../data/system/app_permissions.dart';
@@ -269,26 +268,15 @@ class _ThemeStep extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final amoled = ref.watch(amoledProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Mohyeong is built dark. The light and follow-system options are '
-          'gone rather than left as switches that do nothing.',
+          'gone rather than left as switches that do nothing — and so, for '
+          'now, is AMOLED black: nothing here reads the theme, so the switch '
+          'moved nothing.',
           style: TideText.body(),
-        ),
-        const SizedBox(height: 18),
-        TideRow(
-          icon: Icons.contrast,
-          title: 'AMOLED black',
-          subtitle: 'Pure black, so dark pixels draw no power',
-          lit: amoled,
-          trailing: TideSwitch(
-            value: amoled,
-            onChanged: (v) => ref.read(amoledProvider.notifier).set(v),
-          ),
-          onTap: () => ref.read(amoledProvider.notifier).set(!amoled),
         ),
       ],
     );

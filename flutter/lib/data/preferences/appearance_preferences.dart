@@ -8,6 +8,12 @@
 /// that lies about what it does. If any of them comes back, it comes back
 /// with the feature.
 ///
+/// `pref_theme_dark_amoled` joined them on 2026-07-31. It looked wired —
+/// main.dart really did swap in a darkAmoled ThemeData — but no Tide widget
+/// reads the scheme; every screen paints TideColors.ground directly, so the
+/// switch moved zero pixels. Pure black comes back when the ground colour
+/// itself can respond to it.
+///
 /// Removing them does not break importing a Mihon backup: the restorer
 /// replays SharedPreferences keys generically rather than by name, so an
 /// imported `pref_app_theme` still lands in storage — the app simply no
@@ -15,10 +21,6 @@
 library;
 
 import 'typed_preferences.dart';
-
-/// Use a pure-black background for the dark theme (OLED power saving).
-/// Read by `main.dart`, which swaps in [AppTheme.darkAmoled].
-final amoledProvider = boolPref('pref_theme_dark_amoled', false);
 
 /// Show timestamps as "2h ago" style relative times instead of absolute
 /// dates. Honoured by the History tab via `formatTimestamp`.

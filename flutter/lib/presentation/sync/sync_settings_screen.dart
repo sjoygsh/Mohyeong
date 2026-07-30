@@ -35,12 +35,48 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
 
   SyncPreferencesData? _data;
 
+  /// Last persisted state, for the unsaved-changes check. Everything on this
+  /// screen is buffered until Save, so without this, backing out threw the
+  /// edits away with no indication — the one place in the app where changing
+  /// a switch and leaving did not keep the change.
+  SyncPreferencesData? _savedData;
+  String _savedApiKey = '';
+  bool _lastDirty = false;
+
+  bool get _dirty {
+    final saved = _savedData;
+    final data = _data;
+    if (saved == null || data == null) return false;
+    return _hostCtl.text.trim() != saved.host ||
+        _usernameCtl.text.trim() != saved.username ||
+        _apiKeyCtl.text != _savedApiKey ||
+        data.service != saved.service ||
+        data.syncCategories != saved.syncCategories ||
+        data.syncChapters != saved.syncChapters ||
+        data.syncTracking != saved.syncTracking ||
+        data.syncHistory != saved.syncHistory ||
+        data.autoSyncEnabled != saved.autoSyncEnabled ||
+        data.autoSyncIntervalHours != saved.autoSyncIntervalHours ||
+        data.syncOnAppStart != saved.syncOnAppStart;
+  }
+
+  /// The text fields don't rebuild this screen on their own, so the back
+  /// guard would never learn about a typed-but-unsaved host. Deferred a frame
+  /// because the same controllers are populated during build.
+  void _onFieldChanged() {
+    if (_dirty == _lastDirty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _dirty == _lastDirty) return;
+      setState(() => _lastDirty = _dirty);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
-    _hostCtl = TextEditingController();
-    _usernameCtl = TextEditingController();
-    _apiKeyCtl = TextEditingController();
+    _hostCtl = TextEditingController()..addListener(_onFieldChanged);
+    _usernameCtl = TextEditingController()..addListener(_onFieldChanged);
+    _apiKeyCtl = TextEditingController()..addListener(_onFieldChanged);
   }
 
   @override
@@ -51,10 +87,31 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     super.dispose();
   }
 
+  /// Back with unsaved edits asks rather than silently discarding.
+  Future<void> _confirmDiscard(bool didPop) async {
+    if (didPop) return;
+    final navigator = Navigator.of(context);
+    final discard = await showTideSheet<bool>(
+      context,
+      (_) => const TideConfirmSheet(
+        title: 'Unsaved changes',
+        message: 'Leave without saving what you changed here?',
+        confirmLabel: 'Discard',
+      ),
+    );
+    if (discard == true && mounted) navigator.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final asyncPrefs = ref.watch(syncPreferencesProvider);
-    return Scaffold(
+    return PopScope(
+      // Read live: the switches rebuild through setState, so this is always
+      // current for them. _lastDirty exists only to force that rebuild when
+      // a text field is what changed.
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, _) => _confirmDiscard(didPop),
+      child: Scaffold(
       backgroundColor: TideColors.ground,
       body: Stack(
         children: [
@@ -81,6 +138,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         ),
         data: (prefs) {
           _data ??= prefs.read();
+          _savedData ??= _data;
           if (_hostCtl.text.isEmpty) _hostCtl.text = _data!.host;
           if (_usernameCtl.text.isEmpty) {
             _usernameCtl.text = _data!.username;
@@ -91,7 +149,10 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             prefs.getApiKey().then((k) {
               if (!mounted) return;
               if (_apiKeyCtl.text.isEmpty && k.isNotEmpty) {
-                setState(() => _apiKeyCtl.text = k);
+                setState(() {
+                  _apiKeyCtl.text = k;
+                  _savedApiKey = k;
+                });
               }
             });
           }
@@ -102,6 +163,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         ),
       ),
         ],
+      ),
       ),
     );
   }
@@ -277,6 +339,11 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             service: toSave.service,
           );
       _setStatus('Saved.');
+      // The form is clean again — drop the back guard.
+      _data = toSave;
+      _savedData = toSave;
+      _savedApiKey = _apiKeyCtl.text;
+      _lastDirty = false;
     } finally {
       if (mounted) setState(() => _busy = false);
     }

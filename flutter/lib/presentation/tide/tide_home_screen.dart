@@ -42,7 +42,7 @@ import '../home/home_screen.dart';
 import '../reader/reader_screen.dart';
 import '../upcoming/upcoming_screen.dart';
 import 'tide.dart';
-import 'tide_series_screen.dart';
+import '../manga/manga_details_screen.dart';
 
 /// One entry in the "Continue" rail: a library entry the reader is part-way
 /// through, joined with the chapter history last touched it.
@@ -309,7 +309,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
 
   Future<void> _openSeries(int mangaId) => Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => TideSeriesScreen(mangaId: mangaId),
+          builder: (_) => MangaDetailsScreen(mangaId: mangaId),
         ),
       );
 
