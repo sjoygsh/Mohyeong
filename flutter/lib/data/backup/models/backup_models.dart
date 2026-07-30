@@ -162,6 +162,49 @@ class BackupManga {
 
   /// tag 111.
   final bool initialized;
+
+  /// Drops the per-entity collections a caller did not select, keeping the
+  /// entry itself. `true` means keep.
+  ///
+  /// Sync's "What to sync" selection is the only caller — a backup file
+  /// always carries everything. Note that clearing [categories] only makes
+  /// sense alongside clearing the root `backupCategories`: these are indices
+  /// into that list, not ids.
+  BackupManga withSelection({
+    required bool chapters,
+    required bool categories,
+    required bool tracking,
+    required bool history,
+  }) {
+    if (chapters && categories && tracking && history) return this;
+    return BackupManga(
+      source: source,
+      url: url,
+      title: title,
+      artist: artist,
+      author: author,
+      description: description,
+      genre: genre,
+      status: status,
+      thumbnailUrl: thumbnailUrl,
+      dateAdded: dateAdded,
+      viewer: viewer,
+      chapters: chapters ? this.chapters : const [],
+      categories: categories ? this.categories : const [],
+      tracking: tracking ? this.tracking : const [],
+      favorite: favorite,
+      chapterFlags: chapterFlags,
+      viewerFlags: viewerFlags,
+      history: history ? this.history : const [],
+      updateStrategy: updateStrategy,
+      lastModifiedAt: lastModifiedAt,
+      favoriteModifiedAt: favoriteModifiedAt,
+      excludedScanlators: excludedScanlators,
+      version: version,
+      notes: notes,
+      initialized: initialized,
+    );
+  }
 }
 
 // ─── BackupChapter ─────────────────────────────────────────────────────────

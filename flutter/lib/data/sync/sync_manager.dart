@@ -23,6 +23,7 @@ import '../../data/network/app_http_client.dart';
 import '../backup/backup_codec.dart';
 import '../backup/backup_creator.dart';
 import '../backup/backup_restorer.dart';
+import '../backup/models/backup_models.dart';
 import 'dropbox_transport.dart';
 import 'google_drive_transport.dart';
 import 'sync_preferences.dart';
@@ -59,7 +60,7 @@ class SyncManager {
     final applied = switch (transport) {
       SyncTransportServerMediated() =>
         await _serverMediatedSync(transport, deviceId, data),
-      SyncTransportFileStorage() => await _fileStorageSync(transport),
+      SyncTransportFileStorage() => await _fileStorageSync(transport, data),
     };
 
     await preferences.setLastSyncTimestamp(
@@ -73,30 +74,68 @@ class SyncManager {
     String deviceId,
     SyncPreferencesData data,
   ) async {
-    final local = encodeBackup(await creator.create());
+    final local = encodeBackup(_select(await creator.create(), data));
     final merged = await transport.exchange(
       local: local,
       lastSyncTimestamp: data.lastSyncTimestamp,
       deviceId: deviceId,
     );
-    final result = await restorer.restore(decodeBackup(merged));
+    final result = await restorer.restore(_select(decodeBackup(merged), data));
     return result.mangaRestored;
   }
 
-  Future<int> _fileStorageSync(SyncTransportFileStorage transport) async {
+  /// Honours the "What to sync" selection, in both directions: an entity the
+  /// user switched off is neither pushed to the remote nor applied from it.
+  ///
+  /// The creator and restorer deliberately stay selection-blind — they exist
+  /// to move whole backups, and a backup file always carries everything.
+  /// This is the one place the selection is enforced.
+  Backup _select(Backup backup, SyncPreferencesData data) {
+    if (data.syncCategories &&
+        data.syncChapters &&
+        data.syncTracking &&
+        data.syncHistory) {
+      return backup;
+    }
+    return Backup(
+      backupManga: [
+        for (final m in backup.backupManga)
+          m.withSelection(
+            chapters: data.syncChapters,
+            categories: data.syncCategories,
+            tracking: data.syncTracking,
+            history: data.syncHistory,
+          ),
+      ],
+      // Per-manga `categories` are indices into this list — the two have to
+      // be dropped together or the indices dangle.
+      backupCategories:
+          data.syncCategories ? backup.backupCategories : const [],
+      backupSources: backup.backupSources,
+      backupPreferences: backup.backupPreferences,
+      backupSourcePreferences: backup.backupSourcePreferences,
+      backupExtensionRepo: backup.backupExtensionRepo,
+      backupMangaLinks: backup.backupMangaLinks,
+    );
+  }
+
+  Future<int> _fileStorageSync(
+    SyncTransportFileStorage transport,
+    SyncPreferencesData data,
+  ) async {
     // 1. Pull whatever the remote currently holds and apply it locally
     //    first — this lets BackupRestorer's `lastModifiedAt` merge
     //    resolve per-row conflicts.
     var appliedFromRemote = 0;
     final remote = await transport.pull();
     if (remote != null) {
-      final result = await restorer.restore(decodeBackup(remote));
+      final result = await restorer.restore(_select(decodeBackup(remote), data));
       appliedFromRemote = result.mangaRestored;
     }
 
     // 2. Snapshot the now-merged local state and push it back as the new
     //    authoritative copy.
-    final snapshot = encodeBackup(await creator.create());
+    final snapshot = encodeBackup(_select(await creator.create(), data));
     await transport.push(snapshot);
     return appliedFromRemote;
   }
