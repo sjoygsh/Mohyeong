@@ -3,9 +3,15 @@ library;
 
 import '../preferences/typed_preferences.dart';
 
+/// Prefix Mihon's `Preference.appStateKey(...)` expands to. It marks a
+/// preference as THIS DEVICE's own state — a SAF storage grant, an
+/// onboarding-complete flag, a last-checked timestamp — rather than a user
+/// setting, and such keys are excluded from backups on both ends.
+const appStatePrefix = '__APP_STATE_';
+
 /// Mihon `Preference.appStateKey("pref_downloaded_only")` — app-state keys
 /// are excluded from backups; matched verbatim for settings-import parity.
-const downloadedOnlyKey = '__APP_STATE_pref_downloaded_only';
+const downloadedOnlyKey = '${appStatePrefix}pref_downloaded_only';
 
 /// "Downloaded only" mode (More screen switch). While on: the library is
 /// forced to the downloaded filter, the per-manga downloaded chapter filter

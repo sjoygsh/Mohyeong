@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../manga/excluded_scanlators_repository.dart';
+import '../base/base_preferences.dart';
 import '../category/category_repository.dart';
 import '../chapter/chapter_repository.dart';
 import '../database/app_database.dart' as db;
@@ -247,6 +248,12 @@ class BackupCreator {
       // (Kotlin parity) — keep them out of the app-level dump so they
       // aren't stored twice.
       if (key.startsWith('source_prefs_')) continue;
+      // Mihon's `appStateKey()` marks a pref as THIS DEVICE's state, not a
+      // user setting, and excludes it from backups. Carrying them across
+      // would restore another device's SAF storage grant, its
+      // onboarding-complete flag, or its downloaded-only mode onto a phone
+      // where none of that is true.
+      if (key.startsWith(appStatePrefix)) continue;
       final raw = prefs.get(key);
       final value = _wrapPreferenceValue(raw);
       if (value == null) continue;

@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../manga/excluded_scanlators_repository.dart';
 import '../../domain/manga/model/manga.dart';
+import '../base/base_preferences.dart';
 import '../../domain/manga/model/update_strategy.dart';
 import '../../domain/track/model/track.dart';
 import '../category/category_repository.dart';
@@ -153,6 +154,10 @@ class BackupRestorer {
     final store = await SharedPreferences.getInstance();
     var count = 0;
     for (final p in prefs) {
+      // Defensive twin of the creator's filter: backups taken before that
+      // filter existed still carry this device-local state, and replaying
+      // it would repoint storage at another phone's SAF grant.
+      if (p.key.startsWith(appStatePrefix)) continue;
       final value = p.value;
       final ok = switch (value) {
         BooleanPreferenceValue() => await store.setBool(p.key, value.value),
