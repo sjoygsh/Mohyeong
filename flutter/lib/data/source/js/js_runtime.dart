@@ -404,6 +404,12 @@ class _IsolateEngine implements _JsEngine {
   /// (the command loop is busy; this is delivered by an independent listen).
   late final SendPort _httpReply;
 
+  /// Completes when [dispose] runs. In-flight [_send] calls race against it:
+  /// the runtime is shared and cached per source, so an uninstall/update can
+  /// land while another screen is mid-`invoke`. Killing the worker would
+  /// otherwise strand that reply forever — nobody is left to send it.
+  final Completer<void> _disposed = Completer<void>();
+
   static Future<_IsolateEngine> start(JsRuntime host) async {
     final ready = ReceivePort();
     final hostPort = ReceivePort();
@@ -442,9 +448,20 @@ class _IsolateEngine implements _JsEngine {
   /// Sends a command carrying a one-shot reply port and awaits its result,
   /// converting a worker-side error into a [JsRuntimeException].
   Future<Map> _send(Map cmd) async {
+    if (_disposed.isCompleted) {
+      throw JsRuntimeException('JS runtime was disposed');
+    }
     final reply = ReceivePort();
     _command.send({...cmd, 'reply': reply.sendPort});
-    final result = await reply.first as Map;
+    // Losing the race means the worker died owing us this reply; surface it
+    // as a normal failure so callers fall into their error state instead of
+    // awaiting a future that can never complete.
+    final result = await Future.any<Map>([
+      reply.first.then((v) => v as Map),
+      _disposed.future.then(
+        (_) => <String, dynamic>{'error': 'JS runtime was disposed'},
+      ),
+    ]);
     reply.close();
     if (result['error'] != null) {
       throw JsRuntimeException(result['error'] as String);
@@ -476,6 +493,9 @@ class _IsolateEngine implements _JsEngine {
 
   @override
   Future<void> dispose() async {
+    if (_disposed.isCompleted) return;
+    // Fail anyone mid-invoke BEFORE the worker dies, not after.
+    _disposed.complete();
     _command.send({'cmd': 'dispose'});
     _hostPort.close();
     // Give the worker a tick to tear down its runtime, then kill it.
