@@ -236,6 +236,36 @@ class BackupRestorer {
     return e < b ? e : b;
   }
 
+  /// Which side's favorite flag wins.
+  ///
+  /// Restoring an old backup over a live library must never un-favorite an
+  /// entry the user added since it was taken, which is why this was a plain
+  /// OR. But sync exchanges backups in BOTH directions, and under an OR a
+  /// removal can never survive: the remote copy still says favorite, the
+  /// merge flips it back, and that gets pushed as authoritative — so an
+  /// un-favorite reappears on every device.
+  ///
+  /// `favoriteModifiedAt` is stamped by setFavorite for exactly this
+  /// question. When both sides carry one, the newer stamp decides. Otherwise
+  /// fall back to OR, which is what a backup predating the field needs.
+  static bool _mergeFavorite(Manga? existing, BackupManga bm) {
+    final incoming = bm.favoriteModifiedAt;
+    final local = existing?.favoriteModifiedAt;
+    if (incoming != null && local != null && incoming != local) {
+      return incoming > local ? bm.favorite : existing!.favorite;
+    }
+    return bm.favorite || (existing?.favorite ?? false);
+  }
+
+  /// Keeps the later of the two stamps so the winning side's decision stays
+  /// the one a later merge compares against. Overwriting with the incoming
+  /// value unconditionally threw away a newer local decision.
+  static int? _newerStamp(int? local, int? incoming) {
+    if (local == null) return incoming;
+    if (incoming == null) return local;
+    return local > incoming ? local : incoming;
+  }
+
   Future<void> _restoreManga(
     BackupManga bm,
     List<int> categoryIdByIndex,
@@ -255,10 +285,7 @@ class BackupRestorer {
       genre: Value(bm.genre.isEmpty ? null : bm.genre.join(',')),
       status: bm.status,
       thumbnailUrl: Value(bm.thumbnailUrl),
-      // OR with the local flag (Mihon parity): restoring an old backup over
-      // a live library must never UN-favorite an entry the user added since
-      // the backup was taken.
-      favorite: (bm.favorite || (existing?.favorite ?? false)) ? 1 : 0,
+      favorite: _mergeFavorite(existing, bm) ? 1 : 0,
       // Keep the existing entry's update-scheduler state — zeroing it made
       // every restore discard learned fetch intervals and mark the whole
       // library due on the next sweep.
@@ -280,7 +307,9 @@ class BackupRestorer {
       ),
       calculateInterval: Value(existing?.fetchInterval ?? 0),
       lastModifiedAt: Value(bm.lastModifiedAt == 0 ? nowMs : bm.lastModifiedAt),
-      favoriteModifiedAt: Value(bm.favoriteModifiedAt),
+      favoriteModifiedAt: Value(
+        _newerStamp(existing?.favoriteModifiedAt, bm.favoriteModifiedAt),
+      ),
       version: Value(bm.version),
       isSyncing: const Value(0),
       // Don't blank local notes with a backup that never had any.
