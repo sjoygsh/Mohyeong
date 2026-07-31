@@ -17,36 +17,47 @@ Stream<R> switchMap<T, R>(
   StreamSubscription<R>? inner;
   var outerDone = false;
 
-  Future<void> cancelInner() async {
-    final sub = inner;
-    inner = null;
-    await sub?.cancel();
-  }
-
   controller.onListen = () {
     outer = source.listen(
-      (value) async {
-        await cancelInner();
+      // Deliberately SYNCHRONOUS: no await between cancelling the old inner
+      // and subscribing to the new one. An earlier version awaited the
+      // cancel, which leaves a window where a second outer event could see a
+      // null `inner` and overwrite the first's subscription without
+      // cancelling it. That was NOT reproducible — a StreamController hands
+      // events to the listener one turn apart, so the await always settled
+      // first — but the window only stays shut by accident of the source's
+      // delivery timing, and this version doesn't depend on it.
+      // `cancel()` stops delivery the moment it is called, so not awaiting is
+      // safe.
+      (value) {
+        inner?.cancel();
         if (controller.isClosed) return;
         inner = mapper(value).listen(
           controller.add,
           onError: controller.addError,
-          // An inner stream ending doesn't end the result: the next outer
-          // emission will bring another one.
+          onDone: () {
+            // An inner ending is normally not the end of the result — the
+            // next outer event brings another. It IS the end once the outer
+            // can no longer produce one.
+            if (outerDone) controller.close();
+          },
         );
       },
       onError: controller.addError,
       onDone: () {
         outerDone = true;
-        // Only finish once the inner stream can no longer produce anything.
+        // Nothing left to wait for only if no inner is currently running.
         if (inner == null) controller.close();
       },
     );
   };
   controller.onCancel = () async {
-    await outer?.cancel();
-    await cancelInner();
-    if (!outerDone) outerDone = true;
+    final o = outer;
+    final i = inner;
+    outer = null;
+    inner = null;
+    await o?.cancel();
+    await i?.cancel();
   };
   return controller.stream;
 }

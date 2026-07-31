@@ -190,6 +190,38 @@ void main() {
       expect(await combineLatestList<int>(const []).first, isEmpty);
     });
 
+    test('switchMap survives two outer events in the same turn', () async {
+      // Regression guard for back-to-back outer events: whatever the delivery
+      // timing, exactly one inner subscription may survive and it must be the
+      // latest. Both the awaiting and the synchronous implementation pass
+      // today; this pins the property so a future rewrite can't lose it.
+      final outer = StreamController<int>();
+      final inners = {
+        1: StreamController<String>.broadcast(),
+        2: StreamController<String>.broadcast(),
+      };
+      final seen = <String>[];
+      final sub =
+          switchMap(outer.stream, (int i) => inners[i]!.stream).listen(seen.add);
+
+      outer.add(1);
+      outer.add(2);
+      await pumpEventQueue();
+
+      inners[1]!.add('leaked');
+      inners[2]!.add('live');
+      await pumpEventQueue();
+
+      expect(seen, ['live'], reason: 'the first inner must be cancelled');
+      expect(inners[1]!.hasListener, isFalse);
+
+      await sub.cancel();
+      await outer.close();
+      for (final c in inners.values) {
+        await c.close();
+      }
+    });
+
     test('switchMap drops the previous inner stream', () async {
       final outer = StreamController<int>();
       final inners = <int, StreamController<String>>{
