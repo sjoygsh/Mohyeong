@@ -3,27 +3,29 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../domain/track/model/track.dart';
-import '../../domain/track/model/tracker.dart';
 import '../../presentation/tide/tide.dart';
+import 'delayed_tracking_scheduler.dart';
+import 'delayed_tracking_store.dart';
 import 'track_preferences.dart';
 import 'track_repository.dart';
 import 'tracker_registry.dart';
 
 /// Walks every bound track for a manga and pushes a new chapter number up
-/// to the corresponding tracker's remote API. Best-effort: errors are
-/// swallowed per-track so one offline tracker can't block the others.
+/// to the corresponding tracker's remote API. Errors are caught per-track so
+/// one offline tracker can't block the others — but they are NOT discarded:
+/// a failed push is queued in [DelayedTrackingStore] and a retry job is
+/// scheduled, mirroring Mihon's `TrackChapter` + `DelayedTrackingUpdateJob`.
 ///
 /// Invoked from the reader / manga details screens after a chapter's
-/// `read` flag flips to true. Equivalent to Mihon's
-/// `DelayedTrackingUpdateJob` enqueue path (without the delay batching —
-/// v1.0 keeps it simple and pushes immediately).
+/// `read` flag flips to true.
 class TrackUpdater {
   TrackUpdater(this._ref, this._repo, this._registry);
 
   final Ref _ref;
   final TrackRepository _repo;
   final TrackerRegistry _registry;
+
+  DelayedTrackingStore get _delayed => _ref.read(delayedTrackingStoreProvider);
 
   /// Pushes [chapterNumber] (or [volumeNumber] when the "track by volume"
   /// preference is on and a volume is recognised) up to every bound tracker.
@@ -40,31 +42,31 @@ class TrackUpdater {
         ? volumeNumber
         : chapterNumber;
     final tracks = await _repo.getByMangaId(mangaId);
+    var queued = false;
     for (final track in tracks) {
       final tracker = _registry.byId(track.trackerId);
       if (tracker == null) continue;
       if (track.lastChapterRead >= progress) continue;
-      final updated = track.copyWith(
-        lastChapterRead: progress,
-        status: _shouldComplete(track, progress)
-            ? TrackStatus.completed
-            : (track.status == TrackStatus.planToRead
-                ? TrackStatus.reading
-                : track.status),
-      );
+      final updated = track.withProgress(progress);
       try {
         await tracker.update(updated, didReadChapter: true);
         await _repo.upsert(updated);
+        // Landed — retire any older queued attempt for this track.
+        await _delayed.remove(track.id);
       } catch (_) {
-        // Swallow — surfacing errors in the reader would be intrusive.
-        // The next sync attempt will pick up the diff.
+        // Raising this in the reader would be intrusive, but dropping it
+        // would leave the tracker permanently under-reporting whenever the
+        // failure lands on the last chapter nothing else follows. Queue it.
+        await _delayed.add(track.id, progress);
+        queued = true;
       }
     }
-  }
-
-  bool _shouldComplete(Track track, double newChapter) {
-    final total = track.totalChapters;
-    return total > 0 && newChapter >= total;
+    // One enqueue for the whole manga, not one per failed tracker: the task
+    // is unique-named with REPLACE, so N calls would just reset each other's
+    // backoff.
+    if (queued) {
+      await _ref.read(delayedTrackingSchedulerProvider).setupTask();
+    }
   }
 }
 

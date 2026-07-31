@@ -3,6 +3,7 @@ import 'package:workmanager/workmanager.dart';
 import '../backup/backup_scheduler.dart';
 import '../library/library_update_scheduler.dart';
 import '../sync/sync_scheduler.dart';
+import '../track/delayed_tracking_scheduler.dart';
 
 /// Single workmanager callback dispatcher for the whole app.
 ///
@@ -26,6 +27,8 @@ void backgroundCallbackDispatcher() {
         return runSyncTask();
       case backupTaskName:
         return runBackupTask();
+      case delayedTrackingTaskName:
+        return runDelayedTrackingTask();
       default:
         // Unknown task — succeed so workmanager doesn't retry it forever.
         return true;

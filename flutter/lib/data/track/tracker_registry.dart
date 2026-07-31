@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -37,10 +38,15 @@ class TrackerRegistry {
   Tracker? byId(int id) => _byId[id];
 }
 
-final trackerRegistryProvider = Provider<TrackerRegistry>((ref) {
-  final credentials = ref.watch(trackCredentialStoreProvider);
-  final navigatorKey = ref.watch(trackerNavigatorKeyProvider);
-  final http = ref.watch(appHttpClientProvider);
+/// Builds the registry from its three collaborators. Split out of the
+/// provider so the delayed-tracking retry job — which runs in the workmanager
+/// isolate, where there is no Riverpod — gets the SAME tracker list instead of
+/// a second copy that could drift as trackers are added.
+TrackerRegistry buildTrackerRegistry({
+  required TrackCredentialStore credentials,
+  required GlobalKey<NavigatorState> navigatorKey,
+  required Dio dio,
+}) {
   final trackers = <Tracker>[
     MyAnimeListTracker(credentials: credentials, navigatorKey: navigatorKey),
     AniListTracker(credentials: credentials, navigatorKey: navigatorKey),
@@ -60,7 +66,15 @@ final trackerRegistryProvider = Provider<TrackerRegistry>((ref) {
     ),
   ];
   for (final t in trackers) {
-    t.attachDio(http.dio);
+    t.attachDio(dio);
   }
   return TrackerRegistry(trackers);
+}
+
+final trackerRegistryProvider = Provider<TrackerRegistry>((ref) {
+  return buildTrackerRegistry(
+    credentials: ref.watch(trackCredentialStoreProvider),
+    navigatorKey: ref.watch(trackerNavigatorKeyProvider),
+    dio: ref.watch(appHttpClientProvider).dio,
+  );
 });

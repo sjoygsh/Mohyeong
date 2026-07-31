@@ -1,3 +1,5 @@
+import 'tracker.dart';
+
 /// Mirror of `tachiyomi.domain.track.model.Track`.
 /// One row per (manga, tracker) pair, e.g. AniList, MyAnimeList, MangaUpdates.
 class Track {
@@ -66,6 +68,24 @@ class Track {
       startDate: startDate ?? this.startDate,
       finishDate: finishDate ?? this.finishDate,
       private: private ?? this.private,
+    );
+  }
+
+  /// This track advanced to [progress], with the status transition that
+  /// implies: a series whose total is known and reached becomes `completed`,
+  /// and a plan-to-read entry the user has actually started becomes
+  /// `reading`. Every other status is left alone.
+  ///
+  /// Pure and shared on purpose — both the live push and the delayed-retry
+  /// drain build their updated row through here, so a queued push that lands
+  /// hours later writes exactly what the immediate one would have.
+  Track withProgress(double progress) {
+    final reachedEnd = totalChapters > 0 && progress >= totalChapters;
+    return copyWith(
+      lastChapterRead: progress,
+      status: reachedEnd
+          ? TrackStatus.completed
+          : (status == TrackStatus.planToRead ? TrackStatus.reading : status),
     );
   }
 }
