@@ -3,7 +3,11 @@ import '../model/chapter.dart';
 /// The display list for a linked cluster plus the index that keeps read
 /// state shared across it.
 class MergedChapters {
-  const MergedChapters({required this.chapters, required this.byNumber});
+  const MergedChapters({
+    required this.chapters,
+    required this.byNumber,
+    this.availableScanlators = const {},
+  });
 
   /// What the chapter list renders: one row per recognised chapter number,
   /// followed by every unrecognised chapter.
@@ -14,6 +18,15 @@ class MergedChapters {
   /// is the whole point of a cluster: the same chapter read on a mirror
   /// shouldn't come back unread under the primary.
   final Map<double, List<Chapter>> byNumber;
+
+  /// Every scanlator seen anywhere in the cluster, INCLUDING the excluded
+  /// ones. The filter sheet lists these, so deriving it from the merged
+  /// (post-exclusion) rows would make exclusion a one-way door: excluding a
+  /// scanlator would remove it from the very list you un-exclude it from.
+  /// Kotlin dodges this by sourcing the sheet from a separate
+  /// `getAvailableScanlators` query rather than from the chapter list.
+  /// Empty on the no-cluster path, where the screen derives it as before.
+  final Set<String> availableScanlators;
 
   static const empty = MergedChapters(chapters: [], byNumber: {});
 }
@@ -42,10 +55,26 @@ class MergedChapters {
 /// dedupe, so the only thing that resequencing could change is the ordering
 /// of a source that lists its chapters out of numeric order — which is the
 /// source's own choice to respect.
+///
+/// [excludedScanlators] is applied BEFORE the dedupe, which is where Kotlin
+/// applies it too (`applyScanlatorFilter = true` on every per-manga fetch that
+/// feeds the merge). Filtering afterwards instead loses chapters outright: if
+/// a mirror's copy of chapter 5 wins the number and only then gets filtered
+/// out, the allowed copy on another source has already lost and the row simply
+/// vanishes. Excluding the losers up front lets the next copy win.
+///
+/// The one deliberate difference from the fork is *whose* set this is: Kotlin
+/// applies each mirror's own excluded scanlators to that mirror's chapters,
+/// while the screen passes the primary's set for the whole cluster. The
+/// cluster is presented as the primary's chapter list and the filter sheet is
+/// reached from the primary, so one consistent rule over the merged rows is
+/// the honest reading — the per-mirror sets are only reachable by opening that
+/// mirror's own details screen.
 MergedChapters mergeLinkedChapters({
   required int primaryMangaId,
   required List<Chapter> primaryChapters,
   required List<List<Chapter>> linked,
+  Set<String> excludedScanlators = const {},
 }) {
   if (linked.every((l) => l.isEmpty)) {
     // No index either: with nothing to share state with, expanding a
@@ -59,9 +88,15 @@ MergedChapters mergeLinkedChapters({
   final winners = <double, Chapter>{};
   final unrecognized = <Chapter>[];
   final byNumber = <double, List<Chapter>>{};
+  final scanlators = <String>{};
 
   void ingest(List<Chapter> chapters, {required bool isPrimary}) {
     for (final c in chapters) {
+      final scanlator = c.scanlator;
+      // Inventory first: the filter sheet has to keep offering a scanlator
+      // even once it is excluded, or there is no way to turn it back on.
+      if (scanlator != null && scanlator.isNotEmpty) scanlators.add(scanlator);
+      if (scanlator != null && excludedScanlators.contains(scanlator)) continue;
       if (!c.isRecognizedNumber) {
         unrecognized.add(c);
         continue;
@@ -87,7 +122,11 @@ MergedChapters mergeLinkedChapters({
     for (final (i, c) in unrecognized.indexed)
       c.copyWith(sourceOrder: sorted.length + i),
   ];
-  return MergedChapters(chapters: merged, byNumber: byNumber);
+  return MergedChapters(
+    chapters: merged,
+    byNumber: byNumber,
+    availableScanlators: scanlators,
+  );
 }
 
 /// Expands a user selection so an action taken on a merged row lands on every

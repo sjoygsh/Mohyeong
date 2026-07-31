@@ -62,6 +62,51 @@ Stream<R> switchMap<T, R>(
   return controller.stream;
 }
 
+/// [combineLatestList] for two streams of different types. Used to fold the
+/// excluded-scanlator set into the cluster's chapter streams, which the merge
+/// needs before it dedupes.
+Stream<R> combineLatest2<A, B, R>(
+  Stream<A> a,
+  Stream<B> b,
+  R Function(A a, B b) combine,
+) {
+  final controller = StreamController<R>();
+  StreamSubscription<A>? subA;
+  StreamSubscription<B>? subB;
+  late A latestA;
+  late B latestB;
+  var seenA = false;
+  var seenB = false;
+
+  void emit() {
+    if (seenA && seenB) controller.add(combine(latestA, latestB));
+  }
+
+  controller.onListen = () {
+    subA = a.listen(
+      (value) {
+        latestA = value;
+        seenA = true;
+        emit();
+      },
+      onError: controller.addError,
+    );
+    subB = b.listen(
+      (value) {
+        latestB = value;
+        seenB = true;
+        emit();
+      },
+      onError: controller.addError,
+    );
+  };
+  controller.onCancel = () async {
+    await subA?.cancel();
+    await subB?.cancel();
+  };
+  return controller.stream;
+}
+
 /// Emits a list of the latest value of every stream in [streams], once all of
 /// them have produced at least one value. An empty [streams] emits `[]` once.
 Stream<List<T>> combineLatestList<T>(List<Stream<T>> streams) {

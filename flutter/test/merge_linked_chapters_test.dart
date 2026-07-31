@@ -17,6 +17,7 @@ void main() {
     bool read = false,
     int sourceOrder = 0,
     String? name,
+    String? scanlator,
   }) =>
       Chapter(
         id: id,
@@ -30,7 +31,7 @@ void main() {
         name: name ?? 'Chapter $number',
         dateUpload: 0,
         chapterNumber: number,
-        scanlator: null,
+        scanlator: scanlator,
         lastModifiedAt: 0,
         version: 1,
         volumeNumber: null,
@@ -112,6 +113,61 @@ void main() {
       // Nothing to dedupe them on, so both extras stay.
       expect(merged.chapters.map((c) => c.id), [2, 1, 10]);
       expect(merged.chapters.map((c) => c.sourceOrder), [0, 1, 2]);
+    });
+
+    test('an excluded winner does not take the chapter down with it', () {
+      // The bug this guards: dedupe first, filter second. The mirror's copy
+      // won chapter 5, the render-time filter then dropped it, and the
+      // allowed copy on the second mirror had already lost — so chapter 5
+      // vanished from the list entirely.
+      final merged = mergeLinkedChapters(
+        primaryMangaId: 1,
+        primaryChapters: const [],
+        linked: [
+          [ch(10, 2, 5, scanlator: 'Bad')],
+          [ch(20, 3, 5, scanlator: 'Good')],
+        ],
+        excludedScanlators: const {'Bad'},
+      );
+      expect(merged.chapters.single.id, 20);
+      // The loser is gone from the index too, so marking read can't reach it.
+      expect(merged.byNumber[5]!.map((c) => c.id), [20]);
+    });
+
+    test('a chapter every source excludes is dropped', () {
+      final merged = mergeLinkedChapters(
+        primaryMangaId: 1,
+        primaryChapters: [ch(1, 1, 1)],
+        linked: [
+          [ch(10, 2, 5, scanlator: 'Bad')],
+        ],
+        excludedScanlators: const {'Bad'},
+      );
+      expect(merged.chapters.map((c) => c.id), [1]);
+    });
+
+    test('excluding a scanlator keeps it listed, or it cannot be undone', () {
+      final merged = mergeLinkedChapters(
+        primaryMangaId: 1,
+        primaryChapters: [ch(1, 1, 1, scanlator: 'Good')],
+        linked: [
+          [ch(10, 2, 2, scanlator: 'Bad')],
+        ],
+        excludedScanlators: const {'Bad'},
+      );
+      expect(merged.availableScanlators, {'Good', 'Bad'});
+    });
+
+    test('unrecognised chapters honour the exclusion too', () {
+      final merged = mergeLinkedChapters(
+        primaryMangaId: 1,
+        primaryChapters: [ch(1, 1, -1, scanlator: 'Bad')],
+        linked: [
+          [ch(10, 2, 1)],
+        ],
+        excludedScanlators: const {'Bad'},
+      );
+      expect(merged.chapters.map((c) => c.id), [10]);
     });
 
     test('byNumber indexes every copy so read state can be shared', () {
@@ -220,6 +276,31 @@ void main() {
       for (final c in inners.values) {
         await c.close();
       }
+    });
+
+    test('combineLatest2 waits for both, then tracks the latest of each',
+        () async {
+      final a = StreamController<int>();
+      final b = StreamController<String>();
+      final seen = <String>[];
+      final sub = combineLatest2(a.stream, b.stream, (int x, String y) => '$x$y')
+          .listen(seen.add);
+
+      a.add(1);
+      await pumpEventQueue();
+      expect(seen, isEmpty);
+
+      b.add('a');
+      await pumpEventQueue();
+      expect(seen, ['1a']);
+
+      b.add('b');
+      await pumpEventQueue();
+      expect(seen.last, '1b');
+
+      await sub.cancel();
+      await a.close();
+      await b.close();
     });
 
     test('switchMap drops the previous inner stream', () async {

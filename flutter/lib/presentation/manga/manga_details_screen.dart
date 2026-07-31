@@ -107,15 +107,24 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
           ),
         );
       }
-      return combineLatestList<List<Chapter>>([
-        primary,
-        for (final lm in linked) repo.watchByMangaId(lm.id),
-      ]).map(
-        (lists) => _ClusterChapters(
+      // The excluded set rides along because the merge has to drop those rows
+      // BEFORE it dedupes — see [mergeLinkedChapters]. Filtering only at
+      // render time made a chapter disappear whenever the copy that won its
+      // number happened to be the excluded one.
+      return combineLatest2(
+        combineLatestList<List<Chapter>>([
+          primary,
+          for (final lm in linked) repo.watchByMangaId(lm.id),
+        ]),
+        ref
+            .read(excludedScanlatorsRepositoryProvider)
+            .watchByMangaId(widget.mangaId),
+        (List<List<Chapter>> lists, Set<String> excluded) => _ClusterChapters(
           mergeLinkedChapters(
             primaryMangaId: widget.mangaId,
             primaryChapters: lists.first,
             linked: lists.sublist(1),
+            excludedScanlators: excluded,
           ),
           {for (final lm in linked) lm.id: lm},
         ),
@@ -626,6 +635,12 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                       chapters: chapters,
                       mangaById: _mangaById,
                       byNumber: _byNumber,
+                      // Null off the cluster path, where the section derives
+                      // the inventory from the rows as it always has.
+                      clusterScanlators: cluster != null &&
+                              cluster.mangaById.isNotEmpty
+                          ? cluster.merged.availableScanlators
+                          : null,
                       chapterRepo: ref.read(chapterRepositoryProvider),
                       selectedIds: _selectedChapterIds,
                       onToggleSelected: _toggleChapterSelected,
@@ -893,6 +908,7 @@ class _ChaptersSection extends ConsumerStatefulWidget {
     required this.chapters,
     required this.mangaById,
     required this.byNumber,
+    required this.clusterScanlators,
     required this.chapterRepo,
     required this.selectedIds,
     required this.onToggleSelected,
@@ -908,6 +924,11 @@ class _ChaptersSection extends ConsumerStatefulWidget {
   /// Chapter number → every copy across the cluster (see
   /// [expandAcrossCluster]). Empty when nothing is linked.
   final Map<double, List<Chapter>> byNumber;
+
+  /// Scanlator inventory for the filter sheet on the cluster path, where
+  /// [chapters] has already had the excluded ones removed and so can no
+  /// longer supply it. Null when nothing is linked.
+  final Set<String>? clusterScanlators;
   final ChapterRepository chapterRepo;
   final Set<int> selectedIds;
   final ValueChanged<int> onToggleSelected;
@@ -1107,10 +1128,13 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
       sorted = _cachedSorted!;
       rendered = _cachedRendered!;
     } else {
-      availableScanlators = <String>{
-        for (final c in chapters)
-          if (c.scanlator != null && c.scanlator!.isNotEmpty) c.scanlator!,
-      };
+      // On the cluster path the merge already stripped the excluded rows, so
+      // the inventory has to come from it rather than from what survived.
+      availableScanlators = widget.clusterScanlators ??
+          <String>{
+            for (final c in chapters)
+              if (c.scanlator != null && c.scanlator!.isNotEmpty) c.scanlator!,
+          };
 
       final filtered = chapters.where((c) {
         if (excluded.contains(c.scanlator)) return false;
