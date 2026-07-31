@@ -114,5 +114,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/ic_mihon.png
+  # No Dart-side assets. Notification icons come from the Android drawable
+  # `@drawable/ic_mihon`, which is a different file under android/app/src.
