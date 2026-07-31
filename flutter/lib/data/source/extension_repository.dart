@@ -14,6 +14,7 @@ import 'installed_extension.dart';
 import 'js/js_source.dart';
 import 'local_source.dart';
 import 'local_source_preferences.dart';
+import 'source_icon.dart';
 import 'source_id.dart';
 
 /// Session cache: extension id → declares the optional `preferences()`
@@ -347,6 +348,21 @@ class ExtensionRepository {
     // An in-flight load must not resurrect the uninstalled source.
     _loading.remove(id);
     sourcePrefsCapabilityCache.remove(id);
+    // The favicon cache is keyed by source id and remembers MISSES as well as
+    // hits, so without this a reinstall inherits whatever this id resolved to
+    // — or failed to resolve to — last time, until that record's retry window
+    // expires. Uninstall is the natural "forget this source" point, and it is
+    // the repair a user reaches for when an icon is wrong.
+    //
+    // Deliberately NOT done on install/update: probing is flaky (many hosts
+    // answer once and not the next run), so re-probing on every version bump
+    // would trade a working icon for a coin flip.
+    try {
+      await SourceIconStore.instance.forget(id);
+    } catch (_) {
+      // Best effort — a stale icon must not abort an uninstall the user has
+      // already committed to. The record expires on its own retry window.
+    }
     await _storage.uninstall(id);
     await _emitChanges();
   }

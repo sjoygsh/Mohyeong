@@ -82,6 +82,7 @@ class _DevPageSourceScreenState extends ConsumerState<DevPageSourceScreen> {
     final url = raw.startsWith('http') ? raw : 'https://$raw';
     _baseHost = Uri.parse(url).host;
     await _controller.loadRequest(Uri.parse(url));
+    if (!mounted) return;
     setState(() => _status = 'Loading $url …');
   }
 
@@ -131,8 +132,12 @@ class _DevPageSourceScreenState extends ConsumerState<DevPageSourceScreen> {
       final dir = await getApplicationDocumentsDirectory();
       final file = File('${dir.path}/devdump.html');
       await file.writeAsString(decoded, flush: true);
+      if (!mounted) return;
       setState(() => _status = 'Dumped ${decoded.length} chars → ${file.path}');
     } catch (e) {
+      // Both paths cross an await, so leaving the screen mid-dump would
+      // otherwise land a setState on a disposed State.
+      if (!mounted) return;
       setState(() => _status = 'Dump failed: $e');
     }
   }
