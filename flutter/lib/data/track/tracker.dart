@@ -23,6 +23,17 @@ abstract class Tracker {
   /// this to render an extra "Server" field in the login dialog.
   bool get supportsServerUrl => false;
 
+  /// Whether THIS BUILD can actually sign in to the service.
+  ///
+  /// The OAuth trackers need a client id registered to whoever builds the
+  /// app, supplied with `--dart-define` (see the subclasses). Without one the
+  /// service rejects the very first request, so the UI uses this to say the
+  /// sign-in is unavailable instead of opening a page that cannot succeed.
+  /// Trackers that need no build-time secret — Kitsu publishes a permanent
+  /// public client, Komga and Suwayomi take the user's own server — leave
+  /// this true.
+  bool get isConfigured => true;
+
   /// Whether the tracker supports private list entries (AniList, MAL). The
   /// manga details sheet shows a "Private" toggle when true.
   bool get supportsPrivateTracking => false;

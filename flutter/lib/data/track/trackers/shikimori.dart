@@ -23,9 +23,16 @@ class ShikimoriTracker extends Tracker {
     required this.navigatorKey,
   }) : super(TrackerIds.shikimori, 'Shikimori', TrackerCategory.online);
 
-  // Placeholders; patched at build time. Mihon ships its own pair.
-  static const String _clientId = '0';
-  static const String _clientSecret = '0';
+  // The registered Shikimori OAuth application for this build. Empty in the
+  // public repo: these identify whoever ships the app, so they cannot live in
+  // source. Supply them at build time —
+  //   --dart-define=SHIKIMORI_CLIENT_ID=... --dart-define=SHIKIMORI_CLIENT_SECRET=...
+  // Without them [isConfigured] is false and the UI says sign-in is
+  // unavailable, rather than opening a page Shikimori will reject.
+  static const String _clientId =
+      String.fromEnvironment('SHIKIMORI_CLIENT_ID');
+  static const String _clientSecret =
+      String.fromEnvironment('SHIKIMORI_CLIENT_SECRET');
   static const String _redirectUri = 'mohyeong://shikimori-auth';
   static const String _baseUrl = 'https://shikimori.one';
   static const String _apiUrl = '$_baseUrl/api';
@@ -52,7 +59,14 @@ class ShikimoriTracker extends Tracker {
   }
 
   @override
+  bool get isConfigured => _clientId.isNotEmpty && _clientSecret.isNotEmpty;
+
+  @override
   Future<void> login() async {
+    if (!isConfigured) {
+      throw TrackerException(
+          'Shikimori sign-in isn\'t available in this build.');
+    }
     final ctx = navigatorKey.currentContext;
     if (ctx == null) {
       throw StateError('No navigator available to drive the OAuth flow.');

@@ -21,8 +21,14 @@ class MyAnimeListTracker extends Tracker {
     required this.navigatorKey,
   }) : super(TrackerIds.myAnimeList, 'MyAnimeList', TrackerCategory.online);
 
-  // Patched at build time; placeholder for the public repo.
-  static const String _clientId = '0';
+  // The registered MyAnimeList API client for this build. Empty in the
+  // public repo: it identifies whoever ships the app, so it cannot live in
+  // source. Supply it at build time —
+  //   flutter build apk --release --dart-define=MYANIMELIST_CLIENT_ID=abc123
+  // Without it [isConfigured] is false and the UI says sign-in is
+  // unavailable, rather than opening a page MyAnimeList will reject.
+  static const String _clientId =
+      String.fromEnvironment('MYANIMELIST_CLIENT_ID');
   static const String _redirectUri = 'mohyeong://mal-auth';
   static const String _apiUrl = 'https://api.myanimelist.net/v2';
   static const String _authUrl = 'https://myanimelist.net/v1/oauth2';
@@ -60,7 +66,14 @@ class MyAnimeListTracker extends Tracker {
   }
 
   @override
+  bool get isConfigured => _clientId.isNotEmpty;
+
+  @override
   Future<void> login() async {
+    if (!isConfigured) {
+      throw TrackerException(
+          'MyAnimeList sign-in isn\'t available in this build.');
+    }
     final ctx = navigatorKey.currentContext;
     if (ctx == null) {
       throw StateError('No navigator available to drive the OAuth flow.');

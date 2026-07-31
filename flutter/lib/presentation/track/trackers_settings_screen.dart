@@ -182,27 +182,36 @@ class _TrackerTileState extends State<_TrackerTile> {
   @override
   Widget build(BuildContext context) {
     final loggedIn = _loggedIn;
+    // A build with no OAuth client for this service cannot sign in at all, so
+    // the row says so rather than offering a button the server would reject.
+    final available = widget.tracker.isConfigured;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: TideRow(
         icon: loggedIn == true ? Icons.link : Icons.link_off,
         title: widget.tracker.name,
-        subtitle: loggedIn == null
-            ? 'Checking…'
-            : (loggedIn ? 'Logged in' : 'Not logged in'),
+        subtitle: !available
+            ? 'Unavailable in this build'
+            : loggedIn == null
+                ? 'Checking…'
+                : (loggedIn ? 'Logged in' : 'Not logged in'),
         lit: loggedIn == true,
-        onTap: _working ? null : (loggedIn == true ? _logout : _login),
+        onTap: !available || _working
+            ? null
+            : (loggedIn == true ? _logout : _login),
         trailing: _working
             ? const SizedBox(
                 width: 18,
                 height: 18,
                 child: TideSpinner(size: 18, strokeWidth: 2),
               )
-            : Text(
-                loggedIn == true ? 'Log out' : 'Log in',
-                style: TideText.title(size: 13)
-                    .copyWith(color: TideColors.accent),
-              ),
+            : available
+                ? Text(
+                    loggedIn == true ? 'Log out' : 'Log in',
+                    style: TideText.title(size: 13)
+                        .copyWith(color: TideColors.accent),
+                  )
+                : null,
       ),
     );
   }

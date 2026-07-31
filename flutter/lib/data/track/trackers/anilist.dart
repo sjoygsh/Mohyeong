@@ -22,11 +22,14 @@ class AniListTracker extends Tracker {
     required this.navigatorKey,
   }) : super(TrackerIds.aniList, 'AniList', TrackerCategory.online);
 
-  // The OAuth client id is the user's registered AniList API client. For
-  // v1.0 we register a client per build but ship a placeholder here — the
-  // build pipeline should patch this constant before publishing. Mohyeong's
-  // friends-only model means a single shared client is fine.
-  static const String _clientId = '0';
+  // The registered AniList API client for this build. Empty in the public
+  // repo: it identifies whoever ships the app, so it cannot live in source.
+  // Supply it at build time —
+  //   flutter build apk --release --dart-define=ANILIST_CLIENT_ID=12345
+  // Without it [isConfigured] is false and the UI says sign-in is
+  // unavailable, rather than opening a page AniList will reject.
+  static const String _clientId =
+      String.fromEnvironment('ANILIST_CLIENT_ID');
   static const String _redirectUri = 'mohyeong://anilist-auth';
   static const String _apiUrl = 'https://graphql.anilist.co';
   static const String _baseUrl = 'https://anilist.co';
@@ -54,7 +57,14 @@ class AniListTracker extends Tracker {
   }
 
   @override
+  bool get isConfigured => _clientId.isNotEmpty;
+
+  @override
   Future<void> login() async {
+    if (!isConfigured) {
+      throw TrackerException(
+          'AniList sign-in isn\'t available in this build.');
+    }
     final ctx = navigatorKey.currentContext;
     if (ctx == null) {
       throw StateError('No navigator available to drive the OAuth flow.');
