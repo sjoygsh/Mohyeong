@@ -1884,7 +1884,7 @@ Future<void> _toggleFavorite(
       context,
       (ctx) => const TideConfirmSheet(
         title: 'Remove from library',
-        message: 'Your reading history is kept — the series just leaves '
+        message: 'Your reading history is kept — the entry just leaves '
             'the library.',
         confirmLabel: 'Remove',
       ),

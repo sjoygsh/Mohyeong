@@ -110,7 +110,7 @@ class LinkedMangaSheet extends ConsumerWidget {
               const SizedBox(height: 18),
               if (linked.isEmpty)
                 Text(
-                  'Attach another title from your library and its new '
+                  'Attach another entry from your library and its new '
                   'chapters will appear under this one.',
                   style: TideText.body(),
                 )
@@ -240,7 +240,7 @@ class _LinkedRow extends ConsumerWidget {
 
     final current = await mangaRepo.getById(linked.id);
     if (current == null) {
-      toast.show('That title is no longer available');
+      toast.show('That entry is no longer available');
       return;
     }
     if (!current.favorite) {
@@ -297,7 +297,7 @@ class _PickFavoriteSheet extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Link a title', style: TideText.display(21)),
+              Text('Link an entry', style: TideText.display(21)),
               const SizedBox(height: 18),
               if (candidates.isEmpty)
                 Text(

@@ -105,7 +105,7 @@ class MangaCoverViewer extends ConsumerWidget {
       context,
       (_) => const TideConfirmSheet(
         title: 'Remove custom cover',
-        message: 'The series goes back to the artwork its source provides.',
+        message: 'The entry goes back to the artwork its source provides.',
         confirmLabel: 'Remove',
       ),
     );

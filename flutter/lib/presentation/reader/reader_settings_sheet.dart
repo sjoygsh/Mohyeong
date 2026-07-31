@@ -289,7 +289,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
-        const _SheetHeading('For this series'),
+        const _SheetHeading('For this entry'),
         _ChipRow(
           title: 'Reading mode',
           children: [

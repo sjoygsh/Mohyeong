@@ -144,19 +144,19 @@ class LibrarySettingsScreen extends ConsumerWidget {
           const PrefSectionHeader('Badges'),
           PrefSwitchRaw(
             title: 'Unread count',
-            subtitle: 'Show the number of unread chapters on each card.',
+            subtitle: 'Show the number of unread chapters on each card',
             value: showUnreadBadge,
             onChanged: ref.read(displayUnreadBadgeProvider.notifier).setEnabled,
           ),
           PrefSwitchRaw(
             title: 'Downloaded count',
-            subtitle: 'Show the number of downloaded chapters on each card.',
+            subtitle: 'Show the number of downloaded chapters on each card',
             value: showDownloadBadge,
             onChanged: ref.read(displayDownloadBadgeProvider.notifier).setEnabled,
           ),
           PrefSwitchRaw(
             title: 'Local source chip',
-            subtitle: 'Mark cards backed by the built-in Local source.',
+            subtitle: 'Mark cards backed by the built-in Local source',
             value: showLocalBadge,
             onChanged: ref.read(displayLocalBadgeProvider.notifier).setEnabled,
           ),

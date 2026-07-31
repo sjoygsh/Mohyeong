@@ -418,7 +418,7 @@ class _PermissionStepState extends ConsumerState<_PermissionStep>
       children: [
         _PermissionRow(
           title: 'Notification permission',
-          subtitle: 'Get notified for library updates and more.',
+          subtitle: 'Get notified for library updates and more',
           granted: _notifications,
           onRequest: () async {
             await AppPermissions.requestNotificationPermission();

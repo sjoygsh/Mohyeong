@@ -1636,7 +1636,7 @@ class _EmptyLibraryCard extends StatelessWidget {
       child: TideEmpty(
         title: 'Nothing here yet',
         message:
-            'Add a series to your library and it will surface here — what '
+            'Add an entry to your library and it will surface here — what '
             'you are part-way through, and what arrived overnight.',
       ),
     );

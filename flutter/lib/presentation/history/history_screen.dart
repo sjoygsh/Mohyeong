@@ -195,7 +195,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       )
                     : const TideEmpty(
                         title: 'No results found',
-                        message: 'No series in your history matches that.',
+                        message: 'Nothing in your history matches that.',
                       ),
               ),
             )

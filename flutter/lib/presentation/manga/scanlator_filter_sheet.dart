@@ -117,7 +117,7 @@ class _ScanlatorFilterSheetState extends ConsumerState<ScanlatorFilterSheet> {
           const SizedBox(height: 6),
           Text(
             _ordered.isEmpty
-                ? 'No scanlators are credited on this series.'
+                ? 'No scanlators are credited on this entry.'
                 : '$showing of ${_ordered.length} showing',
             style: TideText.caption(size: 13),
           ),

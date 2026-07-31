@@ -326,8 +326,8 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
       (_) => TideOptionSheet(
         title: group.first.manga.title,
         options: const [
-          ('top', 'Move series to top'),
-          ('cancel', 'Cancel all in series'),
+          ('top', 'Move entry to top'),
+          ('cancel', 'Cancel all in entry'),
         ],
         selected: '',
       ),
