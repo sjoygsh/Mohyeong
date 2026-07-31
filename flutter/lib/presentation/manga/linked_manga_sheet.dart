@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/category/category_repository.dart';
+import '../../data/library/library_update_preference.dart';
 import '../../data/manga/manga_links_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
@@ -112,7 +114,7 @@ class LinkedMangaSheet extends ConsumerWidget {
   }
 }
 
-class _LinkedRow extends StatelessWidget {
+class _LinkedRow extends ConsumerWidget {
   const _LinkedRow({
     required this.primaryId,
     required this.linked,
@@ -124,7 +126,7 @@ class _LinkedRow extends StatelessWidget {
   final MangaLinksRepository repo;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return TideGlass(
       radius: TideRadius.row,
       tintTop: 0.085,
@@ -164,12 +166,67 @@ class _LinkedRow extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           TideIconButton(
-            icon: Icons.link_off,
-            onTap: () => repo.unlink(primaryId, linked.id),
+            icon: Icons.more_horiz,
+            onTap: () => _openActions(context, ref),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openActions(BuildContext context, WidgetRef ref) async {
+    final picked = await showTideSheet<String>(
+      context,
+      (_) => TideOptionSheet(
+        title: linked.title,
+        options: const [
+          ('primary', 'Make primary'),
+          ('unlink', 'Unlink'),
+        ],
+        selected: '',
+      ),
+    );
+    switch (picked) {
+      case 'unlink':
+        await repo.unlink(primaryId, linked.id);
+      case 'primary':
+        if (context.mounted) await _makePrimary(context, ref);
+    }
+  }
+
+  /// Kotlin `MangaScreenModel.makePrimary`. The promoted title's library
+  /// entry becomes the cluster's, so it has to be in the library before the
+  /// swap — otherwise the whole cluster drops out of the library.
+  Future<void> _makePrimary(BuildContext context, WidgetRef ref) async {
+    final nav = Navigator.of(context);
+    final toast = TideToast.of(context);
+    final mangaRepo = ref.read(mangaRepositoryProvider);
+
+    final current = await mangaRepo.getById(linked.id);
+    if (current == null) {
+      toast.show('That title is no longer available');
+      return;
+    }
+    if (!current.favorite) {
+      await mangaRepo.setFavorite(current.id, true);
+      // Kotlin routes through the default category only when one is
+      // configured; "Default" (0) and "Always ask" (-1) both add without
+      // membership rather than interrupting with a picker mid-promotion.
+      final defaultCategoryId = ref.read(defaultCategoryProvider);
+      if (defaultCategoryId > 0) {
+        await ref
+            .read(categoryRepositoryProvider)
+            .setCategoriesForManga(current.id, {defaultCategoryId});
+      }
+    }
+
+    final ok = await repo.makePrimary(primaryId, linked.id);
+    // The cluster now hangs off the other title, so this sheet is showing an
+    // entry with nothing linked to it. Close it and say what happened.
+    nav.pop();
+    toast.show(ok
+        ? '${linked.title} is now the primary'
+        : 'Could not change the primary');
   }
 }
 
