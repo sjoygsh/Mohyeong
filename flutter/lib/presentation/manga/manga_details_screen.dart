@@ -913,6 +913,11 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
   List<Chapter>? _cachedSorted;
   List<Object>? _cachedRendered;
   Set<String>? _cachedScanlators;
+
+  /// Lowest chapter number still unread, or null when nothing is unread.
+  /// "Has an earlier unread chapter" is exactly `number > this`, so the tile
+  /// menu no longer scans the whole list per row — see [_ChapterTile].
+  double? _cachedMinUnread;
   Object? _renderKey;
 
   /// Bumped whenever [_downloadedIds] MEMBERSHIP changes (resolved anew,
@@ -1172,6 +1177,14 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
       } else {
         rendered = sorted;
       }
+      double? minUnread;
+      for (final c in chapters) {
+        if (c.read) continue;
+        if (minUnread == null || c.chapterNumber < minUnread) {
+          minUnread = c.chapterNumber;
+        }
+      }
+      _cachedMinUnread = minUnread;
       _renderKey = key;
       _cachedScanlators = availableScanlators;
       _cachedSorted = sorted;
@@ -1248,11 +1261,13 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
                 onToggleSelected: onToggleSelected,
                 downloadState: downloadState,
                 downloadProgress: progress,
-                // Pass the full (unfiltered, unsorted) chapter list so the
-                // "Mark previous as read" affordance acts over every chapter
-                // earlier in reading order, not just the ones the current
-                // filter happens to show.
+                // The full (unfiltered, unsorted) list so "Mark previous as
+                // read" acts over every chapter earlier in reading order, not
+                // just the ones the current filter happens to show. Only the
+                // ACTION walks it; whether to offer it at all is precomputed.
                 allChapters: chapters,
+                hasEarlierUnread: _cachedMinUnread != null &&
+                    chapter.chapterNumber > _cachedMinUnread!,
               );
             },
           ),
@@ -2793,6 +2808,7 @@ class _ChapterTile extends ConsumerStatefulWidget {
     required this.selecting,
     required this.onToggleSelected,
     required this.allChapters,
+    required this.hasEarlierUnread,
     required this.byNumber,
     required this.downloadState,
     required this.downloadProgress,
@@ -2812,6 +2828,12 @@ class _ChapterTile extends ConsumerStatefulWidget {
   final bool selecting;
   final ValueChanged<int> onToggleSelected;
   final List<Chapter> allChapters;
+
+  /// Whether any chapter earlier in reading order is still unread. Computed
+  /// once per chapters emission: this used to be an `.any()` over the whole
+  /// list, evaluated in every visible tile's build, and a download-progress
+  /// tick rebuilds them several times a second.
+  final bool hasEarlierUnread;
 
   /// Chapter number → every copy across the linked cluster; empty when
   /// nothing is linked. Read actions expand through this so a chapter read
@@ -2950,9 +2972,7 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
     final menu = <(String, String)>[
       if (!chapter.read) ('markRead', 'Mark as read'),
       if (chapter.read) ('markUnread', 'Mark as unread'),
-      if (widget.allChapters
-          .any((c) => c.chapterNumber < chapter.chapterNumber && !c.read))
-        ('markPreviousAsRead', 'Mark previous as read'),
+      if (widget.hasEarlierUnread) ('markPreviousAsRead', 'Mark previous as read'),
       if (!chapter.bookmark) ('bookmark', 'Bookmark'),
       if (chapter.bookmark) ('unbookmark', 'Remove bookmark'),
       (
