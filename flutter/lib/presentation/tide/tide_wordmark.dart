@@ -300,16 +300,11 @@ class _TideSplashGateState extends State<TideSplashGate>
   }
 
   Widget _veilLayer() {
-    // The veil is a sibling of the app inside a bare Stack, so unlike every
-    // other screen it has NO Scaffold or Material above it — and therefore no
-    // DefaultTextStyle. Flutter falls back to a deliberately alarming style
-    // for text in that state, which drew 모형 with a double YELLOW underline.
-    // `TideText.kicker` sets no decoration of its own, so the fallback's came
-    // straight through the merge. Supplying the style here fixes it at the
-    // root, and covers anything else that ends up on this layer.
-    return DefaultTextStyle(
-      style: TideText.body().copyWith(decoration: TextDecoration.none),
-      child: ColoredBox(
+    // This layer has no Scaffold or Material above it, so its text used to
+    // inherit Flutter's alarming fallback style and drew 모형 with a double
+    // yellow underline. The floor now lives above the navigator in
+    // `buildAppShell`, which covers this layer and the toast overlay together.
+    return ColoredBox(
         color: TideColors.ground,
       child: Stack(
         children: [
@@ -341,7 +336,6 @@ class _TideSplashGateState extends State<TideSplashGate>
           ),
           ],
         ),
-      ),
     );
   }
 }

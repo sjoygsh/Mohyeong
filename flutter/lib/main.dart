@@ -25,6 +25,7 @@ import 'presentation/theme/app_theme.dart';
 import 'presentation/home/home_screen.dart';
 import 'presentation/onboarding/onboarding_screen.dart';
 import 'presentation/security/auth_gate.dart';
+import 'presentation/tide/tide.dart';
 import 'presentation/tide/tide_wordmark.dart';
 
 Future<void> main() async {
@@ -184,17 +185,40 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
           child: OnboardingGate(child: HomeScreen()),
         ),
       ),
-      // Mount the shared hidden WebView (Cloudflare fingerprint fetch path)
-      // full-size but BEHIND the app: a real viewport is needed for Cloudflare's
-      // challenge to run, and the opaque full-screen UI on top keeps it
-      // invisible. (A 1×1 viewport gets flagged and never solves.)
-      builder: (context, child) => Stack(
-        children: [
-          const Positioned.fill(child: OffscreenWebViewHost()),
-          if (child != null) Positioned.fill(child: child),
-        ],
-      ),
+      builder: buildAppShell,
       debugShowCheckedModeBanner: false,
     );
   }
+}
+
+/// Everything that wraps the navigator: the hidden WebView host, and the
+/// text-style floor every screen inherits.
+///
+/// Named and top-level so the floor can be tested — see
+/// `test/app_shell_text_style_test.dart`.
+Widget buildAppShell(BuildContext context, Widget? child) {
+  // WidgetsApp installs a deliberately alarming DefaultTextStyle — 48px red
+  // monospace with a DOUBLE YELLOW UNDERLINE — as the app-wide floor, so that
+  // text with no Material above it announces itself. Material and Scaffold
+  // override it, which is why ordinary screens look right, but ANYTHING
+  // outside a Material subtree inherits it: the root overlay (where toasts
+  // are inserted), the splash veil, and these builder-level siblings. The
+  // `TideText.*` helpers set colour, size and weight but never `decoration`,
+  // so the merge kept exactly one part of that fallback — the yellow bars.
+  //
+  // Installing the floor HERE fixes all of them at once: this wraps the
+  // navigator, so it is an ancestor of every route AND of the root overlay.
+  // Material still wins inside routes, so screens are unaffected.
+  return DefaultTextStyle(
+    style: TideText.body().copyWith(decoration: TextDecoration.none),
+    child: Stack(
+      children: [
+        // Mounted full-size but BEHIND the app: Cloudflare's challenge needs a
+        // real viewport to run, and the opaque UI on top keeps it invisible.
+        // (A 1×1 viewport gets flagged and never solves.)
+        const Positioned.fill(child: OffscreenWebViewHost()),
+        if (child != null) Positioned.fill(child: child),
+      ],
+    ),
+  );
 }
