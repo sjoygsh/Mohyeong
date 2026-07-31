@@ -47,6 +47,7 @@ import 'linked_manga_sheet.dart';
 import 'manga_cover_viewer.dart';
 import 'manga_notes_screen.dart';
 import 'scanlator_filter_sheet.dart';
+import '../util/user_message.dart';
 
 /// Highest recognised volume number across [chapters], or null when none is
 /// known — fed to `trackOnMarkRead` so "track by volume" reports the volume.
@@ -262,9 +263,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
           : 'Refreshed. $total new chapter${total == 1 ? '' : 's'}.');
     } catch (e) {
       if (!mounted || silent) return;
-      final msg =
-          e is NoChaptersException ? 'No chapters found' : 'Refresh failed: $e';
-      toast.show(msg);
+      toast.show(userMessage(e, fallback: 'Couldn\'t refresh this entry.'));
     } finally {
       if (mounted) {
         setState(() => _refreshingDetails = false);
@@ -2414,7 +2413,7 @@ class _TrackerPreviewBar extends ConsumerWidget {
               itemBuilder: (context, i) {
                 final t = tracks[i];
                 final tracker = registry.byId(t.trackerId);
-                final name = tracker?.name ?? 'Tracker ${t.trackerId}';
+                final name = tracker?.name ?? 'Unknown tracker';
                 // A bound tracker is live state, so the chip reads as
                 // selected — same as everything else the app is holding on.
                 return TideChip(
@@ -3400,7 +3399,7 @@ class _Error extends StatelessWidget {
       padding: const EdgeInsets.all(28),
       child: Center(
         child: Text(
-          '$error',
+          userMessage(error, fallback: 'Couldn\'t load this entry.'),
           textAlign: TextAlign.center,
           style: TideText.body(),
         ),

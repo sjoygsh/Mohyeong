@@ -2476,10 +2476,7 @@ class _ReaderViewport extends StatelessWidget {
     }
     if (data.source == null) {
       onTotalChanged(0);
-      return _SourceUnavailable(
-        mangaSourceId: data.manga.source,
-        error: data.sourceError,
-      );
+      return _SourceUnavailable(error: data.sourceError);
     }
     return _PageList(
       // Same in-place chapter-swap hazard as above, and worse here:
@@ -2578,7 +2575,8 @@ class _PageListState extends State<_PageList> {
                       color: widget.ink.withValues(alpha: 0.54), size: 64),
                   const SizedBox(height: 12),
                   Text(
-                    'Failed to load pages: ${snap.error}',
+                    userMessage(snap.error!,
+                        fallback: 'Couldn\'t load this chapter\'s pages.'),
                     style: TextStyle(color: widget.ink.withValues(alpha: 0.7)),
                     textAlign: TextAlign.center,
                   ),
@@ -2654,7 +2652,8 @@ class _PageListState extends State<_PageList> {
                 height: 400,
                 child: Center(
                   child: Text(
-                    'Page ${i + 1} failed: $error',
+                    userMessage(error,
+                        fallback: 'Page ${i + 1} didn\'t load.'),
                     style: TextStyle(color: widget.ink.withValues(alpha: 0.7)),
                   ),
                 ),
@@ -3063,7 +3062,7 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
             if (error != null) ...[
               const SizedBox(height: 12),
               Text(
-                '$error',
+                userMessage(error, fallback: 'This page didn\'t load.'),
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -3116,7 +3115,8 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
         height: 400,
         child: Center(
           child: Text(
-            'Page ${item.pageIdx + 1} failed: $error',
+            userMessage(error,
+                fallback: 'Page ${item.pageIdx + 1} didn\'t load.'),
             style: TextStyle(color: widget.textColor.withValues(alpha: 0.7)),
           ),
         ),
@@ -3353,7 +3353,7 @@ class _LocalPageList extends StatelessWidget {
           height: 400,
           child: Center(
             child: Text(
-              'Page ${i + 1} failed: $error',
+              userMessage(error, fallback: 'Page ${i + 1} didn\'t load.'),
               style: TextStyle(color: ink.withValues(alpha: 0.7)),
             ),
           ),
@@ -4002,7 +4002,8 @@ class _PagesViewState extends ConsumerState<_PagesView> {
                       },
                       errorBuilder: (ctx, error, _) => Center(
                         child: Text(
-                          'Page ${i + 1} failed: $error',
+                          userMessage(error,
+                              fallback: 'Page ${i + 1} didn\'t load.'),
                           style:
                               TextStyle(color: widget.ink.withValues(alpha: 0.7)),
                           textAlign: TextAlign.center,
@@ -4409,9 +4410,8 @@ class _ZoomablePageState extends ConsumerState<_ZoomablePage>
 }
 
 class _SourceUnavailable extends StatelessWidget {
-  const _SourceUnavailable({required this.mangaSourceId, required this.error});
+  const _SourceUnavailable({required this.error});
 
-  final int mangaSourceId;
   final Object? error;
 
   @override
@@ -4432,15 +4432,16 @@ class _SourceUnavailable extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'This manga was added from source id $mangaSourceId. Install '
-              'the matching extension on the Browse tab to read it.',
+              'This entry came from a source that is not installed. '
+              'Install the matching extension on the Browse tab to read it.',
               style: const TextStyle(color: Colors.white38, fontSize: 12),
               textAlign: TextAlign.center,
             ),
             if (error != null) ...[
               const SizedBox(height: 12),
               Text(
-                'Detail: $error',
+                userMessage(error!,
+                    fallback: 'The extension couldn\'t be loaded.'),
                 style: const TextStyle(color: Colors.white38, fontSize: 11),
                 textAlign: TextAlign.center,
               ),
@@ -4595,7 +4596,7 @@ class _ReaderError extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Text(
-          'Failed to open chapter: $error',
+          userMessage(error, fallback: 'Couldn\'t open this chapter.'),
           style: const TextStyle(color: Colors.white70),
           textAlign: TextAlign.center,
         ),

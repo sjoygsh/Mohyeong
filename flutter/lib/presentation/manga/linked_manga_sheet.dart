@@ -5,8 +5,45 @@ import '../../data/category/category_repository.dart';
 import '../../data/library/library_update_preference.dart';
 import '../../data/manga/manga_links_repository.dart';
 import '../../data/manga/manga_repository.dart';
+import '../../data/source/extension_repository.dart';
 import '../../domain/manga/model/manga.dart';
 import '../tide/tide.dart';
+
+/// The display name of a source, for rows that would otherwise show its
+/// numeric id. Falls back to "Unknown source" when the extension is gone —
+/// an id in a subtitle reads as a fault rather than as information.
+final _sourceNameProvider =
+    FutureProvider.family<String, int>((ref, sourceId) async {
+  try {
+    final source =
+        await ref.watch(extensionRepositoryProvider).getSource('$sourceId');
+    // Same "Name (LANG)" shape the rest of the app shows.
+    return source.lang.isEmpty
+        ? source.name
+        : '${source.name} (${source.lang.toUpperCase()})';
+  } catch (_) {
+    return 'Unknown source';
+  }
+});
+
+/// One row's source line. Held apart so resolving the name cannot rebuild
+/// the sheet around it.
+class _SourceLabel extends ConsumerWidget {
+  const _SourceLabel(this.sourceId);
+
+  final int sourceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final name = ref.watch(_sourceNameProvider(sourceId));
+    return Text(
+      name.valueOrNull ?? '…',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TideText.caption(size: 12),
+    );
+  }
+}
 
 /// Modal sheet for managing the cluster of "linked" alternate sources
 /// attached to a manga (different translations / mirror sources). The
@@ -159,8 +196,7 @@ class _LinkedRow extends ConsumerWidget {
                   style: TideText.title(size: 14),
                 ),
                 const SizedBox(height: 3),
-                Text('Source ${linked.source}',
-                    style: TideText.caption(size: 12)),
+                _SourceLabel(linked.source),
               ],
             ),
           ),
@@ -309,8 +345,7 @@ class _PickFavoriteSheet extends ConsumerWidget {
                                     style: TideText.title(size: 14),
                                   ),
                                   const SizedBox(height: 3),
-                                  Text('Source ${m.source}',
-                                      style: TideText.caption(size: 12)),
+                                  _SourceLabel(m.source),
                                 ],
                               ),
                             ),

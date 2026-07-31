@@ -33,6 +33,7 @@ import 'migrate_source_screen.dart';
 import 'source_browse_screen.dart';
 import 'source_preferences_screen.dart';
 import 'sources_filter_screen.dart';
+import '../util/user_message.dart';
 
 /// Browse hosts three views: Sources (installed sources you can browse),
 /// Extensions (install / uninstall management), and Migrate (moves favourites
@@ -738,7 +739,8 @@ Future<void> _runUpdate(
   } catch (err) {
     if (!context.mounted) return;
     Navigator.of(context).pop();
-    TideToast.of(context).show('Update failed: $err');
+    TideToast.of(context)
+        .show(userMessage(err, fallback: 'Couldn\'t update that extension.'));
   }
 }
 
@@ -847,7 +849,8 @@ Future<void> _runInstall(
   } catch (e) {
     if (!context.mounted) return;
     Navigator.of(context).pop(); // dismiss progress
-    TideToast.of(context).show('Install failed: $e');
+    TideToast.of(context)
+        .show(userMessage(e, fallback: 'Couldn\'t install that extension.'));
   }
 }
 

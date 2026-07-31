@@ -33,6 +33,7 @@ import '../reader/reader_screen.dart';
 import '../tide/tide.dart';
 import '../manga/manga_details_screen.dart';
 import '../util/timestamp_format.dart';
+import '../util/user_message.dart';
 
 /// The feed this screen renders: the recent-history join, paired with the
 /// all-time read duration.
@@ -129,7 +130,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                   stream: _feed,
                   builder: (context, snap) {
                     if (snap.hasError) {
-                      return _Message('Error: ${snap.error}');
+                      return _Message(userMessage(snap.error!,
+                          fallback: 'Couldn\'t load your history.'));
                     }
                     if (!snap.hasData) {
                       return const Center(

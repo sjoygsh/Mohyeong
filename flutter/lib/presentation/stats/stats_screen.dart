@@ -22,6 +22,7 @@ import '../../data/track/track_repository.dart';
 import '../../data/track/tracker_registry.dart';
 import '../../domain/library/model/library_item.dart';
 import '../tide/tide.dart';
+import '../util/user_message.dart';
 
 /// Statistics screen — the same four groups Mihon's `StatsScreenContent`
 /// shows (Overview / Entries / Chapters / Trackers). Data is a one-shot
@@ -68,7 +69,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                       future: _future,
                       builder: (context, snap) {
                         if (snap.hasError) {
-                          return _Note('Failed to load stats: ${snap.error}');
+                          return _Note(userMessage(snap.error!, fallback: 'Couldn\'t load your stats.'));
                         }
                         if (!snap.hasData) {
                           return const Center(

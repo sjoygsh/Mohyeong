@@ -20,6 +20,7 @@ import '../../domain/manga/model/manga.dart';
 import '../migration/migration_config_screen.dart';
 import '../migration/migration_search_screen.dart';
 import '../tide/tide.dart';
+import '../util/user_message.dart';
 
 /// Browse → Migrate view. Lists every source the user currently has
 /// favourites on, with a count, ordered by descending count. Tapping a source
@@ -95,7 +96,9 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
           baseUrl = ext.baseUrl;
           userAgent = ext.userAgent;
         } else {
-          name = 'Source $sourceId';
+          // The extension is gone, so there is no name to show — an id
+          // would only look like a fault.
+          name = 'Unknown source';
           installed = false;
         }
       }
@@ -130,7 +133,7 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
           );
         }
         if (snap.hasError) {
-          return _Note('Failed to load sources: ${snap.error}');
+          return _Note(userMessage(snap.error!, fallback: 'Couldn\'t load your sources.'));
         }
         final entries = snap.data?.entries ?? const <_MigrateSourceEntry>[];
         if (entries.isEmpty) {
@@ -440,7 +443,7 @@ class _MigrateSourceMangaListScreenState
           );
         }
         if (snap.hasError) {
-          return _Note('Failed to load manga: ${snap.error}');
+          return _Note(userMessage(snap.error!, fallback: 'Couldn\'t load those entries.'));
         }
         final mangas = snap.data ?? const <Manga>[];
         _lastLoaded = mangas;

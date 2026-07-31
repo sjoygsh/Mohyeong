@@ -334,7 +334,8 @@ class _TrackerSearchSheetState extends State<_TrackerSearchSheet> {
     final error = _error;
     if (error != null) {
       return Center(
-        child: Text('Search failed: $error',
+        child: Text(
+            userMessage(error, fallback: 'Couldn\'t search that tracker.'),
             textAlign: TextAlign.center, style: TideText.body()),
       );
     }

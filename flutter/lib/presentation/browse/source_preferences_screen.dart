@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/source/extension_repository.dart';
 import '../../domain/source/model/manga_source.dart';
 import '../tide/tide.dart';
+import '../util/user_message.dart';
 
 /// Per-source settings editor — the JS-extension analog of Kotlin's
 /// `SourcePreferencesScreen` (ConfigurableSource). Renders the defs the
@@ -138,7 +139,8 @@ class _SourcePreferencesScreenState
 
   Widget _body(List<SourceFilterDef>? defs) {
     if (_error != null) {
-      return _Note('Failed to load settings: $_error');
+      return _Note(userMessage(_error!,
+          fallback: 'Couldn\'t load these settings.'));
     }
     if (defs == null) {
       return const Center(

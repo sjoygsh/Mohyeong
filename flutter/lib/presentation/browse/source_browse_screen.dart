@@ -93,7 +93,7 @@ class _SourceBrowseScreenState extends ConsumerState<SourceBrowseScreen> {
           if (snap.hasError) {
             return _Chrome(
               title: 'Source',
-              child: _Note('Failed to load source: ${snap.error}'),
+              child: _Note(userMessage(snap.error!, fallback: 'Couldn\'t load this source.')),
             );
           }
           if (!snap.hasData) {

@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/category/category_repository.dart';
 import '../../domain/category/model/category.dart';
 import '../tide/tide.dart';
+import '../util/user_message.dart';
 
 /// Manage the user-defined library categories. The implicit system
 /// category (id=0, "Uncategorized") is hidden -- the SQL trigger blocks
@@ -53,7 +54,7 @@ class CategoriesScreen extends ConsumerWidget {
                 builder: (context, snap) {
                   if (snap.hasError) {
                     return _Message(
-                      text: 'Failed to load categories: ${snap.error}',
+                      text: userMessage(snap.error!, fallback: 'Couldn\'t load your categories.'),
                     );
                   }
                   if (!snap.hasData) {

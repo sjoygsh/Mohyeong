@@ -133,7 +133,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         error: (e, _) => Center(
           child: Padding(
             padding: const EdgeInsets.all(28),
-            child: Text('Failed to load sync prefs: $e',
+            child: Text(
+                userMessage(e, fallback: 'Couldn\'t load sync settings.'),
                 textAlign: TextAlign.center, style: TideText.body()),
           ),
         ),

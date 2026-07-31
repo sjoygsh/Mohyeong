@@ -262,7 +262,7 @@ class _SourcePickerBar extends StatelessWidget {
         if (snap.hasError) {
           return Padding(
             padding: const EdgeInsets.all(8),
-            child: Text('Failed to load sources: ${snap.error}'),
+            child: Text(userMessage(snap.error!, fallback: 'Couldn\'t load your sources.')),
           );
         }
         if (!snap.hasData) {
@@ -335,7 +335,7 @@ class _ResultsArea extends StatelessWidget {
         if (snap.hasError) {
           return Padding(
             padding: const EdgeInsets.all(16),
-            child: Text('Search failed: ${snap.error}'),
+            child: Text(userMessage(snap.error!, fallback: 'That search failed.')),
           );
         }
         if (!snap.hasData) {

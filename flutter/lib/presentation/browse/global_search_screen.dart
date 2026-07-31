@@ -205,7 +205,8 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
       future: extRepo.listInstalled(),
       builder: (context, snap) {
         if (snap.hasError) {
-          return _Note('Failed to enumerate sources: ${snap.error}');
+          return _Note(userMessage(snap.error!,
+              fallback: 'Couldn\'t list your sources.'));
         }
         if (!snap.hasData) {
           return const Center(
@@ -396,7 +397,7 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
         children: [
           Expanded(
             child: Text(
-              '$error',
+              userMessage(error ?? '', fallback: 'That search failed.'),
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: TideText.caption(size: 12.5, opacity: 0.4),
