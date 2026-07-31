@@ -26,11 +26,11 @@ import '../../data/track/tracker_registry.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/chapter/model/no_chapters_exception.dart';
-import '../../data/util/stream_combine.dart';
 import '../../domain/chapter/service/apply_scanlator_priority.dart';
 import '../../domain/chapter/service/merge_linked_chapters.dart';
 import '../../domain/chapter/service/missing_chapters.dart';
 import '../../domain/chapter/service/set_read_status.dart';
+import '../../domain/chapter/service/watch_cluster_chapters.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/manga/model/tri_state.dart';
 import '../../domain/source/model/source.dart';
@@ -86,52 +86,14 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
       ref.read(mangaRepositoryProvider).watchById(widget.mangaId);
 
   /// This manga's chapters merged with every linked source's — see
-  /// [mergeLinkedChapters]. [switchMap] re-subscribes when the cluster
-  /// itself changes (a title linked or unlinked), so the list follows the
-  /// membership without a screen rebuild.
-  ///
-  /// With nothing linked this is the plain per-manga watch it has always
-  /// been, plus one cheap subscription to the (usually empty) links table.
-  late final Stream<_ClusterChapters> _chaptersStream = switchMap(
-    ref.read(mangaLinksRepositoryProvider).watchLinked(widget.mangaId),
-    (linked) {
-      final repo = ref.read(chapterRepositoryProvider);
-      final primary = repo.watchByMangaId(widget.mangaId);
-      if (linked.isEmpty) {
-        return primary.map(
-          (chapters) => _ClusterChapters(
-            mergeLinkedChapters(
-              primaryMangaId: widget.mangaId,
-              primaryChapters: chapters,
-              linked: const [],
-            ),
-            const {},
-          ),
-        );
-      }
-      // The excluded set rides along because the merge has to drop those rows
-      // BEFORE it dedupes — see [mergeLinkedChapters]. Filtering only at
-      // render time made a chapter disappear whenever the copy that won its
-      // number happened to be the excluded one.
-      return combineLatest2(
-        combineLatestList<List<Chapter>>([
-          primary,
-          for (final lm in linked) repo.watchByMangaId(lm.id),
-        ]),
-        ref
-            .read(excludedScanlatorsRepositoryProvider)
-            .watchByMangaId(widget.mangaId),
-        (List<List<Chapter>> lists, Set<String> excluded) => _ClusterChapters(
-          mergeLinkedChapters(
-            primaryMangaId: widget.mangaId,
-            primaryChapters: lists.first,
-            linked: lists.sublist(1),
-            excludedScanlators: excluded,
-          ),
-          {for (final lm in linked) lm.id: lm},
-        ),
-      );
-    },
+  /// [watchClusterChapters], which holds the composition so it can be tested
+  /// without mounting this screen.
+  late final Stream<ClusterChapters> _chaptersStream = watchClusterChapters(
+    primaryMangaId: widget.mangaId,
+    watchLinked: ref.read(mangaLinksRepositoryProvider).watchLinked,
+    watchChapters: ref.read(chapterRepositoryProvider).watchByMangaId,
+    watchExcludedScanlators:
+        ref.read(excludedScanlatorsRepositoryProvider).watchByMangaId,
   );
 
   /// Chapter number → every copy of it across the cluster, and the manga each
@@ -513,7 +475,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
             return const _MissingManga();
           }
           _maybeAutoFetch(manga);
-          return StreamBuilder<_ClusterChapters>(
+          return StreamBuilder<ClusterChapters>(
             stream: _chaptersStream,
             builder: (context, chapSnap) {
               final cluster = chapSnap.data;
@@ -891,14 +853,6 @@ class _SelectionHeader extends StatelessWidget {
 /// exclusions live-updates the list.
 ///
 /// The filter/sort logic mirrors Mihon's `GetChaptersByMangaId` +
-/// One emission of the merged chapter stream: the display list and its
-/// cluster index, plus the linked manga each merged row belongs to.
-class _ClusterChapters {
-  const _ClusterChapters(this.merged, this.mangaById);
-
-  final MergedChapters merged;
-  final Map<int, Manga> mangaById;
-}
 
 /// `applyFilters` pipeline: drop excluded-scanlator rows, apply the
 /// tri-state unread/bookmarked filters, then sort by the configured key
