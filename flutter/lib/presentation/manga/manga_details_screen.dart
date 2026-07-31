@@ -14,6 +14,7 @@ import '../../data/library/library_display_prefs.dart';
 import '../../data/library/library_update_preference.dart';
 import '../../data/library/library_updater.dart';
 import '../../data/manga/excluded_scanlators_repository.dart';
+import '../../data/manga/manga_links_repository.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/local_source.dart';
@@ -24,6 +25,8 @@ import '../../data/track/tracker_registry.dart';
 import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/chapter/model/no_chapters_exception.dart';
+import '../../data/util/stream_combine.dart';
+import '../../domain/chapter/service/merge_linked_chapters.dart';
 import '../../domain/chapter/service/missing_chapters.dart';
 import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/manga/model/manga.dart';
@@ -79,8 +82,57 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   /// setState, e.g. each chapter-selection tap.
   late final Stream<Manga?> _mangaStream =
       ref.read(mangaRepositoryProvider).watchById(widget.mangaId);
-  late final Stream<List<Chapter>> _chaptersStream =
-      ref.read(chapterRepositoryProvider).watchByMangaId(widget.mangaId);
+
+  /// This manga's chapters merged with every linked source's — see
+  /// [mergeLinkedChapters]. [switchMap] re-subscribes when the cluster
+  /// itself changes (a title linked or unlinked), so the list follows the
+  /// membership without a screen rebuild.
+  ///
+  /// With nothing linked this is the plain per-manga watch it has always
+  /// been, plus one cheap subscription to the (usually empty) links table.
+  late final Stream<_ClusterChapters> _chaptersStream = switchMap(
+    ref.read(mangaLinksRepositoryProvider).watchLinked(widget.mangaId),
+    (linked) {
+      final repo = ref.read(chapterRepositoryProvider);
+      final primary = repo.watchByMangaId(widget.mangaId);
+      if (linked.isEmpty) {
+        return primary.map(
+          (chapters) => _ClusterChapters(
+            mergeLinkedChapters(
+              primaryMangaId: widget.mangaId,
+              primaryChapters: chapters,
+              linked: const [],
+            ),
+            const {},
+          ),
+        );
+      }
+      return combineLatestList<List<Chapter>>([
+        primary,
+        for (final lm in linked) repo.watchByMangaId(lm.id),
+      ]).map(
+        (lists) => _ClusterChapters(
+          mergeLinkedChapters(
+            primaryMangaId: widget.mangaId,
+            primaryChapters: lists.first,
+            linked: lists.sublist(1),
+          ),
+          {for (final lm in linked) lm.id: lm},
+        ),
+      );
+    },
+  );
+
+  /// Chapter number → every copy of it across the cluster, and the manga each
+  /// merged chapter belongs to. Both refreshed from each [_chaptersStream]
+  /// emission; empty whenever nothing is linked.
+  Map<double, List<Chapter>> _byNumber = const {};
+  Map<int, Manga> _mangaById = const {};
+
+  /// The manga a chapter actually belongs to. A merged row can come from a
+  /// linked source, and its pages, downloads and per-source headers all live
+  /// under THAT manga — never the primary whose screen this is.
+  Manga _mangaFor(Chapter c, Manga primary) => _mangaById[c.mangaId] ?? primary;
 
   bool get _selecting => _selectedChapterIds.isNotEmpty;
 
@@ -179,36 +231,64 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
       // eagerError stays false so one side failing doesn't drop the other
       // side's persisted result; the first error still reaches the catch.
       var added = const <Chapter>[];
-      await Future.wait([
-        () async {
-          final details = await source.fetchMangaDetails(sourceManga);
-          await mangaRepo.applySourceDetails(manga.id, details);
-        }(),
-        () async {
-          final fetched = await source.fetchChapterList(sourceManga);
-          added = await chapterRepo.syncChaptersWithSource(
-            manga.id,
-            fetched,
-            isLocalSource: manga.source == LocalSource.numericId,
-          );
-        }(),
-      ]);
+      // A primary failure must NOT skip the linked sources — a dead or
+      // Cloudflare-blocked primary is exactly when its mirrors matter — so
+      // the primary's error is captured rather than thrown (Kotlin
+      // `fetchChaptersFromSource`).
+      Object? primaryError;
+      try {
+        await Future.wait([
+          () async {
+            final details = await source.fetchMangaDetails(sourceManga);
+            await mangaRepo.applySourceDetails(manga.id, details);
+          }(),
+          () async {
+            final fetched = await source.fetchChapterList(sourceManga);
+            added = await chapterRepo.syncChaptersWithSource(
+              manga.id,
+              fetched,
+              isLocalSource: manga.source == LocalSource.numericId,
+            );
+          }(),
+        ]);
+      } catch (e) {
+        primaryError = e;
+      }
+
+      // Always walk the cluster: linked updates appearing under the primary
+      // entry is the whole contract of the feature.
+      final linkedAdded = await _refreshLinkedSources();
+
       final updater = ref.read(libraryUpdaterProvider);
+      // Interval is the PRIMARY's release cadence — a mirror publishing on
+      // its own schedule must not skew it.
       await updater.recomputeFetchInterval(
         manga,
         hasNewChapters: added.isNotEmpty,
       );
       await updater.downloadNewChapters(manga, added);
+      for (final (owner, chapters) in linkedAdded) {
+        await updater.downloadNewChapters(owner, chapters);
+      }
+
       if (!mounted || silent) return;
-      final msg = added.isEmpty
+      final total =
+          added.length + linkedAdded.fold<int>(0, (n, e) => n + e.$2.length);
+      // Only surface the primary's failure when nothing at all came back;
+      // if a mirror delivered, the refresh did its job.
+      if (primaryError != null && total == 0) {
+        // Kotlin MangaScreenModel maps NoChaptersException to its own copy
+        // ("No chapters found") instead of the generic failure message.
+        toast.show(primaryError is NoChaptersException
+            ? 'No chapters found'
+            : 'Refresh failed: $primaryError');
+        return;
+      }
+      toast.show(total == 0
           ? 'Refreshed. No new chapters.'
-          : 'Refreshed. ${added.length} new chapter'
-              '${added.length == 1 ? '' : 's'}.';
-      toast.show(msg);
+          : 'Refreshed. $total new chapter${total == 1 ? '' : 's'}.');
     } catch (e) {
       if (!mounted || silent) return;
-      // Kotlin MangaScreenModel maps NoChaptersException to its own copy
-      // ("No chapters found") instead of the generic failure message.
       final msg =
           e is NoChaptersException ? 'No chapters found' : 'Refresh failed: $e';
       toast.show(msg);
@@ -219,6 +299,44 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
         _refreshingDetails = false;
       }
     }
+  }
+
+  /// Fetches and syncs every linked source under its OWN manga id, returning
+  /// the new chapters per owner. 1:1 with the Kotlin fork's
+  /// `refreshLinkedSourceChapters`: a per-source failure is swallowed so one
+  /// dead mirror — or one whose extension has since been uninstalled — can't
+  /// stop the rest of the cluster from refreshing.
+  Future<List<(Manga, List<Chapter>)>> _refreshLinkedSources() async {
+    final List<Manga> linked;
+    try {
+      linked =
+          await ref.read(mangaLinksRepositoryProvider).getLinked(widget.mangaId);
+    } catch (_) {
+      return const [];
+    }
+    if (linked.isEmpty) return const [];
+
+    final extRepo = ref.read(extensionRepositoryProvider);
+    final chapterRepo = ref.read(chapterRepositoryProvider);
+    final out = <(Manga, List<Chapter>)>[];
+    for (final lm in linked) {
+      try {
+        final source = await extRepo.getSource(lm.source.toString());
+        final fetched = await source.fetchChapterList(
+          SourceManga(url: lm.url, title: lm.title),
+        );
+        final added = await chapterRepo.syncChaptersWithSource(
+          lm.id,
+          fetched,
+          isLocalSource: lm.source == LocalSource.numericId,
+        );
+        if (added.isNotEmpty) out.add((lm, added));
+      } catch (_) {
+        // Logged nowhere on purpose: this runs behind the primary's refresh
+        // and a broken mirror is not something to interrupt the user over.
+      }
+    }
+    return out;
   }
 
   /// Fires the one-shot on-open auto-fetch when the manga row has never
@@ -276,9 +394,13 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
 
   Future<void> _bulkSetRead(List<Chapter> all, bool read) async {
     final picked = _selectedChapters(all);
-    await ref
-        .read(setReadStatusProvider)
-        .setRead(read: read, chapters: picked);
+    // Read state is SHARED across a linked cluster: the same chapter read on
+    // a mirror must not come back unread under the primary. The tracker push
+    // below still uses the selection's own numbers, not the expansion.
+    await ref.read(setReadStatusProvider).setRead(
+          read: read,
+          chapters: expandAcrossCluster(picked, _byNumber),
+        );
     if (read) {
       // Push the highest selected chapter number to trackers, parity
       // with Mihon's per-action sync. We deliberately only push on the
@@ -315,7 +437,8 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   Future<void> _bulkDownload(Manga manga, List<Chapter> all) async {
     final downloadRepo = ref.read(downloadRepositoryProvider);
     for (final c in _selectedChapters(all)) {
-      await downloadRepo.enqueue(manga, c);
+      // Each linked source stores its chapters under its own manga folder.
+      await downloadRepo.enqueue(_mangaFor(c, manga), c);
     }
     _clearSelection();
   }
@@ -323,7 +446,8 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   Future<void> _bulkDeleteDownloads(Manga manga, List<Chapter> all) async {
     final downloadRepo = ref.read(downloadRepositoryProvider);
     for (final c in _selectedChapters(all)) {
-      await downloadRepo.deleteDownload(manga.source, manga.id, c.id);
+      final owner = _mangaFor(c, manga);
+      await downloadRepo.deleteDownload(owner.source, owner.id, c.id);
     }
     _clearSelection();
   }
@@ -340,9 +464,10 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
     final earlier = all
         .where((c) => c.chapterNumber < chapter.chapterNumber && !c.read)
         .toList(growable: false);
-    await ref
-        .read(setReadStatusProvider)
-        .setRead(read: true, chapters: earlier);
+    await ref.read(setReadStatusProvider).setRead(
+          read: true,
+          chapters: expandAcrossCluster(earlier, _byNumber),
+        );
     if (earlier.isNotEmpty && mounted) {
       final highest =
           earlier.map((c) => c.chapterNumber).reduce((a, b) => a > b ? a : b);
@@ -377,10 +502,13 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
             return const _MissingManga();
           }
           _maybeAutoFetch(manga);
-          return StreamBuilder<List<Chapter>>(
+          return StreamBuilder<_ClusterChapters>(
             stream: _chaptersStream,
             builder: (context, chapSnap) {
-              final chapters = chapSnap.data ?? const <Chapter>[];
+              final cluster = chapSnap.data;
+              final chapters = cluster?.merged.chapters ?? const <Chapter>[];
+              _byNumber = cluster?.merged.byNumber ?? const {};
+              _mangaById = cluster?.mangaById ?? const {};
               if (!identical(_headerManga, manga)) {
                 _headerManga = manga;
                 _infoBox = _MangaInfoBox(manga: manga);
@@ -496,6 +624,8 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                     _ChaptersSection(
                       manga: manga,
                       chapters: chapters,
+                      mangaById: _mangaById,
+                      byNumber: _byNumber,
                       chapterRepo: ref.read(chapterRepositoryProvider),
                       selectedIds: _selectedChapterIds,
                       onToggleSelected: _toggleChapterSelected,
@@ -581,7 +711,9 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                   right: 16,
                   bottom: 24,
                   child: _ContinueReadingFab(
-                    manga: manga,
+                    // The next unread chapter can belong to a linked source;
+                    // the reader has to open it under ITS manga.
+                    manga: _mangaFor(nextUnread, manga),
                     chapter: nextUnread,
                     anyRead: _anyRead,
                   ),
@@ -742,6 +874,15 @@ class _SelectionHeader extends StatelessWidget {
 /// exclusions live-updates the list.
 ///
 /// The filter/sort logic mirrors Mihon's `GetChaptersByMangaId` +
+/// One emission of the merged chapter stream: the display list and its
+/// cluster index, plus the linked manga each merged row belongs to.
+class _ClusterChapters {
+  const _ClusterChapters(this.merged, this.mangaById);
+
+  final MergedChapters merged;
+  final Map<int, Manga> mangaById;
+}
+
 /// `applyFilters` pipeline: drop excluded-scanlator rows, apply the
 /// tri-state unread/bookmarked filters, then sort by the configured key
 /// in the configured direction. Chapter display mode (name vs number)
@@ -750,6 +891,8 @@ class _ChaptersSection extends ConsumerStatefulWidget {
   const _ChaptersSection({
     required this.manga,
     required this.chapters,
+    required this.mangaById,
+    required this.byNumber,
     required this.chapterRepo,
     required this.selectedIds,
     required this.onToggleSelected,
@@ -757,6 +900,14 @@ class _ChaptersSection extends ConsumerStatefulWidget {
 
   final Manga manga;
   final List<Chapter> chapters;
+
+  /// Linked-source manga by id, for rows that came from a mirror. Empty when
+  /// nothing is linked.
+  final Map<int, Manga> mangaById;
+
+  /// Chapter number → every copy across the cluster (see
+  /// [expandAcrossCluster]). Empty when nothing is linked.
+  final Map<double, List<Chapter>> byNumber;
   final ChapterRepository chapterRepo;
   final Set<int> selectedIds;
   final ValueChanged<int> onToggleSelected;
@@ -796,6 +947,11 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
   Manga get manga => widget.manga;
   List<Chapter> get chapters => widget.chapters;
   ChapterRepository get chapterRepo => widget.chapterRepo;
+
+  /// The manga a row belongs to — a mirror's manga for merged rows, this
+  /// screen's primary otherwise. Downloads live under the owner's source and
+  /// id, and the reader has to open the owner's copy of the chapter.
+  Manga _ownerOf(Chapter c) => widget.mangaById[c.mangaId] ?? manga;
   Set<int> get selectedIds => widget.selectedIds;
   ValueChanged<int> get onToggleSelected => widget.onToggleSelected;
 
@@ -811,7 +967,11 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
   void didUpdateWidget(covariant _ChaptersSection old) {
     super.didUpdateWidget(old);
     _chapterIds = {for (final c in chapters) c.id};
-    if (manga.id != old.manga.id) {
+    // A cluster change swaps which sources contribute downloads, so the
+    // resolved set has to be rebuilt as well as on a manga change.
+    if (manga.id != old.manga.id ||
+        widget.mangaById.length != old.mangaById.length ||
+        !widget.mangaById.keys.every(old.mangaById.containsKey)) {
       _downloadedIds = null;
       _live.clear();
       _loadDownloadedIds();
@@ -819,9 +979,20 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
   }
 
   Future<void> _loadDownloadedIds() async {
-    final ids = await ref
-        .read(downloadRepositoryProvider)
-        .listDownloadedChapterIds(manga.source, manga.id);
+    final repo = ref.read(downloadRepositoryProvider);
+    // Each source keeps its downloads under its own manga folder, so a merged
+    // list has to walk every contributing source — resolving only the
+    // primary's would show every mirror's downloaded chapter as missing.
+    // Copied into a fresh set: the repository hands back a CONST empty set
+    // when a manga has no downloads, and the union below would throw on it.
+    final ids = <int>{
+      ...await repo.listDownloadedChapterIds(manga.source, manga.id),
+    };
+    for (final linked in widget.mangaById.values) {
+      ids.addAll(
+        await repo.listDownloadedChapterIds(linked.source, linked.id),
+      );
+    }
     if (mounted) {
       setState(() {
         _downloadedIds = ids;
@@ -872,6 +1043,13 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
     final downloadedFilter = ref.watch(downloadedOnlyProvider)
         ? TriState.enabledIs
         : manga.downloadedFilter;
+    // Divergence from the fork, deliberate: Kotlin applies each linked
+    // manga's OWN excluded-scanlator set as it fetches that source's
+    // chapters. Here the primary's set filters the whole merged list. The
+    // cluster is presented as the primary's chapter list and the filter sheet
+    // is reached from the primary, so one consistent rule over the merged
+    // rows is the honest reading — and the per-mirror sets are only
+    // reachable by opening that mirror's own details screen.
     return StreamBuilder<Set<String>>(
       stream: excludedRepo.watchByMangaId(manga.id),
       builder: (context, excludedSnap) {
@@ -1034,7 +1212,7 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
                 target = chapters.where((c) => c.bookmark);
             }
             for (final c in target) {
-              unawaited(downloadRepo.enqueue(manga, c));
+              unawaited(downloadRepo.enqueue(_ownerOf(c), c));
             }
           },
           ),
@@ -1061,6 +1239,8 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
               final (downloadState, progress) = _tileDownloadState(chapter);
               return _ChapterTile(
                 manga: manga,
+                owner: _ownerOf(chapter),
+                byNumber: widget.byNumber,
                 chapter: chapter,
                 chapterRepo: chapterRepo,
                 downloadRepo: downloadRepo,
@@ -2597,17 +2777,25 @@ class _ChapterTile extends ConsumerStatefulWidget {
   const _ChapterTile({
     required this.manga,
     required this.chapter,
+    required this.owner,
     required this.chapterRepo,
     required this.downloadRepo,
     required this.isSelected,
     required this.selecting,
     required this.onToggleSelected,
     required this.allChapters,
+    required this.byNumber,
     required this.downloadState,
     required this.downloadProgress,
   });
 
+  /// The screen's primary — the source of DISPLAY settings (chapter display
+  /// mode, sort). Not necessarily the manga this row's chapter belongs to.
   final Manga manga;
+
+  /// The manga this chapter actually belongs to: a linked source's for a
+  /// merged row, [manga] otherwise. Downloads live under the owner.
+  final Manga owner;
   final Chapter chapter;
   final ChapterRepository chapterRepo;
   final DownloadRepository downloadRepo;
@@ -2615,6 +2803,11 @@ class _ChapterTile extends ConsumerStatefulWidget {
   final bool selecting;
   final ValueChanged<int> onToggleSelected;
   final List<Chapter> allChapters;
+
+  /// Chapter number → every copy across the linked cluster; empty when
+  /// nothing is linked. Read actions expand through this so a chapter read
+  /// here doesn't come back unread from a mirror.
+  final Map<double, List<Chapter>> byNumber;
 
   /// Download indicator state, resolved by the section (one downloads walk
   /// + one event subscription for the whole list) — tiles do no I/O.
@@ -2658,14 +2851,18 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                   unawaited(
                     ref.read(setReadStatusProvider).setRead(
                       read: true,
-                      chapters: [chapter],
+                      chapters:
+                          expandAcrossCluster([chapter], widget.byNumber),
                     ),
                   );
                   unawaited(
                     trackOnMarkRead(
                       ref,
                       context,
-                      mangaId: chapter.mangaId,
+                      // The PRIMARY's id, not the chapter's: trackers bind to
+                      // the library entry, and a merged row can belong to a
+                      // mirror that has no tracker of its own.
+                      mangaId: widget.manga.id,
                       chapterNumber: chapter.chapterNumber,
                       volumeNumber: chapter.volumeNumber,
                     ),
@@ -2674,7 +2871,8 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                   unawaited(
                     ref.read(setReadStatusProvider).setRead(
                       read: false,
-                      chapters: [chapter],
+                      chapters:
+                          expandAcrossCluster([chapter], widget.byNumber),
                     ),
                   );
                 case _ChapterAction.markPreviousAsRead:
@@ -2687,9 +2885,11 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                         .where((c) =>
                             c.chapterNumber < chapter.chapterNumber && !c.read)
                         .toList(growable: false);
-                    await ref
-                        .read(setReadStatusProvider)
-                        .setRead(read: true, chapters: earlier);
+                    await ref.read(setReadStatusProvider).setRead(
+                          read: true,
+                          chapters:
+                              expandAcrossCluster(earlier, widget.byNumber),
+                        );
                     if (earlier.isNotEmpty && context.mounted) {
                       // Push the highest chapter number we just marked
                       // (which is strictly less than `chapter`) to
@@ -2701,7 +2901,7 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                         trackOnMarkRead(
                           ref,
                           context,
-                          mangaId: chapter.mangaId,
+                          mangaId: widget.manga.id,
                           chapterNumber: highest,
                           volumeNumber: _maxVolumeNumber(earlier),
                         ),
@@ -2728,11 +2928,11 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
                     }
                   }();
                 case _ChapterAction.download:
-                  widget.downloadRepo.enqueue(widget.manga, chapter);
+                  widget.downloadRepo.enqueue(widget.owner, chapter);
                 case _ChapterAction.deleteDownload:
                   widget.downloadRepo.deleteDownload(
-                    widget.manga.source,
-                    widget.manga.id,
+                    widget.owner.source,
+                    widget.owner.id,
                     chapter.id,
                   );
               }
@@ -2952,16 +3152,17 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
     switch (action) {
       case ChapterSwipeAction.toggleRead:
         unawaited(
-          ref
-              .read(setReadStatusProvider)
-              .setRead(read: !chapter.read, chapters: [chapter]),
+          ref.read(setReadStatusProvider).setRead(
+                read: !chapter.read,
+                chapters: expandAcrossCluster([chapter], widget.byNumber),
+              ),
         );
         if (!chapter.read) {
           unawaited(
             trackOnMarkRead(
               ref,
               context,
-              mangaId: chapter.mangaId,
+              mangaId: widget.manga.id,
               chapterNumber: chapter.chapterNumber,
               volumeNumber: chapter.volumeNumber,
             ),
@@ -2976,15 +3177,15 @@ class _ChapterTileState extends ConsumerState<_ChapterTile> {
           case DownloadState.completed:
             unawaited(
               widget.downloadRepo.deleteDownload(
-                widget.manga.source,
-                widget.manga.id,
+                widget.owner.source,
+                widget.owner.id,
                 chapter.id,
               ),
             );
           case DownloadState.queued || DownloadState.downloading:
             widget.downloadRepo.cancel(chapter.id);
           default:
-            unawaited(widget.downloadRepo.enqueue(widget.manga, chapter));
+            unawaited(widget.downloadRepo.enqueue(widget.owner, chapter));
         }
       case ChapterSwipeAction.disabled:
         break;
