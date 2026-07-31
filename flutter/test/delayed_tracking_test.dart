@@ -217,15 +217,129 @@ void main() {
       expect(scheduler.calls, 1);
     });
   });
+
+  group('drainDelayedTracking', () {
+    // The retry job's whole point is what happens when a push fails, which is
+    // also the hardest thing to stage by hand — it needs a real tracker
+    // account and a broken network at the right moment. Driving the drain
+    // directly is what makes it verifiable at all.
+    late _FakeTracker tracker;
+
+    setUp(() => tracker = _FakeTracker());
+
+    Future<bool> drain({int maxAttempts = 3}) => drainDelayedTracking(
+          store: store,
+          getTrack: repo.getById,
+          trackerFor: (id) => id == tracker.id ? tracker : null,
+          upsert: repo.upsert,
+          maxAttempts: maxAttempts,
+        );
+
+    test('a queued push that now lands clears the entry and saves it',
+        () async {
+      await seedTrack(lastChapterRead: 10);
+      await store.add(1, 11);
+
+      expect(await drain(), isTrue);
+
+      expect(tracker.pushed, [11]);
+      expect(await store.getItems(), isEmpty);
+      expect((await repo.getByMangaId(1)).single.lastChapterRead, 11);
+    });
+
+    test('still unreachable keeps the entry and reports not-done', () async {
+      await seedTrack(lastChapterRead: 10);
+      await store.add(1, 11);
+      tracker.failing = true;
+
+      expect(await drain(), isFalse);
+
+      expect((await store.getItems()).single.lastChapterRead, 11);
+      // The local row must not claim progress the remote never accepted.
+      expect((await repo.getByMangaId(1)).single.lastChapterRead, 10);
+    });
+
+    test('a logged-out tracker keeps the entry rather than dropping it',
+        () async {
+      await seedTrack(lastChapterRead: 10);
+      await store.add(1, 11);
+      tracker.loggedIn = false;
+
+      expect(await drain(), isFalse);
+      expect(await store.getItems(), isNotEmpty);
+      expect(tracker.pushed, isEmpty);
+    });
+
+    test('a deleted track row drops its entry', () async {
+      // Nothing seeded: the manga was removed while the push was queued.
+      await store.add(404, 11);
+
+      expect(await drain(), isTrue);
+      expect(await store.getItems(), isEmpty);
+    });
+
+    test('a remote already ahead drops the entry without pushing', () async {
+      await seedTrack(lastChapterRead: 20);
+      await store.add(1, 11);
+
+      expect(await drain(), isTrue);
+      expect(tracker.pushed, isEmpty);
+      expect(await store.getItems(), isEmpty);
+    });
+
+    test('one throwing entry cannot strand the rest of the queue', () async {
+      // Reading the row crosses a method channel from the background isolate,
+      // so it is a realistic thrower — and it used to sit OUTSIDE the
+      // per-item try, where one throw abandoned every entry behind it. The
+      // healthy entry must still go through in the same run.
+      await seedTrack(mangaId: 1, lastChapterRead: 10);
+      await seedTrack(mangaId: 2, lastChapterRead: 10);
+      await store.add(1, 11);
+      await store.add(2, 11);
+
+      final done = await drainDelayedTracking(
+        store: store,
+        getTrack: (id) async {
+          if (id == 1) throw TrackerException('credential channel died');
+          return repo.getById(id);
+        },
+        trackerFor: (id) => id == tracker.id ? tracker : null,
+        upsert: repo.upsert,
+      );
+
+      expect(done, isFalse);
+      expect(tracker.pushed, [11], reason: 'entry 2 still pushed');
+      expect((await store.getItems()).single.trackId, 1,
+          reason: 'only the thrower stays queued');
+    });
+
+    test('the attempt cap stops retrying but keeps the entries', () async {
+      await seedTrack(lastChapterRead: 10);
+      await store.add(1, 11);
+      await store.writeAttempts(3);
+
+      // True so workmanager stops rescheduling; the entry survives for the
+      // next real failure to pick up.
+      expect(await drain(), isTrue);
+      expect(tracker.pushed, isEmpty);
+      expect(await store.getItems(), isNotEmpty);
+    });
+
+    test('an empty queue is done immediately', () async {
+      expect(await drain(), isTrue);
+    });
+  });
 }
 
 class _FakeTracker extends Tracker {
   _FakeTracker({int id = 9}) : super(id, 'Fake', TrackerCategory.online);
 
   bool failing = false;
+  bool loggedIn = true;
+  final List<double> pushed = [];
 
   @override
-  Future<bool> get isLoggedIn async => true;
+  Future<bool> get isLoggedIn async => loggedIn;
 
   @override
   Future<void> login() async {}
@@ -242,6 +356,7 @@ class _FakeTracker extends Tracker {
   @override
   Future<Track> update(Track track, {bool didReadChapter = false}) async {
     if (failing) throw TrackerException('offline');
+    pushed.add(track.lastChapterRead);
     return track;
   }
 
