@@ -36,8 +36,6 @@ class BoolPrefNotifier extends Notifier<bool> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, value);
   }
-
-  Future<void> toggle() => set(!state);
 }
 
 NotifierProvider<BoolPrefNotifier, bool> boolPref(

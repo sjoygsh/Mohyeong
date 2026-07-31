@@ -266,13 +266,6 @@ class DownloadRepository {
         false;
   }
 
-  /// Number of fully-downloaded chapters for [mangaId]. Returns 0 if the
-  /// manga has no downloads at all.
-  Future<int> countDownloadedForManga(int sourceId, int mangaId) async {
-    final idx = await _downloadedIndex();
-    return idx[encodeMangaKey(sourceId, mangaId)]?.length ?? 0;
-  }
-
   /// Total number of fully-downloaded chapters across every source/manga.
   /// Mirrors Mihon's `DownloadManager.getDownloadCount()` (used by the
   /// Statistics screen). Returns 0 when nothing has been downloaded yet.

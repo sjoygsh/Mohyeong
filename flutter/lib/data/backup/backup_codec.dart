@@ -94,12 +94,6 @@ class _ProtoWriter {
     _buf.add(encoded);
   }
 
-  void writeBytes(int fieldNumber, List<int> value) {
-    writeTag(fieldNumber, _wireLengthDelim);
-    _writeVarint(value.length);
-    _buf.add(value);
-  }
-
   /// Nested message. We serialize the message into a child buffer first
   /// to learn its length, then emit `tag, length, payload` here.
   void writeMessage(int fieldNumber, void Function(_ProtoWriter) build) {

@@ -39,25 +39,6 @@ class Chapter {
   bool get isRecognizedNumber => chapterNumber >= 0;
   bool get isRecognizedVolume => volumeNumber != null && volumeNumber! >= 0;
 
-  /// Mirrors Kotlin's `copyFrom` -- pulls source-derived fields from another
-  /// Chapter while keeping local state (read/bookmark/etc.).
-  Chapter copyFrom(Chapter other) {
-    return copyWith(
-      name: other.name,
-      url: other.url,
-      dateUpload: other.dateUpload,
-      chapterNumber: other.chapterNumber,
-      // Blank scanlator strings normalise to null, matching the Kotlin
-      // `other.scanlator?.ifBlank { null }`.
-      scanlator: () {
-        final s = other.scanlator;
-        if (s == null) return null;
-        if (s.trim().isEmpty) return null;
-        return s;
-      }(),
-    );
-  }
-
   Chapter copyWith({
     int? id,
     int? mangaId,

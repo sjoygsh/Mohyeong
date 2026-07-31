@@ -401,8 +401,6 @@ class ReaderColorFilterEnabledNotifier extends Notifier<bool> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_key, value);
   }
-
-  Future<void> toggle() => set(!state);
 }
 
 final readerColorFilterEnabledProvider =
