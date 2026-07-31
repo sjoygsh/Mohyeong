@@ -2,21 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/manga/excluded_scanlators_repository.dart';
+import '../../data/manga/scanlator_priority_repository.dart';
 import '../tide/tide.dart';
 
-/// Bottom sheet for excluding scanlators from a single manga's chapter
-/// list. Mirrors Mihon's `ScanlatorFilterDialog`.
+/// Bottom sheet for excluding and ranking the scanlators on a single manga's
+/// chapter list. Mirrors Mihon's `ScanlatorFilterDialog`.
 ///
 /// Tapping a row toggles it between included and excluded. When at least
 /// one scanlator exists, a shortcut flips between "all included" and "all
-/// excluded". Pressing Save persists the resulting set via
-/// [ExcludedScanlatorsRepository.setForManga].
+/// excluded". The arrows reorder: when several scanlators publish the same
+/// chapter number, only the highest one in this list is shown. Pressing Save
+/// persists the set via [ExcludedScanlatorsRepository.setForManga] and the
+/// order via [ScanlatorPriorityRepository.setForManga] — same as the fork,
+/// which writes both from one OK button.
 class ScanlatorFilterSheet extends ConsumerStatefulWidget {
   const ScanlatorFilterSheet({
     super.key,
     required this.mangaId,
     required this.availableScanlators,
     required this.initiallyExcluded,
+    this.initialPriority = const [],
   });
 
   final int mangaId;
@@ -24,6 +29,10 @@ class ScanlatorFilterSheet extends ConsumerStatefulWidget {
   /// Every scanlator that has at least one chapter for this manga.
   final Set<String> availableScanlators;
   final Set<String> initiallyExcluded;
+
+  /// Stored ranking, most preferred first. Names no longer present in
+  /// [availableScanlators] are dropped.
+  final List<String> initialPriority;
 
   @override
   ConsumerState<ScanlatorFilterSheet> createState() =>
@@ -34,12 +43,39 @@ class _ScanlatorFilterSheetState extends ConsumerState<ScanlatorFilterSheet> {
   late final List<String> _ordered;
   late final Set<String> _excluded;
 
+  /// True once this manga has a ranking worth storing — either one was
+  /// already stored, or the user moved a row in this sheet.
+  late bool _reordered;
+
   @override
   void initState() {
     super.initState();
-    _ordered = widget.availableScanlators.toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    // Ranked names first, in their stored order, then everything unranked
+    // alphabetically — 1:1 with the fork's head/tail construction. A stored
+    // name whose chapters are gone is dropped rather than shown as a ghost.
+    final ranked = [
+      for (final name in widget.initialPriority)
+        if (widget.availableScanlators.contains(name)) name,
+    ];
+    final seen = ranked.toSet();
+    final rest = [
+      for (final name in widget.availableScanlators)
+        if (!seen.contains(name)) name,
+    ]..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    _ordered = [...ranked, ...rest];
     _excluded = {...widget.initiallyExcluded};
+    _reordered = ranked.isNotEmpty;
+  }
+
+  void _move(int index, int delta) {
+    final target = index + delta;
+    if (target < 0 || target >= _ordered.length) return;
+    setState(() {
+      _reordered = true;
+      final moved = _ordered[index];
+      _ordered[index] = _ordered[target];
+      _ordered[target] = moved;
+    });
   }
 
   void _toggle(String name) {
@@ -53,11 +89,20 @@ class _ScanlatorFilterSheetState extends ConsumerState<ScanlatorFilterSheet> {
   }
 
   Future<void> _save() async {
+    final nav = Navigator.of(context);
     await ref
         .read(excludedScanlatorsRepositoryProvider)
         .setForManga(widget.mangaId, _excluded);
+    // Only persist an order once the user has actually expressed one; writing
+    // the default alphabetical list would silently start collapsing duplicate
+    // chapter numbers for a manga nobody ranked.
+    if (_reordered) {
+      await ref
+          .read(scanlatorPriorityRepositoryProvider)
+          .setForManga(widget.mangaId, _ordered);
+    }
     if (!mounted) return;
-    Navigator.of(context).pop();
+    nav.pop();
   }
 
   @override
@@ -92,6 +137,13 @@ class _ScanlatorFilterSheetState extends ConsumerState<ScanlatorFilterSheet> {
                     name: name,
                     excluded: _excluded.contains(name),
                     onTap: () => _toggle(name),
+                    // Reordering only means anything when something can lose
+                    // a chapter number to something else.
+                    onMoveUp:
+                        _ordered.length > 1 && i > 0 ? () => _move(i, -1) : null,
+                    onMoveDown: _ordered.length > 1 && i < _ordered.length - 1
+                        ? () => _move(i, 1)
+                        : null,
                   );
                 },
               ),
@@ -146,11 +198,18 @@ class _ScanlatorRow extends StatelessWidget {
     required this.name,
     required this.excluded,
     required this.onTap,
+    this.onMoveUp,
+    this.onMoveDown,
   });
 
   final String name;
   final bool excluded;
   final VoidCallback onTap;
+
+  /// Null at the ends of the list, which disables the arrow rather than
+  /// hiding it so the rows keep a single shape.
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
 
   @override
   Widget build(BuildContext context) {
@@ -199,7 +258,35 @@ class _ScanlatorRow extends StatelessWidget {
               ),
             ),
           ),
+          if (onMoveUp != null || onMoveDown != null) ...[
+            _MoveArrow(icon: Icons.keyboard_arrow_up, onTap: onMoveUp),
+            _MoveArrow(icon: Icons.keyboard_arrow_down, onTap: onMoveDown),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// One reorder arrow. Dimmed and inert at the ends of the list.
+class _MoveArrow extends StatelessWidget {
+  const _MoveArrow({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Icon(
+          icon,
+          size: 20,
+          color: TideColors.textAt(onTap == null ? 0.16 : 0.6),
+        ),
       ),
     );
   }

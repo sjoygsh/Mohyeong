@@ -16,6 +16,7 @@ import '../../data/library/library_updater.dart';
 import '../../data/manga/excluded_scanlators_repository.dart';
 import '../../data/manga/manga_links_repository.dart';
 import '../../data/manga/manga_repository.dart';
+import '../../data/manga/scanlator_priority_repository.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/local_source.dart';
 import '../../data/source/source_repository.dart';
@@ -26,6 +27,7 @@ import '../../domain/category/model/category.dart';
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/chapter/model/no_chapters_exception.dart';
 import '../../data/util/stream_combine.dart';
+import '../../domain/chapter/service/apply_scanlator_priority.dart';
 import '../../domain/chapter/service/merge_linked_chapters.dart';
 import '../../domain/chapter/service/missing_chapters.dart';
 import '../../domain/chapter/service/set_read_status.dart';
@@ -1075,16 +1077,27 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
       stream: excludedRepo.watchByMangaId(manga.id),
       builder: (context, excludedSnap) {
         final excluded = excludedSnap.data ?? const <String>{};
-        return _buildBody(
-          context,
-          excluded,
-          downloadedFilter == TriState.disabled
-              ? null
-              : (_downloadedIds ?? const <int>{}),
-          downloadedFilter,
-          downloadRepo,
-          groupByVolume,
-          hideMissing,
+        // Nested rather than combined: this mirrors the excluded stream's
+        // existing shape, and the priority list is usually empty, so the
+        // second subscription costs a row-less query.
+        return StreamBuilder<List<String>>(
+          stream: ref
+              .watch(scanlatorPriorityRepositoryProvider)
+              .watchByMangaId(manga.id),
+          builder: (context, priorSnap) {
+            return _buildBody(
+              context,
+              excluded,
+              priorSnap.data ?? const <String>[],
+              downloadedFilter == TriState.disabled
+                  ? null
+                  : (_downloadedIds ?? const <int>{}),
+              downloadedFilter,
+              downloadRepo,
+              groupByVolume,
+              hideMissing,
+            );
+          },
         );
       },
     );
@@ -1093,6 +1106,7 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
   Widget _buildBody(
     BuildContext context,
     Set<String> excluded,
+    List<String> scanlatorPriority,
     Set<int>? downloadedIds,
     TriState downloadedFilter,
     DownloadRepository downloadRepo,
@@ -1111,6 +1125,9 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
     final key = (
       chapters,
       excluded,
+      // Compared by value: the repository hands back a fresh list on every
+      // emission, so its identity would miss the cache on every rebuild.
+      Object.hashAll(scanlatorPriority),
       downloadedIds == null ? -1 : _downloadedRev,
       downloadedFilter,
       groupByVolume,
@@ -1156,8 +1173,12 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
       // is intentionally inverted vs the other modes (sourceOrder 0 == newest),
       // so descending source order shows the NEWEST chapter at the top — the
       // Mihon default — rather than the oldest.
-      sorted = [...filtered]
-        ..sort((a, b) => _chapterSortCompare(a, b, manga));
+      // Sorted first, then the priority collapse — the same order Kotlin uses
+      // (its collapse runs over `applyFilters`, which already sorted).
+      sorted = applyScanlatorPriority(
+        [...filtered]..sort((a, b) => _chapterSortCompare(a, b, manga)),
+        scanlatorPriority,
+      );
 
       // Build the interleaved render list:
       //  - "Missing N chapters" separators wherever there's a numeric gap
@@ -1213,6 +1234,7 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
           mangaForSheet: manga,
           availableScanlators: availableScanlators,
           excludedScanlators: excluded,
+          scanlatorPriority: scanlatorPriority,
           onBulkDownload: (scope, count) {
             Iterable<Chapter> target;
             switch (scope) {
@@ -1675,6 +1697,7 @@ void _openScanlatorFilterSheet(
   required int mangaId,
   required Set<String> available,
   required Set<String> excluded,
+  required List<String> priority,
 }) {
   showModalBottomSheet<void>(
     context: context,
@@ -1684,6 +1707,7 @@ void _openScanlatorFilterSheet(
       mangaId: mangaId,
       availableScanlators: available,
       initiallyExcluded: excluded,
+      initialPriority: priority,
     ),
   );
 }
@@ -2660,6 +2684,7 @@ class _ChapterListHeader extends StatelessWidget {
     required this.mangaForSheet,
     this.availableScanlators = const {},
     this.excludedScanlators = const {},
+    this.scanlatorPriority = const [],
     this.onBulkDownload,
   });
 
@@ -2680,6 +2705,10 @@ class _ChapterListHeader extends StatelessWidget {
 
   /// Currently-excluded set. Drives the badge dot on the people icon.
   final Set<String> excludedScanlators;
+
+  /// Stored scanlator ranking, most preferred first. The sheet seeds its
+  /// reorder list from this so an existing ranking survives a re-open.
+  final List<String> scanlatorPriority;
 
   /// Bulk-download callback. `scope` selects which chapters to enqueue;
   /// `count` carries N for [_DownloadScope.next] and is ignored otherwise.
@@ -2713,14 +2742,17 @@ class _ChapterListHeader extends StatelessWidget {
           if (manga != null && availableScanlators.isNotEmpty)
             _HeaderAction(
               icon: Icons.people_alt_outlined,
-              // Lit when at least one scanlator is excluded — the same
-              // "this list is filtered" cue the funnel gives elsewhere.
-              lit: excludedScanlators.isNotEmpty,
+              // Lit when at least one scanlator is excluded OR ranked — both
+              // mean this list is not showing every release, which is the
+              // same "this list is filtered" cue the funnel gives elsewhere.
+              lit: excludedScanlators.isNotEmpty ||
+                  scanlatorPriority.isNotEmpty,
               onTap: () => _openScanlatorFilterSheet(
                 context,
                 mangaId: manga.id,
                 available: availableScanlators,
                 excluded: excludedScanlators,
+                priority: scanlatorPriority,
               ),
             ),
           if (manga != null && onBulkDownload != null)
