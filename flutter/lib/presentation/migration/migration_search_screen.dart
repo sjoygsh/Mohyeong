@@ -11,6 +11,7 @@ import '../../data/source/source_id.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../common/source_image.dart';
+import '../util/user_message.dart';
 
 /// Source-to-source migration screen.
 ///
@@ -236,7 +237,7 @@ class _MigrationSearchScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      toast.show('Migration failed: $e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t migrate that entry.'));
     }
   }
 

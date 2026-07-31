@@ -9,6 +9,7 @@ import '../../data/track/tracker.dart';
 import '../../data/track/tracker_registry.dart';
 import '../../domain/track/model/tracker.dart';
 import '../settings/pref_tiles.dart';
+import '../util/user_message.dart';
 
 /// Trackers settings page — lists every registered tracker and lets the
 /// user log in / out. Split into "Online" and "Advanced" sections matching
@@ -164,7 +165,7 @@ class _TrackerTileState extends State<_TrackerTile> {
       await widget.tracker.login();
       toast.show('Logged in to ${widget.tracker.name}');
     } catch (e) {
-      toast.show('$e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t sign in.'));
     } finally {
       if (mounted) {
         setState(() => _working = false);

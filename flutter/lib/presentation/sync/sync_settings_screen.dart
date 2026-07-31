@@ -14,6 +14,7 @@ import '../../data/sync/sync_manager.dart';
 import '../../data/sync/sync_preferences.dart';
 import '../../data/sync/sync_scheduler.dart';
 import '../../data/sync/sync_transport.dart';
+import '../util/user_message.dart';
 
 class SyncSettingsScreen extends ConsumerStatefulWidget {
   const SyncSettingsScreen({super.key});
@@ -364,7 +365,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     } on SyncException catch (e) {
       _setStatus(e.message);
     } catch (e) {
-      _setStatus('Sync failed: $e');
+      _setStatus(userMessage(e, fallback: 'Sync failed.'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

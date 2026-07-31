@@ -21,6 +21,7 @@ import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
 import '../tide/tide.dart';
 import 'source_browse_screen.dart';
+import '../util/user_message.dart';
 
 /// Mihon's "Global search": takes a query and fans it out across every
 /// installed source, showing one horizontal rail per source with the first
@@ -523,7 +524,7 @@ class _ResultCard extends ConsumerWidget {
         ),
       );
     } catch (e) {
-      toast.show('Could not open manga: $e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t open that entry.'));
     }
   }
 }

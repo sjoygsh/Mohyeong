@@ -39,6 +39,7 @@ import '../../domain/manga/model/tri_state.dart';
 import '../manga/manga_details_screen.dart';
 import '../reader/reader_screen.dart';
 import '../tide/tide.dart';
+import '../util/user_message.dart';
 
 /// Tri-state filters for the library grid. Each axis can be off (show
 /// everything), include-only (show rows where the predicate matches),
@@ -480,7 +481,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     } catch (e) {
       await notifications.cancelLibraryProgress();
       if (!mounted) return;
-      toast.show('Refresh failed: $e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t refresh the library.'));
     } finally {
       // New chapters may have been auto-downloaded — let the memoised
       // downloaded/tracked filter sets re-resolve on the next build.
@@ -2052,7 +2053,7 @@ class _ErrorView extends StatelessWidget {
   Widget build(BuildContext context) {
     return TideEmpty(
       title: 'Could not open the library',
-      message: '$error',
+      message: userMessage(error, fallback: 'Couldn\'t load the library.'),
     );
   }
 }

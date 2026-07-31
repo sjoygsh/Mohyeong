@@ -25,6 +25,7 @@ import '../../data/backup/backup_restorer.dart';
 import '../../data/backup/backup_scheduler.dart';
 
 import '../tide/tide.dart';
+import '../util/user_message.dart';
 
 class BackupScreen extends ConsumerStatefulWidget {
   const BackupScreen({super.key});
@@ -119,7 +120,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         '${backup.backupCategories.length} categories.',
       );
     } catch (e) {
-      _setStatus('Backup failed: $e');
+      _setStatus(userMessage(e, fallback: 'Backup failed.'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -164,7 +165,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         '${result.skippedMangaWithoutSource > 0 ? "\n${result.skippedMangaWithoutSource} entries skipped (errors)." : ""}',
       );
     } catch (e) {
-      _setStatus('Restore failed: $e');
+      _setStatus(userMessage(e, fallback: 'Restore failed.'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

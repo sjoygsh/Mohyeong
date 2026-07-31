@@ -25,6 +25,7 @@ import '../cloudflare/cloudflare_solver_screen.dart';
 import '../common/source_image.dart';
 import '../manga/manga_details_screen.dart';
 import '../tide/tide.dart';
+import '../util/user_message.dart';
 
 /// URLs of the manga already favourited for a given source id. Used to
 /// drop in-library results from the browse grid when the
@@ -733,7 +734,8 @@ class _MangaGrid extends ConsumerWidget {
       }
     }
     if (error != null && items.isEmpty) {
-      return _Note('Failed to load: $error');
+      return _Note(
+          userMessage(error!, fallback: 'Couldn\'t load this source.'));
     }
     if (items.isEmpty && loading) return const _Spinner();
     if (items.isEmpty) {
@@ -994,7 +996,7 @@ class _MangaCard extends ConsumerWidget {
         ),
       );
     } catch (e) {
-      toast.show('Could not open manga: $e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t open that entry.'));
     }
   }
 
@@ -1024,7 +1026,7 @@ class _MangaCard extends ConsumerWidget {
       ref.invalidate(favoritedUrlsForSourceProvider(sourceIdInt));
       toast.show(inLibrary ? 'Removed from library' : 'Added to library');
     } catch (e) {
-      toast.show('Could not update library: $e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t update your library.'));
     }
   }
 }

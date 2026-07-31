@@ -8,6 +8,7 @@ import '../../domain/manga/model/manga.dart';
 import '../../domain/track/model/track.dart';
 import '../../domain/track/model/tracker.dart';
 import '../tide/tide.dart';
+import '../util/user_message.dart';
 
 /// Bottom sheet that lists every tracker for a given manga, surfacing the
 /// current bound state and letting the user search + bind / unbind.
@@ -109,7 +110,7 @@ class _TrackerRowState extends ConsumerState<_TrackerRow> {
       await ref.read(trackRepositoryProvider).upsert(track);
       toast.show('Bound to ${widget.tracker.name}.');
     } catch (e) {
-      toast.show('Bind failed: $e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t link that entry.'));
     } finally {
       if (mounted) setState(() => _working = false);
     }

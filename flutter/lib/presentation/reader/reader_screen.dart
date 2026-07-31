@@ -39,6 +39,7 @@ import '../common/source_image.dart';
 import '../common/webview_screen.dart';
 import '../tide/tide.dart';
 import 'reader_settings_sheet.dart';
+import '../util/user_message.dart';
 
 /// Reader screen — fetches the chapter's page list from the manga's source
 /// and displays them in either a continuous webtoon scroll or a paged
@@ -940,7 +941,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       await ref.read(mangaRepositoryProvider).bumpCoverLastModified(manga.id);
       toast.show('Cover updated');
     } catch (e) {
-      toast.show('Couldn\'t set cover: $e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t set the cover.'));
     }
   }
 
@@ -969,7 +970,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
             'page ${_currentPage.value + 1}',
       );
     } catch (e) {
-      toast.show('Couldn\'t share page: $e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t share this page.'));
     }
   }
 
@@ -984,7 +985,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
         filename: '${_pageFilename()}.png',
       );
     } catch (e) {
-      toast.show('Couldn\'t copy page: $e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t copy this page.'));
     }
   }
 
@@ -998,7 +999,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       );
       toast.show('Picture saved');
     } catch (e) {
-      toast.show('Couldn\'t save page: $e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t save this page.'));
     }
   }
 

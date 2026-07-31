@@ -14,6 +14,7 @@ import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
 import '../../data/source/source_preferences.dart';
 import '../tide/tide.dart';
+import '../util/user_message.dart';
 
 /// Filter the Sources list by language and by per-source toggle.
 /// Flipping a language off hides every source for that language. Inside an
@@ -40,7 +41,8 @@ class SourcesFilterScreen extends ConsumerWidget {
                 loading: () => const Center(
                   child: TideSpinner(),
                 ),
-                error: (e, _) => _Note('Failed to load preferences: $e'),
+                error: (e, _) => _Note(
+                    userMessage(e, fallback: 'Couldn\'t load preferences.')),
                 data: (prefs) => _Body(prefs: prefs),
               ),
             ),

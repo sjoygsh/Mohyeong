@@ -16,6 +16,7 @@ import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
 import '../tide/tide.dart';
 import '../manga/manga_details_screen.dart';
+import '../util/user_message.dart';
 
 /// Library manga whose next chapter is expected on/after today, soonest
 /// first. Mirrors Mihon's `GetUpcomingManga`.
@@ -104,7 +105,8 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
                   Expanded(
                     child: async.when(
                       loading: () => const Center(child: TideSpinner()),
-                      error: (e, _) => _Note('Failed to load: $e'),
+                      error: (e, _) => _Note(
+                          userMessage(e, fallback: 'Couldn\'t load what\'s upcoming.')),
                       data: _body,
                     ),
                   ),

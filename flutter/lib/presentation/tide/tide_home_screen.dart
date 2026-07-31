@@ -43,6 +43,7 @@ import '../reader/reader_screen.dart';
 import '../upcoming/upcoming_screen.dart';
 import 'tide.dart';
 import '../manga/manga_details_screen.dart';
+import '../util/user_message.dart';
 
 /// One entry in the "Continue" rail: a library entry the reader is part-way
 /// through, joined with the chapter history last touched it.
@@ -207,7 +208,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
       toast.show(msg);
     } catch (e) {
       if (!mounted) return;
-      toast.show('Refresh failed: $e');
+      toast.show(userMessage(e, fallback: 'Couldn\'t refresh.'));
     } finally {
       if (mounted) setState(() => _updating = false);
     }
