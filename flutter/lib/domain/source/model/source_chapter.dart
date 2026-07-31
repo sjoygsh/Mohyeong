@@ -24,8 +24,15 @@ class SourceChapter {
         dateUpload: (json['date_upload'] as num?)?.toInt() ?? 0,
         chapterNumber: (json['chapter_number'] as num?)?.toDouble() ?? -1,
         volumeNumber: (json['volume_number'] as num?)?.toDouble(),
-        scanlator: json['scanlator'] as String?,
+        // Kotlin normalises at the copy (`scanlator?.ifBlank { null }`); we do
+        // it at the JS boundary, which is the only place a blank can enter.
+        // A "" would otherwise persist as a distinct value from null and show
+        // up as an empty entry in the scanlator filter.
+        scanlator: _blankToNull(json['scanlator'] as String?),
       );
+
+  static String? _blankToNull(String? s) =>
+      (s == null || s.trim().isEmpty) ? null : s;
 }
 
 /// A single page of an opened chapter. Mirrors Kotlin's `Page`.

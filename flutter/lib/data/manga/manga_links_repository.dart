@@ -88,12 +88,15 @@ class MangaLinksRepository {
     // happened by the time the re-inserts run, so a failure in between would
     // otherwise leave the user with no cluster at all.
     await _db.transaction(() async {
-      await _db.deleteAllLinksForManga(oldPrimaryId);
-      await _db.insertLink(newPrimaryId, oldPrimaryId, 0);
+      // Drift scopes a transaction by zone, so calls on the same database
+      // inside this block join it — clearLinksFor is the same statement and
+      // stays the one place that drops a manga's edges.
+      await clearLinksFor(oldPrimaryId);
+      await link(newPrimaryId, oldPrimaryId);
       var priority = 1;
       for (final sibling in linked) {
         if (sibling.id == newPrimaryId) continue;
-        await _db.insertLink(newPrimaryId, sibling.id, priority++);
+        await link(newPrimaryId, sibling.id, priority: priority++);
       }
     });
     return true;

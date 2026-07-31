@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/cover/cover_cache.dart';
+import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
 import '../common/source_image.dart';
 import '../tide/tide.dart';
@@ -13,8 +14,11 @@ import '../tide/tide.dart';
 ///
 /// Share/Save/Edit are deliberately not wired — they need `share_plus`
 /// (not in pubspec) and a MediaStore registration path on Android for
-/// gallery visibility (no analog plumbed yet). Adding those later only
-/// needs a bottom-right `ActionsPill` next to the close pill.
+/// gallery visibility (no analog plumbed yet).
+///
+/// Removing a custom cover needs none of that plumbing, so it IS wired, in
+/// the bottom-right pill and only when there is a custom cover to remove.
+/// The reader's "Set as cover" could create one with no way back.
 class MangaCoverViewer extends ConsumerWidget {
   const MangaCoverViewer({super.key, required this.manga});
 
@@ -71,10 +75,47 @@ class MangaCoverViewer extends ConsumerWidget {
                 ),
               ),
             ),
+            if (ref.watch(coverCacheProvider).hasCustomCover(manga.id))
+              Positioned(
+                right: 12,
+                bottom: 12,
+                child: _ActionsPill(
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.hide_image_outlined,
+                      color: Colors.white,
+                    ),
+                    tooltip: 'Remove custom cover',
+                    onPressed: () => _removeCustomCover(context, ref),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
+  }
+
+  /// Reverts to the source artwork — Kotlin's `EditCoverAction.DELETE` /
+  /// `MangaCoverScreenModel.deleteCustomCover`.
+  Future<void> _removeCustomCover(BuildContext context, WidgetRef ref) async {
+    final nav = Navigator.of(context);
+    final toast = TideToast.of(context);
+    final confirmed = await showTideSheet<bool>(
+      context,
+      (_) => const TideConfirmSheet(
+        title: 'Remove custom cover',
+        message: 'The series goes back to the artwork its source provides.',
+        confirmLabel: 'Remove',
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.read(coverCacheProvider).deleteCustomCover(manga.id);
+    // Cover surfaces repaint off cover_last_modified, exactly as they do when
+    // the reader sets one; without the bump the grid keeps the old art.
+    await ref.read(mangaRepositoryProvider).bumpCoverLastModified(manga.id);
+    nav.pop();
+    toast.show('Cover removed');
   }
 }
 

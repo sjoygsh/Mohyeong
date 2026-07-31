@@ -66,6 +66,8 @@ class DelayedTrackingStore {
     final out = <DelayedTrackingItem>[];
     for (final key in prefs.getKeys()) {
       if (!key.startsWith(keyPrefix)) continue;
+      // [attemptsKey] also starts with the queue prefix, so the parse is what
+      // separates entries from it — don't relax this into a blind substring.
       final trackId = int.tryParse(key.substring(keyPrefix.length));
       if (trackId == null) continue;
       final value = (prefs.get(key) as num?)?.toDouble();

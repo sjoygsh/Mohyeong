@@ -55,23 +55,29 @@ Future<bool> runDelayedTrackingTask() async {
       );
 
       for (final item in items) {
-        final track = await tracks.getById(item.trackId);
-        if (track == null) {
-          // Row is gone — manga deleted, or the tracker was unbound. Kotlin
-          // drops the entry in exactly this case.
-          await store.remove(item.trackId);
-          continue;
-        }
-        final tracker = registry.byId(track.trackerId);
-        if (tracker == null) continue;
-        if (!await tracker.isLoggedIn) continue;
-        // Nothing to say if the remote is already at or past this point.
-        if (track.lastChapterRead >= item.lastChapterRead) {
-          await store.remove(item.trackId);
-          continue;
-        }
-        final updated = track.withProgress(item.lastChapterRead);
+        // The WHOLE item is guarded, not just the push. The live path
+        // promises that one offline tracker can't block the others and the
+        // drain has to promise the same: reading credentials here crosses a
+        // method channel from a background isolate, so `isLoggedIn` is a
+        // realistic thrower, and letting it escape would strand every
+        // remaining entry for the entire run.
         try {
+          final track = await tracks.getById(item.trackId);
+          if (track == null) {
+            // Row is gone — manga deleted, or the tracker was unbound.
+            // Kotlin drops the entry in exactly this case.
+            await store.remove(item.trackId);
+            continue;
+          }
+          final tracker = registry.byId(track.trackerId);
+          if (tracker == null) continue;
+          if (!await tracker.isLoggedIn) continue;
+          // Nothing to say if the remote is already at or past this point.
+          if (track.lastChapterRead >= item.lastChapterRead) {
+            await store.remove(item.trackId);
+            continue;
+          }
+          final updated = track.withProgress(item.lastChapterRead);
           await tracker.update(updated, didReadChapter: true);
           await tracks.upsert(updated);
           await store.remove(item.trackId);
