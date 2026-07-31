@@ -97,8 +97,18 @@ Future<Uint8List?> encodeImageProviderToPng(ImageProvider provider) async {
   );
   stream.addListener(listener);
   final image = await completer.future;
-  final data = await image.toByteData(format: ui.ImageByteFormat.png);
-  return data?.buffer.asUint8List();
+  try {
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    return data?.buffer.asUint8List();
+  } finally {
+    // Each listener gets its OWN clone of the decoded image and owns it. The
+    // reader resolves pages here at full resolution for Set as cover / Share
+    // / Copy / Save, so every one of those actions used to strand a 10-15MB
+    // native bitmap for the rest of the session. Elsewhere in the codebase
+    // this is already handled — crop_borders_image and _resolvePageAspect
+    // both dispose with a comment saying why; this was the one that didn't.
+    image.dispose();
+  }
 }
 
 final coverCacheProvider = Provider<CoverCache>((ref) {

@@ -19,6 +19,24 @@ class ChapterRepository {
     return rows.map(ChapterMapper.fromRow).toList(growable: false);
   }
 
+  /// Just the two date columns the fetch-interval calculation reads.
+  ///
+  /// It only ever needs a handful of distinct days, and deserializing a
+  /// 3,800-chapter series into full [Chapter] objects to find them costs
+  /// ~17ms — paid once per manga per library sweep and again on every
+  /// details-screen open.
+  Future<List<(int, int)>> intervalDatesByMangaId(int mangaId) async {
+    final rows = await _db.customSelect(
+      'SELECT date_upload, date_fetch FROM chapters WHERE manga_id = ?1',
+      variables: [Variable<int>(mangaId)],
+      readsFrom: {_db.chapters},
+    ).get();
+    return [
+      for (final r in rows)
+        (r.read<int>('date_upload'), r.read<int>('date_fetch')),
+    ];
+  }
+
   Stream<List<Chapter>> watchByMangaId(int mangaId) {
     return _db.getChaptersByMangaId(mangaId).watch().map(
           (rows) => rows.map(ChapterMapper.fromRow).toList(growable: false),

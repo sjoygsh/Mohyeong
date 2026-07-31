@@ -854,7 +854,10 @@ class _MangaCard extends ConsumerWidget {
     final coverImage = (url == null || url.isEmpty)
         ? fallback
         : SourceImage(
-            cacheWidth: 480,
+            // List mode paints this into a 44x58dp box; only the two grids
+            // need the wide decode. Library's identical list row already
+            // uses 180, and this one was decoding ~13x the pixels it shows.
+            cacheWidth: style == SourceDisplayMode.list ? 180 : 480,
             url: url,
             headers: imageHeaders,
             fit: BoxFit.cover,

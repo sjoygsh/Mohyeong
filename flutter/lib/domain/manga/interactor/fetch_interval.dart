@@ -39,11 +39,25 @@ class FetchInterval {
     List<Chapter> chapters,
     DateTime now, {
     required bool hasNewChapters,
+  }) =>
+      toMangaUpdateFromDates(
+        manga,
+        [for (final c in chapters) (c.dateUpload, c.dateFetch)],
+        now,
+        hasNewChapters: hasNewChapters,
+      );
+
+  /// [toMangaUpdate] over a date projection — see [calculateIntervalFromDates].
+  MangaFetchUpdate toMangaUpdateFromDates(
+    Manga manga,
+    List<(int, int)> dates,
+    DateTime now, {
+    required bool hasNewChapters,
   }) {
     // A negative pinned interval means the user disabled auto-update; keep
     // it verbatim (Mihon `manga.fetchInterval.takeIf { it < 0 }`).
     final interval =
-        manga.fetchInterval < 0 ? manga.fetchInterval : calculateInterval(chapters, now);
+        manga.fetchInterval < 0 ? manga.fetchInterval : calculateIntervalFromDates(dates, now);
     final window = getWindow(now);
     final effectiveLastUpdate =
         hasNewChapters ? now.millisecondsSinceEpoch : manga.lastUpdate;
@@ -68,19 +82,30 @@ class FetchInterval {
   /// Median consecutive-release delta over the most recent chapters,
   /// preferring source upload dates and falling back to client fetch
   /// dates, then to a 7-day default. Clamped to 1..[maxInterval].
-  int calculateInterval(List<Chapter> chapters, DateTime now) {
-    final chapterWindow = chapters.length <= 8 ? 3 : 10;
+  int calculateInterval(List<Chapter> chapters, DateTime now) =>
+      calculateIntervalFromDates(
+        [for (final c in chapters) (c.dateUpload, c.dateFetch)],
+        now,
+      );
+
+  /// The same calculation over just the two columns it actually reads.
+  ///
+  /// Only ever needs a handful of distinct days, so callers that would have
+  /// to deserialize a whole chapter list to get here — a 3,800-chapter series
+  /// costs ~17ms in mapping alone — can hand over a projection instead.
+  int calculateIntervalFromDates(List<(int, int)> dates, DateTime now) {
+    final chapterWindow = dates.length <= 8 ? 3 : 10;
 
     final uploadDays = _distinctTake(
-      chapters
-          .where((c) => c.dateUpload > 0)
-          .map((c) => _epochDay(c.dateUpload))
+      dates
+          .where((d) => d.$1 > 0)
+          .map((d) => _epochDay(d.$1))
           .toList()
         ..sort((a, b) => b.compareTo(a)),
       chapterWindow,
     );
     final fetchDays = _distinctTake(
-      chapters.map((c) => _epochDay(c.dateFetch)).toList()
+      dates.map((d) => _epochDay(d.$2)).toList()
         ..sort((a, b) => b.compareTo(a)),
       chapterWindow,
     );

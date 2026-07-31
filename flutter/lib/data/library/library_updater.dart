@@ -294,10 +294,14 @@ class LibraryUpdater {
     Manga manga, {
     required bool hasNewChapters,
   }) async {
-    final chapters = await _chapters.getByMangaId(manga.id);
-    final update = const FetchInterval().toMangaUpdate(
+    // A pinned (negative) interval means the user turned auto-update off, and
+    // the chapter dates are never consulted — so don't read them at all.
+    final dates = manga.fetchInterval < 0
+        ? const <(int, int)>[]
+        : await _chapters.intervalDatesByMangaId(manga.id);
+    final update = const FetchInterval().toMangaUpdateFromDates(
       manga,
-      chapters,
+      dates,
       DateTime.now(),
       hasNewChapters: hasNewChapters,
     );
