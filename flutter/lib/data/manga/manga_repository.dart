@@ -176,6 +176,23 @@ class MangaRepository {
     final coverChanged = existing != null &&
         existing.thumbnailUrl != details.thumbnailUrl &&
         details.thumbnailUrl != null;
+    // A library update re-fetches details for every favourite, and for most
+    // of them nothing has changed. Writing anyway bumps last_modified_at,
+    // which is what cross-device sync reads to decide what changed — so an
+    // unconditional write told sync the whole library had been edited on
+    // every pass. Same reasoning as syncChaptersWithSource.
+    if (existing != null &&
+        existing.initialized &&
+        existing.artist == details.artist &&
+        existing.author == details.author &&
+        existing.description == details.description &&
+        // The column is comma-joined TEXT; the model splits it, so compare in
+        // the stored shape rather than across the two representations.
+        existing.genre?.join(',') == details.genre &&
+        existing.status == details.status &&
+        existing.thumbnailUrl == details.thumbnailUrl) {
+      return;
+    }
     await (_db.update(_db.mangas)..where((t) => t.id.equals(id))).write(
       db.MangasCompanion(
         artist: Value(details.artist),
