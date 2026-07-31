@@ -250,7 +250,19 @@ class ChapterRepository {
             volumeNumber: Value(s.volumeNumber),
           ),
         );
-      } else {
+      } else if (prior.name != s.name ||
+          prior.scanlator != s.scanlator ||
+          prior.chapterNumber != s.chapterNumber ||
+          prior.sourceOrder != i ||
+          prior.dateUpload != s.dateUpload ||
+          prior.volumeNumber != s.volumeNumber) {
+        // Only rows the source actually changed. A re-sync that finds nothing
+        // new used to rewrite EVERY row regardless — 3,800 UPDATEs for a long
+        // series, each firing the AFTER UPDATE trigger into a second write.
+        // Cost aside, that trigger sets last_modified_at, which is what
+        // cross-device sync reads to decide what changed: touching every
+        // chapter on every library update told sync the whole series was
+        // edited, every time.
         updatedCompanions.add(
           db.ChaptersCompanion(
             id: Value(prior.id),
