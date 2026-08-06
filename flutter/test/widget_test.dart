@@ -46,7 +46,10 @@ class _FakeHistoryRepository implements HistoryRepository {
 
 class _FakeUpdatesRepository implements UpdatesRepository {
   @override
-  Stream<List<LibraryUpdate>> watchAll() =>
+  Stream<List<LibraryUpdate>> watchAll({
+    Duration window = const Duration(days: 90),
+    int limit = 500,
+  }) =>
       Stream.value(const <LibraryUpdate>[]);
 
   @override

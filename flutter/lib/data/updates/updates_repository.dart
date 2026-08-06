@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/app_database.dart' as db;
@@ -83,8 +84,26 @@ class UpdatesRepository {
 
   final db.AppDatabase _db;
 
-  Stream<List<LibraryUpdate>> watchAll() {
-    return _db.select(_db.updatesView).watch().asyncMap((rows) async {
+  /// Updates newer than [after], newest first, capped at [limit].
+  ///
+  /// Mihon's Updates screen subscribes with `Calendar.getInstance().apply {
+  /// add(Calendar.MONTH, -3) }` -- it has never shown the whole table -- and
+  /// the bound matters here for a second reason: Drift invalidates per table,
+  /// so every `setLastPageRead` re-runs this query even though Home is not the
+  /// visible tab. Unbounded, that was the entire chapters/mangas join on each
+  /// page turn.
+  Stream<List<LibraryUpdate>> watchAll({
+    Duration window = const Duration(days: 90),
+    int limit = 500,
+  }) {
+    final after = DateTime.now().subtract(window).millisecondsSinceEpoch;
+    final query = _db.select(_db.updatesView)
+      ..where((t) => t.datefetch.isBiggerOrEqualValue(after))
+      // The view carries its own ORDER BY, but SQLite only guarantees the
+      // outer LIMIT picks the newest rows if the outer query orders too.
+      ..orderBy([(t) => OrderingTerm.desc(t.datefetch)])
+      ..limit(limit);
+    return query.watch().asyncMap((rows) async {
       // Re-query the linked->primary map on every emission. The link set
       // is small (one row per cluster edge) and the view itself already
       // reacts to manga_links changes, so this stays in sync.

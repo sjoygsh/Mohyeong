@@ -140,7 +140,11 @@ class _FakeUpdatesRepository implements UpdatesRepository {
   final List<LibraryUpdate> updates;
 
   @override
-  Stream<List<LibraryUpdate>> watchAll() => Stream.value(updates);
+  Stream<List<LibraryUpdate>> watchAll({
+    Duration window = const Duration(days: 90),
+    int limit = 500,
+  }) =>
+      Stream.value(updates);
 
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
