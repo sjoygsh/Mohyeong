@@ -122,6 +122,38 @@ class ChapterRepository {
     ));
   }
 
+  /// `url -> chapter id` for one manga, without deserializing the rows.
+  ///
+  /// Backup restore resolves its history rows (which reference chapters by
+  /// URL on the wire) through this map, per manga, on every sync cycle — and
+  /// building it from full [Chapter] objects costs ~17ms on a long series for
+  /// two columns' worth of answer.
+  Future<Map<String, int>> chapterIdsByUrl(int mangaId) async {
+    final rows = await _db.customSelect(
+      'SELECT _id, url FROM chapters WHERE manga_id = ?1',
+      variables: [Variable<int>(mangaId)],
+      readsFrom: {_db.chapters},
+    ).get();
+    return {for (final r in rows) r.read<String>('url'): r.read<int>('_id')};
+  }
+
+  /// The distinct chapter NUMBERS the reader has already read in this manga,
+  /// recognized numbers only (`chapter_number >= 0`).
+  ///
+  /// Same shape as [intervalDatesByMangaId]: the auto-download filter wants a
+  /// set of numbers, and deserializing a 3,800-chapter series into full
+  /// [Chapter] objects to build it costs ~17ms — once per manga per library
+  /// sweep, when download-new-unread-only is on.
+  Future<Set<double>> readChapterNumbers(int mangaId) async {
+    final rows = await _db.customSelect(
+      'SELECT DISTINCT chapter_number FROM chapters '
+      'WHERE manga_id = ?1 AND read != 0 AND chapter_number >= 0',
+      variables: [Variable<int>(mangaId)],
+      readsFrom: {_db.chapters},
+    ).get();
+    return {for (final r in rows) r.read<double>('chapter_number')};
+  }
+
   /// Merge progress into many chapters at once: one UPDATE per chapter with
   /// whichever of read / bookmark / lastPageRead the caller supplies, the
   /// whole thing in a single transaction.

@@ -32,10 +32,7 @@ class FilterChaptersForDownload {
       return newChapters;
     }
 
-    final readChapterNumbers = (await _chapters.getByMangaId(manga.id))
-        .where((c) => c.read && c.isRecognizedNumber)
-        .map((c) => c.chapterNumber)
-        .toSet();
+    final readChapterNumbers = await _chapters.readChapterNumbers(manga.id);
     return newChapters
         .where((c) => !readChapterNumbers.contains(c.chapterNumber))
         .toList(growable: false);

@@ -396,8 +396,7 @@ class BackupRestorer {
     // just-inserted chapters need fresh ids — existing ones are in
     // [localByUrl] already.
     if (bm.history.isNotEmpty) {
-      final refreshedChapters = await _chapters.getByMangaId(mangaId);
-      final chapterIdByUrl = {for (final c in refreshedChapters) c.url: c.id};
+      final chapterIdByUrl = await _chapters.chapterIdsByUrl(mangaId);
       for (final h in bm.history) {
         final chapterId = chapterIdByUrl[h.url];
         if (chapterId == null) continue;
