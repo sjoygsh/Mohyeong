@@ -1439,18 +1439,47 @@ class _LibraryGrid extends StatelessWidget {
             crossAxisSpacing: 10,
             mainAxisSpacing: 12,
           );
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 108),
-      gridDelegate: gridDelegate,
-      itemCount: items.length,
-      itemBuilder: (context, i) => _MangaCard(
-        item: items[i],
-        displayMode: displayMode,
-        isSelected: selected.contains(items[i].manga.id),
-        selecting: selecting,
-        onToggleSelected: onToggleSelected,
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 108),
+          gridDelegate: gridDelegate,
+          itemCount: items.length,
+          itemBuilder: (context, i) => _MangaCard(
+            item: items[i],
+            displayMode: displayMode,
+            coverDecodeWidth: _coverDecodeWidth(context, constraints, maxExtent),
+            isSelected: selected.contains(items[i].manga.id),
+            selecting: selecting,
+            onToggleSelected: onToggleSelected,
+          ),
+        );
+      },
     );
+  }
+
+  /// What a cover in this grid should actually be decoded at, in device
+  /// pixels. A fixed decode cap can't be right for a grid whose column count
+  /// the user sets: at two columns it decoded a cover narrower than the cell
+  /// and showed it soft, and at six it decoded several times the pixels the
+  /// cell could ever display — held for every card the list keeps alive.
+  int _coverDecodeWidth(
+    BuildContext context,
+    BoxConstraints constraints,
+    double maxExtent,
+  ) {
+    const spacing = 10.0;
+    // The grid's own horizontal padding is inside these constraints.
+    final usable = constraints.maxWidth - 32;
+    if (usable <= 0) return 480;
+    // Auto mode: the same column count SliverGridDelegateWithMaxCrossAxisExtent
+    // derives, so the two never disagree about cell width.
+    final cols = columns > 0
+        ? columns
+        : (usable / (maxExtent + spacing)).ceil().clamp(1, 12);
+    final cellWidth = (usable - spacing * (cols - 1)) / cols;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    return (cellWidth * dpr).round().clamp(120, 900);
   }
 }
 
@@ -1516,6 +1545,7 @@ class _MangaCard extends ConsumerWidget {
   const _MangaCard({
     required this.item,
     required this.displayMode,
+    required this.coverDecodeWidth,
     required this.isSelected,
     required this.selecting,
     required this.onToggleSelected,
@@ -1523,6 +1553,9 @@ class _MangaCard extends ConsumerWidget {
 
   final LibraryItem item;
   final LibraryDisplayMode displayMode;
+
+  /// Decode cap for the cover, in device pixels — sized to the actual cell.
+  final int coverDecodeWidth;
   final bool isSelected;
   final bool selecting;
   final ValueChanged<int> onToggleSelected;
@@ -1568,7 +1601,7 @@ class _MangaCard extends ConsumerWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              TideCover(manga: manga),
+              TideCover(manga: manga, cacheWidth: coverDecodeWidth),
               if (overlayTitle) ...[
                 const Positioned.fill(child: TideScrim()),
                 Positioned(
