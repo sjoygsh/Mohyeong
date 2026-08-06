@@ -36,6 +36,7 @@ import '../../domain/manga/model/tri_state.dart';
 import '../../domain/source/model/source.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../../domain/track/model/track.dart';
+import '../common/app_route_observer.dart';
 import '../common/source_image.dart';
 import '../migration/migration_search_screen.dart';
 import '../reader/reader_screen.dart';
@@ -77,8 +78,21 @@ class MangaDetailsScreen extends ConsumerStatefulWidget {
       _MangaDetailsScreenState();
 }
 
-class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
+class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen>
+    with RouteAware {
   final Set<int> _selectedChapterIds = <int>{};
+
+  /// True while another screen — the reader, almost always — is on top of
+  /// this one. The chapter subscriptions go away while it is, and the last
+  /// emission is rendered from [_cluster] so returning doesn't flash a
+  /// spinner. See [appRouteObserver] for why this is worth doing: the reader
+  /// writes `last_page_read` as you turn pages, and every one of those writes
+  /// had this screen re-read and re-merge the series' whole chapter list.
+  bool _covered = false;
+
+  /// Last cluster emission, held so a covered screen still has something to
+  /// draw and so the first frame back is the list you left.
+  ClusterChapters? _cluster;
 
   /// Created once per screen — building these inside `build` resubscribed
   /// (and re-ran) the manga row + full chapter-list queries on every
@@ -89,13 +103,18 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   /// This manga's chapters merged with every linked source's — see
   /// [watchClusterChapters], which holds the composition so it can be tested
   /// without mounting this screen.
-  late final Stream<ClusterChapters> _chaptersStream = watchClusterChapters(
-    primaryMangaId: widget.mangaId,
-    watchLinked: ref.read(mangaLinksRepositoryProvider).watchLinked,
-    watchChapters: ref.read(chapterRepositoryProvider).watchByMangaId,
-    watchExcludedScanlators:
-        ref.read(excludedScanlatorsRepositoryProvider).watchByMangaId,
-  );
+  ///
+  /// Null while the screen is [_covered] — the composed stream is
+  /// single-subscription, so taking it back means building a fresh one.
+  Stream<ClusterChapters>? _chaptersStream;
+
+  Stream<ClusterChapters> _buildChaptersStream() => watchClusterChapters(
+        primaryMangaId: widget.mangaId,
+        watchLinked: ref.read(mangaLinksRepositoryProvider).watchLinked,
+        watchChapters: ref.read(chapterRepositoryProvider).watchByMangaId,
+        watchExcludedScanlators:
+            ref.read(excludedScanlatorsRepositoryProvider).watchByMangaId,
+      );
 
   /// Chapter number → every copy of it across the cluster, and the manga each
   /// merged chapter belongs to. Both refreshed from each [_chaptersStream]
@@ -160,8 +179,11 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    // Tells us when the reader covers this screen — see [_covered].
+    if (route is PageRoute) appRouteObserver.subscribe(this, route);
     if (_routeSettled) return;
-    final anim = ModalRoute.of(context)?.animation;
+    final anim = route?.animation;
     if (anim == null || anim.isCompleted) {
       _routeSettled = true;
       return;
@@ -462,7 +484,35 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _chaptersStream = _buildChaptersStream();
+  }
+
+  @override
+  void didPushNext() {
+    // Covered by the reader (or any other screen): stop watching.
+    if (_covered) return;
+    setState(() {
+      _covered = true;
+      _chaptersStream = null;
+    });
+  }
+
+  @override
+  void didPopNext() {
+    // Back in front: re-subscribe. The query re-runs once and replaces the
+    // held snapshot, which is how the reading you just did shows up.
+    if (!_covered) return;
+    setState(() {
+      _covered = false;
+      _chaptersStream = _buildChaptersStream();
+    });
+  }
+
+  @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
     _chromeScrim.dispose();
     super.dispose();
   }
@@ -488,7 +538,11 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
           return StreamBuilder<ClusterChapters>(
             stream: _chaptersStream,
             builder: (context, chapSnap) {
-              final cluster = chapSnap.data;
+              // While covered there is no stream; the held emission keeps the
+              // screen drawable and makes the frame you come back to the one
+              // you left, rather than a spinner.
+              final cluster = chapSnap.data ?? _cluster;
+              if (chapSnap.data != null) _cluster = chapSnap.data;
               final chapters = cluster?.merged.chapters ?? const <Chapter>[];
               _byNumber = cluster?.merged.byNumber ?? const {};
               _mangaById = cluster?.mangaById ?? const {};

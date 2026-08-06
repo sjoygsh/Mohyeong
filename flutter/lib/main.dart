@@ -22,6 +22,7 @@ import 'data/sync/sync_preferences.dart';
 import 'data/sync/sync_scheduler.dart';
 import 'data/track/tracker_registry.dart';
 import 'presentation/theme/app_theme.dart';
+import 'presentation/common/app_route_observer.dart';
 import 'presentation/home/home_screen.dart';
 import 'presentation/onboarding/onboarding_screen.dart';
 import 'presentation/security/auth_gate.dart';
@@ -169,6 +170,8 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
     return MaterialApp(
       title: 'Mohyeong',
       navigatorKey: ref.watch(trackerNavigatorKeyProvider),
+      // Lets a screen learn it has been covered — see [appRouteObserver].
+      navigatorObservers: [appRouteObserver],
       // Dark only. The home feed, the series page and the reader are built
       // out of glass over a near-black ground — a light mode would not be the
       // same app with paler colours, it would be a different design. Handing
