@@ -132,7 +132,12 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
 
   /// 0 while the back and more controls are still over the cover, 1 once
   /// they are over the description and chapter rows. Drives [TideTopScrim].
-  double _chromeScrim = 0;
+  ///
+  /// A notifier, not State: this changes roughly a hundred times over the
+  /// cover's height, and a setState per step rebuilt the whole screen —
+  /// including the chapter slivers, which on a long series is the expensive
+  /// part. Only the scrim itself listens.
+  final ValueNotifier<double> _chromeScrim = ValueNotifier<double>(0);
 
   /// Memoised header sliver children + next-unread resolution. Every
   /// chapter-selection tap setStates this whole State; identical cached
@@ -457,6 +462,12 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
   }
 
   @override
+  void dispose() {
+    _chromeScrim.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TideColors.ground,
@@ -531,8 +542,8 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                           n.metrics.pixels,
                           coverHeight: 430,
                         );
-                        if ((next - _chromeScrim).abs() > 0.01) {
-                          setState(() => _chromeScrim = next);
+                        if ((next - _chromeScrim.value).abs() > 0.01) {
+                          _chromeScrim.value = next;
                         }
                         return false;
                       },
@@ -620,7 +631,11 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen> {
                 left: 0,
                 right: 0,
                 top: 0,
-                child: TideTopScrim(opacity: _chromeScrim),
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _chromeScrim,
+                  builder: (context, opacity, _) =>
+                      TideTopScrim(opacity: opacity),
+                ),
               ),
               Positioned(
                 left: 16,
