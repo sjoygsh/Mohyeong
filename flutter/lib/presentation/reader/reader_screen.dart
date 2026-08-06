@@ -687,7 +687,14 @@ class _ReaderBody extends ConsumerStatefulWidget {
 }
 
 class _ReaderBodyState extends ConsumerState<_ReaderBody> {
-  bool _chromeVisible = true;
+  // Whether the top/bottom chrome is showing. A ValueNotifier for the same
+  // reason [_currentPage] is one: tap-to-toggle is the most frequent action in
+  // the reader, and as plain State it rebuilt the whole body — viewport,
+  // colour filters and all — to slide two bars in and out. Only the two
+  // chrome layers listen.
+  final ValueNotifier<bool> _chrome = ValueNotifier<bool>(true);
+  bool get _chromeVisible => _chrome.value;
+  set _chromeVisible(bool v) => _chrome.value = v;
   // Current SOURCE page index. A ValueNotifier rather than setState state:
   // a page turn repaints only the page-indicator label and the chrome
   // slider (the two ValueListenableBuilder consumers in build) — a full
@@ -774,8 +781,23 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
       }
     });
     ReaderVolumeKeys.setListener(_onVolumeKey);
+    _chrome.addListener(_syncVolumeKeys);
     _zoomRegistry.onReachedLastSlot = _onReachedLastSlot;
     _resolveChapterUrl();
+  }
+
+  /// Volume-key navigation is intercepted natively only while the reader is
+  /// open AND the chrome is hidden — matching Mihon, which leaves the keys to
+  /// their normal volume function whenever the reader menu is visible. Only
+  /// crosses the platform boundary when the answer actually changes.
+  void _syncVolumeKeys() {
+    if (!mounted) return;
+    final want = ref.read(readerVolumeKeysProvider) && !_chromeVisible;
+    if (want == _volumeKeysApplied) return;
+    _volumeKeysApplied = want;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ReaderVolumeKeys.setEnabled(want);
+    });
   }
 
   /// Briefly show the active reading-mode label over the page. Mihon flashes
@@ -826,6 +848,8 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   @override
   void dispose() {
     _currentPage.dispose();
+    _chrome.removeListener(_syncVolumeKeys);
+    _chrome.dispose();
     _autoHideTimer?.cancel();
     _flashTimer?.cancel();
     _overlayTimer?.cancel();
@@ -1009,7 +1033,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     if (seconds <= 0 || !_chromeVisible) return;
     _autoHideTimer = Timer(Duration(seconds: seconds), () {
       if (!mounted) return;
-      if (_chromeVisible) setState(() => _chromeVisible = false);
+      _chromeVisible = false;
     });
   }
 
@@ -1052,7 +1076,7 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
   }
 
   void _toggleChrome() {
-    setState(() => _chromeVisible = !_chromeVisible);
+    _chromeVisible = !_chromeVisible;
     if (_chromeVisible) {
       _armAutoHide();
     } else {
@@ -1150,10 +1174,10 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     // Past the very top only, so the first nudge into a chapter doesn't
     // snatch the chrome away before it has been read.
     if (delta > 5 && n.metrics.pixels > 40 && _chromeVisible) {
-      setState(() => _chromeVisible = false);
+      _chromeVisible = false;
       _autoHideTimer?.cancel();
     } else if (delta < -5 && !_chromeVisible) {
-      setState(() => _chromeVisible = true);
+      _chromeVisible = true;
       _armAutoHide();
     }
     return false;
@@ -1675,14 +1699,11 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
         ref.watch(readerTapToNavigateProvider) &&
         ref.watch(readerShowNavOverlayProvider);
 
-    final wantVolumeKeys =
-        ref.watch(readerVolumeKeysProvider) && !_chromeVisible;
-    if (wantVolumeKeys != _volumeKeysApplied) {
-      _volumeKeysApplied = wantVolumeKeys;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ReaderVolumeKeys.setEnabled(wantVolumeKeys);
-      });
-    }
+    // Watched here so a pref change reaches the native side; the chrome half
+    // of the condition arrives through [_chrome]'s listener instead, since
+    // toggling it no longer rebuilds this body.
+    ref.watch(readerVolumeKeysProvider);
+    _syncVolumeKeys();
 
     // Long-strip reading runs THROUGH chapter boundaries: Kotlin's
     // WebtoonViewer keeps the neighbouring chapters in the same RecyclerView
@@ -1812,36 +1833,42 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
             top: 0,
             left: 0,
             right: 0,
-            child: AnimatedSlide(
-              duration: const Duration(milliseconds: 150),
-              offset: _chromeVisible ? Offset.zero : const Offset(0, -1),
-              child: AnimatedOpacity(
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _chrome,
+              builder: (context, chromeVisible, child) => AnimatedSlide(
                 duration: const Duration(milliseconds: 150),
-                opacity: _chromeVisible ? 1 : 0,
-                // Tide's top chrome is a fade rather than a bar: the page runs
-                // under it and darkens into legibility, instead of being cut
-                // off by a slab. Blurred so text stays readable over busy art.
-                child: ClipRect(
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            barColor.withValues(alpha: 0.82),
-                            barColor.withValues(alpha: 0.28),
-                            barColor.withValues(alpha: 0.0),
-                          ],
-                          stops: const [0.0, 0.7, 1.0],
-                        ),
+                offset: chromeVisible ? Offset.zero : const Offset(0, -1),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 150),
+                  opacity: chromeVisible ? 1 : 0,
+                  child: child,
+                ),
+              ),
+              // Built once per body build and handed to the builder untouched
+              // — a toggle animates this subtree, it does not rebuild it.
+              // Tide's top chrome is a fade rather than a bar: the page runs
+              // under it and darkens into legibility, instead of being cut
+              // off by a slab. Blurred so text stays readable over busy art.
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          barColor.withValues(alpha: 0.82),
+                          barColor.withValues(alpha: 0.28),
+                          barColor.withValues(alpha: 0.0),
+                        ],
+                        stops: const [0.0, 0.7, 1.0],
                       ),
-                      child: _ReaderHeader(
-                        manga: data.manga,
-                        chapter: _chapter,
-                        chapterUrl: _chapterUrl,
-                      ),
+                    ),
+                    child: _ReaderHeader(
+                      manga: data.manga,
+                      chapter: _chapter,
+                      chapterUrl: _chapterUrl,
                     ),
                   ),
                 ),
@@ -1873,13 +1900,18 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
             left: 0,
             right: 0,
             bottom: 0,
-            child: AnimatedSlide(
-              duration: const Duration(milliseconds: 150),
-              offset: _chromeVisible ? Offset.zero : const Offset(0, 1),
-              child: AnimatedOpacity(
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _chrome,
+              builder: (context, chromeVisible, child) => AnimatedSlide(
                 duration: const Duration(milliseconds: 150),
-                opacity: _chromeVisible ? 1 : 0,
-                child: Column(
+                offset: chromeVisible ? Offset.zero : const Offset(0, 1),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 150),
+                  opacity: chromeVisible ? 1 : 0,
+                  child: child,
+                ),
+              ),
+              child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -1955,7 +1987,6 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                       ),
                     ),
                   ],
-                ),
               ),
             ),
           ),
