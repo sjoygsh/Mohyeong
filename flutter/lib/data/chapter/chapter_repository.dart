@@ -122,6 +122,43 @@ class ChapterRepository {
     ));
   }
 
+  /// Merge progress into many chapters at once: one UPDATE per chapter with
+  /// whichever of read / bookmark / lastPageRead the caller supplies, the
+  /// whole thing in a single transaction.
+  ///
+  /// The migration path (copying progress onto the manga you migrated to) did
+  /// this a column at a time, unbatched and untransacted — up to three round
+  /// trips per matched chapter pair, so a long series was thousands. Null
+  /// fields are left alone; `read: true` deliberately does NOT reset
+  /// lastPageRead, matching [setRead].
+  Future<void> mergeProgress(
+    List<({int chapterId, bool? read, bool? bookmark, int? lastPageRead})>
+        updates,
+  ) async {
+    if (updates.isEmpty) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await _db.transaction(() async {
+      await _db.batch((b) {
+        for (final u in updates) {
+          b.update(
+            _db.chapters,
+            db.ChaptersCompanion(
+              read: u.read == null ? const Value.absent() : Value(u.read! ? 1 : 0),
+              bookmark: u.bookmark == null
+                  ? const Value.absent()
+                  : Value(u.bookmark! ? 1 : 0),
+              lastPageRead: u.lastPageRead == null
+                  ? const Value.absent()
+                  : Value(u.lastPageRead!),
+              lastModifiedAt: Value(nowMs),
+            ),
+            where: (t) => t.id.equals(u.chapterId),
+          );
+        }
+      });
+    });
+  }
+
   /// Save the user's current page within a chapter. Called by the reader
   /// on every page change; the row also receives a `lastModifiedAt` bump
   /// so sync clients pick up the position.

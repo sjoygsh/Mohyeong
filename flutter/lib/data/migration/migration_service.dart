@@ -100,20 +100,32 @@ class MigrationService {
       }
     }
 
+    // Collected first, then written in one transaction: a chapter needing all
+    // three fields used to cost three separate untransacted UPDATEs, and a
+    // long series is thousands of them.
+    final updates = <({
+      int chapterId,
+      bool? read,
+      bool? bookmark,
+      int? lastPageRead
+    })>[];
     for (final t in targetChapters) {
       final key = _numberKey(t.chapterNumber);
       final s = byNumber[key];
       if (s == null) continue;
-      if (s.read && !t.read) {
-        await chapterRepo.setRead(t.id, true);
-      }
-      if (s.bookmark && !t.bookmark) {
-        await chapterRepo.setBookmark(t.id, true);
-      }
-      if (s.lastPageRead > t.lastPageRead) {
-        await chapterRepo.setLastPageRead(t.id, s.lastPageRead);
-      }
+      final read = s.read && !t.read ? true : null;
+      final bookmark = s.bookmark && !t.bookmark ? true : null;
+      final lastPageRead =
+          s.lastPageRead > t.lastPageRead ? s.lastPageRead : null;
+      if (read == null && bookmark == null && lastPageRead == null) continue;
+      updates.add((
+        chapterId: t.id,
+        read: read,
+        bookmark: bookmark,
+        lastPageRead: lastPageRead,
+      ));
     }
+    await chapterRepo.mergeProgress(updates);
   }
 
   Future<void> _copyTracks(int sourceMangaId, int targetMangaId) async {
