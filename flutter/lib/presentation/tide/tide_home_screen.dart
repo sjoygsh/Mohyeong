@@ -120,6 +120,13 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
   List<LibraryUpdate> _visible = const [];
   List<_FeedRow> _rows = const [];
 
+  /// Same memoisation for the two rails above the feed — keyed on the source
+  /// lists themselves, which the streams replace only when the data changes.
+  List<LibraryItem>? _railsItems;
+  List<HistoryWithContext>? _railsHistory;
+  List<LibraryItem> _heroes = const [];
+  List<_Resuming> _resumingRail = const [];
+
   bool get _selecting => _selected.isNotEmpty;
 
   @override
@@ -424,8 +431,17 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
         child: TideSpinner(),
       );
     }
-    final heroes = _topRead(items);
-    final resuming = _resuming(items, history);
+    // Memoised on the two lists' identity: the hero timer rebuilds this
+    // screen every 5 seconds to advance the banner, and a sort of the whole
+    // library plus a history join is not what advancing a banner should cost.
+    if (!identical(items, _railsItems) || !identical(history, _railsHistory)) {
+      _railsItems = items;
+      _railsHistory = history;
+      _heroes = _topRead(items);
+      _resumingRail = _resuming(items, history);
+    }
+    final heroes = _heroes;
+    final resuming = _resumingRail;
     final filters = ref.watch(updatesFiltersProvider);
     _recomputeRows(updates, filters);
 
