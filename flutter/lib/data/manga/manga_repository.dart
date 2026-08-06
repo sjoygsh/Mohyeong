@@ -1,4 +1,5 @@
-import 'package:drift/drift.dart' show Value, Variable;
+import 'package:drift/drift.dart'
+    show Table, TableInfo, TableUpdate, UpdateKind, Value, Variable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/manga/model/manga.dart';
@@ -364,7 +365,23 @@ class MangaRepository {
           'DELETE FROM $table WHERE manga_id IN ($nonFav)',
         );
       }
-      return (_db.delete(_db.mangas)..where((t) => t.favorite.equals(0))).go();
+      final removed =
+          await (_db.delete(_db.mangas)..where((t) => t.favorite.equals(0)))
+              .go();
+      // Raw statements are opaque to drift, so only the manga delete above
+      // would have refreshed anything. Say what the other six touched.
+      _db.notifyUpdates({
+        for (final table in <TableInfo<Table, dynamic>>[
+          _db.history,
+          _db.mangaLinks,
+          _db.chapters,
+          _db.mangaSync,
+          _db.mangasCategories,
+          _db.excludedScanlators,
+        ])
+          TableUpdate.onTable(table, kind: UpdateKind.delete),
+      });
+      return removed;
     });
   }
 }

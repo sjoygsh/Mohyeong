@@ -1,4 +1,5 @@
-import 'package:drift/drift.dart' show Variable, innerJoin;
+import 'package:drift/drift.dart'
+    show TableUpdate, UpdateKind, Variable, innerJoin;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/history/model/history.dart';
@@ -88,7 +89,11 @@ class HistoryRepository {
   /// every pass) inflated read-time totals without bound. This takes the
   /// MAX of existing vs incoming instead — net `max(local, backup)`,
   /// matching Kotlin's restorer (`max(item.readDuration, db.time_read)`).
-  /// Raw SQL keeps it out of the generated additive query.
+  /// Raw SQL keeps it out of the generated additive query — which means
+  /// drift cannot tell what it touched, so the notification is issued by
+  /// hand. Without it a sync that pulls another device's reading progress
+  /// leaves the History tab and Tide's Continue rail showing yesterday until
+  /// something else happens to write to `history`.
   Future<void> upsertAbsolute({
     required int chapterId,
     required int? readAtMs,
@@ -103,6 +108,9 @@ class HistoryRepository {
       'WHERE chapter_id = ?1',
       [chapterId, readAtMs ?? 0, timeReadMs],
     );
+    _db.notifyUpdates({
+      TableUpdate.onTable(_db.history, kind: UpdateKind.insert),
+    });
   }
 
   Future<void> resetByMangaId(int mangaId) async {
