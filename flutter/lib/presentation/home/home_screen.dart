@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../common/app_route_observer.dart';
 import '../../data/base/base_preferences.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/source/extension_updates.dart';
@@ -497,8 +498,15 @@ class _FadeThroughIndexedStackState extends State<_FadeThroughIndexedStack>
       child: IndexedStack(
         index: _shown,
         children: [
+          // Every built tab is wrapped, always — a wrapper that comes and
+          // goes would move its child in the tree and remount the screen.
+          // [_shown] rather than widget.index so the outgoing tab counts as
+          // visible until the crossover, which is when it stops being drawn.
           for (final (i, child) in widget.children.indexed)
-            if (_built.contains(i)) child else const SizedBox.shrink(),
+            if (_built.contains(i))
+              TabVisibility(visible: i == _shown, child: child)
+            else
+              const SizedBox.shrink(),
         ],
       ),
     );

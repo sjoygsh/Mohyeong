@@ -36,6 +36,7 @@ import '../../domain/category/model/category.dart';
 import '../../domain/library/model/library_item.dart';
 import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/manga/model/tri_state.dart';
+import '../common/app_route_observer.dart';
 import '../manga/manga_details_screen.dart';
 import '../reader/reader_screen.dart';
 import '../tide/tide.dart';
@@ -143,18 +144,33 @@ class LibraryScreen extends ConsumerStatefulWidget {
   ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+class _LibraryScreenState extends ConsumerState<LibraryScreen>
+    with SuspendsWhileHidden {
   String _query = '';
   LibraryFilters _filters = const LibraryFilters();
 
-  // Created ONCE per consumer — previously each rebuild called watchAll()
-  // inline (new stream → StreamBuilder resubscribe per setState, i.e. per
-  // search keystroke / selection tap), and the title re-issued a fresh
-  // categories query per rebuild.
-  late final Stream<List<LibraryItem>> _libraryStream =
-      ref.read(libraryRepositoryProvider).watchAll();
-  late final Stream<List<Category>> _categoryStream =
-      ref.read(categoryRepositoryProvider).watchAll();
+  // Held rather than created per rebuild — each rebuild used to call
+  // watchAll() inline (new stream → StreamBuilder resubscribe per setState,
+  // i.e. per search keystroke / selection tap), and the title re-issued a
+  // fresh categories query per rebuild.
+  //
+  // Dropped entirely while a series or the reader is on top: the library
+  // aggregate reads every chapter of every favourite, and the reader's
+  // progress writes invalidate it every 600ms. Unlike Tide and History this
+  // screen is its own route rather than a tab, so being covered is the only
+  // way it goes out of sight. See [SuspendsWhileHidden].
+  Stream<List<LibraryItem>>? _libraryStream;
+  Stream<List<Category>>? _categoryStream;
+
+  void _syncStreams() {
+    _libraryStream =
+        watching ? ref.read(libraryRepositoryProvider).watchAll() : null;
+    _categoryStream =
+        watching ? ref.read(categoryRepositoryProvider).watchAll() : null;
+  }
+
+  @override
+  void onWatchingChanged() => _syncStreams();
   // Memoised downloaded/tracked filter sets (see build) — resolved once per
   // axis combination rather than on every rebuild.
   Future<_AsyncFilterSets>? _asyncSets;
@@ -226,6 +242,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   /// resolving the download repository eagerly would drag in ExtensionRepository
   /// on every library mount, including contexts that never initialise it.
   StreamSubscription<DownloadEvent>? _downloadEvents;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncStreams();
+  }
 
   @override
   void dispose() {
@@ -2111,9 +2133,10 @@ class _LibraryHeading extends ConsumerWidget {
 
   /// The screen's shared streams — the heading must NOT open its own
   /// `watchAll()` (a second live library query) or re-issue a categories
-  /// fetch per rebuild, as it used to.
-  final Stream<List<LibraryItem>> libraryStream;
-  final Stream<List<Category>> categoryStream;
+  /// fetch per rebuild, as it used to. Null while the screen is covered, in
+  /// which case both [StreamBuilder]s below hold the last counts they had.
+  final Stream<List<LibraryItem>>? libraryStream;
+  final Stream<List<Category>>? categoryStream;
 
   final Widget Function(BuildContext context, String name, String kicker)
       builder;

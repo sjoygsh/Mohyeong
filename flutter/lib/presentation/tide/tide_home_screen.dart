@@ -37,6 +37,7 @@ import '../../data/updates/updates_repository.dart';
 import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/library/model/library_item.dart';
 import '../../domain/manga/model/tri_state.dart';
+import '../common/app_route_observer.dart';
 import '../common/source_image.dart';
 import '../home/home_screen.dart';
 import '../reader/reader_screen.dart';
@@ -85,16 +86,31 @@ class TideHomeScreen extends ConsumerStatefulWidget {
   ConsumerState<TideHomeScreen> createState() => _TideHomeScreenState();
 }
 
-class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
+class _TideHomeScreenState extends ConsumerState<TideHomeScreen>
+    with SuspendsWhileHidden {
   // Held rather than rebuilt per frame: a stream recreated inside build()
   // re-subscribes on every rebuild and the list flickers back to its loading
   // state. Same pattern the History screen uses.
-  late final Stream<List<LibraryItem>> _library =
-      ref.read(libraryRepositoryProvider).watchAll();
-  late final Stream<List<HistoryWithContext>> _history =
-      ref.read(historyRepositoryProvider).watchRecent();
-  late final Stream<List<LibraryUpdate>> _updates =
-      ref.read(updatesRepositoryProvider).watchAll();
+  //
+  // Nulled out while this screen is hidden — see [SuspendsWhileHidden]. Tide
+  // is tab 0 AND the thing the reader is opened from, so it spends most of a
+  // reading session invisible, and all three of these are invalidated by the
+  // reader's own progress writes.
+  Stream<List<LibraryItem>>? _library;
+  Stream<List<HistoryWithContext>>? _history;
+  Stream<List<LibraryUpdate>>? _updates;
+
+  void _syncStreams() {
+    _library =
+        watching ? ref.read(libraryRepositoryProvider).watchAll() : null;
+    _history =
+        watching ? ref.read(historyRepositoryProvider).watchRecent() : null;
+    _updates =
+        watching ? ref.read(updatesRepositoryProvider).watchAll() : null;
+  }
+
+  @override
+  void onWatchingChanged() => _syncStreams();
 
   final _scroll = ScrollController();
 
@@ -132,6 +148,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen> {
   @override
   void initState() {
     super.initState();
+    _syncStreams();
     _rotate = Timer.periodic(const Duration(seconds: 5), (_) {
       // Only advance while Tide is the visible tab — the banner rotating
       // behind another screen is work nobody sees.

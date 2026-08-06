@@ -27,6 +27,7 @@ import '../../data/cover/cover_cache.dart';
 import '../../data/history/history_repository.dart';
 import '../../data/preferences/appearance_preferences.dart';
 import '../../data/source/extension_repository.dart';
+import '../common/app_route_observer.dart';
 import '../common/source_image.dart';
 import '../home/home_screen.dart';
 import '../reader/reader_screen.dart';
@@ -52,20 +53,34 @@ class HistoryScreen extends ConsumerStatefulWidget {
   ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+class _HistoryScreenState extends ConsumerState<HistoryScreen>
+    with SuspendsWhileHidden {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scroll = ScrollController();
   bool _searching = false;
   String _query = '';
 
-  /// Created once — building it in `build` re-ran the recent-history join
-  /// on every search keystroke (each setState resubscribed the stream).
-  late final Stream<_Feed> _feed = () {
+  /// Held rather than built in `build` — building it there re-ran the
+  /// recent-history join on every search keystroke (each setState resubscribed
+  /// the stream). Nulled out while the tab is off-screen or covered: the
+  /// reader writes history as you read, and every one of those writes re-ran
+  /// this join AND the total-read-time sum behind it. See
+  /// [SuspendsWhileHidden].
+  Stream<_Feed>? _feed;
+
+  void _syncStreams() {
+    if (!watching) {
+      _feed = null;
+      return;
+    }
     final repo = ref.read(historyRepositoryProvider);
-    return repo
+    _feed = repo
         .watchRecent()
         .asyncMap((entries) async => (entries, await repo.totalReadDurationMs()));
-  }();
+  }
+
+  @override
+  void onWatchingChanged() => _syncStreams();
 
   /// Memoised filter + grouping output. Recomputed only when the stream emits
   /// a new list, the query changes, or the calendar day rolls over (the key
@@ -77,6 +92,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   @override
   void initState() {
     super.initState();
+    _syncStreams();
     // Reselecting the tab returns to the top, matching the other tabs.
     ref.listenManual<HomeReselectSignal>(homeReselectProvider, (prev, next) {
       if (next.tab != 1 || !_scroll.hasClients) return;
