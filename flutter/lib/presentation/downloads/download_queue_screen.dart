@@ -28,6 +28,42 @@ import '../tide/tide.dart';
 /// screen; per-page `downloading` ticks — several a second during a bulk
 /// download — flow through per-chapter ValueNotifiers so only the running
 /// row's progress area repaints, not the whole queue.
+/// One row of the flattened queue list. The screen used to nest the queued
+/// chapters inside per-series Columns inside a non-lazy `ListView(children:)`,
+/// which built every chapter of every series on every rebuild — and a running
+/// download rebuilds often. Flat rows let the list build what is on screen.
+sealed class _QueueRow {
+  const _QueueRow();
+}
+
+/// A running or errored chapter, pinned above the queue.
+class _PinnedRow extends _QueueRow {
+  const _PinnedRow(this.item);
+  final ActiveDownload item;
+}
+
+class _WaitingHeaderRow extends _QueueRow {
+  const _WaitingHeaderRow();
+}
+
+/// A collapsible series header. [last] is true when the group is collapsed
+/// and the header therefore closes it.
+class _GroupHeaderRow extends _QueueRow {
+  const _GroupHeaderRow(this.group, {
+    required this.collapsed,
+    required this.last,
+  });
+  final List<ActiveDownload> group;
+  final bool collapsed;
+  final bool last;
+}
+
+class _GroupChapterRow extends _QueueRow {
+  const _GroupChapterRow(this.item, {required this.last});
+  final ActiveDownload item;
+  final bool last;
+}
+
 class DownloadQueueScreen extends ConsumerStatefulWidget {
   const DownloadQueueScreen({super.key});
 
@@ -50,6 +86,15 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
   /// Series headers the user has collapsed. Expanded is the default, so this
   /// holds the exceptions rather than the rule.
   final Set<int> _collapsed = <int>{};
+
+  /// Bumped whenever a header is collapsed or expanded. The set is mutated in
+  /// place, so identity can't tell the row memo that it changed.
+  int _collapsedVersion = 0;
+
+  /// Memoised flat row list — see [_rowsFor].
+  List<ActiveDownload>? _rowsSource;
+  int _rowsCollapsedVersion = -1;
+  List<_QueueRow> _rows = const [];
 
   @override
   void initState() {
@@ -241,13 +286,23 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
     }
   }
 
-  Widget _list(DownloadRepository repo, List<ActiveDownload> items) {
-    // Snapshot orders running, then errored, then queued. Pin the running
-    // and errored rows at the top; the queued remainder renders grouped by
-    // manga (Kotlin's DownloadHeaderItem: a collapsible series header with
-    // its chapters beneath and series-level move-to-top / cancel actions —
-    // replaces the old flat drag-to-reorder list; ordering is still
-    // available via Sort + "Move series to top").
+  /// The queue as one flat row list, so the list view can build lazily.
+  ///
+  /// Snapshot orders running, then errored, then queued. Pin the running and
+  /// errored rows at the top; the queued remainder renders grouped by manga
+  /// (Kotlin's DownloadHeaderItem: a collapsible series header with its
+  /// chapters beneath and series-level move-to-top / cancel actions —
+  /// replaces the old flat drag-to-reorder list; ordering is still available
+  /// via Sort + "Move series to top").
+  ///
+  /// Memoised: a download in progress emits a tick several times a second,
+  /// and regrouping the whole queue is not what a progress bar should cost.
+  List<_QueueRow> _rowsFor(List<ActiveDownload> items) {
+    if (identical(items, _rowsSource) &&
+        _collapsedVersion == _rowsCollapsedVersion) {
+      return _rows;
+    }
+
     final pinned =
         items.where((i) => i.current || i.errored).toList(growable: false);
     final queued =
@@ -266,55 +321,76 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
           .add(item);
     }
 
-    return ListView(
+    final rows = <_QueueRow>[
+      for (final item in pinned) _PinnedRow(item),
+      if (pinned.isNotEmpty && groupOrder.isNotEmpty) const _WaitingHeaderRow(),
+    ];
+    for (final mangaId in groupOrder) {
+      final group = groups[mangaId]!;
+      final collapsed = _collapsed.contains(mangaId);
+      rows.add(_GroupHeaderRow(group, collapsed: collapsed, last: collapsed));
+      if (collapsed) continue;
+      for (var i = 0; i < group.length; i++) {
+        rows.add(_GroupChapterRow(group[i], last: i == group.length - 1));
+      }
+    }
+
+    _rowsSource = items;
+    _rowsCollapsedVersion = _collapsedVersion;
+    _rows = rows;
+    return rows;
+  }
+
+  Widget _list(DownloadRepository repo, List<ActiveDownload> items) {
+    final rows = _rowsFor(items);
+    return ListView.builder(
       padding: EdgeInsets.fromLTRB(16, 8, 16, items.isEmpty ? 28 : 104),
-      children: [
-        for (final item in pinned) ...[
-          _tile(repo, item),
-          const SizedBox(height: 8),
-        ],
-        if (pinned.isNotEmpty && groupOrder.isNotEmpty)
-          const TideSectionHeader(
-            label: 'Waiting',
-            padding: EdgeInsets.fromLTRB(4, 14, 4, 12),
-          ),
-        for (final mangaId in groupOrder) _group(repo, groups[mangaId]!),
-      ],
+      itemCount: rows.length,
+      itemBuilder: (context, i) => _row(repo, rows[i]),
     );
   }
 
-  /// One manga's queued chapters under a collapsible series header.
-  Widget _group(DownloadRepository repo, List<ActiveDownload> group) {
-    final manga = group.first.manga;
-    final n = group.length;
-    final collapsed = _collapsed.contains(manga.id);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        children: [
-          TideRow(
+  /// One flat row. The spacing each kind used to get from its enclosing
+  /// Column/Padding is carried on the row itself.
+  Widget _row(DownloadRepository repo, _QueueRow row) {
+    switch (row) {
+      case _PinnedRow(:final item):
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _tile(repo, item),
+        );
+      case _WaitingHeaderRow():
+        return const TideSectionHeader(
+          label: 'Waiting',
+          padding: EdgeInsets.fromLTRB(4, 14, 4, 12),
+        );
+      case _GroupHeaderRow(:final group, :final collapsed, :final last):
+        final manga = group.first.manga;
+        final n = group.length;
+        return Padding(
+          padding: EdgeInsets.only(bottom: last ? 10 : 0),
+          child: TideRow(
             icon: collapsed ? Icons.chevron_right : Icons.expand_more,
             title: manga.title,
             subtitle: n == 1 ? '1 chapter' : '$n chapters',
             onTap: () => setState(() {
               if (!_collapsed.add(manga.id)) _collapsed.remove(manga.id);
+              _collapsedVersion++;
             }),
             trailing: _RowAction(
               icon: Icons.more_horiz,
               onTap: () => _openGroupActions(repo, group),
             ),
           ),
-          if (!collapsed)
-            for (final item in group)
-              Padding(
-                // Indented under their series header, and led by the
-                // chapter rather than the manga title.
-                padding: const EdgeInsets.only(left: 22, top: 7),
-                child: _tile(repo, item, inGroup: true),
-              ),
-        ],
-      ),
-    );
+        );
+      case _GroupChapterRow(:final item, :final last):
+        return Padding(
+          // Indented under their series header, and led by the chapter
+          // rather than the manga title.
+          padding: EdgeInsets.only(left: 22, top: 7, bottom: last ? 10 : 0),
+          child: _tile(repo, item, inGroup: true),
+        );
+    }
   }
 
   Future<void> _openGroupActions(

@@ -75,6 +75,11 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
 
   final Map<DateTime, GlobalKey> _headerKeys = {};
 
+  /// Memoised grouping of the schedule — see [_regroup].
+  List<Manga>? _rowsSource;
+  Map<DateTime, int> _eventsByDay = const {};
+  List<_UpcomingRow> _rows = const [];
+
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(upcomingMangaProvider);
@@ -119,64 +124,99 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
     );
   }
 
-  Widget _body(List<Manga> manga) {
+  /// Day counts and the headered row order, recomputed only when the schedule
+  /// itself changes — not on every month-arrow tap, which rebuilds this body.
+  void _regroup(List<Manga> manga) {
+    if (identical(manga, _rowsSource)) return;
+    _rowsSource = manga;
+
     // Count of releases per calendar day, for the calendar dots.
     final eventsByDay = <DateTime, int>{};
     for (final m in manga) {
       final d = _dateOnly(m.nextUpdate);
       eventsByDay[d] = (eventsByDay[d] ?? 0) + 1;
     }
+    _eventsByDay = eventsByDay;
     _headerKeys
       ..clear()
       ..addEntries(eventsByDay.keys.map((d) => MapEntry(d, GlobalKey())));
 
-    // Flatten into headered rows (manga is already next_update-asc).
-    final rows = <Widget>[];
+    // Flatten into headered rows (manga is already next_update-asc). Row
+    // descriptors, not widgets: the list below builds only what is on screen,
+    // where it used to construct a tile for every scheduled series.
+    final rows = <_UpcomingRow>[];
     DateTime? lastHeader;
     for (final m in manga) {
       final d = _dateOnly(m.nextUpdate);
       if (lastHeader == null || d != lastHeader) {
         lastHeader = d;
-        rows.add(
-          _DateHeader(
-            key: _headerKeys[d],
-            date: d,
-            mangaCount: eventsByDay[d] ?? 0,
-          ),
-        );
+        rows.add(_HeaderRow(d));
       }
-      rows.add(
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: _UpcomingTile(manga: m),
-        ),
-      );
+      rows.add(_MangaRow(m));
     }
+    _rows = rows;
+  }
 
-    return ListView(
+  Widget _body(List<Manga> manga) {
+    _regroup(manga);
+    final eventsByDay = _eventsByDay;
+    final rows = _rows;
+
+    // Index 0 is the calendar; the schedule (or the empty note) follows.
+    final count = 1 + (manga.isEmpty ? 1 : rows.length);
+    return ListView.builder(
       controller: _scroll,
       padding: const EdgeInsets.only(bottom: 28),
-      children: [
-        _MonthCalendar(
-          month: _visibleMonth,
-          eventsByDay: eventsByDay,
-          onPrev: () => _shiftMonth(-1),
-          onNext: () => _shiftMonth(1),
-          onDayTap: (d) {
-            if (eventsByDay.containsKey(d)) _scrollToDate(d);
-          },
-        ),
-        if (manga.isEmpty)
-          const TideEmpty(
+      itemCount: count,
+      itemBuilder: (context, i) {
+        if (i == 0) {
+          return _MonthCalendar(
+            month: _visibleMonth,
+            eventsByDay: eventsByDay,
+            onPrev: () => _shiftMonth(-1),
+            onNext: () => _shiftMonth(1),
+            onDayTap: (d) {
+              if (eventsByDay.containsKey(d)) _scrollToDate(d);
+            },
+          );
+        }
+        if (manga.isEmpty) {
+          return const TideEmpty(
             title: 'Nothing scheduled',
             message: 'Library entries get a predicted next-update date '
                 'after a library update runs.',
-          )
-        else
-          ...rows,
-      ],
+          );
+        }
+        final row = rows[i - 1];
+        return switch (row) {
+          _HeaderRow(:final date) => _DateHeader(
+              key: _headerKeys[date],
+              date: date,
+              mangaCount: eventsByDay[date] ?? 0,
+            ),
+          _MangaRow(:final manga) => Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: _UpcomingTile(manga: manga),
+            ),
+        };
+      },
     );
   }
+}
+
+/// One row of the schedule: a day header, or a series due that day.
+sealed class _UpcomingRow {
+  const _UpcomingRow();
+}
+
+class _HeaderRow extends _UpcomingRow {
+  const _HeaderRow(this.date);
+  final DateTime date;
+}
+
+class _MangaRow extends _UpcomingRow {
+  const _MangaRow(this.manga);
+  final Manga manga;
 }
 
 class _MonthCalendar extends StatelessWidget {
