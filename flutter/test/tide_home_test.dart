@@ -176,6 +176,30 @@ class _FakeChapterRepository implements ChapterRepository {
   @override
   Future<List<Chapter>> getByMangaId(int mangaId) async => const <Chapter>[];
 
+  /// The bulk mark-read resolves the selected ids straight to rows rather
+  /// than reading each owning series whole, so this hands back one row per
+  /// id — enough for the interactor to be called with something real.
+  @override
+  Future<List<Chapter>> getByIds(Iterable<int> ids) async => [
+        for (final id in ids)
+          Chapter(
+            id: id,
+            mangaId: 1,
+            read: false,
+            bookmark: false,
+            lastPageRead: 0,
+            dateFetch: 0,
+            sourceOrder: 0,
+            url: 'ch/$id',
+            name: 'Chapter $id',
+            dateUpload: 0,
+            chapterNumber: 1,
+            scanlator: null,
+            lastModifiedAt: 0,
+            version: 0,
+          ),
+      ];
+
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -1,4 +1,5 @@
-import 'package:drift/drift.dart' show OrderingTerm, Value, Variable;
+import 'package:drift/drift.dart'
+    show BooleanExpressionOperators, OrderingTerm, Value, Variable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -34,6 +35,45 @@ class ChapterRepository {
       (out[r.mangaId] ??= <Chapter>[]).add(ChapterMapper.fromRow(r));
     }
     return out;
+  }
+
+  /// The named chapters, in no particular order.
+  ///
+  /// For the bulk actions on feeds that already know exactly which chapter
+  /// ids the user picked and only need the full rows to act on them. Reading
+  /// each owning series whole to sieve a handful out costs the length of the
+  /// series rather than the length of the selection.
+  Future<List<Chapter>> getByIds(Iterable<int> ids) async {
+    final list = ids.toList(growable: false);
+    if (list.isEmpty) return const <Chapter>[];
+    final rows =
+        await (_db.select(_db.chapters)..where((t) => t.id.isIn(list))).get();
+    return rows.map(ChapterMapper.fromRow).toList(growable: false);
+  }
+
+  /// Unread chapters in READING order, oldest first.
+  ///
+  /// `sourceOrder` 0 is the NEWEST chapter, so reading order is descending —
+  /// resume and "download the next N" both want the oldest unread, never the
+  /// latest release. [limit] caps the result; 1 answers "what do I open".
+  ///
+  /// The alternative is loading every chapter of the series and sieving in
+  /// Dart, which is what resume did — ~17ms of deserialization on a long
+  /// series to find one row, on the tap that is supposed to open the reader.
+  Future<List<Chapter>> unreadInReadingOrder(int mangaId, {int? limit}) async {
+    final query = _db.select(_db.chapters)
+      ..where((t) => t.mangaId.equals(mangaId) & t.read.equals(0))
+      ..orderBy([(t) => OrderingTerm.desc(t.sourceOrder)]);
+    if (limit != null) query.limit(limit);
+    final rows = await query.get();
+    return rows.map(ChapterMapper.fromRow).toList(growable: false);
+  }
+
+  /// The chapter a "continue reading" affordance should open, or null when
+  /// the series is fully read.
+  Future<Chapter?> nextUnread(int mangaId) async {
+    final rows = await unreadInReadingOrder(mangaId, limit: 1);
+    return rows.isEmpty ? null : rows.first;
   }
 
   /// Just the two date columns the fetch-interval calculation reads.

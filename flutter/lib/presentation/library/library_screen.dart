@@ -291,12 +291,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     for (final id in ids) {
       final manga = await mangaRepo.getById(id);
       if (manga == null) continue;
-      final chapters = await chapterRepo.getByMangaId(id);
       // Reading order = descending sourceOrder (0 == newest): "Next N
-      // chapters" downloads the N OLDEST unread, not the N latest.
-      final unread = chapters.where((c) => !c.read).toList()
-        ..sort((a, b) => b.sourceOrder.compareTo(a.sourceOrder));
-      final take = count == null ? unread : unread.take(count).toList();
+      // chapters" downloads the N OLDEST unread, not the N latest. Asking for
+      // exactly those beats reading the series and discarding the read ones.
+      final take = await chapterRepo.unreadInReadingOrder(id, limit: count);
       for (final c in take) {
         await downloadRepo.enqueue(manga, c);
         enqueued++;
@@ -1098,20 +1096,17 @@ Future<void> _resumeNextUnread(
 ) async {
   final toast = TideToast.of(context);
   final navigator = Navigator.of(context);
-  final chapters =
-      await ref.read(chapterRepositoryProvider).getByMangaId(mangaId);
-  // sourceOrder 0 == NEWEST, so reading order is descending sourceOrder —
-  // resume must open the OLDEST unread chapter (matches the details
-  // screen's _pickNextUnread), not the latest release.
-  final unread = chapters.where((c) => !c.read).toList()
-    ..sort((a, b) => b.sourceOrder.compareTo(a.sourceOrder));
-  if (unread.isEmpty) {
+  // The OLDEST unread chapter, not the latest release — matches the details
+  // screen's _pickNextUnread. Resolved by the query rather than by reading
+  // the whole series and sieving it here.
+  final next = await ref.read(chapterRepositoryProvider).nextUnread(mangaId);
+  if (next == null) {
     toast.show('No unread chapters left.');
     return;
   }
   await navigator.push(
     MaterialPageRoute<void>(
-      builder: (_) => ReaderScreen(mangaId: mangaId, chapterId: unread.first.id),
+      builder: (_) => ReaderScreen(mangaId: mangaId, chapterId: next.id),
     ),
   );
 }

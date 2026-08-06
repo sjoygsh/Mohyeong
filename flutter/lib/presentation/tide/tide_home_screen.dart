@@ -34,6 +34,7 @@ import '../../data/library/library_updater.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/updates/updates_filter_prefs.dart';
 import '../../data/updates/updates_repository.dart';
+import '../../domain/chapter/model/chapter.dart';
 import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/library/model/library_item.dart';
 import '../../domain/manga/model/tri_state.dart';
@@ -286,19 +287,21 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen>
     final selected = _visible
         .where((u) => _selected.contains(u.chapterId))
         .toList(growable: false);
-    // Group the selected updates by manga so we can resolve each id back to
-    // a full `Chapter` row (the interactor needs read/lastPageRead/bookmark
-    // to decide what to skip and what download to delete).
-    final idsByManga = <int, Set<int>>{};
-    for (final u in selected) {
-      (idsByManga[u.mangaId] ??= <int>{}).add(u.chapterId);
-    }
-    for (final entry in idsByManga.entries) {
-      final chapters = await repo.getByMangaId(entry.key);
-      final picked = chapters
-          .where((c) => entry.value.contains(c.id))
-          .toList(growable: false);
-      await setReadStatus.setRead(read: read, chapters: picked);
+    // The interactor needs whole `Chapter` rows (read/lastPageRead/bookmark
+    // decide what to skip and which download to delete), so the picked ids
+    // are resolved back — but only those. Reading each owning series in full
+    // to sieve them out cost the length of the series, once per series
+    // touched, for a selection that is usually a handful of rows.
+    final picked = await repo.getByIds(selected.map((u) => u.chapterId));
+    if (picked.isNotEmpty) {
+      // Still grouped by manga: setRead is a per-series interactor.
+      final byManga = <int, List<Chapter>>{};
+      for (final c in picked) {
+        (byManga[c.mangaId] ??= <Chapter>[]).add(c);
+      }
+      for (final chapters in byManga.values) {
+        await setReadStatus.setRead(read: read, chapters: chapters);
+      }
     }
     _clearSelection();
   }
@@ -349,16 +352,13 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen>
   /// resolution the library grid's resume affordance performs.
   Future<void> _resume(int mangaId) async {
     final toast = TideToast.of(context);
-    final chapters =
-        await ref.read(chapterRepositoryProvider).getByMangaId(mangaId);
-    final unread = chapters.where((c) => !c.read).toList()
-      ..sort((a, b) => b.sourceOrder.compareTo(a.sourceOrder));
+    final next = await ref.read(chapterRepositoryProvider).nextUnread(mangaId);
     if (!mounted) return;
-    if (unread.isEmpty) {
+    if (next == null) {
       toast.show('No unread chapters left.');
       return;
     }
-    await _openChapter(mangaId, unread.first.id);
+    await _openChapter(mangaId, next.id);
   }
 
   @override
