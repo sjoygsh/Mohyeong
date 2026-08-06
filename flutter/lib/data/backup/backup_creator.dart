@@ -86,10 +86,23 @@ class BackupCreator {
     final backupManga = <BackupManga>[];
     final seenSourceIds = <int>{};
 
+    // Everything the per-manga body needs, fetched in one query each rather
+    // than five per favourite. Sync calls create() on every cycle, so at a
+    // few hundred favourites that loop was over a thousand round trips.
+    final favoriteIds = favorites.map((m) => m.id).toList(growable: false);
+    final chaptersByManga = await _chapters.getByMangaIds(favoriteIds);
+    final categoryIdsByManga =
+        await _categories.categoryIdsByMangaIds(favoriteIds);
+    final historyByManga = await _history.getByMangaIds(favoriteIds);
+    final tracksByManga = await _tracks.getByMangaIds(favoriteIds);
+    final excludedByManga = await _excludedScanlators.getByMangaIds(
+      favoriteIds,
+    );
+
     for (final m in favorites) {
       seenSourceIds.add(m.source);
 
-      final chapters = await _chapters.getByMangaId(m.id);
+      final chapters = chaptersByManga[m.id] ?? const [];
       final backupChapters = chapters
           .map((c) => BackupChapter(
                 url: c.url,
@@ -109,14 +122,14 @@ class BackupCreator {
               ))
           .toList(growable: false);
 
-      final mangaCategories = await _categories.getByMangaId(m.id);
+      // `categoryIndexById` already excludes the system category, so the
+      // membership ids alone answer this — no join back to `categories`.
       final categoryIndices = <int>[
-        for (final c in mangaCategories)
-          if (!c.isSystemCategory && categoryIndexById.containsKey(c.id))
-            categoryIndexById[c.id]!,
+        for (final id in categoryIdsByManga[m.id] ?? const <int>[])
+          if (categoryIndexById.containsKey(id)) categoryIndexById[id]!,
       ];
 
-      final history = await _history.getByMangaId(m.id);
+      final history = historyByManga[m.id] ?? const [];
       // History needs the chapter URL (not id) for Mihon compat — we
       // already have the chapters fetched above, so build a lookup.
       final chapterUrlById = {for (final c in chapters) c.id: c.url};
@@ -132,7 +145,7 @@ class BackupCreator {
             ),
       ];
 
-      final tracks = await _tracks.getByMangaId(m.id);
+      final tracks = tracksByManga[m.id] ?? const [];
       final backupTracks = tracks
           .map((t) => BackupTracking(
                 syncId: t.trackerId,
@@ -177,7 +190,7 @@ class BackupCreator {
         // Was hardcoded empty — per-manga scanlator exclusions silently
         // vanished on every export (consensus-review data-loss finding).
         excludedScanlators:
-            (await _excludedScanlators.getByMangaId(m.id)).toList(),
+            (excludedByManga[m.id] ?? const <String>{}).toList(),
         version: m.version,
         notes: m.notes,
         initialized: m.initialized,

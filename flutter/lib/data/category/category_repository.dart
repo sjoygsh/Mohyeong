@@ -34,6 +34,24 @@ class CategoryRepository {
     return rows.map(CategoryMapper.fromRow).toList(growable: false);
   }
 
+  /// Category memberships for many manga at once, as `mangaId -> categoryId`
+  /// lists. The membership table alone answers this, so callers that already
+  /// hold the category list (backup creation) never join back to it.
+  Future<Map<int, List<int>>> categoryIdsByMangaIds(
+    Iterable<int> mangaIds,
+  ) async {
+    final ids = mangaIds.toList(growable: false);
+    if (ids.isEmpty) return const {};
+    final rows = await (_db.select(_db.mangasCategories)
+          ..where((t) => t.mangaId.isIn(ids)))
+        .get();
+    final out = <int, List<int>>{};
+    for (final r in rows) {
+      (out[r.mangaId] ??= <int>[]).add(r.categoryId);
+    }
+    return out;
+  }
+
   Future<int> insert({
     required String name,
     required int order,

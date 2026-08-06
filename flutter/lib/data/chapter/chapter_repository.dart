@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' show Value, Variable;
+import 'package:drift/drift.dart' show OrderingTerm, Value, Variable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,6 +17,23 @@ class ChapterRepository {
   Future<List<Chapter>> getByMangaId(int mangaId) async {
     final rows = await _db.getChaptersByMangaId(mangaId).get();
     return rows.map(ChapterMapper.fromRow).toList(growable: false);
+  }
+
+  /// Chapters for many manga at once, grouped by manga id. For whole-library
+  /// walks (backup creation) where one query per favourite is the cost that
+  /// matters; ids with no chapters are absent from the map.
+  Future<Map<int, List<Chapter>>> getByMangaIds(Iterable<int> mangaIds) async {
+    final ids = mangaIds.toList(growable: false);
+    if (ids.isEmpty) return const {};
+    final rows = await (_db.select(_db.chapters)
+          ..where((t) => t.mangaId.isIn(ids))
+          ..orderBy([(t) => OrderingTerm.asc(t.sourceOrder)]))
+        .get();
+    final out = <int, List<Chapter>>{};
+    for (final r in rows) {
+      (out[r.mangaId] ??= <Chapter>[]).add(ChapterMapper.fromRow(r));
+    }
+    return out;
   }
 
   /// Just the two date columns the fetch-interval calculation reads.

@@ -15,6 +15,21 @@ class TrackRepository {
     return rows.map(TrackMapper.fromRow).toList(growable: false);
   }
 
+  /// Tracks for many manga at once, grouped by manga id — the bulk form of
+  /// [getByMangaId] for whole-library walks (backup creation).
+  Future<Map<int, List<Track>>> getByMangaIds(Iterable<int> mangaIds) async {
+    final ids = mangaIds.toList(growable: false);
+    if (ids.isEmpty) return const {};
+    final rows = await (_db.select(_db.mangaSync)
+          ..where((t) => t.mangaId.isIn(ids)))
+        .get();
+    final out = <int, List<Track>>{};
+    for (final r in rows) {
+      (out[r.mangaId] ??= <Track>[]).add(TrackMapper.fromRow(r));
+    }
+    return out;
+  }
+
   Future<List<Track>> getByMangaId(int mangaId) async {
     final rows = await _db.getTracksByMangaId(mangaId).get();
     return rows.map(TrackMapper.fromRow).toList(growable: false);

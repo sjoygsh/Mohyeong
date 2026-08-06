@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' show Variable;
+import 'package:drift/drift.dart' show Variable, innerJoin;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/history/model/history.dart';
@@ -46,6 +46,25 @@ class HistoryRepository {
   Future<List<History>> getByMangaId(int mangaId) async {
     final rows = await _db.getHistoryByMangaId(mangaId).get();
     return rows.map(HistoryMapper.fromRow).toList(growable: false);
+  }
+
+  /// History for many manga at once, grouped by manga id — the bulk form of
+  /// [getByMangaId] for whole-library walks (backup creation). `history` has
+  /// no manga_id of its own, so the owning manga comes off the chapter join.
+  Future<Map<int, List<History>>> getByMangaIds(Iterable<int> mangaIds) async {
+    final ids = mangaIds.toList(growable: false);
+    if (ids.isEmpty) return const {};
+    final rows = await (_db.select(_db.history).join([
+      innerJoin(_db.chapters, _db.chapters.id.equalsExp(_db.history.chapterId)),
+    ])..where(_db.chapters.mangaId.isIn(ids)))
+        .get();
+    final out = <int, List<History>>{};
+    for (final r in rows) {
+      final mangaId = r.readTable(_db.chapters).mangaId;
+      (out[mangaId] ??= <History>[])
+          .add(HistoryMapper.fromRow(r.readTable(_db.history)));
+    }
+    return out;
   }
 
   /// Records or extends a read session for a chapter. Time spent reading is

@@ -21,6 +21,21 @@ class ExcludedScanlatorsRepository {
     return rows.toSet();
   }
 
+  /// Excluded scanlators for many manga at once, grouped by manga id — the
+  /// bulk form of [getByMangaId] for whole-library walks (backup creation).
+  Future<Map<int, Set<String>>> getByMangaIds(Iterable<int> mangaIds) async {
+    final ids = mangaIds.toList(growable: false);
+    if (ids.isEmpty) return const {};
+    final rows = await (_db.select(_db.excludedScanlators)
+          ..where((t) => t.mangaId.isIn(ids)))
+        .get();
+    final out = <int, Set<String>>{};
+    for (final r in rows) {
+      (out[r.mangaId] ??= <String>{}).add(r.scanlator);
+    }
+    return out;
+  }
+
   Stream<Set<String>> watchByMangaId(int mangaId) {
     return _db.getExcludedScanlatorsByMangaId(mangaId).watch().map((r) =>
         r.toSet());
