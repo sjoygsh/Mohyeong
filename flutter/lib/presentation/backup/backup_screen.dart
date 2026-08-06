@@ -80,7 +80,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     });
     try {
       final backup = await ref.read(backupCreatorProvider).create();
-      final bytes = encodeBackup(backup);
+      final bytes = await encodeBackupAsync(backup);
       final defaultName =
           'mohyeong-${DateTime.now().toIso8601String().substring(0, 10)}.tachibk';
 
@@ -152,7 +152,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         return;
       }
 
-      final backup = decodeBackup(bytes);
+      final backup = await decodeBackupAsync(bytes);
       final result = await ref.read(backupRestorerProvider).restore(backup);
 
       _setStatus(

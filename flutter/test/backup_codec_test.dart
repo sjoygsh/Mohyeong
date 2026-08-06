@@ -205,5 +205,49 @@ void main() {
       expect(gz[1], 0x8B);
       expect(decodeBackup(gz).backupSources.single.name, 'X');
     });
+
+    // Sync and manual export encode on a background isolate so the whole
+    // library's protobuf + gzip doesn't block the frame. That only works if
+    // the Backup graph survives being sent across — which is exactly the
+    // thing a new field of the wrong kind would break.
+    test('round-trips through the background-isolate API', () async {
+      final original = Backup(
+        backupManga: [
+          BackupManga(
+            source: 7,
+            url: 'm/1',
+            title: 'Sent Across',
+            genre: const ['Action', 'Drama'],
+            favorite: true,
+            chapters: [
+              BackupChapter(url: 'c/1', name: 'One', read: true, sourceOrder: 0),
+            ],
+            history: [BackupHistory(url: 'c/1', lastRead: 5, readDuration: 90)],
+            tracking: [BackupTracking(syncId: 2, title: 'Tracked')],
+            categories: const [0],
+            excludedScanlators: const ['Ghost Scans'],
+          ),
+        ],
+        backupCategories: [BackupCategory(name: 'Reading', order: 0, id: 1)],
+        backupSources: [BackupSource(name: 'S', sourceId: 7)],
+        backupPreferences: [
+          BackupPreference(
+            key: 'theme',
+            value: const BooleanPreferenceValue(true),
+          ),
+        ],
+      );
+
+      final bytes = await encodeBackupAsync(original);
+      expect(bytes, equals(encodeBackup(original)));
+
+      final decoded = await decodeBackupAsync(bytes);
+      expect(decoded.backupManga.single.title, 'Sent Across');
+      expect(decoded.backupManga.single.chapters.single.read, isTrue);
+      expect(decoded.backupManga.single.history.single.readDuration, 90);
+      expect(decoded.backupManga.single.excludedScanlators, ['Ghost Scans']);
+      expect(decoded.backupCategories.single.name, 'Reading');
+      expect(decoded.backupPreferences.single.key, 'theme');
+    });
   });
 }

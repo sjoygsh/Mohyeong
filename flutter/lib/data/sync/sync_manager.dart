@@ -74,13 +74,14 @@ class SyncManager {
     String deviceId,
     SyncPreferencesData data,
   ) async {
-    final local = encodeBackup(_select(await creator.create(), data));
+    final local = await encodeBackupAsync(_select(await creator.create(), data));
     final merged = await transport.exchange(
       local: local,
       lastSyncTimestamp: data.lastSyncTimestamp,
       deviceId: deviceId,
     );
-    final result = await restorer.restore(_select(decodeBackup(merged), data));
+    final result =
+        await restorer.restore(_select(await decodeBackupAsync(merged), data));
     return result.mangaRestored;
   }
 
@@ -129,13 +130,15 @@ class SyncManager {
     var appliedFromRemote = 0;
     final remote = await transport.pull();
     if (remote != null) {
-      final result = await restorer.restore(_select(decodeBackup(remote), data));
+      final result =
+          await restorer.restore(_select(await decodeBackupAsync(remote), data));
       appliedFromRemote = result.mangaRestored;
     }
 
     // 2. Snapshot the now-merged local state and push it back as the new
     //    authoritative copy.
-    final snapshot = encodeBackup(_select(await creator.create(), data));
+    final snapshot =
+        await encodeBackupAsync(_select(await creator.create(), data));
     await transport.push(snapshot);
     return appliedFromRemote;
   }

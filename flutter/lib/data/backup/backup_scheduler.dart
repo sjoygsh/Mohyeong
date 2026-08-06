@@ -61,7 +61,7 @@ Future<bool> runBackupTask() async {
         sourceRepository: SourceRepository(db),
         excludedScanlatorsRepository: ExcludedScanlatorsRepository(db),
       );
-      final bytes = encodeBackup(await creator.create());
+      final bytes = await encodeBackupAsync(await creator.create());
 
       final dir = await autoBackupDirectory();
       // Delete older autos so at most MAX_AUTO_BACKUPS remain after this
