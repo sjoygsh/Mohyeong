@@ -3846,6 +3846,34 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     widget.onPageChanged(page);
   }
 
+  /// Decode the next few strip pages ahead of the scroll, the way the paged
+  /// viewer's `_precacheAhead` does. The strip used to get its read-ahead
+  /// purely from a wide cache extent, and a cache extent is symmetric: three
+  /// viewports ahead meant three viewports BEHIND as well, holding full-res
+  /// pages nobody scrolls back to. Read-ahead lives here now, so the extent
+  /// can be narrow. The provider chain matches the displayed one (crop
+  /// included) so the cache key is shared.
+  void _precacheStripAhead(int index) {
+    if (!mounted) return;
+    final urlOf = widget.pageUrlOf;
+    if (urlOf == null) return;
+    final crop = ref.read(readerCropBordersProvider);
+    final cacheWidth = _readerPageCacheWidth(context);
+    for (var i = index + 1; i <= index + 4 && i < widget.count; i++) {
+      final url = urlOf(i);
+      // Chapter boundaries have no image of their own.
+      if (url == null) continue;
+      ImageProvider provider = SourceImage.providerFor(
+        url,
+        headers: widget.pageHeadersOf?.call(i),
+        cacheWidth: cacheWidth,
+        fullResolution: true,
+      );
+      if (crop) provider = CropBordersImageProvider(provider);
+      unawaited(precacheImage(provider, context));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!widget.mode.isPaged) {
@@ -3869,6 +3897,7 @@ class _PagesViewState extends ConsumerState<_PagesView> {
                 ? widget.count - 1
                 : _indexForOffset(pos.pixels + pos.viewportDimension / 2);
             _report(idx);
+            _precacheStripAhead(idx);
             if (idx >= widget.count - 1) {
               widget.zoomRegistry?.onReachedLastSlot?.call();
             }
@@ -3878,11 +3907,14 @@ class _PagesViewState extends ConsumerState<_PagesView> {
         child: ListView.builder(
           controller: _scrollController,
           itemCount: widget.itemCount,
-          // Read-ahead: build/decode pages well before they scroll on
-          // screen (Mihon preloads 4 pages ahead; the Flutter default
-          // ~250px meant every page boundary fetched on arrival and
-          // stuttered).
-          scrollCacheExtent: const ScrollCacheExtent.viewport(3),
+          // Enough read-ahead that a page boundary is never reached cold
+          // (the Flutter default ~250px meant every one fetched on arrival
+          // and stuttered), but no more: a cache extent is SYMMETRIC, so
+          // the old viewport(3) also kept three viewports of full-res pages
+          // mounted behind the read position. The deeper read-ahead Mihon
+          // does (4 pages) is [_precacheStripAhead]'s job, and a decoded
+          // image in the shared cache can be evicted; a mounted one cannot.
+          scrollCacheExtent: const ScrollCacheExtent.viewport(1),
           // Webtoon side padding: inset each page horizontally by a
           // fraction of the viewport width so strips don't run edge-to-
           // edge on wide screens. 0 = no inset (the default).
