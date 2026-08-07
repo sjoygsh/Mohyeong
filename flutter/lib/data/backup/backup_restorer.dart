@@ -203,25 +203,74 @@ class BackupRestorer {
 
   /// Restore categories, returning a list of local IDs in the same order
   /// as the input. Existing categories (matched by name) are reused.
+  ///
+  /// Two passes, as in Kotlin's `CategoriesRestorer`, because a category's
+  /// `parent_id` is a LOCAL row id and a restored category does not keep the
+  /// id it had on the device the backup came from. Writing the backup's raw
+  /// parent id straight into the new row pointed each nested category at
+  /// whatever local category happened to occupy that id — an unrelated
+  /// category, itself, or nothing. (`_flattenHierarchy` tolerates all three
+  /// rather than hanging, but a category caught in a cycle is unreachable
+  /// from any root and disappears from the Categories screen.) So: insert
+  /// top-level, learn each backup id's new local id, then set the parents.
+  ///
+  /// Order is likewise reassigned from the local maximum instead of being
+  /// copied, so restored categories can't collide with the sort positions of
+  /// categories already here; the backup's own order decides the sequence
+  /// they are created in.
   Future<List<int>> _restoreCategories(List<BackupCategory> categories) async {
+    if (categories.isEmpty) return const <int>[];
     final localCategories = await _categories.getAll();
     final byName = {for (final c in localCategories) c.name: c};
-    final restoredIds = <int>[];
-    for (final bc in categories) {
+    var nextOrder = 0;
+    for (final c in localCategories) {
+      if (c.order >= nextOrder) nextOrder = c.order + 1;
+    }
+
+    // Backup id -> local id, for the parent remap. Ids are only trustworthy
+    // as keys within one backup, never as local row ids.
+    final liveIdByBackupId = <int, int>{};
+    // Positional, so the returned list keeps the caller's index contract even
+    // if a backup carries duplicate or defaulted category ids.
+    final liveIdByIndex = List<int?>.filled(categories.length, null);
+
+    final ordered = [
+      for (var i = 0; i < categories.length; i++) (i, categories[i]),
+    ]..sort((a, b) => a.$2.order.compareTo(b.$2.order));
+
+    for (final (index, bc) in ordered) {
       final existing = byName[bc.name];
       if (existing != null) {
-        restoredIds.add(existing.id);
+        liveIdByBackupId[bc.id] = existing.id;
+        liveIdByIndex[index] = existing.id;
         continue;
       }
       final newId = await _categories.insert(
         name: bc.name,
-        order: bc.order,
+        order: nextOrder++,
         flags: bc.flags,
-        parentId: bc.parentId,
+        // Deliberately null: the parent may not exist yet, and its local id
+        // isn't known until it does. Fixed up in the second pass.
+        parentId: null,
       );
-      restoredIds.add(newId);
+      liveIdByBackupId[bc.id] = newId;
+      liveIdByIndex[index] = newId;
     }
-    return restoredIds;
+
+    for (var i = 0; i < categories.length; i++) {
+      final bc = categories[i];
+      final liveId = liveIdByIndex[i];
+      final backupParent = bc.parentId;
+      if (liveId == null || backupParent == null) continue;
+      final liveParent = liveIdByBackupId[backupParent];
+      // A parent that isn't in this backup, or that resolves to the category
+      // itself, stays top-level rather than becoming a dangling or self
+      // reference.
+      if (liveParent == null || liveParent == liveId) continue;
+      await _categories.updateParent(id: liveId, parentId: liveParent);
+    }
+
+    return [for (final id in liveIdByIndex) id!];
   }
 
   /// Earliest KNOWN add-date wins; 0 means "unknown" on either side (e.g. a
