@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kDebugMode, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
@@ -131,6 +132,11 @@ class LibraryUpdateScheduler {
       frequency: Duration(hours: interval.hours),
       constraints: await _buildConstraints(),
       existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
+      // Kotlin `setBackoffCriteria(LINEAR, 10, MINUTES)`. Without it the
+      // plugin's default exponential backoff pushes a sweep that failed on a
+      // flaky network hours out instead of ten minutes.
+      backoffPolicy: BackoffPolicy.linear,
+      backoffPolicyDelay: const Duration(minutes: 10),
     );
   }
 
@@ -141,6 +147,9 @@ class LibraryUpdateScheduler {
   /// [NetworkType.unmetered] (Android treats Wi-Fi as unmetered); otherwise a
   /// plain connection is required. Charging adds `requiresCharging`. Mirrors
   /// Kotlin `LibraryUpdateJob.setupTask`'s constraint builder.
+  @visibleForTesting
+  Future<Constraints> buildConstraintsForTesting() => _buildConstraints();
+
   Future<Constraints> _buildConstraints() async {
     final prefs = await SharedPreferences.getInstance();
     final restrictions =
@@ -153,20 +162,34 @@ class LibraryUpdateScheduler {
     return Constraints(
       networkType: unmetered ? NetworkType.unmetered : NetworkType.connected,
       requiresCharging: restrictions.contains(DeviceRestriction.charging),
+      // Kotlin sets this unconditionally on the periodic job, and so does our
+      // own backup scheduler — a whole-library sweep is the last thing that
+      // should run on a nearly-flat battery. It was the one line of that
+      // builder this port left out.
+      requiresBatteryNotLow: true,
     );
   }
 
-  /// Triggers a one-off library update via workmanager. Used by the
-  /// "Update now" manual button. The same callback dispatcher runs the
-  /// fetch — running it via workmanager (instead of in-process) means it
-  /// continues even if the user backgrounds the app.
+  /// Triggers a one-off library update via workmanager, so it continues even
+  /// if the user backgrounds the app. The same callback dispatcher runs it.
+  ///
+  /// NOTE: nothing calls this today — the Library tab's "Update now" runs the
+  /// sweep in-process so it can show progress and a result toast. It is kept
+  /// because the dispatcher already routes [libraryUpdateOneOffTaskName].
+  ///
+  /// Deliberately UNCONSTRAINED, matching Kotlin's `startNow`, which builds a
+  /// bare `OneTimeWorkRequest`. The device restrictions exist to stop the app
+  /// choosing to sweep at a bad moment; they must not apply to a sweep the
+  /// user asked for, or "Update now" on mobile data would silently queue
+  /// until Wi-Fi appeared and look like a dead button. `keep` rather than
+  /// `replace` for the same reason Kotlin bails when one is already running:
+  /// a second tap should not restart a sweep that is already going.
   Future<void> runOnce() async {
     await ensureWorkmanagerInitialized();
     await Workmanager().registerOneOffTask(
       libraryUpdateOneOffTaskName,
       libraryUpdateOneOffTaskName,
-      constraints: await _buildConstraints(),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
+      existingWorkPolicy: ExistingWorkPolicy.keep,
     );
   }
 }
