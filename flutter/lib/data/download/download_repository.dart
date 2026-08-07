@@ -487,8 +487,9 @@ class DownloadRepository {
 
   /// Zips the chapter's page images into `<chapterId>.cbz` inside the same
   /// chapter directory, then writes the `.done` marker and removes the
-  /// loose page files. The `.cbz` and `.done` are the only survivors, so
-  /// existing `.done`-based completion checks keep working unchanged.
+  /// loose page files. `<chapterId>/` itself stays, holding just the `.cbz`
+  /// and the `.done`, so every `.done`-based completion check — including
+  /// the index walk — keeps working unchanged.
   Future<void> _archiveChapterAsCbz(Directory dir, List<File> pages) async {
     final cbzPath = p.join(dir.path, '${p.basename(dir.path)}.cbz');
     final encoder = ZipFileEncoder();
@@ -673,10 +674,14 @@ class DownloadRepository {
         Error.throwWithStackTrace(firstError!, firstStack!);
       }
       final pageFiles = pageSlots.whereType<File>().toList();
-      // Optionally archive the chapter into a single CBZ alongside the
-      // page folder, mirroring Mihon's `saveChaptersAsCBZ`. The folder is
-      // removed once the archive is written so a chapter lives as exactly
-      // one of {folder, cbz}, matching Mihon's on-disk shape.
+      // Optionally archive the chapter into a single CBZ, mirroring Mihon's
+      // `saveChaptersAsCBZ`. The chapter DIRECTORY survives either way and
+      // still carries the `.done` marker — it is the loose page images that
+      // the archive replaces. That matters: [_walkDownloadedIndex] decides
+      // what is downloaded by stat-ing `<chapterId>/.done`, so a shape where
+      // the folder went away would make every CBZ chapter invisible to the
+      // index (and so to the library's Downloaded filter and the stats
+      // count) after any rebuild.
       if (await _saveAsCbz()) {
         await _archiveChapterAsCbz(dir, pageFiles);
       } else {
