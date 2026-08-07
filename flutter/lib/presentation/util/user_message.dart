@@ -39,6 +39,25 @@ String _classify(Object error, String fallback) {
   if (error is SyncException) return error.message;
   if (error is NoChaptersException) return 'This source returned no chapters.';
 
+  // A refused or broken REQUEST, before anything is blamed on the extension.
+  //
+  // This has to come first because the JS bridge raises HTTP failures as
+  // `Error('HTTP 403 for <url>')`, which arrives here as a
+  // [JsRuntimeException] — so every Cloudflare wall and every dead origin used
+  // to read as "this source's extension failed to run", which blames the one
+  // part that worked. These are also the app's most common real failures:
+  // 403 from a CDN that fingerprint-blocks non-browser TLS, and Cloudflare's
+  // 52x family when a site's own server is down.
+  final status = _httpStatus(error);
+  if (status != null) {
+    if (status == 401 || status == 403) {
+      return 'This source is refusing the app right now.';
+    }
+    if (status == 404) return 'That page is gone from the source.';
+    if (status == 429) return 'The source is rate-limiting — wait a moment.';
+    if (status >= 500) return 'The source’s own server is down.';
+  }
+
   // The extension misbehaved — not something the reader can fix, but saying
   // WHICH half broke stops it reading as a bug in the app.
   if (error is JsRuntimeException) {
@@ -63,6 +82,23 @@ String _classify(Object error, String fallback) {
   }
 
   return fallback;
+}
+
+/// The HTTP status an error is reporting, or null when it isn't reporting one.
+///
+/// Read out of the message rather than off a type, for the same reason
+/// [_looksLikeNetwork] does: the two producers phrase it differently and
+/// neither type is visible from here. The JS bridge throws
+/// `Error('HTTP 503 for <url>')`; Dio writes
+/// `... status code of 403`. Only 100–599 counts, so a chapter URL that
+/// happens to contain "HTTP 1234" can't be mistaken for one.
+int? _httpStatus(Object error) {
+  final text = error.toString();
+  final m = RegExp(r'(?:HTTP|status code of)\s+(\d{3})\b').firstMatch(text);
+  if (m == null) return null;
+  final code = int.tryParse(m.group(1)!);
+  if (code == null || code < 100 || code > 599) return null;
+  return code;
 }
 
 /// True for the socket/HTTP families, including when they're wrapped (Dio
