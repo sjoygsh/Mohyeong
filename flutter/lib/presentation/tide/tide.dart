@@ -267,6 +267,7 @@ class TideGlass extends StatelessWidget {
     this.border = 0.09,
     this.saturation = 1.6,
     this.sigma = 15,
+    this.scrim,
     this.padding,
     this.shadows,
     this.onTap,
@@ -288,6 +289,25 @@ class TideGlass extends StatelessWidget {
   /// pure black while every lit/unlit relationship survives intact.
   final double tintTop;
   final double tintBottom;
+
+  /// Black laid under the tint, for panes that FLOAT over artwork.
+  ///
+  /// A blurred backdrop is only as dark as what it samples. The tab bar sits
+  /// over the cover rails, so its blur picks up the art directly beneath it and
+  /// the bar reads as a pale slab no matter how black the ground is — the one
+  /// surface an AMOLED pass cannot fix by lowering the tint, because the light
+  /// is coming through from behind rather than from the panel. This puts the
+  /// black back before the tint goes on. 0 for every panel that sits on the
+  /// ground and therefore has nothing bright behind it.
+  ///
+  /// Defaults to [_floatingScrim] whenever [blur] is on and 0 otherwise,
+  /// because those are already the same thing: this file's own doc says a pane
+  /// passes `blur: true` precisely when it floats over artwork. Pass a value to
+  /// override.
+  final double? scrim;
+
+  /// How much black a floating pane puts back before it lifts.
+  static const double _floatingScrim = 0.82;
 
   /// Multiplier on [tintTop] / [tintBottom]. At 1.0 the panels were a grey
   /// lift over a blue-violet ground, which is where the purplish cast came
@@ -314,8 +334,18 @@ class TideGlass extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final shape = BorderRadius.circular(radius);
+    final effectiveScrim = scrim ?? (blur ? _floatingScrim : 0.0);
 
     Widget pane = DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: shape,
+        // The scrim sits UNDER the tint, so a floating pane darkens what it
+        // blurred before it lifts off it.
+        color: effectiveScrim > 0
+            ? Colors.black.withValues(alpha: effectiveScrim)
+            : null,
+      ),
+      child: DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: shape,
         gradient: LinearGradient(
@@ -334,6 +364,7 @@ class TideGlass extends StatelessWidget {
           border: border,
         ),
         child: padding == null ? child : Padding(padding: padding!, child: child),
+      ),
       ),
     );
 
@@ -1395,7 +1426,10 @@ class TideTabBar extends StatelessWidget {
         tintBottom: 0.05,
         highlight: 0.26,
         border: 0.15,
-        saturation: 1.9,
+        // Was 1.9. Saturation multiplies whatever the blur sampled, so over a
+        // cover rail the bar was amplifying the art's colour into itself —
+        // the loudest reason it never read black.
+        saturation: 1.05,
         shadows: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.55),
