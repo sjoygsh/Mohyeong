@@ -17,6 +17,35 @@ import '../notification/notification_service.dart';
 import '../source/local_archive.dart';
 import '../source/extension_repository.dart';
 
+/// Index of the first entry in [queuedSourceIds] whose source is not in
+/// [activeSources], or -1 when every queued job belongs to a source that
+/// already has a chapter in flight.
+///
+/// This is what makes `download_parallel_source_limit` mean what it says.
+/// Kotlin `Downloader.launchDownloaderJob` groups the queue by source, takes
+/// `parallelSourceLimit` of those GROUPS, and starts only `.first()` of each —
+/// so at most one chapter per site is ever downloading. Draining the queue in
+/// flat FIFO order instead read the same preference as "5 chapters at once",
+/// and the ordinary case ("download next 10") is ten chapters of ONE manga:
+/// five concurrent chapters times `parallelPageLimit` pages was twenty-five
+/// simultaneous connections to a single host. These sources sit behind
+/// Cloudflare and 403 or 52x under exactly that load, which then reads to the
+/// user as a broken extension.
+///
+/// Scanning in queue order keeps FIFO within a source and across sources — the
+/// same order the fork's `groupBy` preserves.
+int nextStartableDownloadIndex(
+  Iterable<int> queuedSourceIds,
+  Set<int> activeSources,
+) {
+  var i = 0;
+  for (final source in queuedSourceIds) {
+    if (!activeSources.contains(source)) return i;
+    i++;
+  }
+  return -1;
+}
+
 /// Per-architecture-decisions: downloads live inside the app's data
 /// directory (deviates from Mihon, which uses SAF/external storage).
 /// Layout under `<appSupport>/downloads/`:
@@ -564,12 +593,23 @@ class DownloadRepository {
     );
   }
 
+  /// Index in [_queue] of the oldest job whose source has nothing in flight.
+  /// See [nextStartableDownloadIndex] for why the cap is per source.
+  int _nextStartableIndex(Set<int> activeSources) =>
+      nextStartableDownloadIndex(
+        _queue.map((j) => j.manga.source),
+        activeSources,
+      );
+
   Future<void> _drain() async {
     if (_running || _paused) return;
     _running = true;
     try {
       final concurrency = await _maxConcurrent();
       final active = <Future<void>>{};
+      // Sources with a chapter in flight. The cap is on SOURCES, not
+      // chapters — see [_nextStartableIndex].
+      final activeSources = <int>{};
       while (!_paused && (_queue.isNotEmpty || active.isNotEmpty)) {
         // Gate new jobs on the current network: when "only over Wi-Fi" is
         // on (or the device is offline) we stop pulling from the queue and
@@ -585,17 +625,22 @@ class DownloadRepository {
           _events.add(const DownloadEvent.networkWaiting());
         }
         // Top up the in-flight set until we hit the concurrency cap or
-        // run out of queued jobs.
+        // run out of startable jobs.
         while (!_paused &&
             netOk &&
             _queue.isNotEmpty &&
             active.length < concurrency) {
-          final job = _queue.removeAt(0);
+          final index = _nextStartableIndex(activeSources);
+          if (index < 0) break; // Every queued job's source is already busy.
+          final job = _queue.removeAt(index);
+          final sourceId = job.manga.source;
+          activeSources.add(sourceId);
           late final Future<void> f;
           f = _runJob(job).whenComplete(() {
             // Keep errored jobs registered so they can be retried; only
             // forget jobs that completed or were cancelled.
             if (!job.errored) _byChapter.remove(job.chapter.id);
+            activeSources.remove(sourceId);
             active.remove(f);
           });
           active.add(f);
