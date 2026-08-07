@@ -19,7 +19,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:archive/archive.dart' show getCrc32;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -455,13 +457,18 @@ class SourceIconStore {
     return null;
   }
 
-  /// Pulls a PNG out of an `.ico`.
+  /// Pulls a paintable image out of an `.ico`.
   ///
-  /// Skia has no ICO decoder, so a raw .ico is unpaintable — but a modern
+  /// Skia has no ICO decoder, so a raw .ico is unpaintable. A modern
   /// favicon.ico is usually a container holding PNGs, and the largest of those
-  /// is exactly the image we want. An ICO carrying only the old BMP-with-mask
-  /// entries is left alone: reconstructing a valid .bmp from one (the header's
-  /// height is doubled to cover the AND mask) is a decoder, not a slice.
+  /// is exactly the image we want — that is a slice, and it is tried first.
+  ///
+  /// Failing that, the entry is the older BMP-with-mask form, which is a real
+  /// decode rather than a slice: the DIB's height is DOUBLED to cover an AND
+  /// mask that follows the colour data, so the bytes cannot be handed to Skia
+  /// as a `.bmp` either. [_bmpIconToPng] does that decode. It is worth the
+  /// forty lines because it is not an exotic case — tapas.io, a working
+  /// source, ships exactly one 32bpp BMP entry and had no logo because of it.
   static ({Uint8List bytes, String extension})? _unwrapIco(Uint8List bytes) {
     final data = ByteData.sublistView(bytes);
     final count = data.getUint16(4, Endian.little);
@@ -487,11 +494,103 @@ class SourceIconStore {
         bestOffset = offset;
       }
     }
-    if (bestOffset < 0) return null;
-    return (
-      bytes: Uint8List.sublistView(bytes, bestOffset, bestOffset + bestLength),
-      extension: 'png',
-    );
+    if (bestOffset >= 0) {
+      return (
+        bytes: Uint8List.sublistView(bytes, bestOffset, bestOffset + bestLength),
+        extension: 'png',
+      );
+    }
+    return _bmpIconToPng(bytes, data, count);
+  }
+
+  /// Decodes the largest uncompressed BMP entry of an `.ico` into a PNG.
+  ///
+  /// Handles the two bit depths favicons actually use, 32bpp BGRA and 24bpp
+  /// BGR. Anything palletised, RLE-compressed or otherwise exotic returns null
+  /// rather than guessing — a wrong logo is worse than the letter tile.
+  static ({Uint8List bytes, String extension})? _bmpIconToPng(
+    Uint8List bytes,
+    ByteData data,
+    int count,
+  ) {
+    var bestEntry = -1;
+    var bestPixels = 0;
+    for (var i = 0; i < count; i++) {
+      final entry = 6 + i * 16;
+      if (entry + 16 > bytes.length) break;
+      final length = data.getUint32(entry + 8, Endian.little);
+      final offset = data.getUint32(entry + 12, Endian.little);
+      if (offset + length > bytes.length || length < 40) continue;
+      // A BITMAPINFOHEADER announces itself with its own size.
+      if (data.getUint32(offset, Endian.little) != 40) continue;
+      final w = data.getInt32(offset + 4, Endian.little);
+      if (w <= 0 || w > _maxIconEdge) continue;
+      if (w * w > bestPixels) {
+        bestPixels = w * w;
+        bestEntry = offset;
+      }
+    }
+    if (bestEntry < 0) return null;
+
+    final width = data.getInt32(bestEntry + 4, Endian.little);
+    // Doubled to cover the AND mask stored after the colour data.
+    final height = data.getInt32(bestEntry + 8, Endian.little) ~/ 2;
+    final bits = data.getUint16(bestEntry + 14, Endian.little);
+    final compression = data.getUint32(bestEntry + 16, Endian.little);
+    if (height <= 0 || compression != 0) return null;
+    if (bits != 32 && bits != 24) return null;
+
+    final bytesPerPixel = bits ~/ 8;
+    // DIB rows are padded to a 4-byte boundary.
+    final stride = ((width * bytesPerPixel + 3) ~/ 4) * 4;
+    final pixels = bestEntry + 40;
+    if (pixels + stride * height > bytes.length) return null;
+
+    // One filter byte per row, then RGBA. Rows are bottom-up in a DIB.
+    final raw = Uint8List(height * (1 + width * 4));
+    var out = 0;
+    for (var y = 0; y < height; y++) {
+      raw[out++] = 0; // filter: none
+      final row = pixels + (height - 1 - y) * stride;
+      for (var x = 0; x < width; x++) {
+        final px = row + x * bytesPerPixel;
+        raw[out++] = bytes[px + 2]; // B,G,R stored little-endian
+        raw[out++] = bytes[px + 1];
+        raw[out++] = bytes[px];
+        raw[out++] = bytesPerPixel == 4 ? bytes[px + 3] : 0xFF;
+      }
+    }
+    return (bytes: _encodePng(width, height, raw), extension: 'png');
+  }
+
+  /// The smallest PNG that can carry 8-bit RGBA: signature, IHDR, one IDAT of
+  /// zlib-compressed scanlines, IEND. Written by hand because the app has no
+  /// image encoder and pulling one in for a favicon would be the larger cost.
+  static Uint8List _encodePng(int width, int height, Uint8List raw) {
+    final out = BytesBuilder();
+    out.add(const [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+
+    void chunk(String type, List<int> body) {
+      final header = ByteData(4)..setUint32(0, body.length);
+      out.add(header.buffer.asUint8List());
+      final typed = <int>[...type.codeUnits, ...body];
+      out.add(typed);
+      final crc = ByteData(4)..setUint32(0, getCrc32(typed));
+      out.add(crc.buffer.asUint8List());
+    }
+
+    final ihdr = ByteData(13)
+      ..setUint32(0, width)
+      ..setUint32(4, height)
+      ..setUint8(8, 8) // bit depth
+      ..setUint8(9, 6) // colour type: RGBA
+      ..setUint8(10, 0)
+      ..setUint8(11, 0)
+      ..setUint8(12, 0);
+    chunk('IHDR', ihdr.buffer.asUint8List());
+    chunk('IDAT', zlib.encode(raw));
+    chunk('IEND', const []);
+    return out.toBytes();
   }
 
   static String? _attribute(String tag, String name) {
