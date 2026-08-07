@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/app_database.dart' as db;
@@ -19,6 +20,22 @@ class ScanlatorPriorityRepository {
   Future<List<String>> getByMangaId(int mangaId) async {
     final rows = await _db.getPrioritiesByMangaId(mangaId).get();
     return [for (final r in rows) r.scanlator];
+  }
+
+  /// The stored order for many manga at once, most preferred first. One query
+  /// for the whole backup rather than one per favourite.
+  Future<Map<int, List<String>>> getByMangaIds(Iterable<int> mangaIds) async {
+    final ids = mangaIds.toList(growable: false);
+    if (ids.isEmpty) return const {};
+    final rows = await (_db.select(_db.scanlatorPriority)
+          ..where((t) => t.mangaId.isIn(ids))
+          ..orderBy([(t) => OrderingTerm.asc(t.priority)]))
+        .get();
+    final out = <int, List<String>>{};
+    for (final r in rows) {
+      (out[r.mangaId] ??= <String>[]).add(r.scanlator);
+    }
+    return out;
   }
 
   Stream<List<String>> watchByMangaId(int mangaId) {

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mohyeong/data/manga/scanlator_priority_repository.dart';
 import 'package:mohyeong/data/backup/backup_creator.dart';
 import 'package:mohyeong/data/base/base_preferences.dart';
 import 'package:mohyeong/data/category/category_repository.dart';
@@ -38,6 +39,7 @@ void main() {
         trackRepository: TrackRepository(db),
         sourceRepository: SourceRepository(db),
         excludedScanlatorsRepository: ExcludedScanlatorsRepository(db),
+        scanlatorPriorityRepository: ScanlatorPriorityRepository(db),
       );
 
   test('neither the device id nor the last-sync stamp reaches a backup',

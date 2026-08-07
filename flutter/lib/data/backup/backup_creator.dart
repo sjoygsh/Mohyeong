@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../manga/excluded_scanlators_repository.dart';
+import '../manga/scanlator_priority_repository.dart';
 import '../base/base_preferences.dart';
 import '../category/category_repository.dart';
 import '../chapter/chapter_repository.dart';
@@ -37,6 +38,7 @@ class BackupCreator {
     required TrackRepository trackRepository,
     required SourceRepository sourceRepository,
     required ExcludedScanlatorsRepository excludedScanlatorsRepository,
+    required ScanlatorPriorityRepository scanlatorPriorityRepository,
   })  : _db = database,
         _manga = mangaRepository,
         _chapters = chapterRepository,
@@ -44,7 +46,8 @@ class BackupCreator {
         _history = historyRepository,
         _tracks = trackRepository,
         _sources = sourceRepository,
-        _excludedScanlators = excludedScanlatorsRepository;
+        _excludedScanlators = excludedScanlatorsRepository,
+        _scanlatorPriority = scanlatorPriorityRepository;
 
   final db.AppDatabase _db;
   final MangaRepository _manga;
@@ -54,6 +57,7 @@ class BackupCreator {
   final TrackRepository _tracks;
   final SourceRepository _sources;
   final ExcludedScanlatorsRepository _excludedScanlators;
+  final ScanlatorPriorityRepository _scanlatorPriority;
 
   /// Snapshots the library into a [Backup]. Streams nothing — the caller
   /// is expected to wrap this in a progress indicator if needed; Mihon's
@@ -98,6 +102,7 @@ class BackupCreator {
     final excludedByManga = await _excludedScanlators.getByMangaIds(
       favoriteIds,
     );
+    final priorityByManga = await _scanlatorPriority.getByMangaIds(favoriteIds);
 
     for (final m in favorites) {
       seenSourceIds.add(m.source);
@@ -191,6 +196,10 @@ class BackupCreator {
         // vanished on every export (consensus-review data-loss finding).
         excludedScanlators:
             (excludedByManga[m.id] ?? const <String>{}).toList(),
+        // The per-manga scanlator RANKING. Neither app backed this up, so a
+        // ranking was lost on every export — the same data-loss class as the
+        // exclusions above, one table over.
+        scanlatorPriority: priorityByManga[m.id] ?? const <String>[],
         version: m.version,
         notes: m.notes,
         initialized: m.initialized,
@@ -335,5 +344,7 @@ final backupCreatorProvider = Provider<BackupCreator>((ref) {
     sourceRepository: ref.watch(sourceRepositoryProvider),
     excludedScanlatorsRepository:
         ref.watch(excludedScanlatorsRepositoryProvider),
+    scanlatorPriorityRepository:
+        ref.watch(scanlatorPriorityRepositoryProvider),
   );
 });

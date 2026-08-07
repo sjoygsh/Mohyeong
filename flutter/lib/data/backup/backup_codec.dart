@@ -729,6 +729,10 @@ void _writeBackupManga(_ProtoWriter w, BackupManga m) {
     w.writeString(108, s);
   }
   if (m.version != 0) w.writeInt(109, m.version);
+  // Mohyeong-only, numbered clear of Mihon's range — see the field's doc.
+  for (final s in m.scanlatorPriority) {
+    w.writeString(900, s);
+  }
   if (m.notes.isNotEmpty) w.writeString(110, m.notes);
   if (m.initialized) w.writeBool(111, m.initialized);
 }
@@ -810,6 +814,7 @@ BackupManga _readBackupManga(_ProtoReader r) {
   int lastModifiedAt = 0;
   int? favoriteModifiedAt;
   final excludedScanlators = <String>[];
+  final scanlatorPriority = <String>[];
   int version = 0;
   String notes = '';
   bool initialized = false;
@@ -865,6 +870,8 @@ BackupManga _readBackupManga(_ProtoReader r) {
         excludedScanlators.add(r.readString());
       case 109:
         version = r.readVarint();
+      case 900:
+        scanlatorPriority.add(r.readString());
       case 110:
         notes = r.readString();
       case 111:
@@ -897,6 +904,7 @@ BackupManga _readBackupManga(_ProtoReader r) {
     lastModifiedAt: lastModifiedAt,
     favoriteModifiedAt: favoriteModifiedAt,
     excludedScanlators: excludedScanlators,
+    scanlatorPriority: scanlatorPriority,
     version: version,
     notes: notes,
     initialized: initialized,

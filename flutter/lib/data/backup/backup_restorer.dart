@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../manga/excluded_scanlators_repository.dart';
+import '../manga/scanlator_priority_repository.dart';
 import '../../domain/manga/model/manga.dart';
 import '../base/base_preferences.dart';
 import '../../domain/manga/model/update_strategy.dart';
@@ -60,6 +61,7 @@ class BackupRestorer {
     required TrackRepository trackRepository,
     required SourceRepository sourceRepository,
     required ExcludedScanlatorsRepository excludedScanlatorsRepository,
+    required ScanlatorPriorityRepository scanlatorPriorityRepository,
   })  : _db = database,
         _manga = mangaRepository,
         _chapters = chapterRepository,
@@ -67,7 +69,8 @@ class BackupRestorer {
         _history = historyRepository,
         _tracks = trackRepository,
         _sources = sourceRepository,
-        _excludedScanlators = excludedScanlatorsRepository;
+        _excludedScanlators = excludedScanlatorsRepository,
+        _scanlatorPriority = scanlatorPriorityRepository;
 
   final db.AppDatabase _db;
   final MangaRepository _manga;
@@ -77,6 +80,7 @@ class BackupRestorer {
   final TrackRepository _tracks;
   final SourceRepository _sources;
   final ExcludedScanlatorsRepository _excludedScanlators;
+  final ScanlatorPriorityRepository _scanlatorPriority;
 
   Future<BackupRestoreResult> restore(Backup backup) async {
     var mangaCount = 0;
@@ -495,6 +499,12 @@ class BackupRestorer {
         bm.excludedScanlators.toSet(),
       );
     }
+
+    // The scanlator ranking, in the order it was written — this is a list,
+    // not a set, and position 0 is the most preferred.
+    if (bm.scanlatorPriority.isNotEmpty) {
+      await _scanlatorPriority.setForManga(mangaId, bm.scanlatorPriority);
+    }
   }
 }
 
@@ -509,5 +519,7 @@ final backupRestorerProvider = Provider<BackupRestorer>((ref) {
     sourceRepository: ref.watch(sourceRepositoryProvider),
     excludedScanlatorsRepository:
         ref.watch(excludedScanlatorsRepositoryProvider),
+    scanlatorPriorityRepository:
+        ref.watch(scanlatorPriorityRepositoryProvider),
   );
 });

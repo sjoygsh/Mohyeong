@@ -81,6 +81,7 @@ class BackupManga {
     this.lastModifiedAt = 0,
     this.favoriteModifiedAt,
     this.excludedScanlators = const [],
+    this.scanlatorPriority = const [],
     this.version = 0,
     this.notes = '',
     this.initialized = false,
@@ -136,25 +137,35 @@ class BackupManga {
   /// tag 101.
   final int chapterFlags;
 
-  /// tag 102 — nullable; older backups omit this.
+  /// tag 103 — nullable; older backups omit this. (102 is the fork's
+  /// abandoned `brokenHistory` and is never written.)
   final int? viewerFlags;
 
-  /// tag 103.
+  /// tag 104.
   final List<BackupHistory> history;
 
-  /// tag 104 — `Manga.UpdateStrategy` ordinal.
+  /// tag 105 — `Manga.UpdateStrategy` ordinal.
   final int updateStrategy;
 
-  /// tag 105.
+  /// tag 106.
   final int lastModifiedAt;
 
-  /// tag 106 — nullable, used by Mihon's sync diffing.
+  /// tag 107 — nullable, used by Mihon's sync diffing.
   final int? favoriteModifiedAt;
 
-  /// tag 107.
+  /// tag 108.
   final List<String> excludedScanlators;
 
-  /// tag 108.
+  /// tag 900 — Mohyeong only. The per-manga scanlator RANKING, most preferred
+  /// first (the `scanlator_priority` table). The fork ships that table
+  /// (migration 12) but backs it up nowhere, so a ranking was lost on every
+  /// export by both apps. Numbered far above Mihon's range so a future field
+  /// of theirs cannot collide with it; their decoder ignores what it does not
+  /// know, so a backup still round-trips through Mihon unharmed — it just
+  /// arrives back without the ranking, which is what happens today anyway.
+  final List<String> scanlatorPriority;
+
+  /// tag 109.
   final int version;
 
   /// tag 110.
@@ -200,6 +211,7 @@ class BackupManga {
       lastModifiedAt: lastModifiedAt,
       favoriteModifiedAt: favoriteModifiedAt,
       excludedScanlators: excludedScanlators,
+      scanlatorPriority: scanlatorPriority,
       version: version,
       notes: notes,
       initialized: initialized,

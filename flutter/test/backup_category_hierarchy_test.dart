@@ -1,5 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mohyeong/data/manga/scanlator_priority_repository.dart';
 import 'package:mohyeong/data/backup/backup_restorer.dart';
 import 'package:mohyeong/data/backup/models/backup_models.dart';
 import 'package:mohyeong/data/category/category_repository.dart';
@@ -39,6 +40,7 @@ void main() {
       trackRepository: TrackRepository(db),
       sourceRepository: SourceRepository(db),
       excludedScanlatorsRepository: ExcludedScanlatorsRepository(db),
+        scanlatorPriorityRepository: ScanlatorPriorityRepository(db),
     );
   });
 
