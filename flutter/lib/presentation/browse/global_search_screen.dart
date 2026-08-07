@@ -63,6 +63,9 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
     final q = _controller.text.trim();
     if (q.isEmpty) return;
     if (q == _activeQuery) return;
+    // The previous query's results can never be shown again — the sections
+    // are keyed by query — so this is the one place the cache is spent.
+    _sectionSearches.clear();
     setState(() => _activeQuery = q);
   }
 
@@ -269,6 +272,21 @@ class _SourceSection extends ConsumerStatefulWidget {
   ConsumerState<_SourceSection> createState() => _SourceSectionState();
 }
 
+/// One in-flight-or-settled search per (source, query), shared by every
+/// [_SourceSection] state that is built for it.
+///
+/// The outer list has one section per installed source — twenty-odd of them —
+/// and a section that scrolls out of the list's cache extent is DISPOSED. Its
+/// future lived on its State, so scrolling back re-ran `_kick` and fired the
+/// whole network search again: scrolling up and down the results re-searched
+/// every source it passed, which is both the jank on this screen and a lot of
+/// traffic aimed at sites that ratelimit.
+///
+/// Keyed by query as well as source so a new search cannot read a stale page,
+/// and cleared in [_submit] because the sections are keyed by query too — the
+/// old entries could never be read again.
+final Map<String, Future<MangasPage>> _sectionSearches = {};
+
 class _SourceSectionState extends ConsumerState<_SourceSection> {
   Future<MangasPage>? _future;
   // Tracks whether the search resolved with at least one result, for the
@@ -284,10 +302,13 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
   void _kick() {
     _hasResults = null;
     final repo = ref.read(extensionRepositoryProvider);
-    _future = repo
+    final key = '${widget.sourceId} ${widget.query}';
+    // The shared future is the SEARCH; the per-state `.then` below is this
+    // section's own bookkeeping and must not be cached with it.
+    final search = _sectionSearches[key] ??= repo
         .getSource(widget.sourceId)
-        .then((s) => s.fetchSearch(widget.query, 1))
-        .then((page) {
+        .then((s) => s.fetchSearch(widget.query, 1));
+    _future = search.then((page) {
       if (mounted && _hasResults != page.mangas.isNotEmpty) {
         // Schedule after this frame — the FutureBuilder consumes the value
         // in the same build otherwise.

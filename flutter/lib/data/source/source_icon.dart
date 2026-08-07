@@ -336,8 +336,8 @@ class SourceIconStore {
         }
         return iconLinksIn(response.data ?? '', url);
       } on DioException catch (e) {
-        // A 403 from Cloudflare is still the host answering; a timeout is not.
-        if (e.response != null) reach.answered = true;
+        // A wall is not an answer — see [isAnswerStatus]. A 404 on the apex is.
+        if (isAnswerStatus(e.response?.statusCode)) reach.answered = true;
         // The conventional paths are often served by the edge even when the
         // page itself is walled, so a failure here is not the end of the probe.
         return const [];
@@ -421,11 +421,27 @@ class SourceIconStore {
     } on DioException catch (e) {
       // A 404 for /favicon.ico is the host telling us it has none — that is an
       // answer, and it is why an unreachable host must be tracked separately.
-      if (e.response != null) reach.answered = true;
+      if (isAnswerStatus(e.response?.statusCode)) reach.answered = true;
       return null;
     } catch (_) {
       return null;
     }
+  }
+
+  /// Whether [status] is the HOST telling us something about its icon, rather
+  /// than an edge refusing to let us ask.
+  ///
+  /// A 404 is an answer: there is no icon there. A Cloudflare 403 or 503 is
+  /// not — it is the same wall the extensions themselves only get past on the
+  /// device's WebView, and it says nothing at all about whether the site has a
+  /// mark. Counting it as an answer parked those sources on the 12-hour
+  /// "asked and it had nothing" TTL, so brainrotcomics, manhuaus and manhwatop
+  /// kept their letter tiles for half a day at a time off a wall we already
+  /// know how to get through. They now take the 1-hour unreachable TTL.
+  @visibleForTesting
+  static bool isAnswerStatus(int? status) {
+    if (status == null) return false;
+    return status != 403 && status != 429 && status != 503;
   }
 
   /// Identifies [bytes] by their magic number, and unwraps the one container

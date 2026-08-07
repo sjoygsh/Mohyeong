@@ -185,6 +185,28 @@ void main() {
       expect(tideSourceHost('https://mangadex.org'), 'mangadex.org');
     });
 
+    group('a wall is not an answer', () {
+      test('a 404 is the host saying it has no icon', () {
+        expect(SourceIconStore.isAnswerStatus(404), isTrue);
+        expect(SourceIconStore.isAnswerStatus(200), isTrue);
+        expect(SourceIconStore.isAnswerStatus(500), isTrue);
+      });
+
+      test('a Cloudflare block or throttle is not', () {
+        // These are the same wall the extensions only get past on the
+        // device's WebView. Treating one as "asked, and it had nothing"
+        // parked the source on the 12-hour miss TTL instead of the 1-hour
+        // unreachable one.
+        expect(SourceIconStore.isAnswerStatus(403), isFalse);
+        expect(SourceIconStore.isAnswerStatus(429), isFalse);
+        expect(SourceIconStore.isAnswerStatus(503), isFalse);
+      });
+
+      test('no response at all is not an answer either', () {
+        expect(SourceIconStore.isAnswerStatus(null), isFalse);
+      });
+    });
+
     test('is null when there is nothing to show', () {
       expect(tideSourceHost(null), isNull);
       expect(tideSourceHost(''), isNull);
@@ -192,3 +214,14 @@ void main() {
     });
   });
 }
+
+/// A wall is not an answer.
+///
+/// "The host told us it has no icon" and "an edge refused to let us ask" both
+/// end in no image, and the store already keeps them apart — a real miss is
+/// remembered for 12 hours, an unreachable host for 1. But a Cloudflare 403
+/// arrives WITH a response, and any response was being counted as the host
+/// answering. So exactly the sources that need the device's WebView to be
+/// reached at all — brainrotcomics, manhuaus, manhwatop — were parked on the
+/// long TTL and kept their letter tiles for half a day at a time.
+
