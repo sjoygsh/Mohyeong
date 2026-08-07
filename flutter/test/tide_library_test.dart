@@ -132,12 +132,20 @@ Future<void> _settle(WidgetTester tester, {int frames = 6}) async {
 /// Read off the [Align] that does the folding rather than off the title's own
 /// size — the title lays out at full height either way; what changes is how
 /// much of it the header gives room to.
+///
+/// Fully folded, the masthead is not built at all: a zero-height [Align] still
+/// lays its child out in full before clipping it away, and this subtree
+/// rebuilds on every scrolled frame, so the header being gone is expressed by
+/// its absence. No folding [Align] therefore reads as 0, not as a missing
+/// widget — the tests below still pin the showing case, so a masthead that
+/// vanished for the WRONG reason cannot pass.
 double _mastheadShowing(WidgetTester tester) {
   final folds = tester
       .widgetList<Align>(find.byType(Align))
       .where((a) => a.heightFactor != null)
       .toList();
-  expect(folds, hasLength(1), reason: 'exactly one folding Align expected');
+  if (folds.isEmpty) return 0;
+  expect(folds, hasLength(1), reason: 'at most one folding Align expected');
   return folds.single.heightFactor!;
 }
 

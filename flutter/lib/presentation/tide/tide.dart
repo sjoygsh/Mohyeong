@@ -339,15 +339,6 @@ class TideGlass extends StatelessWidget {
     Widget pane = DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: shape,
-        // The scrim sits UNDER the tint, so a floating pane darkens what it
-        // blurred before it lifts off it.
-        color: effectiveScrim > 0
-            ? Colors.black.withValues(alpha: effectiveScrim)
-            : null,
-      ),
-      child: DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: shape,
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -365,8 +356,21 @@ class TideGlass extends StatelessWidget {
         ),
         child: padding == null ? child : Padding(padding: padding!, child: child),
       ),
-      ),
     );
+
+    // The scrim sits UNDER the tint, so a floating pane darkens what it
+    // blurred before it lifts off it. Only wrapped when there IS one: the
+    // vast majority of the app's ~370 panes sit on the ground and pass none,
+    // and an unconditional wrapper spent a render object on every one of them.
+    if (effectiveScrim > 0) {
+      pane = DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: shape,
+          color: Colors.black.withValues(alpha: effectiveScrim),
+        ),
+        child: pane,
+      );
+    }
 
     if (blur) {
       pane = BackdropFilter(
@@ -629,10 +633,14 @@ class _AuroraBlob extends StatefulWidget {
     required this.from,
     required this.to,
     required this.period,
+    required this.opacity,
   });
 
   final Color color;
   final Size size;
+
+  /// The whole field's opacity, folded into this blob's own gradient.
+  final double opacity;
 
   /// Start / mid keyframes: `(translateX, translateY, scale)`, translation in
   /// fractions of the blob's own size — the design's `translate(%)`.
@@ -693,10 +701,12 @@ class _AuroraBlobState extends State<_AuroraBlob>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: RadialGradient(
+              // The field's opacity is multiplied INTO the stops rather than
+              // applied by an `Opacity` above the stack — see [TideAurora].
               colors: [
-                widget.color,
-                widget.color.withValues(alpha: 0.55),
-                widget.color.withValues(alpha: 0.18),
+                widget.color.withValues(alpha: widget.opacity),
+                widget.color.withValues(alpha: 0.55 * widget.opacity),
+                widget.color.withValues(alpha: 0.18 * widget.opacity),
                 widget.color.withValues(alpha: 0.0),
               ],
               stops: const [0.0, 0.35, 0.62, 1.0],
@@ -754,9 +764,17 @@ class TideAurora extends StatelessWidget {
     return IgnorePointer(
       child: ClipRect(
         child: RepaintBoundary(
-          child: Opacity(
-            opacity: opacity,
-            child: LayoutBuilder(
+          // No `Opacity` here, deliberately. An opacity layer over an
+          // animating subtree is a full-screen offscreen render plus a blend
+          // on EVERY frame — and the blobs animate forever, on every screen
+          // that shows an aurora, including while you scroll. Folding the
+          // same number into each blob's gradient stops costs nothing at all:
+          // the blob rasters are already cached behind their own repaint
+          // boundaries, so a frame becomes three transforms of three cached
+          // layers. The one visible difference is where two blobs overlap
+          // (per-blob alpha blends slightly brighter there than one group
+          // opacity would), which at these alphas is well under a level step.
+          child: LayoutBuilder(
               builder: (context, constraints) {
                 // Degenerate constraints (a zero-size or unbounded slot)
                 // would make the fractional geometry meaningless.
@@ -787,13 +805,13 @@ class TideAurora extends StatelessWidget {
                             from: b.from,
                             to: b.to,
                             period: b.period,
+                            opacity: opacity,
                           ),
                         ),
                     ],
                   ),
                 );
               },
-            ),
           ),
         ),
       ),

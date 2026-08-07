@@ -658,7 +658,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 12),
       child: ValueListenableBuilder<double>(
         valueListenable: _collapse,
-        builder: (context, t, _) => Column(
+        builder: (context, t, _) {
+          final fadeIn = ((t - 0.62) / 0.38).clamp(0.0, 1.0);
+          final fadeOut = (1 - t * 1.5).clamp(0.0, 1.0);
+          return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
@@ -672,24 +675,30 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Opacity(
-                      // Held back until the masthead is nearly gone: the same
-                      // name twice on one screen is the thing a collapsing
-                      // header exists to avoid.
-                      opacity: ((t - 0.62) / 0.38).clamp(0.0, 1.0),
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          height: 1.15,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: -0.4,
-                          color: TideColors.text,
-                        ),
-                      ),
-                    ),
+                    // Held back until the masthead is nearly gone: the same
+                    // name twice on one screen is the thing a collapsing
+                    // header exists to avoid.
+                    //
+                    // The fade rides the text COLOUR, not an `Opacity` widget.
+                    // This rebuilds on every scrolled frame, and an opacity
+                    // between 0 and 1 is a saveLayer on each of them; for a
+                    // single line of text the alpha is exactly equivalent and
+                    // free. Below the threshold there is nothing to draw, so
+                    // the line is not laid out at all.
+                    child: fadeIn == 0
+                        ? const SizedBox.shrink()
+                        : Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 18,
+                              height: 1.15,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: -0.4,
+                              color: TideColors.text.withValues(alpha: fadeIn),
+                            ),
+                          ),
                   ),
                   const SizedBox(width: 8),
                   TideIconButton(
@@ -712,14 +721,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ],
               ),
             ),
-            ClipRect(
-              child: Align(
-                alignment: Alignment.topLeft,
-                heightFactor: 1 - t,
-                child: Opacity(
-                  // Fades out ahead of the fold so the last thing to go is
-                  // empty space rather than half a letterform.
-                  opacity: (1 - t * 1.5).clamp(0.0, 1.0),
+            // Fully folded: the masthead is zero-height and invisible, so it
+            // is not built. `Align(heightFactor: 0)` still lays its child out
+            // in full before clipping it away, and this rebuilds on every
+            // scrolled frame — so the common case (reading the grid, header
+            // long gone) was measuring two lines of 32pt type per frame to
+            // draw nothing.
+            if (t < 1)
+              ClipRect(
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  heightFactor: 1 - t,
+                  // The fade is on the colours rather than an `Opacity`
+                  // widget, for the same reason as the collapsed title above:
+                  // a partial opacity is a saveLayer on every frame of the
+                  // fold, and these are two Text runs with nothing to
+                  // composite between them.
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 18, 20, 2),
                     child: Column(
@@ -732,7 +749,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                           overflow: TextOverflow.ellipsis,
                           style: TideText.kicker(
                             size: 11,
-                            color: TideColors.accent,
+                            // Fades out ahead of the fold so the last thing to
+                            // go is empty space rather than half a letterform.
+                            color: TideColors.accent
+                                .withValues(alpha: fadeOut),
                           ).copyWith(letterSpacing: 2.0),
                         ),
                         const SizedBox(height: 9),
@@ -740,17 +760,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                           name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TideText.display(32),
+                          style: TideText.display(32).copyWith(
+                            color: TideColors.brightAt(fadeOut),
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
               ),
-            ),
             const SizedBox(height: 12),
           ],
-        ),
+          );
+        },
       ),
       ),
     );
