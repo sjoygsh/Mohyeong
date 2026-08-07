@@ -52,6 +52,7 @@ class _IconRecord {
     this.file,
     this.url,
     this.answered = true,
+    this.decoder = 0,
   });
 
   /// The `base_url` the probe was made against. A source that moves domain
@@ -70,6 +71,11 @@ class _IconRecord {
   /// about the site; a miss where it didn't is a fact about the network.
   final bool answered;
 
+  /// Which decoder generation recorded this. A miss written by an older one
+  /// says nothing about what the current one can read — see
+  /// [SourceIconStore._decoderGeneration].
+  final int decoder;
+
   bool get found => file != null;
 
   Map<String, dynamic> toJson() => {
@@ -78,6 +84,7 @@ class _IconRecord {
         if (file != null) 'file': file,
         if (url != null) 'url': url,
         if (!answered) 'unreachable': true,
+        'decoder': decoder,
       };
 
   static _IconRecord? fromJson(Object? json) {
@@ -91,6 +98,7 @@ class _IconRecord {
       file: json['file'] as String?,
       url: json['url'] as String?,
       answered: json['unreachable'] != true,
+      decoder: json['decoder'] as int? ?? 0,
     );
   }
 }
@@ -115,6 +123,19 @@ class SourceIconStore {
   /// first run of Browse probes every source at once, which is exactly when a
   /// phone is most likely to drop one.
   static const _retryAfterUnreachable = Duration(hours: 1);
+
+  /// Which generation of [sniffImage] is in the build. A remembered MISS is
+  /// only a fact about what the decoder of the day could read: WEBTOONS
+  /// publishes a single 32x32 32bpp BMP inside its .ico, which generation 1
+  /// could not decode and generation 2 can — and yet the row kept its letter,
+  /// because the miss recorded before the fix shipped was still inside its
+  /// 12-hour TTL and nothing about an app update could shorten it. Misses from
+  /// an older generation are re-probed at once. Bump this whenever
+  /// [sniffImage] learns a format.
+  ///
+  ///   1 — PNG / JPEG / GIF / WebP / BMP, and PNG-inside-.ico
+  ///   2 — plus BMP-inside-.ico (32bpp and 24bpp, BI_RGB)
+  static const _decoderGeneration = 2;
 
   /// Anything bigger than this is not a favicon and we are not decoding it.
   static const _maxBytes = 512 * 1024;
@@ -177,8 +198,9 @@ class SourceIconStore {
         final file = File(p.join(dir.path, record.file!));
         if (file.existsSync()) return file.path;
         // The file was cleared out from under us — fall through and re-probe.
-      } else if (DateTime.now().difference(record.attemptedAt) <
-          (record.answered ? _retryAfterMiss : _retryAfterUnreachable)) {
+      } else if (record.decoder >= _decoderGeneration &&
+          DateTime.now().difference(record.attemptedAt) <
+              (record.answered ? _retryAfterMiss : _retryAfterUnreachable)) {
         return null;
       }
     }
@@ -208,6 +230,7 @@ class SourceIconStore {
         file: storedName,
         url: sourceUrl,
         answered: reach.answered,
+        decoder: _decoderGeneration,
       ),
     );
     return storedName == null ? null : p.join(dir.path, storedName);
