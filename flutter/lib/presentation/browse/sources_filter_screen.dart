@@ -66,6 +66,22 @@ class _Body extends ConsumerWidget {
     return StreamBuilder<List<InstalledExtension>>(
       stream: repo.watchInstalled(),
       builder: (context, extSnap) {
+        // Same stream the Browse tab reads, and the same reason it needs a
+        // failure state: without one an error left this screen spinning
+        // forever with nothing said.
+        if (extSnap.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Text(
+                userMessage(extSnap.error!,
+                    fallback: 'Couldn\'t read your installed sources.'),
+                textAlign: TextAlign.center,
+                style: TideText.body(),
+              ),
+            ),
+          );
+        }
         if (!extSnap.hasData) {
           return const Center(
             child: TideSpinner(),

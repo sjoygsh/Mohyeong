@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -53,6 +55,28 @@ class _FakeExtensionRepository implements ExtensionRepository {
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// A repository whose installed-source stream fails, which is what a corrupt
+/// or unreadable extension store looks like from the screen's side.
+class _FailingExtensionRepository implements ExtensionRepository {
+  @override
+  Stream<List<InstalledExtension>> watchInstalled() =>
+      Stream<List<InstalledExtension>>.error(
+          const FileSystemException('extensions unreadable'));
+
+  @override
+  Future<List<InstalledExtension>> listInstalled() async =>
+      throw const FileSystemException('extensions unreadable');
+
+  @override
+  Future<Set<String>> checkForUpdates() async => const <String>{};
+
+  @override
+  Future<MangaSource> getSource(String id) async => throw UnimplementedError();
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 Future<void> _pump(WidgetTester tester, {int frames = 6}) async {
   for (var i = 0; i < frames; i++) {
     await tester.pump(const Duration(milliseconds: 60));
@@ -76,6 +100,47 @@ Future<_FakeExtensionRepository> _pumpBrowse(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('a source list that cannot be read says so instead of spinning',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          extensionRepositoryProvider
+              .overrideWithValue(_FailingExtensionRepository()),
+        ],
+        child: const MaterialApp(home: BrowseScreen()),
+      ),
+    );
+    await _pump(tester);
+
+    // `userMessage` classifies the cause, so the caller's fallback is only
+    // the wording of last resort — what matters is that SOMETHING is said.
+    expect(find.textContaining('read or write that file'), findsOneWidget);
+    expect(find.byType(TideSpinner), findsNothing,
+        reason: 'the spinner would otherwise never end');
+  });
+
+  testWidgets('the Extensions view carries the same failure state',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          extensionRepositoryProvider
+              .overrideWithValue(_FailingExtensionRepository()),
+        ],
+        child: const MaterialApp(home: BrowseScreen()),
+      ),
+    );
+    await _pump(tester);
+    await tester.tap(find.text('Extensions'));
+    await _pump(tester);
+
+    expect(find.textContaining('read or write that file'), findsWidgets);
+    expect(find.byType(TideSpinner), findsNothing);
+  });
+
   testWidgets('Sources lists installed sources behind a segmented control',
       (WidgetTester tester) async {
     final repo = await _pumpBrowse(tester);

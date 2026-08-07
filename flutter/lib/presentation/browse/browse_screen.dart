@@ -226,6 +226,7 @@ class _SourcesView extends ConsumerWidget {
     return StreamBuilder<List<InstalledExtension>>(
       stream: repo.watchInstalled(),
       builder: (context, snap) {
+        if (snap.hasError) return _LoadFailed(snap.error);
         if (!snap.hasData) return const _Spinner();
         final allExtensions = snap.data!;
         final sourcePrefs = sourcePrefsAsync.value;
@@ -520,6 +521,7 @@ class _ExtensionsViewState extends ConsumerState<_ExtensionsView> {
     return StreamBuilder<List<InstalledExtension>>(
       stream: repo.watchInstalled(),
       builder: (context, snap) {
+        if (snap.hasError) return _LoadFailed(snap.error);
         if (!snap.hasData) return const _Spinner();
         final extensions = snap.data!;
         // Anything with an update waiting is lifted into its own section at
@@ -1042,5 +1044,29 @@ class _Spinner extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const Center(
         child: TideSpinner(),
+      );
+}
+
+/// What both Browse views show when the installed-source list cannot be read.
+///
+/// Plain centred text rather than [TideEmpty]: the glass card is for ABSENCE
+/// (no results, nothing scheduled), and this is FAILURE. Without it a stream
+/// error left the tab on [_Spinner] forever, saying nothing.
+class _LoadFailed extends StatelessWidget {
+  const _LoadFailed(this.error);
+
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Text(
+            userMessage(error ?? '',
+                fallback: 'Couldn\'t read your installed sources.'),
+            textAlign: TextAlign.center,
+            style: TideText.body(),
+          ),
+        ),
       );
 }
