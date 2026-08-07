@@ -14,10 +14,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Keys deliberately mirror the Kotlin app's preference keys so a future
 /// settings-import path carries values across without translation.
 class BoolPrefNotifier extends Notifier<bool> {
-  BoolPrefNotifier(this.key, this.defaultValue);
+  BoolPrefNotifier(this.key, this.defaultValue, {this.alsoRead = const []});
 
   final String key;
   final bool defaultValue;
+
+  /// Older spellings of [key], read (in order) when [key] itself holds
+  /// nothing, and dropped as soon as a value is written under [key].
+  ///
+  /// Preference keys are an on-disk contract shared with the Kotlin app: the
+  /// v0.19 -> v1.0 upgrade happens in place under the same applicationId, and
+  /// backups replay entries by key. So a key that was written down wrong is
+  /// not a rename — it is a value the user set and the app then stopped
+  /// reading.
+  final List<String> alsoRead;
 
   @override
   bool build() {
@@ -27,7 +37,11 @@ class BoolPrefNotifier extends Notifier<bool> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getBool(key);
+    var stored = prefs.getBool(key);
+    for (final legacy in alsoRead) {
+      if (stored != null) break;
+      stored = prefs.getBool(legacy);
+    }
     if (stored != null && stored != state) state = stored;
   }
 
@@ -35,15 +49,19 @@ class BoolPrefNotifier extends Notifier<bool> {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, value);
+    for (final legacy in alsoRead) {
+      await prefs.remove(legacy);
+    }
   }
 }
 
 NotifierProvider<BoolPrefNotifier, bool> boolPref(
   String key,
-  bool defaultValue,
-) =>
+  bool defaultValue, {
+  List<String> alsoRead = const [],
+}) =>
     NotifierProvider<BoolPrefNotifier, bool>(
-      () => BoolPrefNotifier(key, defaultValue),
+      () => BoolPrefNotifier(key, defaultValue, alsoRead: alsoRead),
     );
 
 class IntPrefNotifier extends Notifier<int> {

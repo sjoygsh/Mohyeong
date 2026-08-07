@@ -16,8 +16,19 @@ import '../preferences/typed_preferences.dart';
 
 /// Hide manga that are already in the library from source browse / search
 /// result grids.
-final hideInLibraryItemsProvider =
-    boolPref('pref_hide_in_library_items', false);
+///
+/// The key is `browse_hide_in_library_items`. `pref_hide_in_library_items` —
+/// what this used to be — is the Kotlin app's STRING RESOURCE id for the
+/// switch's label, not its storage key, and the two sit next to each other in
+/// `SettingsBrowseScreen`. Reading the label id meant a settings import and an
+/// in-place upgrade both silently dropped this choice, in a file whose own
+/// header promises the keys match. The old spelling is still read once so
+/// nobody who set it here loses it.
+final hideInLibraryItemsProvider = boolPref(
+  'browse_hide_in_library_items',
+  false,
+  alsoRead: const ['pref_hide_in_library_items'],
+);
 
 /// How source browse / search results render. Mirrors Kotlin's
 /// `sourceDisplayMode` (`pref_display_mode_catalogue`), which serialises
