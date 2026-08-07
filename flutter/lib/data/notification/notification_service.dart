@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -79,79 +80,130 @@ class NotificationService {
     return prefs.getBool('hide_notification_content') ?? false;
   }
 
+  /// Channels the Kotlin app created and then stopped using.
+  ///
+  /// Android channels live in the OS, not the APK, and the v0.19 -> v1.0
+  /// upgrade keeps the same applicationId — so every channel that build ever
+  /// registered is still on an upgraded device, including these. Kotlin
+  /// deletes them on each start (`Notifications.deprecatedChannels`); without
+  /// the same call they sit in the app's notification settings forever as
+  /// switches that control nothing.
+  @visibleForTesting
+  static const deprecatedChannels = <String>[
+    'downloader_channel',
+    'downloader_complete_channel',
+    'backup_restore_complete_channel',
+    'library_channel',
+    'updates_ext_channel',
+    'downloader_cache_renewal',
+    'crash_logs_channel',
+    'library_skipped_channel',
+  ];
+
+  /// Channel groups, matching `Notifications.createChannels`. Eleven channels
+  /// in one flat list is a wall; grouped, the settings screen reads as the
+  /// four things the app actually does in the background.
+  @visibleForTesting
+  static const groups = <AndroidNotificationChannelGroup>[
+    AndroidNotificationChannelGroup('group_library', 'Library'),
+    AndroidNotificationChannelGroup('group_downloader', 'Downloads'),
+    AndroidNotificationChannelGroup('group_backup_restore', 'Backup & restore'),
+    AndroidNotificationChannelGroup('group_apk_updates', 'Updates'),
+  ];
+
   Future<void> _createChannels() async {
     final android = _android;
     if (android == null) return;
-    // Importances mirror Notifications.kt: progress/error channels are LOW
-    // (silent, no badge), new-chapters is DEFAULT, complete is HIGH.
-    const channels = <AndroidNotificationChannel>[
-      AndroidNotificationChannel(
-        channelCommon,
-        'Common',
-        importance: Importance.low,
-      ),
-      AndroidNotificationChannel(
-        channelLibraryProgress,
-        'Library progress',
-        importance: Importance.low,
-        showBadge: false,
-      ),
-      AndroidNotificationChannel(
-        channelLibraryError,
-        'Library errors',
-        importance: Importance.low,
-        showBadge: false,
-      ),
-      AndroidNotificationChannel(
-        channelNewChapters,
-        'New chapters',
-        importance: Importance.defaultImportance,
-      ),
-      AndroidNotificationChannel(
-        channelDownloaderProgress,
-        'Download progress',
-        importance: Importance.low,
-        showBadge: false,
-      ),
-      AndroidNotificationChannel(
-        channelDownloaderError,
-        'Download errors',
-        importance: Importance.low,
-        showBadge: false,
-      ),
-      AndroidNotificationChannel(
-        channelBackupRestoreProgress,
-        'Backup/restore progress',
-        importance: Importance.low,
-        showBadge: false,
-      ),
-      AndroidNotificationChannel(
-        channelBackupRestoreComplete,
-        'Backup/restore complete',
-        importance: Importance.high,
-        showBadge: false,
-        playSound: false,
-      ),
-      AndroidNotificationChannel(
-        channelIncognito,
-        'Incognito mode',
-        importance: Importance.low,
-      ),
-      AndroidNotificationChannel(
-        channelAppUpdate,
-        'App updates',
-        importance: Importance.defaultImportance,
-      ),
-      AndroidNotificationChannel(
-        channelExtensionsUpdate,
-        'Extension updates',
-        importance: Importance.defaultImportance,
-      ),
-    ];
+    for (final id in deprecatedChannels) {
+      // `library_progress_channel` is deliberately NOT in this list even
+      // though Kotlin lists it — we still use that id, and deleting a live
+      // channel would drop the user's own settings for it.
+      await android.deleteNotificationChannel(id);
+    }
+    for (final group in groups) {
+      await android.createNotificationChannelGroup(group);
+    }
     for (final channel in channels) {
       await android.createNotificationChannel(channel);
     }
   }
+
+  /// Every channel this app registers, in creation order.
+  ///
+  /// Importances mirror Notifications.kt: progress/error channels are LOW
+  /// (silent, no badge), new-chapters is DEFAULT, complete is HIGH.
+  static const channels = <AndroidNotificationChannel>[
+    AndroidNotificationChannel(
+      channelCommon,
+      'Common',
+      importance: Importance.low,
+    ),
+    AndroidNotificationChannel(
+      channelLibraryProgress,
+      'Library progress',
+      importance: Importance.low,
+      showBadge: false,
+      groupId: 'group_library',
+    ),
+    AndroidNotificationChannel(
+      channelLibraryError,
+      'Library errors',
+      importance: Importance.low,
+      showBadge: false,
+      groupId: 'group_library',
+    ),
+    AndroidNotificationChannel(
+      channelNewChapters,
+      'New chapters',
+      importance: Importance.defaultImportance,
+    ),
+    AndroidNotificationChannel(
+      channelDownloaderProgress,
+      'Download progress',
+      importance: Importance.low,
+      showBadge: false,
+      groupId: 'group_downloader',
+    ),
+    AndroidNotificationChannel(
+      channelDownloaderError,
+      'Download errors',
+      importance: Importance.low,
+      showBadge: false,
+      groupId: 'group_downloader',
+    ),
+    AndroidNotificationChannel(
+      channelBackupRestoreProgress,
+      'Backup/restore progress',
+      importance: Importance.low,
+      showBadge: false,
+      groupId: 'group_backup_restore',
+    ),
+    AndroidNotificationChannel(
+      channelBackupRestoreComplete,
+      'Backup/restore complete',
+      importance: Importance.high,
+      showBadge: false,
+      playSound: false,
+      groupId: 'group_backup_restore',
+    ),
+    AndroidNotificationChannel(
+      channelIncognito,
+      'Incognito mode',
+      importance: Importance.low,
+    ),
+    AndroidNotificationChannel(
+      channelAppUpdate,
+      'App updates',
+      importance: Importance.defaultImportance,
+      groupId: 'group_apk_updates',
+    ),
+    AndroidNotificationChannel(
+      channelExtensionsUpdate,
+      'Extension updates',
+      importance: Importance.defaultImportance,
+      groupId: 'group_apk_updates',
+    ),
+  ];
 
   // --- Library update (mirrors LibraryUpdateNotifier). ---
 
