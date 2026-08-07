@@ -41,10 +41,10 @@ class MangaCoverViewer extends ConsumerWidget {
                   maxScale: 5,
                   child: Center(
                     child: url == null || url.isEmpty
-                        ? const Icon(
+                        ? Icon(
                             Icons.menu_book_outlined,
                             size: 96,
-                            color: Colors.white54,
+                            color: TideColors.brightAt(0.54),
                           )
                         : SourceImage(
                             url: url,
@@ -52,11 +52,11 @@ class MangaCoverViewer extends ConsumerWidget {
                             placeholder: (_) => const Center(
                               child: TideSpinner(),
                             ),
-                            errorWidget: (_, _) => const Center(
+                            errorWidget: (_, _) => Center(
                               child: Icon(
                                 Icons.broken_image_outlined,
                                 size: 64,
-                                color: Colors.white54,
+                                color: TideColors.brightAt(0.54),
                               ),
                             ),
                           ),

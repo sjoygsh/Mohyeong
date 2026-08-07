@@ -4485,19 +4485,19 @@ class _SourceUnavailable extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.extension_off_outlined,
-                color: Colors.white54, size: 64),
+            Icon(Icons.extension_off_outlined,
+                color: TideColors.brightAt(0.54), size: 64),
             const SizedBox(height: 12),
             Text(
               'Source not installed.',
-              style: const TextStyle(color: Colors.white70, fontSize: 16),
+              style: TideText.title(size: 16),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 6),
             Text(
               'This entry came from a source that is not installed. '
               'Install the matching extension on the Browse tab to read it.',
-              style: const TextStyle(color: Colors.white38, fontSize: 12),
+              style: TideText.caption(size: 12, opacity: 0.38),
               textAlign: TextAlign.center,
             ),
             if (error != null) ...[
@@ -4505,7 +4505,7 @@ class _SourceUnavailable extends StatelessWidget {
               Text(
                 userMessage(error!,
                     fallback: 'The extension couldn\'t be loaded.'),
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
+                style: TideText.caption(size: 11, opacity: 0.38),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -4660,7 +4660,7 @@ class _ReaderError extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: Text(
           userMessage(error, fallback: 'Couldn\'t open this chapter.'),
-          style: const TextStyle(color: Colors.white70),
+          style: TideText.body(),
           textAlign: TextAlign.center,
         ),
       ),
