@@ -1355,18 +1355,39 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
     );
   }
 
+  /// The library comparator, shaped like Kotlin `LibraryScreenModel`'s:
+  /// the axis comparator, reversed for a descending sort, then ALWAYS a
+  /// title tie-break (`.thenComparator(sortAlphabetically)`).
+  ///
+  /// The tie-break is not decoration. Dart's `List.sort` is not stable, and
+  /// ties are the common case — every never-opened series shares `lastRead`
+  /// 0, every fully-read one shares `unreadCount` 0 — so without it the grid
+  /// could reorder itself between rebuilds with nothing having changed. It
+  /// stays ascending in both directions, as in the fork: reversing applies to
+  /// the axis, not to the alphabet.
   int Function(LibraryItem, LibraryItem) _compare(LibrarySortPref sort) {
-    int asc(LibraryItem a, LibraryItem b) {
+    final ascending = sort.direction == LibrarySortDirection.ascending;
+
+    int byTitle(LibraryItem a, LibraryItem b) =>
+        a.manga.title.toLowerCase().compareTo(b.manga.title.toLowerCase());
+
+    int axis(LibraryItem a, LibraryItem b) {
       switch (sort.axis) {
         case LibrarySortAxis.title:
-          return a.manga.title
-              .toLowerCase()
-              .compareTo(b.manga.title.toLowerCase());
+          return byTitle(a, b);
         case LibrarySortAxis.lastRead:
           return a.lastRead.compareTo(b.lastRead);
         case LibrarySortAxis.lastUpdate:
           return a.manga.lastUpdate.compareTo(b.manga.lastUpdate);
         case LibrarySortAxis.unread:
+          // Kotlin's "ensure unread content comes first": a series with
+          // nothing left to read sinks to the bottom in BOTH directions,
+          // rather than heading the list whenever the sort is ascending.
+          // Written direction-aware here for the same reason it is there —
+          // the outer reversal below would otherwise undo it.
+          if (a.unreadCount == b.unreadCount) return 0;
+          if (a.unreadCount == 0) return ascending ? 1 : -1;
+          if (b.unreadCount == 0) return ascending ? -1 : 1;
           return a.unreadCount.compareTo(b.unreadCount);
         case LibrarySortAxis.totalChapters:
           return a.totalCount.compareTo(b.totalCount);
@@ -1382,9 +1403,10 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
       }
     }
 
-    return sort.direction == LibrarySortDirection.ascending
-        ? asc
-        : (a, b) => asc(b, a);
+    return (a, b) {
+      final primary = ascending ? axis(a, b) : axis(b, a);
+      return primary != 0 ? primary : byTitle(a, b);
+    };
   }
 }
 
