@@ -89,7 +89,7 @@ class Track {
   /// Pure and shared on purpose — both the live push and the delayed-retry
   /// drain build their updated row through here, so a queued push that lands
   /// hours later writes exactly what the immediate one would have.
-  Track withProgress(double progress) {
+  Track withProgress(double progress, {DateTime? now}) {
     if (status == TrackStatus.completed) {
       return copyWith(lastChapterRead: progress);
     }
@@ -104,6 +104,13 @@ class Track {
           : (status == TrackStatus.rereading
               ? TrackStatus.rereading
               : TrackStatus.reading),
+      // Kotlin `BaseTracker.setRemoteLastChapterRead` stamps
+      // `finished_reading_date` in the same breath as it sets the completed
+      // status. Only on the transition — an entry that already carries a
+      // finish date keeps it, so re-reading and re-syncing can't move it.
+      finishDate: reachedEnd && finishDate == 0
+          ? (now ?? DateTime.now()).millisecondsSinceEpoch
+          : finishDate,
     );
   }
 }

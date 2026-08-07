@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/track/model/track.dart';
 import '../../presentation/tide/tide.dart';
+import '../chapter/chapter_repository.dart';
+import '../history/history_repository.dart';
 import 'delayed_tracking_scheduler.dart';
 import 'delayed_tracking_store.dart';
 import 'track_preferences.dart';
@@ -66,6 +69,71 @@ class TrackUpdater {
     // backoff.
     if (queued) {
       await _ref.read(delayedTrackingSchedulerProvider).setupTask();
+    }
+  }
+
+  /// Brings a freshly bound [track] up to what the library already knows, and
+  /// returns it. Kotlin `AddTracks.await` does this the moment a tracker is
+  /// bound; binding here only ever wrote a fresh zeroed entry, so linking a
+  /// series you had already read fifty chapters of told the tracker you were
+  /// on chapter zero, with no start date.
+  ///
+  /// Two things, both from the fork:
+  ///  * the latest UNBROKEN run of read chapters becomes the progress —
+  ///    `sortedBy { chapterNumber }.takeWhile { read }.last`, so a gap stops
+  ///    the count rather than claiming everything past it;
+  ///  * the earliest history entry becomes the start date, if there isn't one.
+  ///
+  /// A failure to push leaves the local row as it was: a bind that half-worked
+  /// and then reported success is worse than one that simply didn't catch up,
+  /// and the next chapter read pushes progress anyway.
+  Future<Track> catchUpAfterBind(Track track) async {
+    final tracker = _registry.byId(track.trackerId);
+    if (tracker == null) return track;
+
+    var updated = track;
+    final chapters = await _ref
+        .read(chapterRepositoryProvider)
+        .getByMangaId(track.mangaId);
+    final ordered = [
+      for (final c in chapters)
+        if (c.chapterNumber >= 0) c,
+    ]..sort((a, b) {
+        final byNumber = a.chapterNumber.compareTo(b.chapterNumber);
+        return byNumber != 0 ? byNumber : a.sourceOrder.compareTo(b.sourceOrder);
+      });
+    double latestRead = -1;
+    for (final c in ordered) {
+      if (!c.read) break;
+      latestRead = c.chapterNumber;
+    }
+    if (latestRead > updated.lastChapterRead) {
+      updated = updated.withProgress(latestRead);
+    }
+
+    if (updated.startDate <= 0) {
+      final history = await _ref
+          .read(historyRepositoryProvider)
+          .getByMangaId(track.mangaId);
+      DateTime? earliest;
+      for (final h in history) {
+        final at = h.readAt;
+        if (at == null) continue;
+        if (earliest == null || at.isBefore(earliest)) earliest = at;
+      }
+      if (earliest != null) {
+        updated = updated.copyWith(
+          startDate: earliest.millisecondsSinceEpoch,
+        );
+      }
+    }
+
+    if (updated == track) return track;
+    try {
+      await tracker.update(updated, didReadChapter: latestRead >= 0);
+      return updated;
+    } catch (_) {
+      return track;
     }
   }
 }

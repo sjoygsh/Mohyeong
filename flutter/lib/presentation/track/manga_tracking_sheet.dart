@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/track/track_repository.dart';
+import '../../data/track/track_updater.dart';
 import '../../data/track/tracker.dart';
 import '../../data/track/tracker_registry.dart';
 import '../../domain/manga/model/manga.dart';
@@ -106,7 +107,12 @@ class _TrackerRowState extends ConsumerState<_TrackerRow> {
     if (picked == null) return;
     setState(() => _working = true);
     try {
-      final track = await widget.tracker.bind(widget.manga.id, picked);
+      final bound = await widget.tracker.bind(widget.manga.id, picked);
+      // Kotlin `AddTracks.await` catches a new binding up to what the library
+      // already knows — otherwise linking a series you have read fifty
+      // chapters of tells the tracker you are on chapter zero.
+      final track =
+          await ref.read(trackUpdaterProvider).catchUpAfterBind(bound);
       await ref.read(trackRepositoryProvider).upsert(track);
       toast.show('Bound to ${widget.tracker.name}.');
     } catch (e) {

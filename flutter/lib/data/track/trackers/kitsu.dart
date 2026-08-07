@@ -22,6 +22,22 @@ import '../tracker.dart';
 /// Status mapping mirrors Mihon's Kitsu adapter: their list strings are
 /// `current` / `planned` / `completed` / `on_hold` / `dropped`. There is
 /// no "rereading" list — it collapses to `current` on the wire.
+/// Kitsu's date format, a 1:1 port of Kotlin `KitsuDateHelper.convert`:
+/// `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`, and null when the value is unset.
+///
+/// The fork formats in the device's LOCAL zone and stamps a literal `Z`, which
+/// is not what `Z` means — kept anyway, because the two apps write to the same
+/// Kitsu account and a date that disagrees between them would be worse than
+/// one that is a few hours off in both.
+String? kitsuDate(int epochMillis) {
+  if (epochMillis == 0) return null;
+  final d = DateTime.fromMillisecondsSinceEpoch(epochMillis);
+  String two(int v) => v.toString().padLeft(2, '0');
+  final ms = d.millisecond.toString().padLeft(3, '0');
+  return '${d.year.toString().padLeft(4, '0')}-${two(d.month)}-${two(d.day)}'
+      'T${two(d.hour)}:${two(d.minute)}:${two(d.second)}.${ms}Z';
+}
+
 class KitsuTracker extends Tracker {
   KitsuTracker({
     required this.credentials,
@@ -380,6 +396,11 @@ class KitsuTracker extends Tracker {
             'progress': track.lastChapterRead.toInt(),
             // Mihon 0..10 → Kitsu ratingTwenty 0..20.
             'ratingTwenty': (track.score * 2).round(),
+            // Kotlin `KitsuDateHelper.convert`: the exact pattern Kitsu
+            // returns, null when unset. Read back by the search/list parser
+            // already; nothing wrote them until now.
+            'startedAt': kitsuDate(track.startDate),
+            'finishedAt': kitsuDate(track.finishDate),
           },
         },
       },

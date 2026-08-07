@@ -278,12 +278,25 @@ class AniListTracker extends Tracker {
   }
 
   static const String _updateEntryMutation = r'''
-    mutation Update($mediaId: Int, $status: MediaListStatus, $progress: Int, $score: Float, $private: Boolean) {
-      SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress, scoreRaw: $score, private: $private) {
+    mutation Update($mediaId: Int, $status: MediaListStatus, $progress: Int, $score: Float, $private: Boolean, $startedAt: FuzzyDateInput, $completedAt: FuzzyDateInput) {
+      SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress, scoreRaw: $score, private: $private, startedAt: $startedAt, completedAt: $completedAt) {
         id status progress score private
       }
     }
   ''';
+
+  /// AniList's `FuzzyDateInput`, verbatim from Kotlin `AnilistApi.createDate`:
+  /// a local-time y/m/d, or all three null for "unset". The entry query above
+  /// already reads these back into [Track.startDate] / [Track.finishDate];
+  /// nothing ever wrote them, so a Mohyeong-only reader's AniList profile
+  /// never got a start or finish date.
+  static Map<String, int?> _fuzzyDate(int epochMillis) {
+    if (epochMillis == 0) {
+      return const {'year': null, 'month': null, 'day': null};
+    }
+    final d = DateTime.fromMillisecondsSinceEpoch(epochMillis);
+    return {'year': d.year, 'month': d.month, 'day': d.day};
+  }
 
   @override
   Future<Track> update(Track track, {bool didReadChapter = false}) async {
@@ -294,6 +307,8 @@ class AniListTracker extends Tracker {
       // AniList stores POINT_100 internally; the score field is set raw.
       'score': (track.score * 10).toInt(),
       'private': track.private,
+      'startedAt': _fuzzyDate(track.startDate),
+      'completedAt': _fuzzyDate(track.finishDate),
     });
     return track;
   }
