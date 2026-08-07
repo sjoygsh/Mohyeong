@@ -29,6 +29,7 @@ import '../../domain/chapter/model/no_chapters_exception.dart';
 import '../../domain/chapter/service/apply_scanlator_priority.dart';
 import '../../domain/chapter/service/merge_linked_chapters.dart';
 import '../../domain/chapter/service/missing_chapters.dart';
+import '../../domain/chapter/service/chapter_sort.dart';
 import '../../domain/chapter/service/set_read_status.dart';
 import '../../domain/chapter/service/watch_cluster_chapters.dart';
 import '../../domain/manga/model/manga.dart';
@@ -1204,7 +1205,7 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
       // Sorted first, then the priority collapse — the same order Kotlin uses
       // (its collapse runs over `applyFilters`, which already sorted).
       sorted = applyScanlatorPriority(
-        [...filtered]..sort((a, b) => _chapterSortCompare(a, b, manga)),
+        [...filtered]..sort((a, b) => compareChapters(a, b, manga)),
         scanlatorPriority,
       );
 
@@ -1280,7 +1281,7 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
                 // so the EARLIEST unread chapters in reading order are
                 // taken first, then take N.
                 final sorted = chapters.where((c) => !c.read).toList()
-                  ..sort((a, b) => _chapterSortCompare(a, b, manga));
+                  ..sort((a, b) => compareChapters(a, b, manga));
                 final ordered = manga.sortDescending()
                     ? sorted.reversed.toList()
                     : sorted;
@@ -1443,32 +1444,6 @@ class _VolumeHeaderRow extends StatelessWidget {
   }
 }
 
-/// Comparator matching Mihon's `getChapterSort` (ChapterSort.kt) exactly,
-/// including its source-order quirk: because sources return chapters
-/// newest-first (so `sourceOrder == 0` is the NEWEST chapter), the SOURCE
-/// case inverts its direction relative to the number/date/alphabet cases.
-int _chapterSortCompare(Chapter a, Chapter b, Manga manga) {
-  final desc = manga.sortDescending();
-  switch (manga.sorting) {
-    case Manga.chapterSortingNumber:
-      return desc
-          ? b.chapterNumber.compareTo(a.chapterNumber)
-          : a.chapterNumber.compareTo(b.chapterNumber);
-    case Manga.chapterSortingUploadDate:
-      return desc
-          ? b.dateUpload.compareTo(a.dateUpload)
-          : a.dateUpload.compareTo(b.dateUpload);
-    case Manga.chapterSortingAlphabet:
-      return desc
-          ? b.name.toLowerCase().compareTo(a.name.toLowerCase())
-          : a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    default: // chapterSortingSource
-      return desc
-          ? a.sourceOrder.compareTo(b.sourceOrder)
-          : b.sourceOrder.compareTo(a.sourceOrder);
-  }
-}
-
 /// Returns the next chapter the user should read, or null if every
 /// chapter is already marked read (or the list is empty).
 ///
@@ -1481,7 +1456,7 @@ int _chapterSortCompare(Chapter a, Chapter b, Manga manga) {
 Chapter? _pickNextUnread(List<Chapter> chapters, Manga manga) {
   final unread = chapters.where((c) => !c.read).toList();
   if (unread.isEmpty) return null;
-  unread.sort((a, b) => _chapterSortCompare(a, b, manga));
+  unread.sort((a, b) => compareChapters(a, b, manga));
   return manga.sortDescending() ? unread.last : unread.first;
 }
 
