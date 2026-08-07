@@ -1,6 +1,8 @@
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 
+import '../tide/tide.dart';
+
 /// App-wide Material 3 theme.
 ///
 /// There used to be a `seed` parameter here, fed by an "App theme" picker with
@@ -63,10 +65,16 @@ class AppTheme {
   /// listTile / progressIndicator blocks below for what "no longer built"
   /// looks like.
   static ThemeData _tide(ThemeData base) {
-    const ground = Color(0xFF0D1019);
-    const raised = Color(0xFF161A26);
-    const accent = Color(0xFFB5ABFC);
-    const text = Color(0xFFE9E9ED);
+    // Taken from TideColors rather than restated: this file used to carry its
+    // own copy of the ground, which is exactly how a recolour ends up half
+    // applied — the Tide surfaces would go black and every Material-owned
+    // surface (platform dialogs, menus, the scrollbar) would stay blue-violet.
+    const ground = TideColors.ground;
+    // The Material container ramp, rebuilt on black. Neutral greys, so nothing
+    // Material draws reintroduces the blue-violet cast the ground had.
+    const raised = Color(0xFF121212);
+    const accent = TideColors.accent;
+    const text = TideColors.text;
     final scheme = base.colorScheme.copyWith(
       primary: accent,
       onPrimary: ground,
@@ -75,12 +83,12 @@ class AppTheme {
       surface: ground,
       onSurface: text,
       surfaceContainerLowest: ground,
-      surfaceContainerLow: const Color(0xFF12151F),
+      surfaceContainerLow: const Color(0xFF0A0A0A),
       surfaceContainer: raised,
-      surfaceContainerHigh: const Color(0xFF1B2030),
-      surfaceContainerHighest: const Color(0xFF20263A),
-      outline: const Color(0xFF3F4457),
-      outlineVariant: const Color(0xFF2A2F3E),
+      surfaceContainerHigh: const Color(0xFF1C1C1C),
+      surfaceContainerHighest: const Color(0xFF242424),
+      outline: const Color(0xFF3A3A3A),
+      outlineVariant: const Color(0xFF262626),
     );
     return base.copyWith(
       colorScheme: scheme,

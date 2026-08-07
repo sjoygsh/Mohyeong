@@ -32,13 +32,15 @@ import '../common/source_image.dart';
 /// The ramps are the design system's own OKLCH-derived steps; prefer a named
 /// step over an ad-hoc blend so the same visual weight shows up everywhere.
 abstract final class TideColors {
-  /// Home / series ground. Nocturne's `--color-bg` shifted a touch cooler and
-  /// darker so the aurora behind it has somewhere to glow.
-  static const ground = Color(0xFF0D1019);
+  /// Home / series ground. AMOLED black: on this panel a #000 pixel is an
+  /// OFF pixel, so the ground costs nothing to light and the aurora reads as
+  /// actual light rather than as a wash over a blue-violet slab. The old
+  /// `0xFF0D1019` was what made every glass panel above it read purplish-grey.
+  static const ground = Color(0xFF000000);
 
-  /// Reader ground — darker still: page art is the only thing that should
-  /// carry light while reading.
-  static const readerGround = Color(0xFF07080E);
+  /// Reader ground. Also pure black — page art is the only thing that should
+  /// carry light while reading, and it now has the full range to do it in.
+  static const readerGround = Color(0xFF000000);
 
   /// Aurora blobs (blurred radial washes behind the home screen).
   static const auroraViolet = Color(0xFF4A3F8F);
@@ -275,8 +277,25 @@ class TideGlass extends StatelessWidget {
   final bool blur;
 
   /// Alpha of the panel's own gradient fill, top and bottom.
+  /// How far a panel lifts off the ground, top and bottom.
+  ///
+  /// These stay WHITE rather than becoming black. Roughly a dozen call sites
+  /// raise `tintTop` to mean lit / selected / bound — a bound tracker, the
+  /// active library filter, the selected reading mode. Painting the tint black
+  /// would have inverted every one of those: the ON state would have gone
+  /// darker than the OFF state. So the direction is kept and the whole ramp is
+  /// scaled down by [_amoledTint] instead, which lands the panels just off
+  /// pure black while every lit/unlit relationship survives intact.
   final double tintTop;
   final double tintBottom;
+
+  /// Multiplier on [tintTop] / [tintBottom]. At 1.0 the panels were a grey
+  /// lift over a blue-violet ground, which is where the purplish cast came
+  /// from; against pure black that same lift reads as plain grey and still
+  /// costs backlight on an AMOLED panel. A quarter of it keeps the glass
+  /// legible — the edge does most of that work anyway — without the surface
+  /// ever leaving black.
+  static const double _amoledTint = 0.26;
 
   /// Edge stroke alphas — see [_GlassEdge].
   final double highlight;
@@ -303,8 +322,8 @@ class TideGlass extends StatelessWidget {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.white.withValues(alpha: tintTop),
-            Colors.white.withValues(alpha: tintBottom),
+            Colors.white.withValues(alpha: tintTop * _amoledTint),
+            Colors.white.withValues(alpha: tintBottom * _amoledTint),
           ],
         ),
       ),
