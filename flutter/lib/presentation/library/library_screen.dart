@@ -339,10 +339,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     final chapterRepo = ref.read(chapterRepositoryProvider);
     final setReadStatus = ref.read(setReadStatusProvider);
     final ids = _selected.toList(growable: false);
-    for (final id in ids) {
-      final chapters = await chapterRepo.getByMangaId(id);
-      await setReadStatus.setRead(read: read, chapters: chapters);
-    }
+    // One query for the rows that will actually change, then ONE interactor
+    // call — it groups by manga itself for the download-removal step. The
+    // per-manga loop this replaces read every chapter of every selected
+    // series in full and committed one row at a time.
+    final chapters =
+        await chapterRepo.chaptersNeedingReadFlip(ids, read: read);
+    await setReadStatus.setRead(read: read, chapters: chapters);
     if (!mounted) return;
     _clearSelection();
   }

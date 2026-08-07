@@ -356,10 +356,15 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     // be surprising.
     await _save(prefs);
 
+    // A sync runs for as long as the network takes and this screen can be
+    // left mid-run; `setState` on an unmounted State throws. `_setStatus` and
+    // the `finally` below already guarded — these two did not.
+    if (!mounted) return;
     setState(() => _busy = true);
     try {
       final manager = await ref.read(syncManagerProvider.future);
       final applied = await manager.sync();
+      if (!mounted) return;
       // Refresh local snapshot so "last sync" updates immediately.
       setState(() => _data = prefs.read());
       _setStatus('Sync complete. Applied $applied manga entries.');

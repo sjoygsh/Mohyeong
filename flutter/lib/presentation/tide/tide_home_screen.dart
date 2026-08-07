@@ -313,9 +313,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen>
         .where((u) => _selected.contains(u.chapterId))
         .map((u) => u.chapterId)
         .toList(growable: false);
-    for (final id in ids) {
-      await repo.setBookmark(id, bookmark);
-    }
+    await repo.setBookmarkForIds(ids, bookmark);
     _clearSelection();
   }
 

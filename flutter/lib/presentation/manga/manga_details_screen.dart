@@ -427,9 +427,10 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen>
 
   Future<void> _bulkSetBookmark(List<Chapter> all, bool bookmark) async {
     final chapterRepo = ref.read(chapterRepositoryProvider);
-    for (final c in _selectedChapters(all)) {
-      await chapterRepo.setBookmark(c.id, bookmark);
-    }
+    await chapterRepo.setBookmarkForIds(
+      [for (final c in _selectedChapters(all)) c.id],
+      bookmark,
+    );
     _clearSelection();
   }
 

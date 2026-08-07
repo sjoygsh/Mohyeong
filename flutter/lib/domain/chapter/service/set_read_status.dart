@@ -39,10 +39,14 @@ class SetReadStatus {
     }).toList(growable: false);
     if (toUpdate.isEmpty) return;
 
+    // One transaction, not one commit (and one stream invalidation) per
+    // chapter — see [ChapterRepository.setReadForIds]. This is the path
+    // behind every bulk mark-read in the app.
     final chapterRepo = _ref.read(chapterRepositoryProvider);
-    for (final c in toUpdate) {
-      await chapterRepo.setRead(c.id, read);
-    }
+    await chapterRepo.setReadForIds(
+      [for (final c in toUpdate) c.id],
+      read,
+    );
 
     if (!read || !_ref.read(removeAfterMarkedAsReadProvider)) return;
 

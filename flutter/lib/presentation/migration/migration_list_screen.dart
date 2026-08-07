@@ -99,6 +99,10 @@ class _MigrationListScreenState extends ConsumerState<MigrationListScreen> {
         ),
       );
     }
+    // Backing out of the batch while its chapter counts are still loading
+    // used to reach this with the State already unmounted, and `setState`
+    // throws there. Every other await in this flow was already guarded.
+    if (!mounted) return;
     setState(() => _initialized = true);
 
     // Resolve the target source instances once, pairing each with the numeric

@@ -1,5 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:drift/drift.dart'
-    show BooleanExpressionOperators, OrderingTerm, Value, Variable;
+    show
+        BooleanExpressionOperators,
+        ComparableExpr,
+        OrderingTerm,
+        Value,
+        Variable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,6 +21,11 @@ class ChapterRepository {
   ChapterRepository(this._db);
 
   final db.AppDatabase _db;
+
+  /// Ids per `IN (…)` statement. SQLite's default bound-variable ceiling is
+  /// 999; staying well under it keeps a batch of any size to whole statements
+  /// rather than one per row.
+  static const int _idChunk = 500;
 
   Future<List<Chapter>> getByMangaId(int mangaId) async {
     final rows = await _db.getChaptersByMangaId(mangaId).get();
@@ -67,6 +79,35 @@ class ChapterRepository {
     if (limit != null) query.limit(limit);
     final rows = await query.get();
     return rows.map(ChapterMapper.fromRow).toList(growable: false);
+  }
+
+  /// Across [mangaIds], only the chapters a mark-read/unread would actually
+  /// change — the rows `SetReadStatus` keeps after its own filter.
+  ///
+  /// Marking read touches unread rows; marking unread touches rows that are
+  /// read or hold a saved page position. The library's bulk action used to
+  /// read every chapter of every selected series in full and let the
+  /// interactor sieve them in Dart, which costs the length of the selected
+  /// LIBRARY — the same "read a whole series to act on a few rows" shape
+  /// [getByIds] and [unreadInReadingOrder] were added for. Selecting series
+  /// that are already fully read now returns nothing and writes nothing.
+  Future<List<Chapter>> chaptersNeedingReadFlip(
+    Iterable<int> mangaIds, {
+    required bool read,
+  }) async {
+    final ids = mangaIds.toList(growable: false);
+    if (ids.isEmpty) return const <Chapter>[];
+    final out = <Chapter>[];
+    for (var i = 0; i < ids.length; i += _idChunk) {
+      final chunk = ids.sublist(i, math.min(i + _idChunk, ids.length));
+      final query = _db.select(_db.chapters)
+        ..where((t) => read
+            ? t.mangaId.isIn(chunk) & t.read.equals(0)
+            : t.mangaId.isIn(chunk) &
+                (t.read.equals(1) | t.lastPageRead.isBiggerThanValue(0)));
+      out.addAll((await query.get()).map(ChapterMapper.fromRow));
+    }
+    return out;
   }
 
   /// The chapter a "continue reading" affordance should open, or null when
@@ -139,6 +180,36 @@ class ChapterRepository {
     ));
   }
 
+  /// [setRead] for a whole batch: ONE statement per chunk, all inside ONE
+  /// transaction.
+  ///
+  /// The per-row loop this replaces was expensive twice over. Each write was
+  /// its own implicit transaction (a commit per chapter), and each one fired
+  /// drift's `chapters` table invalidation, so every live query in the app
+  /// re-ran once per chapter marked — marking a 300-chapter series read from
+  /// the library ran the whole-library aggregate, the updates join and
+  /// History's recent-reads join 300 times. Inside a transaction drift holds
+  /// the notification until commit, so the same batch invalidates once.
+  ///
+  /// Chunked because SQLite caps bound variables per statement; the chunks
+  /// share the transaction, so they still commit and notify together.
+  Future<void> setReadForIds(Iterable<int> chapterIds, bool read) async {
+    final ids = chapterIds.toList(growable: false);
+    if (ids.isEmpty) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await _db.transaction(() async {
+      for (var i = 0; i < ids.length; i += _idChunk) {
+        final chunk = ids.sublist(i, math.min(i + _idChunk, ids.length));
+        await (_db.update(_db.chapters)..where((t) => t.id.isIn(chunk)))
+            .write(db.ChaptersCompanion(
+          read: Value(read ? 1 : 0),
+          lastPageRead: read ? const Value.absent() : const Value(0),
+          lastModifiedAt: Value(nowMs),
+        ));
+      }
+    });
+  }
+
   Future<void> setBookmark(int chapterId, bool bookmark) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     await (_db.update(_db.chapters)..where((t) => t.id.equals(chapterId)))
@@ -146,6 +217,24 @@ class ChapterRepository {
       bookmark: Value(bookmark ? 1 : 0),
       lastModifiedAt: Value(nowMs),
     ));
+  }
+
+  /// [setBookmark] for a whole batch — same one-transaction, one-statement
+  /// shape and the same reason as [setReadForIds].
+  Future<void> setBookmarkForIds(Iterable<int> chapterIds, bool bookmark) async {
+    final ids = chapterIds.toList(growable: false);
+    if (ids.isEmpty) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await _db.transaction(() async {
+      for (var i = 0; i < ids.length; i += _idChunk) {
+        final chunk = ids.sublist(i, math.min(i + _idChunk, ids.length));
+        await (_db.update(_db.chapters)..where((t) => t.id.isIn(chunk)))
+            .write(db.ChaptersCompanion(
+          bookmark: Value(bookmark ? 1 : 0),
+          lastModifiedAt: Value(nowMs),
+        ));
+      }
+    });
   }
 
   /// Overwrites the per-chapter `bookmark_note` text. Empty string clears
