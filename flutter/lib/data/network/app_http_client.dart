@@ -30,8 +30,22 @@ class AppHttpClient {
   /// Memoises the in-flight future, not the finished client: two concurrent
   /// first callers must not each build a Dio + PersistCookieJar over the same
   /// on-disk cookie directory (the await below is a real suspension point).
+  ///
+  /// A FAILED build is dropped rather than memoised. [_create] awaits
+  /// `getApplicationSupportDirectory()` and `SharedPreferences.getInstance()`,
+  /// both of which can fail transiently — most plausibly in the WorkManager
+  /// background isolate, which builds its own client and whose plugin
+  /// registrations come up independently of the UI engine's. Caching the
+  /// rejected future would mean that isolate never makes another HTTP request
+  /// for the rest of its life: no library sweep, no download, no extension
+  /// fetch, with nothing to do but wait for the process to die.
+  /// [ExtensionRepository] already applies this rule to its per-source
+  /// in-flight map; this one site was missed.
   static Future<AppHttpClient> instance() =>
-      _instance ??= _create();
+      _instance ??= _create().onError((Object error, StackTrace stack) {
+        _instance = null;
+        Error.throwWithStackTrace(error, stack);
+      });
 
   static Future<AppHttpClient> _create() async {
     final support = await getApplicationSupportDirectory();

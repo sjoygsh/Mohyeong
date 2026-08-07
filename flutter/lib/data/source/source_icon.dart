@@ -565,8 +565,12 @@ class SourceIconStore {
     final loaded = _index;
     if (loaded != null) return loaded;
     // Two rows arriving together must not both parse (and then both write) the
-    // index — the second would clobber the first's record.
-    await (_loading ??= _load());
+    // index — the second would clobber the first's record. Cleared when it
+    // settles: a load that failed (no support directory yet) must not stay
+    // memoised, or every later lookup awaits the same dead future and the
+    // whole feature is off until the app restarts. Clearing on success is
+    // harmless — [_index] is set by then, so the early return above wins.
+    await (_loading ??= _load().whenComplete(() => _loading = null));
     return _index!;
   }
 
