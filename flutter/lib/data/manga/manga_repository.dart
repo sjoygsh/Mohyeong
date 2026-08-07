@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:drift/drift.dart'
     show Table, TableInfo, TableUpdate, UpdateKind, Value, Variable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,9 +21,29 @@ class MangaRepository {
 
   final db.AppDatabase _db;
 
+  /// SQLite's default variable ceiling is 999; bulk id lists are chunked well
+  /// under it. Matches [ChapterRepository]'s chunking.
+  static const int _idChunk = 500;
+
   Future<Manga?> getById(int id) async {
     final row = await _db.getMangaById(id).getSingleOrNull();
     return row == null ? null : MangaMapper.fromRow(row);
+  }
+
+  /// Every manga in [ids], in one query per chunk. Rows that no longer exist
+  /// are simply absent, so the result may be shorter than [ids]. Replaces the
+  /// per-id [getById] loops the bulk library actions used to run.
+  Future<List<Manga>> getByIds(Iterable<int> ids) async {
+    final list = ids.toList(growable: false);
+    if (list.isEmpty) return const <Manga>[];
+    final out = <Manga>[];
+    for (var i = 0; i < list.length; i += _idChunk) {
+      final chunk = list.sublist(i, math.min(i + _idChunk, list.length));
+      final rows =
+          await (_db.select(_db.mangas)..where((t) => t.id.isIn(chunk))).get();
+      out.addAll(rows.map(MangaMapper.fromRow));
+    }
+    return out;
   }
 
   Future<Manga?> getByUrlAndSource(String url, int source) async {
@@ -337,6 +359,32 @@ class MangaRepository {
         lastModifiedAt: Value(nowMs),
       ),
     );
+  }
+
+  /// [setFavorite] for a whole selection, as ONE statement per chunk inside
+  /// ONE transaction. The library's "Remove from library" ran the single-row
+  /// version in a loop, and every row write here cascades through the ported
+  /// `update_last_modified_at_mangas` trigger and re-runs `libraryView` for
+  /// each live subscriber — so removing 200 entries re-queried the grid the
+  /// user was watching 200 times. Same reasoning as
+  /// [ChapterRepository.setReadForIds].
+  Future<void> setFavoriteForIds(Iterable<int> ids, bool favorite) async {
+    final list = ids.toList(growable: false);
+    if (list.isEmpty) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await _db.transaction(() async {
+      for (var i = 0; i < list.length; i += _idChunk) {
+        final chunk = list.sublist(i, math.min(i + _idChunk, list.length));
+        await (_db.update(_db.mangas)..where((t) => t.id.isIn(chunk))).write(
+          db.MangasCompanion(
+            favorite: Value(favorite ? 1 : 0),
+            dateAdded: favorite ? Value(nowMs) : const Value.absent(),
+            favoriteModifiedAt: Value(nowMs),
+            lastModifiedAt: Value(nowMs),
+          ),
+        );
+      }
+    });
   }
 
   /// Deletes every non-favourited manga and all of its dependent rows

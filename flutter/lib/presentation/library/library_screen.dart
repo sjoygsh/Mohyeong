@@ -297,9 +297,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     final downloadRepo = ref.read(downloadRepositoryProvider);
     final ids = _selected.toList(growable: false);
     var enqueued = 0;
-    for (final id in ids) {
-      final manga = await mangaRepo.getById(id);
-      if (manga == null) continue;
+    for (final manga in await mangaRepo.getByIds(ids)) {
+      final id = manga.id;
       // Reading order = descending sourceOrder (0 == newest): "Next N
       // chapters" downloads the N OLDEST unread, not the N latest. Asking for
       // exactly those beats reading the series and discarding the read ones.
@@ -363,14 +362,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     final downloadRepo =
         result.deleteDownloads ? ref.read(downloadRepositoryProvider) : null;
     final ids = _selected.toList(growable: false);
-    for (final id in ids) {
-      final manga = await mangaRepo.getById(id);
-      if (result.remove) {
-        await mangaRepo.setFavorite(id, false);
-        // Clear category memberships so re-adding starts clean.
-        await categoryRepo.setCategoriesForManga(id, const <int>{});
-      }
-      if (downloadRepo != null && manga != null) {
+    // Two bulk writes, not four per entry: each single-row write commits on
+    // its own and its trigger re-runs `libraryView` for every live
+    // subscriber, so a 200-entry removal used to re-query the grid the user
+    // is watching hundreds of times while it worked through the list.
+    final mangas = await mangaRepo.getByIds(ids);
+    if (result.remove) {
+      await mangaRepo.setFavoriteForIds(ids, false);
+      // Clear category memberships so re-adding starts clean.
+      await categoryRepo.clearCategoriesForManga(ids);
+    }
+    if (downloadRepo != null) {
+      // Deleting downloads is filesystem work, not DB work — still per manga.
+      for (final manga in mangas) {
         await downloadRepo.deleteAllForManga(manga.source, manga.id);
       }
     }

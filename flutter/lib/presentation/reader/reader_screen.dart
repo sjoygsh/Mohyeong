@@ -464,13 +464,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   .read(markDuplicateReadChapterAsReadProvider)
                   .contains(MarkDuplicateRead.readExisting)) {
                 final repo = ref.read(chapterRepositoryProvider);
-                for (final sibling in data.siblings) {
-                  if (sibling.id != chapter.id &&
-                      !sibling.read &&
-                      sibling.chapterNumber >= 0 &&
-                      sibling.chapterNumber == chapter.chapterNumber) {
-                    unawaited(repo.setRead(sibling.id, true));
-                  }
+                final duplicates = [
+                  for (final sibling in data.siblings)
+                    if (sibling.id != chapter.id &&
+                        !sibling.read &&
+                        sibling.chapterNumber >= 0 &&
+                        sibling.chapterNumber == chapter.chapterNumber)
+                      sibling.id,
+                ];
+                // One write, not one per duplicate: this fires as the last
+                // page appears, and each single-row write commits on its own
+                // and re-runs every live chapter query behind the reader.
+                if (duplicates.isNotEmpty) {
+                  unawaited(repo.setReadForIds(duplicates, true));
                 }
               }
               // Mirrors Mihon `updateChapterProgressOnComplete` →

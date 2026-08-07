@@ -158,6 +158,21 @@ class CategoryRepository {
       }
     });
   }
+
+  /// Drops every category membership for [mangaIds] in ONE transaction —
+  /// what "Remove from library" wants for a whole selection. Calling
+  /// [setCategoriesForManga] with an empty set in a loop opened one
+  /// transaction per manga, and the `mangas_categories` trigger bumps
+  /// `mangas.version` on each delete, so the grid re-queried once per entry.
+  Future<void> clearCategoriesForManga(Iterable<int> mangaIds) async {
+    final ids = mangaIds.toList(growable: false);
+    if (ids.isEmpty) return;
+    await _db.transaction(() async {
+      for (final id in ids) {
+        await _db.deleteMangaCategoryByMangaId(id);
+      }
+    });
+  }
 }
 
 final categoryRepositoryProvider = Provider<CategoryRepository>((ref) {
