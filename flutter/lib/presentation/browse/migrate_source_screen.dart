@@ -58,7 +58,12 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
       final cmp = _sortMode == _SortMode.alphabetical
           ? a.name.toLowerCase().compareTo(b.name.toLowerCase())
           : a.count.compareTo(b.count);
-      return _ascending ? cmp : -cmp;
+      if (cmp != 0) return _ascending ? cmp : -cmp;
+      // Counts tie constantly — most sources hold one or two entries — and
+      // Dart's sort is not stable, so without this the list reshuffles every
+      // time it is rebuilt. The tie-break stays alphabetical in both
+      // directions; reversing applies to the sort axis, not to the fallback.
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
     return sorted;
   }

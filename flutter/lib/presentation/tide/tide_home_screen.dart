@@ -181,9 +181,23 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen>
   List<LibraryItem> _topRead(List<LibraryItem> items) {
     final started = items
         .where((it) => it.totalCount > 0 && it.readCount > 0)
-        .toList(growable: false);
-    started.sort((a, b) =>
-        (b.readCount / b.totalCount).compareTo(a.readCount / a.totalCount));
+        .toList();
+    // Ratios tie constantly — every finished series is 1.0, and 10/20 and 5/10
+    // are the same number — and Dart's `List.sort` is not stable, so without a
+    // tie-break `take(5)` could hand back a DIFFERENT five between rebuilds
+    // and the hero rail would change what it rotates through on its own.
+    // Title, then id, so the answer is total.
+    final ratio = {
+      for (final it in started) it.manga.id: it.readCount / it.totalCount,
+    };
+    started.sort((a, b) {
+      final byRatio = ratio[b.manga.id]!.compareTo(ratio[a.manga.id]!);
+      if (byRatio != 0) return byRatio;
+      final byTitle = a.manga.title
+          .toLowerCase()
+          .compareTo(b.manga.title.toLowerCase());
+      return byTitle != 0 ? byTitle : a.manga.id.compareTo(b.manga.id);
+    });
     return started.take(5).toList(growable: false);
   }
 

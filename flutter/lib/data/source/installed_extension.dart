@@ -107,7 +107,15 @@ class ExtensionStorage {
         // don't have yet. The user can reinstall.
       }
     }
-    result.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    // Name, then id: two extensions can legitimately share a name (the same
+    // site in two languages, or the same source from two repos), and this
+    // list seeds the order of Browse, global search and the migrate picker,
+    // so a tie left to Dart's unstable sort would move rows around between
+    // rebuilds.
+    result.sort((a, b) {
+      final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      return byName != 0 ? byName : a.id.compareTo(b.id);
+    });
     return result;
   }
 

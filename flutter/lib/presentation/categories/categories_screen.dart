@@ -452,9 +452,11 @@ List<_CategoryWithDepth> _flattenHierarchy(List<Category> categories) {
     }
     childrenByParent.putIfAbsent(parent, () => <Category>[]).add(cat);
   }
-  // Sort each sibling group by order for deterministic display.
+  // Sort each sibling group for deterministic display. `order` alone is not
+  // deterministic — it is not unique, and Dart's sort is not stable — so this
+  // goes through [compareCategories], which carries a name/id tail.
   for (final list in childrenByParent.values) {
-    list.sort((a, b) => a.order.compareTo(b.order));
+    list.sort(compareCategories);
   }
 
   final result = <_CategoryWithDepth>[];

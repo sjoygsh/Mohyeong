@@ -41,4 +41,21 @@ class Category {
   static const int uncategorizedId = 0;
 }
 
+/// Display order for a set of categories: the user's `order`, then name, then
+/// id.
+///
+/// The tail is not decoration. `order` is not unique — the reorder path
+/// redistributes whatever sibling positions already exist, and a database
+/// carried over from the Kotlin app can hold duplicates — and Dart's
+/// `List.sort` is NOT stable (Kotlin's `sortedWith`, which every one of these
+/// lists was ported from, is). Sorting on `order` alone therefore let tied
+/// categories swap places between rebuilds, in the category chips and in the
+/// hierarchy's sibling groups alike.
+int compareCategories(Category a, Category b) {
+  final byOrder = a.order.compareTo(b.order);
+  if (byOrder != 0) return byOrder;
+  final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  return byName != 0 ? byName : a.id.compareTo(b.id);
+}
+
 const Object _sentinel = Object();

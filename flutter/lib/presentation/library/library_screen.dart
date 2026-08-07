@@ -1227,7 +1227,7 @@ class _LibraryBodyState extends ConsumerState<_LibraryBody> {
       final visibleCategories = [
         for (final c in categories)
           if (!c.isSystemCategory && usedIds.contains(c.id)) c,
-      ]..sort((a, b) => a.order.compareTo(b.order));
+      ]..sort(compareCategories);
       final hasUncategorized = usedIds.contains(Category.uncategorizedId);
       _visibleCategories = visibleCategories;
       _tabIds = <int>[
