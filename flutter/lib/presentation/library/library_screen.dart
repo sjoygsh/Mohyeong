@@ -175,6 +175,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   // axis combination rather than on every rebuild.
   Future<_AsyncFilterSets>? _asyncSets;
   (bool, bool)? _asyncSetsKey;
+
+  /// Last successfully resolved sets, kept so a re-resolve can keep painting
+  /// the grid instead of dropping it for a spinner.
+  _AsyncFilterSets? _lastAsyncSets;
   bool _searching = false;
   bool _updating = false;
   int _selectedCategoryId = Category.uncategorizedId;
@@ -243,6 +247,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   /// on every library mount, including contexts that never initialise it.
   StreamSubscription<DownloadEvent>? _downloadEvents;
 
+  /// Coalesces a burst of download events into one re-resolve (see the
+  /// listener in [build]).
+  Timer? _downloadSetsRefresh;
+
   @override
   void initState() {
     super.initState();
@@ -251,6 +259,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
 
   @override
   void dispose() {
+    _downloadSetsRefresh?.cancel();
     _downloadEvents?.cancel();
     _searchController.dispose();
     _collapse.dispose();
@@ -815,25 +824,51 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               // Manga details and coming back left the grid filtering against
               // the set resolved before you left. Only a full library refresh
               // cleared it. Drop the memo whenever the downloads change.
-              _downloadEvents ??= downloadRepo.events.listen((_) {
+              // Only completion and deletion change which manga HAVE a
+              // download; the per-page `downloading` events do not. Dropping
+              // the memo on those re-walked the whole downloads tree once per
+              // downloaded page — and blanked the grid to a spinner each time.
+              // Bursts (a whole chapter finishing back-to-back) are coalesced
+              // into one re-resolve, matching the badge counts provider.
+              _downloadEvents ??= downloadRepo.events.listen((e) {
+                if (e.state != DownloadState.completed &&
+                    e.state != DownloadState.deleted) {
+                  return;
+                }
                 if (!mounted || _asyncSets == null) return;
-                setState(() => _asyncSets = null);
+                _downloadSetsRefresh ??= Timer(const Duration(seconds: 1), () {
+                  _downloadSetsRefresh = null;
+                  if (!mounted) return;
+                  setState(() => _asyncSets = null);
+                });
               });
               // Memoised: re-resolving on every rebuild walked the whole
               // downloads tree per frame while a downloaded/tracked filter
               // was active.
               final setsKey = (needsDownloaded, needsTracked);
               if (_asyncSets == null || _asyncSetsKey != setsKey) {
+                // A different axis combination resolves different fields, so
+                // the previous sets can't stand in for it — only a re-resolve
+                // of the SAME combination may keep painting the old grid.
+                if (_asyncSetsKey != setsKey) _lastAsyncSets = null;
                 _asyncSetsKey = setsKey;
-                _asyncSets = _resolveAsyncFilterSets(
+                late final Future<_AsyncFilterSets> future;
+                future = _resolveAsyncFilterSets(
                   downloadRepo: needsDownloaded ? downloadRepo : null,
                   trackRepo: needsTracked ? trackRepo : null,
-                );
+                ).then((sets) {
+                  if (_asyncSets == future) _lastAsyncSets = sets;
+                  return sets;
+                });
+                _asyncSets = future;
               }
               return FutureBuilder<_AsyncFilterSets>(
                 future: _asyncSets,
                 builder: (context, snap) {
-                  if (!snap.hasData) {
+                  // Fall back to the last resolved sets while a refresh is in
+                  // flight: a download completing must not blank the grid.
+                  final sets = snap.data ?? _lastAsyncSets;
+                  if (sets == null) {
                     return const Center(child: TideSpinner());
                   }
                   return _body(
@@ -842,8 +877,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                     sortPref,
                     effectiveFilters,
                     displayMode,
-                    snap.data!.downloadedKeys,
-                    snap.data!.trackedMangaIds,
+                    sets.downloadedKeys,
+                    sets.trackedMangaIds,
                   );
                 },
               );
