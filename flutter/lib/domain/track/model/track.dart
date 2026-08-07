@@ -72,20 +72,38 @@ class Track {
   }
 
   /// This track advanced to [progress], with the status transition that
-  /// implies: a series whose total is known and reached becomes `completed`,
-  /// and a plan-to-read entry the user has actually started becomes
-  /// `reading`. Every other status is left alone.
+  /// implies. The rule is the fork's, which every one of its trackers repeats
+  /// verbatim in `update(track, didReadChapter = true)`:
+  ///
+  ///   * an entry already `completed` is left completely alone;
+  ///   * otherwise, reaching a known total makes it `completed`;
+  ///   * otherwise it becomes `reading` — from ANY status, not just
+  ///     plan-to-read. Picking a dropped or on-hold series back up is exactly
+  ///     the case this exists for, and only promoting plan-to-read left those
+  ///     two reading on the tracker while still filed as abandoned.
+  ///   * `rereading` is the one exception, so a second pass through a
+  ///     finished series isn't demoted to a first one (AniList and Shikimori
+  ///     carry this guard in the fork; applying it everywhere is harmless
+  ///     since no tracker wants rereading clobbered).
   ///
   /// Pure and shared on purpose — both the live push and the delayed-retry
   /// drain build their updated row through here, so a queued push that lands
   /// hours later writes exactly what the immediate one would have.
   Track withProgress(double progress) {
+    if (status == TrackStatus.completed) {
+      return copyWith(lastChapterRead: progress);
+    }
+    // The fork compares `last_chapter_read.toLong() == total_chapters`; `>=`
+    // is the same answer wherever that one is, and also completes a series
+    // whose source numbers run past what the tracker knows about.
     final reachedEnd = totalChapters > 0 && progress >= totalChapters;
     return copyWith(
       lastChapterRead: progress,
       status: reachedEnd
           ? TrackStatus.completed
-          : (status == TrackStatus.planToRead ? TrackStatus.reading : status),
+          : (status == TrackStatus.rereading
+              ? TrackStatus.rereading
+              : TrackStatus.reading),
     );
   }
 }

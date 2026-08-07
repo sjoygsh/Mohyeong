@@ -133,6 +133,43 @@ void main() {
       expect(t.status, TrackStatus.reading);
       expect(t.lastChapterRead, 2);
     });
+
+    test('picking a dropped series back up moves it to reading', () {
+      // The fork sets READING from ANY non-completed status. Only promoting
+      // plan-to-read left a series you had resumed still filed as abandoned
+      // on the tracker while its progress climbed.
+      final t = base(status: TrackStatus.dropped).withProgress(2);
+      expect(t.status, TrackStatus.reading);
+      expect(t.lastChapterRead, 2);
+    });
+
+    test('an on-hold series moves to reading too', () {
+      expect(
+        base(status: TrackStatus.onHold).withProgress(2).status,
+        TrackStatus.reading,
+      );
+    });
+
+    test('rereading is not demoted to a first read', () {
+      final t = base(status: TrackStatus.rereading).withProgress(2);
+      expect(t.status, TrackStatus.rereading);
+      expect(t.lastChapterRead, 2);
+    });
+
+    test('rereading to the end still completes', () {
+      expect(
+        base(total: 20, status: TrackStatus.rereading).withProgress(20).status,
+        TrackStatus.completed,
+      );
+    });
+
+    test('a completed entry keeps its status but still takes the progress',
+        () {
+      // The fork guards the whole transition with `if (status != COMPLETED)`.
+      final t = base(total: 20, status: TrackStatus.completed).withProgress(5);
+      expect(t.status, TrackStatus.completed);
+      expect(t.lastChapterRead, 5);
+    });
   });
 
   group('TrackUpdater', () {
