@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'call_timeout_adapter.dart';
 import 'network_preferences.dart';
 import 'webview_cookie_sync.dart';
 
@@ -77,6 +78,11 @@ class AppHttpClient {
       receiveTimeout: const Duration(seconds: 30),
       sendTimeout: const Duration(seconds: 30),
     ))..interceptors.add(CookieManager(jar));
+    // The 2-minute call ceiling the comment above promised. Dio has no
+    // `callTimeout`, and its `receiveTimeout` measures the gap between chunks
+    // of a streamed response, so a server dribbling a few bytes a minute
+    // satisfies every timeout Dio owns, forever. See [CallTimeoutAdapter].
+    dio.httpClientAdapter = CallTimeoutAdapter(dio.httpClientAdapter);
     // Mirrors Kotlin's UserAgentInterceptor: stamp the default browser UA on
     // every request that doesn't already carry one. Required for Cloudflare —
     // `cf_clearance` is minted against this exact UA in the solver WebView, so
