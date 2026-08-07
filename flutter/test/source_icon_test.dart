@@ -54,6 +54,48 @@ void main() {
       expect(links.map((u) => u.path), ['/big.png', '/mid.png', '/small.png']);
     });
 
+    test('a sizes attribute too long to be a number does not throw', () {
+      // Straight out of a stranger's markup: `\d+` is unbounded, and
+      // `int.parse` throws on a digit run past what fits in 64 bits.
+      final links = SourceIconStore.iconLinksIn('''
+        <head>
+          <link rel="icon" href="/junk.png" sizes="99999999999999999999x16">
+          <link rel="icon" href="/real.png" sizes="64x64">
+        </head>
+      ''', origin);
+
+      // The junk size is ignored rather than fatal, so the sized icon wins
+      // and the unsized one still appears.
+      expect(links.map((u) => u.path), ['/real.png', '/junk.png']);
+    });
+
+    test('an absurd size cannot overflow its way to the front', () {
+      // A value that parses but whose product wraps negative would sort a
+      // huge icon LAST; anything past a plausible icon edge is not a size.
+      final links = SourceIconStore.iconLinksIn('''
+        <head>
+          <link rel="icon" href="/absurd.png" sizes="4000000000x4000000000">
+          <link rel="icon" href="/real.png" sizes="64x64">
+        </head>
+      ''', origin);
+
+      expect(links.map((u) => u.path), ['/real.png', '/absurd.png']);
+    });
+
+    test('equally-ranked unsized icons keep a stable order', () {
+      final html = '''
+        <head>
+          <link rel="icon" href="/c.png">
+          <link rel="icon" href="/a.png">
+          <link rel="icon" href="/b.png">
+        </head>
+      ''';
+      expect(
+        SourceIconStore.iconLinksIn(html, origin).map((u) => u.path),
+        ['/a.png', '/b.png', '/c.png'],
+      );
+    });
+
     test('skips what the engine cannot paint', () {
       final links = SourceIconStore.iconLinksIn('''
         <head>

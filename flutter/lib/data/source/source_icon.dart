@@ -381,7 +381,12 @@ class SourceIconStore {
     }
     found.sort((a, b) {
       final byRank = b.rank.compareTo(a.rank);
-      return byRank != 0 ? byRank : b.area.compareTo(a.area);
+      if (byRank != 0) return byRank;
+      final byArea = b.area.compareTo(a.area);
+      // Same rank and same (or absent) size is the common case — a page
+      // listing several unsized `icon` links — and Dart's sort is not stable,
+      // so the winner would otherwise vary run to run for one page.
+      return byArea != 0 ? byArea : a.uri.toString().compareTo(b.uri.toString());
     });
     return [for (final f in found) f.uri];
   }
@@ -500,14 +505,26 @@ class SourceIconStore {
     return bare?.group(1);
   }
 
+  /// Largest edge a `sizes` attribute can claim and still be describing an
+  /// icon. Past this it is junk, and treating it as junk is what keeps the
+  /// multiply below in range.
+  static const int _maxIconEdge = 8192;
+
   /// `sizes="180x180"` → 32400. Unsized (or `any`) sorts last among peers.
   static int _sizeArea(String? sizes) {
     if (sizes == null) return 0;
     var best = 0;
-    for (final match
-        in RegExp(r'(\d+)\s*[xX]\s*(\d+)').allMatches(sizes)) {
-      final area =
-          int.parse(match.group(1)!) * int.parse(match.group(2)!);
+    for (final match in RegExp(r'(\d+)\s*[xX]\s*(\d+)').allMatches(sizes)) {
+      // `\d+` is unbounded and this string comes straight out of a stranger's
+      // markup. `int.parse` THROWS on a digit run past what fits in 64 bits,
+      // and a value that does parse can still overflow the multiply and come
+      // back NEGATIVE — which would sort a huge icon last instead of first.
+      // Anything past a plausible icon edge is not a size, so it is skipped.
+      final w = int.tryParse(match.group(1)!);
+      final h = int.tryParse(match.group(2)!);
+      if (w == null || h == null) continue;
+      if (w <= 0 || h <= 0 || w > _maxIconEdge || h > _maxIconEdge) continue;
+      final area = w * h;
       if (area > best) best = area;
     }
     return best;
