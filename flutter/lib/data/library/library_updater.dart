@@ -146,6 +146,20 @@ class LibraryUpdater {
       total: eligible.length,
       currentTitle: null,
     ));
+    // The sweep is where chapter rows get pruned, so it is where the downloads
+    // those rows left stranded are reclaimed. Never let it fail the update —
+    // it is housekeeping, and the sweep's own result is what the user asked
+    // for. Skipped on a partial run, whose id set says nothing about the rest
+    // of the library.
+    if (restrictToMangaIds == null) {
+      try {
+        await _downloads.pruneOrphanedDownloads(
+          await _chapters.allChapterIds(),
+        );
+      } catch (_) {
+        // Housekeeping only.
+      }
+    }
     return LibraryUpdateResult(
       mangaChecked: eligible.length,
       newChapters: newChaptersTotal,

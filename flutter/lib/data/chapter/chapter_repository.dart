@@ -56,6 +56,16 @@ class ChapterRepository {
   /// ids the user picked and only need the full rows to act on them. Reading
   /// each owning series whole to sieve a handful out costs the length of the
   /// series rather than the length of the selection.
+  /// Every chapter id in the database. Used by
+  /// [DownloadRepository.pruneOrphanedDownloads] to tell a download whose row
+  /// was pruned from one whose row is simply not loaded.
+  Future<Set<int>> allChapterIds() async {
+    final rows = await _db
+        .customSelect('SELECT _id FROM chapters', readsFrom: {_db.chapters})
+        .get();
+    return {for (final r in rows) r.read<int>('_id')};
+  }
+
   Future<List<Chapter>> getByIds(Iterable<int> ids) async {
     final list = ids.toList(growable: false);
     if (list.isEmpty) return const <Chapter>[];

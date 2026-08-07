@@ -429,6 +429,61 @@ class DownloadRepository {
     );
   }
 
+  /// Deletes download directories whose chapter row no longer exists, and
+  /// returns how many were removed.
+  ///
+  /// `syncChaptersWithSource` prunes rows the source stopped returning, and
+  /// collapses pre-existing duplicate rows onto one canonical row. Neither
+  /// touched the filesystem, so those chapters' pages stayed on disk forever:
+  /// they kept counting in [totalDownloadedCount], kept the manga in
+  /// [listMangaWithAnyDownload], and left the Downloaded filter showing
+  /// chapters that can never open. Given how much of the device's chapter
+  /// table turned out to be duplicate rows, that is real disk.
+  ///
+  /// This deliberately only removes directories whose id matches NO row at
+  /// all, which is unambiguous — such a directory is unreachable by anything
+  /// in the app. It does NOT try to reclaim the losing copy when duplicate
+  /// rows collapse: the canonical-row picker prefers the row with PROGRESS,
+  /// which is not necessarily the row whose files are on disk, so deleting the
+  /// loser could throw away the only downloaded copy. That case still wants a
+  /// decision.
+  ///
+  /// [liveChapterIds] must be the COMPLETE set from the database. An empty set
+  /// is treated as "I don't know" and does nothing, rather than as "delete
+  /// everything" — a failed or half-built query must never wipe the library's
+  /// downloads.
+  Future<int> pruneOrphanedDownloads(Set<int> liveChapterIds) async {
+    if (liveChapterIds.isEmpty) return 0;
+    final root = await _root();
+    if (!await root.exists()) return 0;
+    var removed = 0;
+    await for (final sourceDir in _listSafe(root)) {
+      if (sourceDir is! Directory) continue;
+      if (int.tryParse(p.basename(sourceDir.path)) == null) continue;
+      await for (final mangaDir in _listSafe(sourceDir)) {
+        if (mangaDir is! Directory) continue;
+        if (int.tryParse(p.basename(mangaDir.path)) == null) continue;
+        await for (final chapterDir in _listSafe(mangaDir)) {
+          if (chapterDir is! Directory) continue;
+          final chapterId = int.tryParse(p.basename(chapterDir.path));
+          if (chapterId == null) continue;
+          if (liveChapterIds.contains(chapterId)) continue;
+          // A chapter being written right now always has a row, so this can't
+          // fire for one — but never race a live job on the strength of that.
+          if (_byChapter.containsKey(chapterId)) continue;
+          try {
+            await chapterDir.delete(recursive: true);
+            removed++;
+          } on FileSystemException {
+            // Vanished under us, or unreadable. Nothing to reclaim.
+          }
+        }
+      }
+    }
+    if (removed > 0) invalidateDownloadedIndex();
+    return removed;
+  }
+
   /// Wipes the entire `<root>/<sourceId>/<mangaId>/` directory tree —
   /// every downloaded chapter for the manga. Used by the library bulk
   /// remove flow when the user opts to free up storage. Returns the
