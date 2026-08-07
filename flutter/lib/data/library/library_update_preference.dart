@@ -33,9 +33,19 @@ enum LibraryUpdateInterval {
 
 class LibraryUpdatePreferenceNotifier
     extends Notifier<LibraryUpdateInterval> {
-  // Key carefully chosen to be migration-friendly with the Kotlin app's
-  // `pref_library_update_interval_key` once we wire up a migration step.
   static const _key = 'pref_library_update_interval_hours';
+
+  /// The Kotlin fork's spelling of the same value.
+  ///
+  /// It stores hours under `pref_library_update_interval_key` with exactly
+  /// these numbers, 0 included, so the two are value-compatible and only the
+  /// name differs. The v0.19 → v1.0 upgrade happens in place under the same
+  /// applicationId, so those preferences are still sitting in the same store
+  /// — this key was chosen to be "migration-friendly … once we wire up a
+  /// migration step", and that step was never wired. Until now the interval
+  /// silently fell back to the Flutter default on upgrade, which for someone
+  /// who had set it to Off meant the library started updating itself.
+  static const _legacyKey = 'pref_library_update_interval_key';
 
   @override
   LibraryUpdateInterval build() {
@@ -45,7 +55,7 @@ class LibraryUpdatePreferenceNotifier
 
   Future<void> _loadFromDisk() async {
     final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getInt(_key);
+    final stored = prefs.getInt(_key) ?? prefs.getInt(_legacyKey);
     if (stored == null) return;
     final loaded = LibraryUpdateInterval.fromHours(stored);
     if (loaded != state) state = loaded;
@@ -55,6 +65,9 @@ class LibraryUpdatePreferenceNotifier
     state = interval;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_key, interval.hours);
+    // Once the value lives under our own key, drop the fork's copy so the
+    // two can never disagree.
+    await prefs.remove(_legacyKey);
   }
 }
 
