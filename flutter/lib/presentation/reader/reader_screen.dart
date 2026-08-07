@@ -3859,8 +3859,14 @@ class _PagesViewState extends ConsumerState<_PagesView> {
   /// pages nobody scrolls back to. Read-ahead lives here now, so the extent
   /// can be narrow. The provider chain matches the displayed one (crop
   /// included) so the cache key is shared.
+  /// Index [_precacheStripAhead] last ran for, so a scroll that stays inside
+  /// one page doesn't re-resolve four providers on every frame.
+  int _precacheAnchor = -1;
+
   void _precacheStripAhead(int index) {
     if (!mounted) return;
+    if (index == _precacheAnchor) return;
+    _precacheAnchor = index;
     final urlOf = widget.pageUrlOf;
     if (urlOf == null) return;
     final crop = ref.read(readerCropBordersProvider);
@@ -3889,6 +3895,23 @@ class _PagesViewState extends ConsumerState<_PagesView> {
       final disableZoomOut = ref.watch(readerWebtoonDisableZoomOutProvider);
       Widget strip = NotificationListener<ScrollNotification>(
         onNotification: (notif) {
+          // Read-ahead has to happen WHILE the strip is moving. It used to
+          // run only on ScrollEndNotification, which is the one moment you
+          // are not reading: scrolling steadily down a chapter — the way a
+          // webtoon is actually read — reached every page cold and stalled on
+          // its decode, and the read-ahead then dutifully fetched the next
+          // four once you had already stopped. Guarded by the page index, so
+          // this costs one prefix-sum walk per page crossed, not per frame.
+          if (notif is ScrollUpdateNotification &&
+              _scrollController != null &&
+              widget.count > 0) {
+            final pos = _scrollController!.position;
+            if (pos.hasPixels && pos.hasViewportDimension) {
+              _precacheStripAhead(
+                _indexForOffset(pos.pixels + pos.viewportDimension / 2),
+              );
+            }
+          }
           if (notif is ScrollEndNotification &&
               _scrollController != null &&
               widget.count > 0) {
