@@ -236,6 +236,15 @@ class LibraryUpdater {
       }
       out.add(manga);
     }
+    // Kotlin `LibraryUpdateJob` ends this filter with `.sortedBy { title }`,
+    // so the sweep works alphabetically and the progress notification counts
+    // through the library in an order the user can follow. Dart's sort is not
+    // stable, hence the id tie-break — two series can share a title.
+    out.sort((a, b) {
+      final byTitle =
+          a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      return byTitle != 0 ? byTitle : a.id.compareTo(b.id);
+    });
     return out;
   }
 

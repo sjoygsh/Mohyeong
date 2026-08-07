@@ -540,7 +540,7 @@ class DownloadRepository {
   /// next chapter without restart. Defaults to off.
   Future<bool> _saveAsCbz() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('save_chapter_as_cbz') ?? false;
+    return prefs.getBool('save_chapter_as_cbz') ?? true;
   }
 
   /// Zips the chapter's page images into `<chapterId>.cbz` inside the same

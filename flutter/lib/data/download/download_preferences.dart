@@ -75,7 +75,7 @@ final removeExcludeCategoriesProvider =
 
 /// Archive each downloaded chapter as a single CBZ file instead of a
 /// folder of page images.
-final saveChaptersAsCbzProvider = boolPref('save_chapter_as_cbz', false);
+final saveChaptersAsCbzProvider = boolPref('save_chapter_as_cbz', true);
 
 /// Number of chapters to keep downloaded ahead of the one currently being
 /// read. 0 disables download-ahead. Consumed by the reader, which enqueues

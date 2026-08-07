@@ -27,7 +27,8 @@ enum LibraryUpdateInterval {
     for (final v in values) {
       if (v.hours == hours) return v;
     }
-    return LibraryUpdateInterval.daily;
+    // An unrecognised stored value must not silently start updating either.
+    return LibraryUpdateInterval.manual;
   }
 }
 
@@ -47,10 +48,17 @@ class LibraryUpdatePreferenceNotifier
   /// who had set it to Off meant the library started updating itself.
   static const _legacyKey = 'pref_library_update_interval_key';
 
+  /// The fork's default is 0 — Off (`autoUpdateInterval` in
+  /// `LibraryPreferences.kt`). This defaulted to `daily`, which no comment
+  /// justified and which no sibling default did: a fresh install, or an
+  /// in-place upgrade from someone who had never opened the setting, started
+  /// sweeping the whole library once a day without being asked. Combined with
+  /// the flat download drain (pass 26) that is a lot of unrequested traffic to
+  /// sources that answer load with 403s.
   @override
   LibraryUpdateInterval build() {
     _loadFromDisk();
-    return LibraryUpdateInterval.daily;
+    return LibraryUpdateInterval.manual;
   }
 
   Future<void> _loadFromDisk() async {

@@ -72,11 +72,25 @@ void main() {
     expect(store.getInt('pref_library_update_interval_key'), isNull);
   });
 
-  test('a fresh install reads nothing and keeps the default', () async {
+  test('a fresh install reads nothing and keeps the fork\'s default: Off',
+      () async {
     SharedPreferences.setMockInitialValues({});
     final c = ProviderContainer();
     addTearDown(c.dispose);
 
-    expect(await _read(c), LibraryUpdateInterval.daily);
+    // `autoUpdateInterval` in `LibraryPreferences.kt` defaults to 0. This used
+    // to default to `daily`, so a fresh install swept the whole library once a
+    // day without ever being asked.
+    expect(await _read(c), LibraryUpdateInterval.manual);
+  });
+
+  test('an unrecognised stored value does not start updating either', () async {
+    SharedPreferences.setMockInitialValues({
+      'pref_library_update_interval_hours': 6,
+    });
+    final c = ProviderContainer();
+    addTearDown(c.dispose);
+
+    expect(await _read(c), LibraryUpdateInterval.manual);
   });
 }
