@@ -120,6 +120,11 @@ class _ProtoReader {
 
   bool get isAtEnd => _pos >= _end;
 
+  /// Current offset, and the way back to it. [_readBackupManga] needs one
+  /// pre-pass over a message's tags before it can decide how to read it.
+  int get position => _pos;
+  void seek(int position) => _pos = position;
+
   int _readByte() {
     if (_pos >= _end) {
       throw const FormatException('Unexpected end of protobuf stream');
@@ -709,19 +714,77 @@ void _writeBackupManga(_ProtoWriter w, BackupManga m) {
   }
   if (!m.favorite) w.writeBool(100, m.favorite);
   if (m.chapterFlags != 0) w.writeInt(101, m.chapterFlags);
-  if (m.viewerFlags != null) w.writeInt(102, m.viewerFlags!);
+  // 102 is Mihon's abandoned `brokenHistory` and is never written. Everything
+  // from here to 109 used to be written one tag LOW, which made every Mohyeong
+  // backup unreadable by Mihon (and every Mihon backup misread here) for these
+  // seven fields — see [_legacyMangaTagShift].
+  if (m.viewerFlags != null) w.writeInt(103, m.viewerFlags!);
   for (final h in m.history) {
-    w.writeMessage(103, (mw) => _writeBackupHistory(mw, h));
+    w.writeMessage(104, (mw) => _writeBackupHistory(mw, h));
   }
-  if (m.updateStrategy != 0) w.writeInt(104, m.updateStrategy);
-  if (m.lastModifiedAt != 0) w.writeInt(105, m.lastModifiedAt);
-  if (m.favoriteModifiedAt != null) w.writeInt(106, m.favoriteModifiedAt!);
+  if (m.updateStrategy != 0) w.writeInt(105, m.updateStrategy);
+  if (m.lastModifiedAt != 0) w.writeInt(106, m.lastModifiedAt);
+  if (m.favoriteModifiedAt != null) w.writeInt(107, m.favoriteModifiedAt!);
   for (final s in m.excludedScanlators) {
-    w.writeString(107, s);
+    w.writeString(108, s);
   }
-  if (m.version != 0) w.writeInt(108, m.version);
+  if (m.version != 0) w.writeInt(109, m.version);
   if (m.notes.isNotEmpty) w.writeString(110, m.notes);
   if (m.initialized) w.writeBool(111, m.initialized);
+}
+
+/// 1 when [r]'s manga message was written by a Mohyeong build that numbered
+/// tags 102..108 one LOW, 0 when it is fork-shaped (the correct layout).
+///
+/// Mihon's `BackupManga` puts `viewer_flags` at 103, `history` at 104,
+/// `updateStrategy` 105, `lastModifiedAt` 106, `favoriteModifiedAt` 107,
+/// `excludedScanlators` 108 and `version` 109, leaving 102 to an abandoned
+/// legacy `brokenHistory`. This codec wrote all seven one tag lower, so every
+/// backup the two apps exchanged silently disagreed about seven fields —
+/// including reading history and per-entry reader settings.
+///
+/// Files already written that way have to keep restoring, so the dialect is
+/// sniffed from the wire types, which differ on four of the tags: a
+/// length-delimited 103 or 107 is a message/string where the fork has an
+/// integer, a varint 104 or 108 the reverse, and a 102 present at all is
+/// something the fork never writes. Tags 105 and 106 are varints in both
+/// layouts and cannot be told apart alone; when a message carries nothing but
+/// those, the correct fork reading is assumed, because that is what every
+/// backup from now on is.
+///
+/// Leaves [r] where it found it.
+int _legacyMangaTagShift(_ProtoReader r) {
+  final start = r.position;
+  var shift = 0;
+  try {
+    while (!r.isAtEnd) {
+      final tag = r.readTag();
+      final field = _tagField(tag);
+      final wire = _tagWire(tag);
+      final legacy = field == 102 ||
+          (field == 103 && wire == _wireLengthDelim) ||
+          (field == 104 && wire == _wireVarint) ||
+          (field == 107 && wire == _wireLengthDelim) ||
+          (field == 108 && wire == _wireVarint);
+      if (legacy) {
+        shift = 1;
+        break;
+      }
+      // A fork-shaped tag settles it just as firmly; stop looking.
+      if ((field == 103 && wire == _wireVarint) ||
+          (field == 104 && wire == _wireLengthDelim) ||
+          (field == 109)) {
+        break;
+      }
+      r.skipField(wire);
+    }
+  } on FormatException {
+    // A malformed tail is the main parse's problem to report, not this
+    // pre-pass's. Fall back to the correct layout.
+    shift = 0;
+  }
+  r.seek(start);
+  return shift;
 }
 
 BackupManga _readBackupManga(_ProtoReader r) {
@@ -751,9 +814,11 @@ BackupManga _readBackupManga(_ProtoReader r) {
   String notes = '';
   bool initialized = false;
 
+  final shift = _legacyMangaTagShift(r);
   while (!r.isAtEnd) {
     final tag = r.readTag();
-    switch (_tagField(tag)) {
+    final field = _tagField(tag);
+    switch (field >= 102 && field <= 108 ? field + shift : field) {
       case 1:
         source = r.readVarint();
       case 2:
@@ -786,19 +851,19 @@ BackupManga _readBackupManga(_ProtoReader r) {
         favorite = r.readBool();
       case 101:
         chapterFlags = r.readVarint();
-      case 102:
-        viewerFlags = r.readVarint();
       case 103:
-        history.add(_readBackupHistory(r.readSubMessage()));
+        viewerFlags = r.readVarint();
       case 104:
-        updateStrategy = r.readVarint();
+        history.add(_readBackupHistory(r.readSubMessage()));
       case 105:
-        lastModifiedAt = r.readVarint();
+        updateStrategy = r.readVarint();
       case 106:
-        favoriteModifiedAt = r.readVarint();
+        lastModifiedAt = r.readVarint();
       case 107:
-        excludedScanlators.add(r.readString());
+        favoriteModifiedAt = r.readVarint();
       case 108:
+        excludedScanlators.add(r.readString());
+      case 109:
         version = r.readVarint();
       case 110:
         notes = r.readString();
