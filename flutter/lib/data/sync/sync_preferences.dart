@@ -12,6 +12,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../base/base_preferences.dart';
+
 /// Which sync backend is currently configured. Ordinal matches Mihon's
 /// `SyncService` enum on disk so a backup-imported pref reads the right
 /// service.
@@ -47,8 +49,24 @@ class _Keys {
   static const service = 'pref_sync_service';
   static const host = 'pref_sync_host';
   static const username = 'pref_sync_username';
-  static const deviceId = 'pref_sync_device_id';
-  static const lastSyncTimestamp = 'pref_sync_last_timestamp';
+
+  // THIS DEVICE's sync state, not settings — hence [appStatePrefix], which
+  // keeps both out of backups.
+  //
+  // The device id exists so a server-mediated sync can tell two devices on
+  // one account apart; restoring a backup used to hand phone B phone A's id
+  // and collapse them into one. The last-sync stamp is the high-water mark
+  // the server answers "what changed since?" against — adopting another
+  // device's mark makes a phone that has never synced claim to be up to date,
+  // and everything older than that mark is simply never sent to it.
+  static const deviceId = '${appStatePrefix}pref_sync_device_id';
+  static const lastSyncTimestamp = '${appStatePrefix}pref_sync_last_timestamp';
+
+  /// Pre-[appStatePrefix] spellings, read once so an existing install keeps
+  /// its identity and its place instead of silently re-registering.
+  static const legacyDeviceId = 'pref_sync_device_id';
+  static const legacyLastSyncTimestamp = 'pref_sync_last_timestamp';
+
   static const syncCategories = 'pref_sync_categories';
   static const syncChapters = 'pref_sync_chapters';
   static const syncTracking = 'pref_sync_tracking';
@@ -144,8 +162,13 @@ class SyncPreferences {
           SyncService.fromInt(_prefs.getInt(_Keys.service) ?? 0),
       host: _prefs.getString(_Keys.host) ?? '',
       username: _prefs.getString(_Keys.username) ?? '',
-      deviceId: _prefs.getString(_Keys.deviceId) ?? '',
-      lastSyncTimestamp: _prefs.getInt(_Keys.lastSyncTimestamp) ?? 0,
+      // Fall back to the pre-prefix key so upgrading doesn't reset either.
+      deviceId: _prefs.getString(_Keys.deviceId) ??
+          _prefs.getString(_Keys.legacyDeviceId) ??
+          '',
+      lastSyncTimestamp: _prefs.getInt(_Keys.lastSyncTimestamp) ??
+          _prefs.getInt(_Keys.legacyLastSyncTimestamp) ??
+          0,
       syncCategories: _prefs.getBool(_Keys.syncCategories) ?? true,
       syncChapters: _prefs.getBool(_Keys.syncChapters) ?? true,
       syncTracking: _prefs.getBool(_Keys.syncTracking) ?? true,
@@ -163,6 +186,11 @@ class SyncPreferences {
     await _prefs.setString(_Keys.username, data.username);
     await _prefs.setString(_Keys.deviceId, data.deviceId);
     await _prefs.setInt(_Keys.lastSyncTimestamp, data.lastSyncTimestamp);
+    // Drop the pre-prefix copies once the value lives under the new key —
+    // leaving them would keep exporting this device's identity in backups,
+    // which is the whole point of the move.
+    await _prefs.remove(_Keys.legacyDeviceId);
+    await _prefs.remove(_Keys.legacyLastSyncTimestamp);
     await _prefs.setBool(_Keys.syncCategories, data.syncCategories);
     await _prefs.setBool(_Keys.syncChapters, data.syncChapters);
     await _prefs.setBool(_Keys.syncTracking, data.syncTracking);
@@ -187,6 +215,7 @@ class SyncPreferences {
 
   Future<void> setLastSyncTimestamp(int ms) async {
     await _prefs.setInt(_Keys.lastSyncTimestamp, ms);
+    await _prefs.remove(_Keys.legacyLastSyncTimestamp);
   }
 }
 

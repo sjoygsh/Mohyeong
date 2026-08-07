@@ -17,6 +17,8 @@
 /// a stable message in the UI.
 library;
 
+import 'dart:math';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/network/app_http_client.dart';
@@ -181,10 +183,16 @@ class SyncManager {
   /// can distinguish devices for the same account.
   Future<String> _ensureDeviceId(SyncPreferencesData data) async {
     if (data.deviceId.isNotEmpty) return data.deviceId;
-    // Cheap UUID v4-ish without pulling a new dep: random hex pieces.
-    final rand = DateTime.now().microsecondsSinceEpoch.toRadixString(16) +
-        DateTime.now().millisecondsSinceEpoch.toRadixString(16);
-    final id = '${rand.padLeft(24, '0').substring(0, 24)}-mohyeong';
+    // Actually random, without pulling a new dep. The previous version
+    // described itself as "UUID v4-ish" but was two readings of the clock
+    // taken microseconds apart — no entropy at all, so two devices set up in
+    // the same moment could take the same id, which is the one thing it must
+    // not do.
+    final rng = Random.secure();
+    final id = '${[
+      for (var i = 0; i < 12; i++)
+        rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ].join()}-mohyeong';
     await preferences.write(data.copyWith(deviceId: id));
     return id;
   }
