@@ -1043,8 +1043,15 @@ var mh = (function () {
       return out;
     }
     function hasNext(html, page) {
-      return /class="[^"]*r"[^>]*>\s*<a[^>]*href[^>]*>\s*Next|hpage|<a class="next page-numbers"|\/page\/(\d+)/i.test(html) ||
-        html.indexOf('page=' + (page + 1)) !== -1;
+      // An explicit "next" affordance is proof on its own.
+      if (/class="[^"]*r"[^>]*>\s*<a[^>]*href[^>]*>\s*Next|hpage|<a class="next page-numbers"/i.test(html)) return true;
+      // A paginator on its own proves nothing: the LAST page renders one too,
+      // listing every page back to 1. Matching any /page/N (as this used to)
+      // therefore returned true forever, so browse never stopped asking for
+      // more and refetched the final page on every scroll. Only a link to the
+      // NEXT page counts. The Madara factory above already works this way.
+      return html.indexOf('page=' + (page + 1)) !== -1 ||
+        html.indexOf('/page/' + (page + 1)) !== -1;
     }
     function popular(page) {
       return getHtml(BASE + '/' + DIR + '/?page=' + page + '&order=popular').then(function (html) {
