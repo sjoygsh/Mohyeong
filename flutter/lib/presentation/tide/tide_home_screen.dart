@@ -45,6 +45,7 @@ import '../reader/reader_screen.dart';
 import '../upcoming/upcoming_screen.dart';
 import 'tide.dart';
 import '../manga/manga_details_screen.dart';
+import '../util/timestamp_format.dart';
 import '../util/user_message.dart';
 
 /// One entry in the "Continue" rail: a library entry the reader is part-way
@@ -1638,10 +1639,13 @@ class _TriRow extends StatelessWidget {
 String _dayLabel(int epochMs, DateTime today) {
   final t = DateTime.fromMillisecondsSinceEpoch(epochMs);
   final that = DateTime(t.year, t.month, t.day);
-  final diffDays = today.difference(that).inDays;
+  // Calendar days, not elapsed hours — see [calendarDaysBetween]. A future
+  // `date_fetch` (a source that dates a chapter ahead) no longer takes the
+  // weekday branch.
+  final diffDays = calendarDaysBetween(that, today);
   if (diffDays == 0) return 'Today';
   if (diffDays == 1) return 'Yesterday';
-  if (diffDays < 7) return _weekdayName(that.weekday);
+  if (diffDays > 1 && diffDays < 7) return _weekdayName(that.weekday);
   return '${that.year}-${that.month.toString().padLeft(2, '0')}-'
       '${that.day.toString().padLeft(2, '0')}';
 }

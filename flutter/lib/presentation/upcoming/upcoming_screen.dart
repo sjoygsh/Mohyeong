@@ -16,6 +16,7 @@ import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
 import '../tide/tide.dart';
 import '../manga/manga_details_screen.dart';
+import '../util/timestamp_format.dart';
 import '../util/user_message.dart';
 
 /// Library manga whose next chapter is expected on/after today, soonest
@@ -429,7 +430,9 @@ class _DateHeader extends StatelessWidget {
   String _relativeText() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final diff = date.difference(today).inDays;
+    // Calendar days, not elapsed hours — see [calendarDaysBetween]. Across a
+    // daylight-saving change the old subtraction called tomorrow "Today".
+    final diff = calendarDaysBetween(today, date);
     switch (diff) {
       case 0:
         return 'Today';

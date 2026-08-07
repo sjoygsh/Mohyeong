@@ -29,6 +29,21 @@ String formatDate(DateTime t, String pattern) {
   return format.format(t);
 }
 
+/// Whole CALENDAR days from [from] to [to], each taken as its local date.
+///
+/// Deliberately not `to.difference(from).inDays` over two midnights: a
+/// [Duration] between local times measures ABSOLUTE elapsed time, so across a
+/// daylight-saving change two adjacent midnights are 23 or 25 hours apart and
+/// the truncating division reports 0 days for yesterday (or 1 for today).
+/// Twice a year, in every DST region, that files yesterday's reading under
+/// "Today". The fork counts calendar days — `ChronoUnit.DAYS.between` over
+/// `LocalDate`, which has no time-of-day at all — and re-anchoring both dates
+/// in UTC, where no offset shift exists, reproduces that exactly.
+int calendarDaysBetween(DateTime from, DateTime to) =>
+    DateTime.utc(to.year, to.month, to.day)
+        .difference(DateTime.utc(from.year, from.month, from.day))
+        .inDays;
+
 String _absoluteDateTime(DateTime t, String pattern) =>
     '${formatDate(t, pattern)} ${_two(t.hour)}:${_two(t.minute)}';
 

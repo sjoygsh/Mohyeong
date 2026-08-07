@@ -420,10 +420,14 @@ List<_Row> _buildRows(List<HistoryWithContext> entries, DateTime today) {
 String _dayLabel(DateTime? t, DateTime today) {
   if (t == null) return 'Unknown';
   final that = DateTime(t.year, t.month, t.day);
-  final diffDays = today.difference(that).inDays;
+  final diffDays = calendarDaysBetween(that, today);
   if (diffDays == 0) return 'Today';
   if (diffDays == 1) return 'Yesterday';
-  if (diffDays < 7) return _weekdayName(that.weekday);
+  // A negative difference is a timestamp in the FUTURE (clock skew, a synced
+  // row from a device set ahead). It used to fall into the weekday branch and
+  // label next Tuesday as if it had already happened; the fork sends anything
+  // outside the past week to the absolute date, so do that.
+  if (diffDays > 1 && diffDays < 7) return _weekdayName(that.weekday);
   return '${that.year}-${that.month.toString().padLeft(2, '0')}-${that.day.toString().padLeft(2, '0')}';
 }
 
