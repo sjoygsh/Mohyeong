@@ -46,6 +46,35 @@ int nextStartableDownloadIndex(
   return -1;
 }
 
+/// Runs [attempt], retrying a failure up to [maxRetries] times with the fork's
+/// backoff: 2s, then 4s, then 8s (Kotlin `Downloader.getOrDownloadImage`'s
+/// `retryWhen { _, attempt -> delay((2L shl attempt) * 1000) }`).
+///
+/// One flaky page used to fail a whole chapter. `_runJob` stops scheduling
+/// pages at the first error and rethrows it, so a single dropped connection on
+/// page 40 of 60 threw away the other 59 and put the chapter in the errored
+/// state for the user to retry by hand — on mobile data, most of the time.
+///
+/// [isFatal] is what keeps a user cancel from being retried three times over
+/// twelve seconds; [sleep] is injectable so the schedule can be tested without
+/// waiting fourteen real seconds.
+Future<T> withPageRetries<T>(
+  Future<T> Function() attempt, {
+  bool Function(Object error)? isFatal,
+  Future<void> Function(Duration delay)? sleep,
+  int maxRetries = 3,
+}) async {
+  for (var tries = 0;; tries++) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (tries >= maxRetries || (isFatal?.call(error) ?? false)) rethrow;
+      final delay = Duration(seconds: 2 << tries);
+      await (sleep == null ? Future<void>.delayed(delay) : sleep(delay));
+    }
+  }
+}
+
 /// Per-architecture-decisions: downloads live inside the app's data
 /// directory (deviates from Mihon, which uses SAF/external storage).
 /// Layout under `<appSupport>/downloads/`:
@@ -801,13 +830,23 @@ class DownloadRepository {
       // downloaded" on re-queue and ship a corrupt page under the .done
       // marker; a leftover .part is simply re-downloaded.
       final part = File('${target.path}.part');
-      await _dio.download(
-        imageUrl,
-        part.path,
-        options: Options(headers: page.headers),
-        cancelToken: job.cancelToken,
+      // Mihon retries each image three times before giving up on the chapter.
+      // A cancel is not a transient failure — it must surface at once.
+      await withPageRetries<void>(
+        () async {
+          await _dio.download(
+            imageUrl,
+            part.path,
+            options: Options(headers: page.headers),
+            cancelToken: job.cancelToken,
+          );
+          await part.rename(target.path);
+        },
+        isFatal: (error) =>
+            job.cancelToken.isCancelled ||
+            (error is DioException &&
+                error.type == DioExceptionType.cancel),
       );
-      await part.rename(target.path);
     }
     return target;
   }
