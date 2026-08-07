@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/chapter/model/chapter.dart';
 import '../../domain/chapter/model/no_chapters_exception.dart';
+import '../../domain/chapter/service/chapter_recognition.dart';
 import '../../domain/source/model/source_chapter.dart';
 import '../database/app_database.dart' as db;
 import '../database/database_provider.dart';
@@ -363,6 +364,18 @@ class ChapterRepository {
     return _db.transaction(() => _syncChaptersInTxn(mangaId, fetched));
   }
 
+  /// The series title, for [parseChapterNumber]'s "strip the manga name"
+  /// step. Read once per sync. Empty if the row has gone, which
+  /// [parseChapterNumber] treats as "strip nothing".
+  Future<String> _mangaTitle(int mangaId) async {
+    final row = await _db.customSelect(
+      'SELECT title FROM mangas WHERE _id = ?1',
+      variables: [Variable<int>(mangaId)],
+      readsFrom: {_db.mangas},
+    ).getSingleOrNull();
+    return row?.read<String>('title') ?? '';
+  }
+
   Future<List<Chapter>> _syncChaptersInTxn(
     int mangaId,
     List<SourceChapter> fetched,
@@ -378,6 +391,23 @@ class ChapterRepository {
     for (final s in fetched) {
       if (sourceUrls.add(s.url)) deduped.add(s);
     }
+
+    // Derive the chapter number from the name when the source didn't give one,
+    // as Kotlin `SyncChaptersWithSource` does for every chapter. Most
+    // extensions here give nothing — both shared theme factories emit a
+    // literal `chapter_number: -1` — so without this the column was -1 for
+    // most of the library and everything keyed on it silently did nothing.
+    // The title is read once per sync, not once per chapter, and is only used
+    // to keep digits in the SERIES name out of the chapter's number.
+    final mangaTitle = await _mangaTitle(mangaId);
+    final numbers = <String, double>{
+      for (final s in deduped)
+        s.url: parseChapterNumber(
+          mangaTitle,
+          s.name,
+          chapterNumber: s.chapterNumber,
+        ),
+    };
 
     // Canonical existing row per URL, preferring one that carries progress so
     // collapsing any pre-existing duplicate rows never drops read state.
@@ -440,11 +470,12 @@ class ChapterRepository {
     // source_order in getChaptersByMangaId works.
     for (var i = 0; i < deduped.length; i++) {
       final s = deduped[i];
+      final chapterNumber = numbers[s.url]!;
       final prior = existingByUrl[s.url];
       if (prior == null) {
         final duplicateRead = markDuplicateAsRead &&
-            s.chapterNumber >= 0 &&
-            readChapterNumbers.contains(s.chapterNumber);
+            chapterNumber >= 0 &&
+            readChapterNumbers.contains(chapterNumber);
         newTemplates[s.url] = Chapter(
           id: -1,
           mangaId: mangaId,
@@ -456,7 +487,7 @@ class ChapterRepository {
           url: s.url,
           name: s.name,
           dateUpload: s.dateUpload,
-          chapterNumber: s.chapterNumber,
+          chapterNumber: chapterNumber,
           scanlator: s.scanlator,
           lastModifiedAt: nowMs,
           version: 1,
@@ -473,7 +504,7 @@ class ChapterRepository {
             read: duplicateRead ? 1 : 0,
             bookmark: 0,
             lastPageRead: 0,
-            chapterNumber: s.chapterNumber,
+            chapterNumber: chapterNumber,
             sourceOrder: i,
             dateFetch: nowMs,
             dateUpload: s.dateUpload,
@@ -485,7 +516,7 @@ class ChapterRepository {
         );
       } else if (prior.name != s.name ||
           prior.scanlator != s.scanlator ||
-          prior.chapterNumber != s.chapterNumber ||
+          prior.chapterNumber != chapterNumber ||
           prior.sourceOrder != i ||
           prior.dateUpload != s.dateUpload ||
           prior.volumeNumber != s.volumeNumber) {
@@ -501,7 +532,7 @@ class ChapterRepository {
             id: Value(prior.id),
             name: Value(s.name),
             scanlator: Value(s.scanlator),
-            chapterNumber: Value(s.chapterNumber),
+            chapterNumber: Value(chapterNumber),
             sourceOrder: Value(i),
             dateUpload: Value(s.dateUpload),
             volumeNumber: Value(s.volumeNumber),
