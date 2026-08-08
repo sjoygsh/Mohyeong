@@ -85,10 +85,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
             _scopeChips(),
             Expanded(
               child: _activeQuery.isEmpty
-                  ? const _Note(
-                      'Type a query and search to look it up across every '
-                      'installed source at once.',
-                    )
+                  ? const _Note('Type a query to search.')
                   : _results(extRepo),
             ),
           ],
@@ -302,7 +299,7 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
   void _kick() {
     _hasResults = null;
     final repo = ref.read(extensionRepositoryProvider);
-    final key = '${widget.sourceId} ${widget.query}';
+    final key = '${widget.sourceId}\u0000${widget.query}';
     // The shared future is the SEARCH; the per-state `.then` below is this
     // section's own bookkeeping and must not be cached with it.
     final search = _sectionSearches[key] ??= repo
