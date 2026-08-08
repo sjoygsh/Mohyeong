@@ -509,7 +509,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen>
             ),
             if (resuming.isEmpty)
               const SliverToBoxAdapter(
-                child: _SectionEmpty('Nothing started right now.'),
+                child: _SectionEmpty('Nothing going on.'),
               )
             else
               SliverToBoxAdapter(
