@@ -17,6 +17,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -656,17 +657,27 @@ class _AuroraBlob extends StatefulWidget {
 }
 
 class _AuroraBlobState extends State<_AuroraBlob>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, _TideIdlePulse<_AuroraBlob> {
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: widget.period,
-  )..repeat(reverse: true);
+  );
 
   late final Animation<double> _t =
       CurvedAnimation(parent: _c, curve: Curves.easeInOut);
 
   @override
+  AnimationController get pulse => _c;
+
+  @override
+  void initState() {
+    super.initState();
+    startPulse();
+  }
+
+  @override
   void dispose() {
+    stopPulse();
     _c.dispose();
     super.dispose();
   }
@@ -715,6 +726,133 @@ class _AuroraBlobState extends State<_AuroraBlob>
         ),
       ),
     );
+  }
+}
+
+/// Whether the app has been touched recently.
+///
+/// Tide's decoration never stops on its own: three aurora blobs, the hero's
+/// Ken Burns drift and the sheen sweep all `repeat()` forever, so a screen
+/// sitting untouched on a table still produced a full 60fps. Measured on the
+/// device that is **half a core and 160MB of graphics memory, continuously**,
+/// for a picture that is not changing in any way a person is watching. The
+/// same app backgrounded costs 0.0% and 1.6MB, which is what proves the whole
+/// bill is drawing rather than any work behind it.
+///
+/// So the decoration sleeps. Any pointer event wakes it; [_after] of nothing
+/// puts it back down. The reader has no aurora, so reading a page for ten
+/// minutes without touching the screen was never affected by this either way.
+///
+/// A global pointer route rather than a `Listener` in the shell deliberately:
+/// wrapping the app would change every screen's depth in the tree, and this
+/// app has already been bitten once by a shell widget that moved its child
+/// (it remounted the world on every cold start).
+abstract final class TideIdle {
+  /// Long enough that reading a page of settings never stutters the ground,
+  /// short enough that a phone put down stops costing anything.
+  static const Duration _after = Duration(seconds: 10);
+
+  /// Watched by every forever-animation. False means "stop drawing".
+  static final ValueNotifier<bool> awake = ValueNotifier<bool>(true);
+
+  static Timer? _timer;
+  static bool _installed = false;
+
+  /// Called once from `main`. Safe to call again: the global route is added
+  /// once, but the countdown is always (re)armed, so a second call can never
+  /// leave the decoration awake forever with no timer to put it down.
+  static void install() {
+    if (!_installed) {
+      _installed = true;
+      GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
+    }
+    _arm();
+  }
+
+  static void _onPointer(PointerEvent event) {
+    // Hovers are a mouse passing over on a desktop build; they are not a
+    // person interacting, and on a phone they never fire at all.
+    if (event is PointerHoverEvent) return;
+    poke();
+  }
+
+  /// Wake the decoration and restart the countdown.
+  static void poke() {
+    awake.value = true;
+    _arm();
+  }
+
+  static void _arm() {
+    _timer?.cancel();
+    _timer = Timer(_after, () => awake.value = false);
+  }
+
+  @visibleForTesting
+  static void resetForTest() {
+    _timer?.cancel();
+    _timer = null;
+    awake.value = true;
+  }
+}
+
+/// Drives a controller as a forever animation that STOPS while the app is
+/// idle and resumes exactly where it froze.
+///
+/// Resuming is the whole difficulty. `AnimationController.repeat()` always
+/// restarts from its lower bound, so stop-then-repeat would snap the aurora
+/// back to the start of its drift in full view. Instead the loop is driven by
+/// hand off the status, and resume is `forward(from: value)` — which also
+/// keeps the speed right, since the controller scales the remaining time by
+/// the remaining distance.
+mixin _TideIdlePulse<T extends StatefulWidget> on State<T> {
+  /// The controller to drive. Must NOT already be repeating.
+  AnimationController get pulse;
+
+  /// True ping-pongs (the old `repeat(reverse: true)`); false restarts each
+  /// cycle from zero (the old plain `repeat()`).
+  bool get pulseReverses => true;
+
+  void startPulse() {
+    pulse.addStatusListener(_bounce);
+    TideIdle.awake.addListener(_onAwake);
+    if (TideIdle.awake.value) _run();
+  }
+
+  void stopPulse() {
+    pulse.removeStatusListener(_bounce);
+    TideIdle.awake.removeListener(_onAwake);
+  }
+
+  void _bounce(AnimationStatus status) {
+    // While asleep the controller is stopped at an end; do not start the next
+    // leg, or the animation would run on regardless.
+    if (!TideIdle.awake.value) return;
+    if (status == AnimationStatus.completed) {
+      if (pulseReverses) {
+        pulse.reverse();
+      } else {
+        pulse.forward(from: 0);
+      }
+    } else if (status == AnimationStatus.dismissed) {
+      pulse.forward();
+    }
+  }
+
+  void _onAwake() {
+    if (TideIdle.awake.value) {
+      _run();
+    } else {
+      pulse.stop(canceled: false);
+    }
+  }
+
+  void _run() {
+    if (pulse.isAnimating) return;
+    if (pulse.status == AnimationStatus.reverse) {
+      pulse.reverse(from: pulse.value);
+    } else {
+      pulse.forward(from: pulse.value);
+    }
   }
 }
 
@@ -831,17 +969,27 @@ class TideKenBurns extends StatefulWidget {
 }
 
 class _TideKenBurnsState extends State<TideKenBurns>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, _TideIdlePulse<TideKenBurns> {
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 12),
-  )..repeat(reverse: true);
+  );
+
+  @override
+  AnimationController get pulse => _c;
+
+  @override
+  void initState() {
+    super.initState();
+    startPulse();
+  }
 
   late final Animation<double> _t =
       CurvedAnimation(parent: _c, curve: Curves.easeInOut);
 
   @override
   void dispose() {
+    stopPulse();
     _c.dispose();
     super.dispose();
   }
@@ -874,14 +1022,28 @@ class TideSheen extends StatefulWidget {
 }
 
 class _TideSheenState extends State<TideSheen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, _TideIdlePulse<TideSheen> {
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 5500),
-  )..repeat();
+  );
+
+  @override
+  AnimationController get pulse => _c;
+
+  /// A sweep, not a drift: it runs one way and starts over.
+  @override
+  bool get pulseReverses => false;
+
+  @override
+  void initState() {
+    super.initState();
+    startPulse();
+  }
 
   @override
   void dispose() {
+    stopPulse();
     _c.dispose();
     super.dispose();
   }

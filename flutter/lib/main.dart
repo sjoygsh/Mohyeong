@@ -37,6 +37,10 @@ Future<void> main() async {
   // moment it stutters. 256MB matches the budget Coil ends up with on the
   // same class of device (25% of a typical largeHeap memory class) in Mihon.
   PaintingBinding.instance.imageCache.maximumSizeBytes = 256 << 20;
+  // Tide's decoration animates forever; this is what lets it sleep when the
+  // app is sitting untouched. Installed here so the global pointer route
+  // exists before the first frame. See [TideIdle].
+  TideIdle.install();
   // These five inits are independent platform-channel round trips — start
   // them all before awaiting any so cold start pays the slowest one, not
   // the sum (they were strictly serial before).
