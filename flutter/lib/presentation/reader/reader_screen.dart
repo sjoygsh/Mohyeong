@@ -908,7 +908,8 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
     final provider = SourceImage.providerFor(
       ref0.url,
       headers: ref0.headers,
-      cacheWidth: _readerPageCacheWidth(context),
+      cacheWidth:
+          _readerPageCacheWidth(context, webtoon: !widget.mode.isPaged),
       fullResolution: true,
     );
     final bytes = await encodeImageProviderToPng(provider);
@@ -2702,7 +2703,8 @@ class _PageListState extends State<_PageList> {
               url: imageUrl,
               fit: widget.fit,
               headers: page.headers,
-              cacheWidth: _readerPageCacheWidth(ctx),
+              cacheWidth:
+                  _readerPageCacheWidth(ctx, webtoon: !widget.mode.isPaged),
               fullResolution: true,
               // ReaderPageImageView sets crossfade(false): pages appear at
               // full opacity, exempt from the global cover fade.
@@ -3167,7 +3169,7 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
       url: page.url,
       fit: widget.fit,
       headers: page.headers,
-      cacheWidth: _readerPageCacheWidth(ctx),
+      cacheWidth: _readerPageCacheWidth(ctx, webtoon: true),
       fullResolution: true,
       // ReaderPageImageView sets crossfade(false): pages appear at full
       // opacity, exempt from the global cover fade.
@@ -3408,7 +3410,7 @@ class _LocalPageList extends StatelessWidget {
       itemBuilder: (ctx, i) => SourceImage(
         url: paths[i],
         fit: fit,
-        cacheWidth: _readerPageCacheWidth(ctx),
+        cacheWidth: _readerPageCacheWidth(ctx, webtoon: !mode.isPaged),
         fullResolution: true,
         // ReaderPageImageView sets crossfade(false) — same for local pages.
         fadeIn: false,
@@ -3543,11 +3545,23 @@ class _ZoomRegistry {
 /// Every reader consumer of a page provider MUST pass this same value (and
 /// `fullResolution: true`) to [SourceImage] / [SourceImage.providerFor]:
 /// both are part of the ImageCache key, and one mismatched site decodes
-/// every page a second time.
-int _readerPageCacheWidth(BuildContext context) {
+/// every page a second time. [webtoon] is therefore part of that contract —
+/// pass `!mode.isPaged` at EVERY call site the continuous viewer reaches.
+///
+/// Continuous mode halves the cap to 1x. A webtoon page is painted fit-width
+/// and never zoomed by a re-decode (the strip's [InteractiveViewer] scales
+/// the rasterised layer), so the second x bought nothing and cost 4x the
+/// bytes: a 2000px-wide scan decoded 2160x3240 is 28MB, and at that size a
+/// 256MB cache holds nine pages. Scrolling a long chapter evicted pages as
+/// fast as they decoded, so every page arrived cold — the reader crawled
+/// until you stopped and let it catch up. At 1x the same page is 7MB.
+/// The paged viewer keeps 2x: it zooms by re-rendering the decoded bitmap,
+/// and one screen-sized page at a time is not what fills the cache.
+int _readerPageCacheWidth(BuildContext context, {bool webtoon = false}) {
   final size = MediaQuery.sizeOf(context);
   final dpr = MediaQuery.devicePixelRatioOf(context);
-  return (size.shortestSide * dpr * 2).round();
+  final base = size.shortestSide * dpr;
+  return (webtoon ? base : base * 2).round();
 }
 
 /// Decoded width/height ratio per page locator, shared across viewers.
@@ -3559,12 +3573,18 @@ int _readerPageCacheWidth(BuildContext context) {
 final Map<String, double> _pageAspectCache = {};
 const int _pageAspectCacheCap = 2048;
 
+/// Bumped on every [_pageAspectCache] mutation. The continuous viewer keeps
+/// a prefix sum of page extents derived from that cache; this is how it
+/// knows the sum went stale without re-deriving it per frame.
+int _pageAspectVersion = 0;
+
 void _cachePageAspect(String url, double aspect) {
   _pageAspectCache.remove(url);
   _pageAspectCache[url] = aspect;
   while (_pageAspectCache.length > _pageAspectCacheCap) {
     _pageAspectCache.remove(_pageAspectCache.keys.first);
   }
+  _pageAspectVersion++;
 }
 
 /// Resolve [url]'s decoded aspect into [_pageAspectCache], then [onReady].
@@ -3721,33 +3741,79 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     return size.width * (1 - 2 * widget.sidePaddingFraction);
   }
 
-  double _offsetForIndex(int index) {
-    final w = _webtoonContentWidth();
-    final fallback = _fallbackExtent(w);
-    var offset = 0.0;
-    for (var i = 0; i < index && i < widget.count; i++) {
-      offset += _estimatedHeight(i, w, fallback);
-    }
-    return offset;
-  }
+  /// Prefix sum of [_estimatedHeight] over items `[0, count]`, memoised.
+  /// `_prefix[i]` is the distance from the top of item 0 to the top of item
+  /// [i]. Rebuilt only when the page count, the content width, or the aspect
+  /// cache changes — the strip asks for an index on every scroll frame, and
+  /// walking the whole (unbounded: it grows with each appended chapter) item
+  /// list per frame is not something a reader can afford.
+  List<double>? _prefix;
+  int _prefixVersion = -1;
+  int _prefixCount = -1;
+  double _prefixWidth = -1;
 
-  int _indexForOffset(double pixels) {
+  List<double> _prefixSums() {
     final w = _webtoonContentWidth();
+    final cached = _prefix;
+    if (cached != null &&
+        _prefixVersion == _pageAspectVersion &&
+        _prefixCount == widget.count &&
+        _prefixWidth == w) {
+      return cached;
+    }
     final fallback = _fallbackExtent(w);
-    var cumulative = 0.0;
+    final sums = List<double>.filled(widget.count + 1, 0);
     for (var i = 0; i < widget.count; i++) {
-      cumulative += _estimatedHeight(i, w, fallback);
-      if (pixels < cumulative) return i;
+      sums[i + 1] = sums[i] + _estimatedHeight(i, w, fallback);
     }
-    return widget.count - 1;
+    _prefix = sums;
+    _prefixVersion = _pageAspectVersion;
+    _prefixCount = widget.count;
+    _prefixWidth = w;
+    return sums;
   }
 
-  void _jumpToWebtoonIndex(int index) {
-    final controller = _scrollController;
-    if (controller == null || !controller.hasClients) return;
-    final pos = controller.position;
-    controller.jumpTo(_offsetForIndex(index).clamp(0.0, pos.maxScrollExtent));
+  /// Item at scroll offset [pixels], which is SIGNED relative to
+  /// [_anchorIndex] — the item pinned to offset 0 by the viewport's `center`
+  /// sliver. Items above the anchor live at negative offsets.
+  int _indexForOffset(double pixels) {
+    if (widget.count <= 0) return 0;
+    final sums = _prefixSums();
+    final target = sums[_anchorIndex.clamp(0, widget.count)] + pixels;
+    // Last i with sums[i] <= target — the item [target] falls inside.
+    var lo = 0;
+    var hi = widget.count - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (sums[mid] <= target) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return lo;
   }
+
+  /// The item held at scroll offset 0 in continuous mode, via the viewport's
+  /// `center` sliver — i.e. where the reader RESUMES.
+  ///
+  /// It has to be an item and not an offset. Resuming used to be a
+  /// `jumpTo(pixels)` computed from the extent estimates above, and at the
+  /// moment it ran not one page had decoded, so every estimate was the
+  /// 400px placeholder. Two things then went wrong at once: a `RenderSliverList`
+  /// reaching a scroll offset it has never laid out walks there from item 0,
+  /// so the jump BUILT (and fetched, and decoded) every page above the resume
+  /// point; and as those pages decoded they grew from 400px to their real
+  /// height, pushing the content down under a scroll offset that stays where
+  /// it is — which slid the reader back to roughly page one. Leaving at page 5
+  /// and returning to page 1 was that, every time.
+  ///
+  /// Anchoring instead means the pages above the resume point are never built
+  /// until you scroll up into them, and whatever they turn out to measure
+  /// grows into negative offsets rather than shoving the anchor down the
+  /// strip. Resume is exact, and it costs no estimate at all.
+  int _anchorIndex = 0;
+  final GlobalKey _centerKey = GlobalKey();
 
   @override
   void initState() {
@@ -3759,12 +3825,8 @@ class _PagesViewState extends ConsumerState<_PagesView> {
       _pageController =
           PageController(initialPage: _sourceToDisplay(clamped));
     } else {
+      _anchorIndex = clamped;
       _scrollController = ScrollController();
-      // Defer jump until after layout so the viewport has a size.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _jumpToWebtoonIndex(clamped);
-      });
     }
     _lastReported = clamped;
     widget.zoomRegistry?.stepPage = _stepDisplayPage;
@@ -3818,11 +3880,10 @@ class _PagesViewState extends ConsumerState<_PagesView> {
         _pageController =
             PageController(initialPage: _sourceToDisplay(resume));
       } else {
+        // Re-anchor on the page being read; the fresh controller then opens
+        // at offset 0, which IS that page. See [_anchorIndex].
+        _anchorIndex = resume;
         _scrollController = ScrollController();
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          _jumpToWebtoonIndex(resume);
-        });
       }
       return;
     }
@@ -3899,7 +3960,7 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     final urlOf = widget.pageUrlOf;
     if (urlOf == null) return;
     final crop = ref.read(readerCropBordersProvider);
-    final cacheWidth = _readerPageCacheWidth(context);
+    final cacheWidth = _readerPageCacheWidth(context, webtoon: true);
     for (var i = index + 1; i <= index + 4 && i < widget.count; i++) {
       final url = urlOf(i);
       // Chapter boundaries have no image of their own.
@@ -3913,6 +3974,30 @@ class _PagesViewState extends ConsumerState<_PagesView> {
       if (crop) provider = CropBordersImageProvider(provider);
       unawaited(precacheImage(provider, context));
     }
+  }
+
+  /// Webtoon side padding: inset each page horizontally by a fraction of the
+  /// viewport width so strips don't run edge-to-edge on wide screens.
+  /// 0 = no inset (the default).
+  EdgeInsets _stripPadding(BuildContext context) =>
+      widget.sidePaddingFraction <= 0
+          ? EdgeInsets.zero
+          : EdgeInsets.symmetric(
+              horizontal: MediaQuery.sizeOf(context).width *
+                  widget.sidePaddingFraction,
+            );
+
+  /// One row of the continuous strip, by ABSOLUTE item index (both slivers
+  /// map their own child index onto this).
+  Widget _stripItem(BuildContext ctx, int i) {
+    if (i >= widget.count) return widget.transition!;
+    // Reserve the page's real extent once its aspect is known so later
+    // decodes don't shift content under the reader.
+    return _WebtoonPageSlot(
+      url: widget.pageUrlOf?.call(i),
+      headers: widget.pageHeadersOf?.call(i),
+      child: widget.itemBuilder(ctx, i),
+    );
   }
 
   @override
@@ -3936,9 +4021,16 @@ class _PagesViewState extends ConsumerState<_PagesView> {
               widget.count > 0) {
             final pos = _scrollController!.position;
             if (pos.hasPixels && pos.hasViewportDimension) {
-              _precacheStripAhead(
-                _indexForOffset(pos.pixels + pos.viewportDimension / 2),
-              );
+              final idx =
+                  _indexForOffset(pos.pixels + pos.viewportDimension / 2);
+              _precacheStripAhead(idx);
+              // Report DURING the scroll as well, not only when it settles.
+              // Progress used to land on ScrollEndNotification alone, so
+              // leaving the reader while a fling was still running — closing
+              // it the moment you reach the page you meant to stop on — threw
+              // that page away and resumed from the last one that had settled.
+              // [_report] dedups, so this costs nothing per frame.
+              _report(idx);
             }
           }
           if (notif is ScrollEndNotification &&
@@ -3962,9 +4054,13 @@ class _PagesViewState extends ConsumerState<_PagesView> {
           }
           return false;
         },
-        child: ListView.builder(
+        child: CustomScrollView(
           controller: _scrollController,
-          itemCount: widget.itemCount,
+          // Item [_anchorIndex] sits at scroll offset 0 and everything above
+          // it hangs off the leading sliver at negative offsets. That is what
+          // makes resume exact and keeps a page decoding above the reader
+          // from shoving the strip down; see [_anchorIndex].
+          center: _centerKey,
           // Enough read-ahead that a page boundary is never reached cold
           // (the Flutter default ~250px meant every one fetched on arrival
           // and stuttered), but no more: a cache extent is SYMMETRIC, so
@@ -3973,25 +4069,29 @@ class _PagesViewState extends ConsumerState<_PagesView> {
           // does (4 pages) is [_precacheStripAhead]'s job, and a decoded
           // image in the shared cache can be evicted; a mounted one cannot.
           scrollCacheExtent: const ScrollCacheExtent.viewport(1),
-          // Webtoon side padding: inset each page horizontally by a
-          // fraction of the viewport width so strips don't run edge-to-
-          // edge on wide screens. 0 = no inset (the default).
-          padding: widget.sidePaddingFraction <= 0
-              ? EdgeInsets.zero
-              : EdgeInsets.symmetric(
-                  horizontal: MediaQuery.sizeOf(context).width *
-                      widget.sidePaddingFraction,
+          slivers: [
+            // Pages ABOVE the anchor, laid out upward — child 0 of this
+            // sliver is the item immediately before the anchor.
+            SliverPadding(
+              padding: _stripPadding(context),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (ctx, i) => _stripItem(ctx, _anchorIndex - 1 - i),
+                  childCount: _anchorIndex,
                 ),
-          itemBuilder: (ctx, i) {
-            if (i >= widget.count) return widget.transition!;
-            // Reserve the page's real extent once its aspect is known so
-            // later decodes don't shift content under the reader.
-            return _WebtoonPageSlot(
-              url: widget.pageUrlOf?.call(i),
-              headers: widget.pageHeadersOf?.call(i),
-              child: widget.itemBuilder(ctx, i),
-            );
-          },
+              ),
+            ),
+            SliverPadding(
+              key: _centerKey,
+              padding: _stripPadding(context),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (ctx, i) => _stripItem(ctx, _anchorIndex + i),
+                  childCount: widget.itemCount - _anchorIndex,
+                ),
+              ),
+            ),
+          ],
         ),
       );
       // Webtoon zoom layer (Mihon WebtoonViewer): pinch zoom over the whole
@@ -4282,7 +4382,8 @@ class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
       _aspect = cached;
       return;
     }
-    _resolvePageAspect(url, widget.headers, _readerPageCacheWidth(context),
+    _resolvePageAspect(
+        url, widget.headers, _readerPageCacheWidth(context, webtoon: true),
         (aspect) {
       if (mounted && _aspect != aspect) setState(() => _aspect = aspect);
     });

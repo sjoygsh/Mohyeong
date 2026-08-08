@@ -364,6 +364,11 @@ class _NetworkImageWithWebViewFallback
   /// doesn't re-fetch them on every load. Session-lived, bounded.
   static final Set<String> _confirmedSmall = <String>{};
 
+  /// Byte ceiling under which a cached entry could plausibly BE the old 480px
+  /// WebView re-encode. Anything fatter is a real page, so the poisoned-cache
+  /// probe below can skip it — see [_loadAsync].
+  static const int _maxCoverSizedBytes = 512 * 1024;
+
   @override
   Future<_NetworkImageWithWebViewFallback> obtainKey(
     ImageConfiguration configuration,
@@ -386,7 +391,12 @@ class _NetworkImageWithWebViewFallback
     _NetworkImageWithWebViewFallback key,
     ImageDecoderCallback decode,
   ) async {
-    Uint8List bytes;
+    // Exactly one of these ends up set. `path` is the fast lane: the engine
+    // reads the file itself ([ui.ImmutableBuffer.fromFilePath]) instead of
+    // this isolate copying a multi-megabyte page onto the Dart heap first,
+    // which on a fast webtoon scroll is several copies per second.
+    Uint8List? bytes;
+    String? path;
     var fromDiskCache = false;
     try {
       // Read-through to the legacy default store first on a miss: upgraded
@@ -405,10 +415,10 @@ class _NetworkImageWithWebViewFallback
             key.url,
             headers: key.headers ?? const {},
           );
-          bytes = await file.readAsBytes();
+          path = file.path;
         }
       } else {
-        bytes = await file.readAsBytes();
+        path = file.path;
         fromDiskCache = true;
       }
     } catch (_) {
@@ -416,14 +426,14 @@ class _NetworkImageWithWebViewFallback
           .fetchImageBytes(key.url, fullResolution: key.fullResolution);
       if (fallback == null || fallback.isEmpty) rethrow;
       bytes = fallback;
+      path = null;
       // Persist so the next cold load is a disk hit instead of a doomed
       // HTTP attempt plus a serialized WebView round trip.
       unawaited(appImageCacheManager.putFile(key.url, fallback));
     }
     if (key.fullResolution &&
         fromDiskCache &&
-        !_confirmedSmall.contains(key.url) &&
-        await _isCoverSized(bytes)) {
+        !_confirmedSmall.contains(key.url)) {
       // Poisoned cache entry: before full-resolution fetches existed, the
       // WebView fallback persisted 480px cover-sized bytes under the page's
       // URL — a full-screen page rendered from them is visibly pixelated.
@@ -431,18 +441,33 @@ class _NetworkImageWithWebViewFallback
       // small, remember it so this doesn't re-fetch on every load. On
       // refetch failure keep serving the small bytes (better than an error
       // box) and stay unmarked so a later load retries.
-      final fresh = await _refetchOriginal(key);
-      if (fresh != null && fresh.isNotEmpty) {
-        bytes = fresh;
-        if (await _isCoverSized(fresh)) {
-          if (_confirmedSmall.length >= 512) {
-            _confirmedSmall.remove(_confirmedSmall.first);
+      //
+      // Gated on the entry's SIZE first. This probe used to run on every
+      // full-resolution disk hit, so every reader page was read into the
+      // Dart heap and header-parsed once purely to rule the poisoning out —
+      // a cost paid per page, forever, for a one-off migration hazard. Only
+      // bytes small enough to be that 480px re-encode can be poisoned.
+      final length = bytes?.length ?? await File(path!).length();
+      if (length <= _maxCoverSizedBytes) {
+        bytes ??= await File(path!).readAsBytes();
+        if (await _isCoverSized(bytes)) {
+          final fresh = await _refetchOriginal(key);
+          if (fresh != null && fresh.isNotEmpty) {
+            bytes = fresh;
+            path = null;
+            if (await _isCoverSized(fresh)) {
+              if (_confirmedSmall.length >= 512) {
+                _confirmedSmall.remove(_confirmedSmall.first);
+              }
+              _confirmedSmall.add(key.url);
+            }
           }
-          _confirmedSmall.add(key.url);
         }
       }
     }
-    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    final buffer = bytes != null
+        ? await ui.ImmutableBuffer.fromUint8List(bytes)
+        : await ui.ImmutableBuffer.fromFilePath(path!);
     return decode(buffer);
   }
 
