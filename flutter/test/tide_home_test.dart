@@ -334,7 +334,7 @@ void main() {
     // the caption carries the chapter plus how far through the series it is.
     expect(find.text('CONTINUE'), findsOneWidget);
     expect(find.text('Chapter 42 · 63%'), findsOneWidget);
-    expect(find.text('Nothing part-read right now.'), findsNothing);
+    expect(find.text('Nothing started right now.'), findsNothing);
   });
 
   testWidgets('Tonight is the updates feed, and only older days get a header',
