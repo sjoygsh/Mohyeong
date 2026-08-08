@@ -41,9 +41,6 @@ import '../util/open_link.dart';
 class BrowseScreen extends ConsumerStatefulWidget {
   const BrowseScreen({super.key});
 
-  static const _migrationHelp =
-      'https://sjoygsh.github.io/Mohyeong/help.html#source-migration';
-
   @override
   ConsumerState<BrowseScreen> createState() => _BrowseScreenState();
 }
@@ -188,7 +185,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
           if (_view == 2) ...[
             TideIconButton(
               icon: Icons.help_outlined,
-              onTap: () => openLink(context, BrowseScreen._migrationHelp),
+              onTap: () => openLink(context, helpUrl('source-migration')),
             ),
             const SizedBox(width: 9),
           ],

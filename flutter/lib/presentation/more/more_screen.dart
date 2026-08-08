@@ -36,7 +36,6 @@ class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
 
   /// Verbatim Kotlin `Constants.URL_HELP`.
-  static const _urlHelp = 'https://sjoygsh.github.io/Mohyeong/help.html';
 
   @override
   ConsumerState<MoreScreen> createState() => _MoreScreenState();
@@ -191,7 +190,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             size: 15,
                             color: TideColors.textAt(0.3),
                           ),
-                          onTap: () => openLink(context, MoreScreen._urlHelp),
+                          onTap: () => openLink(context, helpUrl()),
                         ),
                       ],
                     ),

@@ -4,18 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Docs — Mohyeong</title>
-  <meta name="description" content="Documentation and guides for Mohyeong, an enhanced Android manga reader." />
+  <meta name="description" content="Documentation and guides for Mohyeong, a manga reader for Android." />
   <link rel="icon" href="assets/icon-round.png" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #0f0f11;
-      --surface:   #18181c;
-      --card:      #222228;
-      --border:    #2e2e38;
-      --accent:    #c0392b;
-      --accent-h:  #e74c3c;
+      --bg:        #000000;
+      --surface:   #0e0e13;
+      --card:      #16161d;
+      --border:    #262632;
+      --accent:    #b5abfc;
+      --accent-h:  #d2cefd;
       --text:      #e8e8ec;
       --muted:     #8888a0;
       --sidebar-w: 260px;
@@ -37,7 +37,7 @@
     /* ── NAV ───────────────────────────────────────── */
     nav {
       position: sticky; top: 0; z-index: 100;
-      background: rgba(15,15,17,.9);
+      background: rgba(0,0,0,.9);
       backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
       height: var(--nav-h);
@@ -182,7 +182,7 @@
     }
     .callout.info { background: rgba(59,130,246,.1); border-color: #3b82f6; color: #93c5fd; }
     .callout.warning { background: rgba(245,158,11,.1); border-color: #f59e0b; color: #fcd34d; }
-    .callout.tip { background: rgba(192,57,43,.1); border-color: var(--accent); color: #f4a4a4; }
+    .callout.tip { background: rgba(181,171,252,.1); border-color: var(--accent); color: #d2cefd; }
     .callout strong { color: inherit; opacity: .85; }
 
     /* Steps */
@@ -208,7 +208,7 @@
     /* Badge */
     .badge {
       display: inline-block;
-      background: rgba(192,57,43,.15); color: var(--accent);
+      background: rgba(181,171,252,.15); color: var(--accent);
       border-radius: 4px; padding: .1rem .5rem;
       font-size: .75rem; font-weight: 600;
       vertical-align: middle; margin-left: .4rem;
@@ -290,7 +290,6 @@
 </head>
 <body>
 
-<!-- Navigation -->
 <nav>
   <div class="nav-inner">
     <a class="nav-logo" href="index.html">
@@ -308,588 +307,234 @@
 </nav>
 
 <div class="layout">
-
-  <!-- Sidebar -->
   <aside class="sidebar">
     <div class="sidebar-group">
-      <div class="sidebar-group-title">Getting Started</div>
+      <div class="sidebar-group-title">Start here</div>
       <ul>
-        <li><a href="#installation" class="active">Installation</a></li>
-        <li><a href="#migrating">Migrating from Mihon</a></li>
-        <li><a href="#sources">Adding Sources</a></li>
+        <li><a href="#getting-started" class="active">Getting started</a></li>
+        <li><a href="#installation">Installing</a></li>
+        <li><a href="#storage">Storage folder</a></li>
+        <li><a href="#extensions">Extensions</a></li>
+        <li><a href="#sources">Sources</a></li>
       </ul>
     </div>
     <div class="sidebar-group">
-      <div class="sidebar-group-title">Mohyeong Features</div>
+      <div class="sidebar-group-title">Using the app</div>
       <ul>
-        <li><a href="#linked-sources">Linked Sources</a></li>
-        <li><a href="#sync-overview">Cloud Sync Overview</a></li>
-        <li><a href="#sync-syncyomi">SyncYomi</a></li>
-        <li><a href="#sync-webdav">WebDAV</a></li>
-        <li><a href="#sync-google-drive">Google Drive</a></li>
-        <li><a href="#sync-dropbox">Dropbox</a></li>
-        <li><a href="#conflict-resolution">Conflict Resolution</a></li>
-      </ul>
-    </div>
-    <div class="sidebar-group">
-      <div class="sidebar-group-title">Mihon Features</div>
-      <ul>
+        <li><a href="#home">Home</a></li>
+        <li><a href="#tonight">Tonight</a></li>
         <li><a href="#library">Library</a></li>
-        <li><a href="#tracking">Tracking</a></li>
+        <li><a href="#categories">Categories</a></li>
         <li><a href="#reader">Reader</a></li>
         <li><a href="#downloads">Downloads</a></li>
-        <li><a href="#categories">Categories</a></li>
+        <li><a href="#upcoming">Upcoming</a></li>
+        <li><a href="#tracking">Tracking</a></li>
+        <li><a href="#local-source">Local source</a></li>
+        <li><a href="#source-migration">Migrating sources</a></li>
       </ul>
     </div>
     <div class="sidebar-group">
-      <div class="sidebar-group-title">FAQ</div>
+      <div class="sidebar-group-title">Data</div>
       <ul>
-        <li><a href="#faq-mihon">Differences from Mihon</a></li>
-        <li><a href="#faq-sync">Sync troubleshooting</a></li>
-        <li><a href="#faq-linked">Linked sources FAQ</a></li>
+        <li><a href="#backup">Backup and restore</a></li>
+        <li><a href="#sync-overview">Sync</a></li>
+        <li><a href="#security">Security</a></li>
+        <li><a href="#appearance">Appearance</a></li>
+      </ul>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-group-title">Help</div>
+      <ul>
+        <li><a href="#troubleshooting">Troubleshooting</a></li>
+        <li><a href="#faq">FAQ</a></li>
       </ul>
     </div>
   </aside>
 
-  <!-- Main content -->
   <main class="content">
 
-    <!-- ── INSTALLATION ───────────────────────────── -->
-    <span id="getting-started"></span>
-    <h1 id="installation">Getting Started</h1>
-    <p>
-      Mohyeong is an enhanced fork of <strong>Mihon</strong> for Android.
-      It includes all of Mihon's features plus exclusive additions like linked sources,
-      expanded sync backends, and per-row conflict resolution.
-    </p>
-
-    <div class="callout tip">
-      <strong>Android 8.0 or higher required.</strong>
-      Mohyeong targets the same minimum SDK as Mihon (API 26).
-    </div>
-
-    <h2 id="install-steps">Installation</h2>
-    <ol class="steps">
-      <li>
-        <div>
-          <strong>Download the APK</strong>
-          Go to the <a href="https://github.com/sjoygsh/Mohyeong/releases" target="_blank" rel="noopener">Releases page</a>
-          on GitHub and download the latest <code>.apk</code> file.
-        </div>
-      </li>
-      <li>
-        <div>
-          <strong>Allow unknown sources</strong>
-          On your Android device, go to <strong>Settings → Apps → Special app access → Install unknown apps</strong>
-          and allow your browser or file manager.
-        </div>
-      </li>
-      <li>
-        <div>
-          <strong>Install</strong>
-          Open the downloaded APK and tap Install. Mohyeong uses the package ID
-          <code>app.mohyeong</code> — it will not conflict with Mihon if both are installed.
-        </div>
-      </li>
-      <li>
-        <div>
-          <strong>Restore a backup (optional)</strong>
-          If you're coming from Mihon, use <strong>More → Backup and restore</strong> to import
-          your existing <code>.tachibk</code> backup file.
-        </div>
-      </li>
-    </ol>
-
-    <span id="source-migration"></span>
-    <h2 id="migrating">Migrating from Mihon</h2>
-    <p>
-      Mohyeong reads standard Mihon <code>.tachibk</code> backup files without modification.
-      To migrate:
-    </p>
-    <ul>
-      <li>In Mihon: <strong>More → Settings → Data and storage → Create backup</strong></li>
-      <li>Transfer the <code>.tachibk</code> file to your device</li>
-      <li>In Mohyeong: <strong>More → Backup and restore → Restore backup</strong></li>
+    <h1 id="getting-started">Getting started</h1>
+    <p>Mohyeong is a manga reader for Android. You install <strong>extensions</strong>, which are small scripts that teach the app how to read a particular website. Then you browse those sites, add what you want to your <strong>library</strong>, and read.</p>
+    <p>Three things need setting up once, and the app walks you through them the first time it opens:</p>
+    <ul class="steps">
+      <li><div><strong>Pick a storage folder</strong>Where downloads and backups live. This is the only step you cannot skip.</div></li>
+      <li><div><strong>Grant permissions</strong>Notifications for update and download progress, and an exemption from battery optimisation so long downloads are not killed. Both optional.</div></li>
+      <li><div><strong>Guides and restore</strong>A link back here, and a way to restore an existing backup if you are coming from another install.</div></li>
     </ul>
-    <div class="callout info">
-      Your reading history, categories, tracking links, and chapter progress are all preserved
-      in the backup.
-    </div>
+    <p>Once that is done the app has no sources yet. Head to <strong>Browse</strong> and add an extension.</p>
 
-    <h2 id="sources">Adding Sources</h2>
-    <p>
-      Mohyeong uses the same extension system as Mihon. Go to
-      <strong>Browse → Extensions</strong>, enable the extensions you want, and they'll
-      appear as sources in Browse.
-    </p>
-
-    <!-- ── LINKED SOURCES ──────────────────────────── -->
-    <h1 id="linked-sources" style="margin-top:3rem;">Linked Sources <span class="badge">Mohyeong exclusive</span></h1>
-    <p>
-      Linked Sources lets you attach multiple source entries to a single manga in your library.
-      The entry you originally added is the <strong>primary</strong>; everything else you attach
-      is a <strong>linked source</strong>. When you open the primary, chapters from every linked
-      source are merged into one chapter list — and library updates walk every linked source so
-      their new chapters appear under the primary entry, even when the primary itself hasn't
-      updated.
-    </p>
-
-    <h2 id="linked-why">Why use linked sources?</h2>
-    <p>
-      Some titles exist on multiple sources with different translation groups, quality levels,
-      or update speeds. Instead of maintaining separate library entries, link them so the fastest
-      or highest-quality chapter always surfaces under one entry.
-    </p>
-
-    <h2 id="linked-how">How to link sources</h2>
-    <ol class="steps">
-      <li>
-        <div>
-          <strong>Open the primary manga</strong>
-          Open the entry you want to keep in your library as the primary.
-        </div>
-      </li>
-      <li>
-        <div>
-          <strong>Open the overflow menu</strong>
-          Tap the <strong>⋮</strong> (three-dot menu) in the top-right corner of the manga detail screen.
-        </div>
-      </li>
-      <li>
-        <div>
-          <strong>Tap "Linked Sources"</strong>
-          The dialog lists favorited entries you can link.
-        </div>
-      </li>
-      <li>
-        <div>
-          <strong>Select and confirm</strong>
-          Choose the source entries to link. The merged chapter list updates immediately.
-        </div>
-      </li>
-    </ol>
-
-    <h2 id="linked-behavior">How merged chapters behave</h2>
-    <ul>
-      <li>
-        <strong>Library updates walk every linked source.</strong> If Asura's mirror of a title gets
-        a new chapter, it appears under your primary library entry — even if the primary source
-        itself never updated. A broken primary source no longer hides updates from working
-        mirrors; a broken mirror no longer aborts updates from siblings.
-      </li>
-      <li>
-        <strong>Dedupe is by recognized chapter number.</strong> The primary always wins ties; if
-        the primary is missing a chapter number, the earliest-linked source fills the gap.
-      </li>
-      <li>
-        <strong>Read state is mirrored across linked sources by chapter number.</strong> Marking
-        Ch.10 read on the merged list marks Ch.10 read on every linked source's row, so swapping
-        the primary later doesn't reset your progress.
-      </li>
-      <li>
-        <strong>Downloads go to each chapter's true source folder.</strong> A chapter served by
-        Asura is downloaded against Asura's source with Asura's URL — not silently dumped into
-        the primary's folder.
-      </li>
-      <li>
-        <strong>Pull-to-refresh on the manga screen always walks every linked source</strong>, not
-        just on primary failure.
-      </li>
+    <h2 id="installation">Installing</h2>
+    <ul class="steps">
+      <li><div><strong>Download the APK</strong>From the <a href="https://github.com/sjoygsh/Mohyeong/releases" target="_blank" rel="noopener">Releases page</a>.</div></li>
+      <li><div><strong>Allow your browser to install apps</strong>Settings, Apps, Special app access, Install unknown apps. Enable it for whatever you downloaded with.</div></li>
+      <li><div><strong>Open the file and install</strong>Android 8.0 or newer.</div></li>
     </ul>
+    <div class="callout info"><strong>Both at once.</strong> Mohyeong does not use the same package name as Mihon, so having both installed side by side is fine. They keep entirely separate libraries.</div>
 
-    <h2 id="linked-limits">Limitations</h2>
-    <ul>
-      <li>
-        <strong>Metadata stays primary-only.</strong> Cover, title, and description always come
-        from the primary entry. Linked-source metadata is ignored.
-      </li>
-      <li>
-        <strong>No in-app way to swap primary ↔ linked.</strong> If you want to flip which entry is
-        primary, unlink and relink in the opposite direction.
-      </li>
-      <li>
-        <strong>Removing the primary from library only prompts about primary's downloads.</strong>
-        Linked-source chapters of the same series stay downloaded — clean them up from each
-        linked entry separately.
-      </li>
-      <li>
-        <strong>Linked entries don't need to stay in your library.</strong> Links live independently
-        of the favorite flag, so you can unfavorite a linked entry and the link still works.
-        Uninstalling the source extension, however, silently skips that source on every refresh.
-      </li>
-    </ul>
+    <h2 id="storage">Storage folder</h2>
+    <p>Mohyeong asks for one folder and keeps everything of yours inside it: chapter downloads, automatic backups, and the local source if you use one. You choose it during setup and can change it later in <strong>Settings, Data and storage</strong>.</p>
+    <p>Pick a folder you will recognise later, for example <code>Documents/Mohyeong</code>. A dedicated folder is easier to back up and easier to delete.</p>
+    <div class="callout warning"><strong>Changing it does not move anything.</strong> Point the app somewhere new and it starts using the new place. Existing downloads stay where they are and the app stops seeing them. Move the contents yourself first if you want to keep them.</div>
 
-    <div class="callout warning">
-      <strong>Note:</strong> Linked source relationships are stored locally. They are not part of
-      any global database.
-    </div>
+    <h2 id="extensions">Extensions</h2>
+    <p>An extension is a small JavaScript file that knows how to read one website: where the popular list is, how a chapter page is laid out, where the images are. One extension equals one source.</p>
+    <p>This is not the same mechanism Mihon uses. Mihon extensions are Android APKs installed through the system; Mohyeong's are scripts the app runs itself. <strong>Mihon extension APKs will not work here.</strong></p>
+    <p>Manage them under <strong>Browse, Extensions</strong>: add one from a file, see what is installed, check for updates, or remove one. Removing an extension does not remove anything from your library, but entries from that source will not load until it is back.</p>
+    <div class="callout info"><strong>A source stops working.</strong> Sites change their markup and an extension written against the old markup breaks. That is a fault in the extension, not in the app, and it is fixed by updating the extension.</div>
 
-    <!-- ── SYNC OVERVIEW ───────────────────────────── -->
-    <h1 id="sync-overview" style="margin-top:3rem;">Cloud Sync <span class="badge">Mohyeong exclusive</span></h1>
-    <p>
-      Mohyeong supports four sync backends. All use the same bidirectional merge engine:
-      pull remote → apply locally (timestamp merge) → snapshot merged state → push back.
-      Your data is never silently overwritten.
-    </p>
+    <h2 id="sources">Sources</h2>
+    <p><strong>Browse</strong> lists everything you can read from, each row wearing that site's own logo. Tap one to open its catalogue: Popular, Latest, and Search, with whatever filters that site offers.</p>
+    <p>The pin on the right keeps a source at the top of the list. The funnel in the header hides sources you never use, and the search icon runs one query across every installed source at once, one row of results per source, so a slow site never holds up a fast one.</p>
+    <div class="callout tip"><strong>Tap Browse again</strong> when you are already on it and global search opens directly.</div>
 
+    <h2 id="home">Home</h2>
+    <p>The first tab is built around reading position rather than around what you own, because the question a library app actually has to answer is what is next and where was I.</p>
+    <p>It has three parts: a rotating <strong>hero</strong> showing the series you are furthest through, <strong>Continue</strong> with what you are part way into and the position you left it at, and <strong>Tonight</strong>.</p>
+
+    <h2 id="tonight">Tonight</h2>
+    <p>Tonight is the updates surface. There is no separate Updates tab; this is it, and it carries the whole job: every chapter that has arrived, newest first, grouped by day.</p>
+    <p>From its header you can refresh the whole library, filter to unread or bookmarked, hide muted scanlators, search, and open <a href="#upcoming">Upcoming</a>. Long press a row to select, then mark read or bookmark in bulk. Pull down to refresh.</p>
+    <div class="callout info"><strong>No day header over today.</strong> The section is already called Tonight, so repeating today's date above the first group would only restate it.</div>
+
+    <h2 id="library">Library</h2>
+    <p>Everything you have added, as a grid of covers with an unread count. The header names the shelf and counts what is waiting on it.</p>
+    <p>Sort, filter and the number of columns live in <strong>Settings, Library</strong>, along with how often the app checks for new chapters and which categories it checks. Long press a cover to select and act on several entries at once.</p>
+
+    <h2 id="categories">Categories</h2>
+    <p>Shelves for your library. A category can sit inside another one, so you can keep Reading, Reading / Weekly and Reading / On hold without three flat names that only look related.</p>
+    <p>Manage them in <strong>Settings, Library, Categories</strong>: create, rename, reorder by dragging, set a parent, delete. Dragging only reorders within one parent group, so a drag can never silently reparent something.</p>
+
+    <h2 id="reader">Reader</h2>
+    <p>Tap the middle of the page to show or hide the controls. The edges turn pages, and which edge does what depends on the reading mode.</p>
     <table>
-      <thead>
-        <tr>
-          <th>Backend</th>
-          <th>Auth</th>
-          <th>Self-hosted</th>
-          <th>Best for</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><td>SyncYomi</td><td>API key</td><td>Yes</td><td>Full control, server-side merge</td></tr>
-        <tr><td>WebDAV</td><td>Username + password</td><td>Yes</td><td>Nextcloud, Synology, own server</td></tr>
-        <tr><td>Google Drive</td><td>OAuth access token</td><td>No</td><td>Easiest cloud setup</td></tr>
-        <tr><td>Dropbox</td><td>Personal access token</td><td>No</td><td>Dropbox users</td></tr>
-      </tbody>
+      <tr><th>Mode</th><th>Behaviour</th></tr>
+      <tr><td>Left to right</td><td>Paged, western order</td></tr>
+      <tr><td>Right to left</td><td>Paged, manga order</td></tr>
+      <tr><td>Vertical</td><td>Paged, top to bottom</td></tr>
+      <tr><td>Webtoon</td><td>Continuous scroll, no page gaps</td></tr>
+      <tr><td>Continuous vertical</td><td>Continuous scroll with gaps between pages</td></tr>
     </table>
+    <p>Mode can be set globally in <strong>Settings, Reader</strong> or per series from the reader's own settings sheet, which is where per series wins. That sheet also holds scale, rotation, background, crop borders, and the colour filter and brightness controls.</p>
+    <p><strong>Settings, Reader</strong> additionally covers full screen, keeping the screen on, page number display, double tap zoom, tap zones and whether to invert them, and the flash on page change used to reduce ghosting on e ink.</p>
 
-    <p>To enable sync: <strong>More → Settings → Sync</strong> → choose a service and enter credentials.</p>
+    <h2 id="downloads">Downloads</h2>
+    <p>Download a chapter from a series page, or in bulk from the selection bar. The queue lives in <strong>More, Download queue</strong>, where you can pause, resume, reorder and cancel.</p>
+    <p><strong>Settings, Downloads</strong> decides how much happens on its own: download new chapters as they arrive, restricted to chosen categories, and whether to delete a chapter once it has been read. Bookmarked chapters can be excluded from that deletion, which is the setting people usually want and rarely find.</p>
+    <div class="callout warning"><strong>Downloads live in your storage folder.</strong> Clearing app data does not touch them, but they are not part of a backup either. A backup records what you read, not the files.</div>
 
-    <!-- SyncYomi -->
-    <h2 id="sync-syncyomi">SyncYomi</h2>
-    <p>
-      SyncYomi is a self-hosted sync server. The server performs the final merge and returns
-      a merged payload, so conflict resolution happens server-side.
-    </p>
-    <ul>
-      <li><strong>Host:</strong> Full URL of your SyncYomi instance (e.g. <code>https://sync.example.com</code>)</li>
-      <li><strong>API Key:</strong> The key configured on your server</li>
+    <h2 id="upcoming">Upcoming</h2>
+    <p>A calendar of predicted release dates for series in your library, reachable from Tonight. A ring marks today and a dot under a date means something is expected then; tap a marked day to jump the list to it.</p>
+    <p>These are predictions, not announcements. The app measures how often a series has actually been updating and projects the next one, so a series only appears here once a library update has run and there is enough history to guess from. Irregular series will be wrong, and that is expected.</p>
+
+    <h2 id="tracking">Tracking</h2>
+    <p>Mohyeong can push your progress to an external tracker. Sign in under <strong>Settings, Tracking</strong>, then link an individual series from its details page.</p>
+    <table>
+      <tr><th>Tracker</th><th>Sign in with</th></tr>
+      <tr><td>AniList</td><td>Account authorisation in a browser</td></tr>
+      <tr><td>MyAnimeList</td><td>Account authorisation in a browser</td></tr>
+      <tr><td>Kitsu</td><td>Email and password</td></tr>
+      <tr><td>MangaUpdates</td><td>Username and password</td></tr>
+      <tr><td>Shikimori</td><td>Account authorisation in a browser</td></tr>
+      <tr><td>Bangumi</td><td>Account authorisation in a browser</td></tr>
+      <tr><td>Komga, Suwayomi</td><td>Server address and credentials</td></tr>
+    </table>
+    <p>Linking is per series and nothing is sent until you link one. Progress is pushed as you read; you can also set status, score and dates by hand from the tracking sheet.</p>
+
+    <h2 id="local-source">Local source</h2>
+    <p>Read files already on the device. Point the local source at a folder and every subfolder becomes a series.</p>
+    <pre><code>Mohyeong/local/
+  Series name/
+    Chapter 1.cbz
+    Chapter 2.cbz
+    cover.jpg</code></pre>
+    <p>Each chapter is one <code>.cbz</code>, <code>.zip</code>, <code>.cbr</code> or <code>.rar</code>, or a folder of images. A file named <code>cover</code> beside the chapters is used as the series cover; otherwise the first image of the first chapter is.</p>
+    <div class="callout info"><strong>Chapter order comes from the name.</strong> The app reads a number out of the filename, so <code>Chapter 2</code> sorts before <code>Chapter 10</code> even though the text does not.</div>
+
+    <h2 id="source-migration">Migrating sources</h2>
+    <p>When a site dies or a better one appears, migration moves your entries across without losing what you have read.</p>
+    <ul class="steps">
+      <li><div><strong>Browse, Migrate</strong>Lists every source you have favourites on, with a count.</div></li>
+      <li><div><strong>Pick the source you are leaving</strong>Then select the entries to move, or all of them.</div></li>
+      <li><div><strong>Choose the destination</strong>The app searches the sources you allow and shows what it thinks matches. Confirm each one.</div></li>
+      <li><div><strong>Choose what carries over</strong>Chapters read, categories, tracking. Optionally delete the old entry.</div></li>
     </ul>
+    <div class="callout warning"><strong>Chapter numbers have to line up.</strong> Progress is matched by chapter number, so a destination that numbers differently, or bundles chapters into volumes, can land you in the wrong place.</div>
 
-    <!-- WebDAV -->
-    <h2 id="sync-webdav">WebDAV</h2>
-    <p>
-      WebDAV stores a single <code>mihon-sync.tachibk</code> file at the root of your WebDAV URL.
-      Client-side merge happens via BackupRestorer's per-row timestamp logic.
-    </p>
-    <ul>
-      <li><strong>URL:</strong> WebDAV server root (e.g. <code>https://cloud.example.com/remote.php/dav/files/user/</code>)</li>
-      <li><strong>Username:</strong> Your WebDAV username</li>
-      <li><strong>Password:</strong> Your WebDAV password</li>
-    </ul>
-    <div class="callout info">
-      Tested with Nextcloud and Synology DSM. Any server that supports HTTP GET/PUT on a path
-      should work.
-    </div>
+    <h2 id="backup">Backup and restore</h2>
+    <p><strong>Settings, Data and storage, Backup</strong> writes a single file containing your library, categories, reading history, chapter states, tracking links and per source settings. It does not contain downloaded images.</p>
+    <p>Automatic backups can be scheduled, with a limit on how many are kept. Restoring merges into what is already there rather than replacing it.</p>
+    <div class="callout warning"><strong>Restore what you can read.</strong> A backup records which source each entry came from. Restore onto a device without that extension installed and the entries are there but cannot load until you add it.</div>
 
-    <!-- Google Drive -->
-    <h2 id="sync-google-drive">Google Drive</h2>
-    <p>
-      Google Drive stores one file named <code>mihon-sync.tachibk</code> in the app's Drive space
-      (<code>drive.file</code> scope — only files Mohyeong created are accessible).
-    </p>
-    <ol class="steps">
-      <li>
-        <div>
-          <strong>Get an access token</strong>
-          Use the <a href="https://developers.google.com/oauthplayground/" target="_blank" rel="noopener">Google OAuth Playground</a>.
-          Select scope <code>https://www.googleapis.com/auth/drive.file</code>, authorize, and copy
-          the access token.
-        </div>
-      </li>
-      <li>
-        <div>
-          <strong>Enter it in Mohyeong</strong>
-          <strong>More → Settings → Sync</strong> → Select Google Drive → paste into Access Token.
-        </div>
-      </li>
-    </ol>
-    <div class="callout warning">
-      <strong>Access tokens expire (usually 1 hour).</strong> You'll need to refresh the token
-      periodically. Mohyeong does not handle OAuth refresh automatically.
-    </div>
+    <h2 id="sync-overview">Sync</h2>
+    <p>Sync keeps two devices agreeing about the same library. Backup is a file you keep; sync is a conversation between installs. Set it up in <strong>Settings, Data and storage, Sync</strong>.</p>
+    <table>
+      <tr><th>Backend</th><th>You provide</th></tr>
+      <tr><td>SyncYomi</td><td>Server address and API key</td></tr>
+      <tr><td>WebDAV</td><td>URL, username, password</td></tr>
+      <tr><td>Google Drive</td><td>Account authorisation</td></tr>
+      <tr><td>Dropbox</td><td>Account authorisation</td></tr>
+    </table>
+    <p>Choose what takes part: library, categories, chapters, history, tracking. Sync can run on app start and on a schedule.</p>
+    <p>Merging is per row and by timestamp, so the most recently changed version of each entry wins rather than the whole of whichever device synced last. Removing something is recorded as an act with its own timestamp, so an entry you delete on one device does not come back from the other.</p>
+    <div class="callout info"><strong>Leaving the sync screen with unsaved changes</strong> warns you first, because a half entered server address that silently discards itself looks exactly like sync being broken.</div>
 
-    <!-- Dropbox -->
-    <h2 id="sync-dropbox">Dropbox</h2>
-    <p>
-      Dropbox stores <code>/mihon-sync.tachibk</code> in your Dropbox root using a long-lived
-      personal access token.
-    </p>
-    <ol class="steps">
-      <li>
-        <div>
-          <strong>Create a Dropbox app</strong>
-          Go to <a href="https://www.dropbox.com/developers/apps" target="_blank" rel="noopener">dropbox.com/developers/apps</a>,
-          create an app with <strong>Full Dropbox</strong> access.
-        </div>
-      </li>
-      <li>
-        <div>
-          <strong>Generate an access token</strong>
-          In the app settings, click <strong>Generate</strong> under "Generated access token".
-        </div>
-      </li>
-      <li>
-        <div>
-          <strong>Enter in Mohyeong</strong>
-          <strong>More → Settings → Sync</strong> → Select Dropbox → paste the token.
-        </div>
-      </li>
-    </ol>
+    <h2 id="security">Security</h2>
+    <p><strong>Settings, Security</strong> can require your device lock to open the app, with a delay so switching apps for a moment does not lock you out. There is also an option to hide the app's contents in the recent apps switcher.</p>
+    <p><strong>Incognito mode</strong> stops the app recording history while it is on. It is a toggle rather than a mode you can forget you are in: while it is active the app says so.</p>
+    <div class="callout warning"><strong>Lock when idle set to Never</strong> means the lock is only asked for on a cold start, not when returning from another app.</div>
 
-    <!-- Conflict resolution -->
-    <h2 id="conflict-resolution">Conflict Resolution <span class="badge">Mohyeong exclusive</span></h2>
-    <p>
-      Standard Mihon sync uses last-write-wins at the whole-backup level — whichever device
-      synced most recently overwrites everything. Mohyeong resolves conflicts at the
-      <strong>row level</strong> using <code>lastModifiedAt</code> timestamps.
-    </p>
-    <ul>
-      <li>
-        <strong>Manga metadata</strong> — the version with the higher <code>lastModifiedAt</code>
-        timestamp wins. If timestamps are equal, <code>version</code> counter acts as tiebreaker.
-      </li>
-      <li>
-        <strong>Chapter read state</strong> — <code>lastModifiedAt</code> comparison.
-        If the DB entry is newer, its read/bookmark/lastPage values are kept. Bookmarks are
-        <em>always sticky</em> (never unset by a sync).
-      </li>
-      <li>
-        <strong>Categories, tracking, history</strong> — merged additively; entries are never
-        deleted by a sync unless the backup explicitly omits them.
-      </li>
-    </ul>
+    <h2 id="appearance">Appearance</h2>
+    <p>Mohyeong is built dark. There is no light theme and no follow the system option, because there is nothing behind them: the whole interface is designed against a black ground with drifting aurora light, and a light variant would be a different application rather than a different setting. Rather than ship switches that move nothing, the settings are not there.</p>
+    <p>What <strong>Settings, Appearance</strong> does hold is the relative date format used across history and updates.</p>
+    <div class="callout info"><strong>Idle decoration sleeps.</strong> The aurora stops drifting about ten seconds after you stop touching the screen and picks up exactly where it left off when you touch it again. This is a battery measure and it is not configurable.</div>
 
-    <!-- ── MIHON FEATURES ──────────────────────────── -->
-    <span id="library-faq"></span>
-    <h1 id="library" style="margin-top:3rem;">Library</h1>
-    <p>
-      Your library is the central hub for all manga you're following. Add titles from any source
-      by tapping the bookmark icon on a manga's detail page.
-    </p>
-    <ul>
-      <li><strong>Categories</strong> — organise manga into custom categories (see <a href="#categories">Categories</a>)</li>
-      <li><strong>Filters</strong> — filter by read status, source, category, or custom tags</li>
-      <li><strong>Sort</strong> — by last read, alphabetical, total chapters, or unread count</li>
-      <li><strong>Bulk actions</strong> — mark as read, move category, download, delete in bulk</li>
-    </ul>
+    <h2 id="troubleshooting">Troubleshooting</h2>
 
-    <h1 id="tracking" style="margin-top:3rem;">Tracking</h1>
-    <p>
-      Mohyeong supports all the same tracking services as Mihon. Connect your accounts in
-      <strong>More → Settings → Tracking</strong>.
-    </p>
-    <ul>
-      <li>MyAnimeList</li>
-      <li>AniList</li>
-      <li>Kitsu</li>
-      <li>MangaUpdates</li>
-      <li>Shikimori</li>
-      <li>Bangumi</li>
-    </ul>
-    <p>Reading progress is synced automatically after you finish a chapter.</p>
+    <h3>A source shows nothing, or fails to load</h3>
+    <p>Open the site in a browser first. If it is down or has moved domain, the extension cannot help. If the site loads in a browser but not in the app, it is likely a Cloudflare check; open the source once from Browse so the challenge can be solved, then try again.</p>
 
-    <h1 id="reader" style="margin-top:3rem;">Reader</h1>
-    <p>Multiple reading modes are available per-manga or as a global default:</p>
-    <ul>
-      <li><strong>Right to Left / Left to Right</strong> — paged horizontal reading</li>
-      <li><strong>Vertical</strong> — continuous vertical scroll</li>
-      <li><strong>Webtoon</strong> — optimised for long-strip webtoons, no gaps</li>
-      <li><strong>Continuous horizontal</strong> — horizontal strip reading</li>
-    </ul>
-    <p>Additional reader options: brightness control, color filter, page scale, crop borders.</p>
+    <h3>A source has no logo, just a letter</h3>
+    <p>The logo is fetched from the site itself, once. Sites behind a check can fail the first attempt and are retried within the hour. Some sites genuinely publish no icon at all, and those keep the letter permanently.</p>
 
-    <span id="storage"></span>
-    <h1 id="downloads" style="margin-top:3rem;">Downloads</h1>
-    <p>
-      Download chapters for offline reading. Downloads are stored in your configured storage
-      location (<strong>More → Settings → Data and storage</strong>).
-    </p>
-    <ul>
-      <li>Download individual chapters or bulk-download from the chapter list</li>
-      <li>Auto-download new chapters on library update</li>
-      <li>Download queue with pause/resume</li>
-    </ul>
+    <h3>Covers load but pages do not</h3>
+    <p>Usually the site rate limiting a burst of image requests. Wait, then retry the chapter. Downloading the chapter first is more reliable than reading it live on sites that do this often.</p>
 
-    <span id="local-source"></span>
-    <h1 id="local" style="margin-top:3rem;">Local Source</h1>
-    <p>
-      The <strong>Local source</strong> lets you read manga stored on your device — no extension required.
-      Put your files in the configured storage folder (<strong>More → Settings → Data and storage → Storage location</strong>),
-      under the <code>local</code> subdirectory. The app scans it the next time you open the Local source.
-    </p>
-    <h3>Folder layout</h3>
-    <pre><code>&lt;Storage&gt;/Mohyeong/local/
-    My Series Title/
-        cover.jpg            (optional cover image)
-        details.json         (optional metadata)
-        Chapter 1/           (folder of images = one chapter)
-            001.jpg
-            002.jpg
-        Chapter 2.cbz        (archive = one chapter)
-        Chapter 3.epub       (EPUB = one chapter)</code></pre>
-    <p>
-      Each top-level folder under <code>local/</code> is one series. Chapters can be either subfolders
-      of images or archive files (<code>.zip</code>, <code>.cbz</code>, <code>.rar</code>, <code>.cbr</code>, <code>.epub</code>).
-    </p>
-    <h3>Metadata (optional <code>details.json</code>)</h3>
-    <p>Drop a <code>details.json</code> next to the chapters to override the title, author, status, description, and genre:</p>
-    <pre><code>{
-  "title": "My Series Title",
-  "author": "Author Name",
-  "artist": "Artist Name",
-  "description": "Short synopsis",
-  "genre": ["Action", "Adventure"],
-  "status": "1",
-  "_status values": ["0 = Unknown", "1 = Ongoing", "2 = Completed", "3 = Licensed", "4 = Publishing finished", "5 = Cancelled", "6 = On hiatus"]
-}</code></pre>
-    <h3>Cover image</h3>
-    <p>Add a <code>cover.jpg</code> (or <code>.png</code>) inside the series folder to set a custom cover. Otherwise the first page of the first chapter is used.</p>
+    <h3>Library updates find nothing new</h3>
+    <p>Check <strong>Settings, Library</strong>: updates can be restricted to certain categories, skipped for completed series, or limited to Wi-Fi and to charging. An update that is skipped is not an update that failed.</p>
 
-    <h1 id="categories" style="margin-top:3rem;">Categories</h1>
-    <p>
-      Categories help you organise your library. Create them in
-      <strong>More → Settings → Library → Edit categories</strong>.
-      Manga can belong to multiple categories.
-    </p>
+    <h3>Downloads stop when the screen is off</h3>
+    <p>Grant the battery optimisation exemption offered during setup, or in <strong>Settings, Advanced</strong>. Without it Android is free to kill long downloads.</p>
 
-    <!-- ── FAQ ─────────────────────────────────────── -->
-    <h1 id="faq-mihon" style="margin-top:3rem;">FAQ — Differences from Mihon</h1>
+    <h3>The app asks for the storage folder again</h3>
+    <p>The permission Android grants for a folder can be revoked if the folder is deleted, renamed, or lives on removed external storage. Pick it again.</p>
 
-    <h3>Is Mohyeong compatible with Mihon backups?</h3>
-    <p>
-      Yes. Mohyeong reads and writes standard <code>.tachibk</code> backup files. You can
-      restore a Mihon backup in Mohyeong and vice versa.
-    </p>
+    <h2 id="faq">FAQ</h2>
 
-    <h3>Can I install both Mihon and Mohyeong?</h3>
-    <p>
-      Yes. Mohyeong uses the package ID <code>app.mohyeong</code>, which is different from
-      Mihon's <code>app.mihon</code>. They won't conflict.
-    </p>
+    <h3>Can I use my Mihon extensions?</h3>
+    <p>No. Mihon extensions are Android APKs; Mohyeong's are JavaScript files it runs itself. They are not interchangeable in either direction.</p>
 
-    <h3>Does Mohyeong receive Mihon upstream updates?</h3>
-    <p>
-      Mohyeong is based on a specific Mihon version and is updated manually. Check the
-      <a href="https://github.com/sjoygsh/Mohyeong/releases" target="_blank" rel="noopener">releases page</a>
-      for the current base version.
-    </p>
+    <h3>Can I restore a Mihon backup?</h3>
+    <p>The backup format is compatible, so the library, categories, history and chapter states come across. What cannot come across is the sources: a Mihon backup refers to Mihon extensions, and you will need the matching Mohyeong extension for each source before those entries load.</p>
+
+    <h3>Can I run Mihon and Mohyeong together?</h3>
+    <p>Yes. Different package names, separate libraries, separate storage.</p>
+
+    <h3>Where is the Updates tab?</h3>
+    <p>It is <a href="#tonight">Tonight</a>, on Home. It does everything the separate tab did: refresh, filters, day grouping, search, bulk selection.</p>
+
+    <h3>Why is there no light theme?</h3>
+    <p>See <a href="#appearance">Appearance</a>. Briefly: there is nothing behind the switch, and a switch that moves nothing is worse than no switch.</p>
 
     <h3>Is this endorsed by the Mihon team?</h3>
-    <p>
-      No. Mohyeong is an independent fork. It is not affiliated with or endorsed by the Mihon
-      project. Mihon is open-source under Apache 2.0, which permits forks.
-    </p>
+    <p>No. Mohyeong is an independent project that follows Mihon's behaviour closely. Do not take problems here to them.</p>
 
-    <span id="troubleshooting"></span>
-    <h1 id="faq-sync" style="margin-top:3rem;">FAQ — Sync Troubleshooting</h1>
-
-    <h3>Sync says "auth failed" for Google Drive</h3>
-    <p>
-      Your access token has expired. OAuth Playground tokens are typically valid for 1 hour.
-      Generate a new one and update it in sync settings.
-    </p>
-
-    <h3>WebDAV sync fails with 405 or 401</h3>
-    <p>
-      Check that your WebDAV URL is the correct base path, that your username/password are right,
-      and that the server allows PUT requests on that path.
-    </p>
-
-    <h3>Dropbox returns "path/not_found" on first sync</h3>
-    <p>
-      This is expected on the first sync — no file exists yet. Mohyeong will create it. If it
-      persists after the first sync, check that your access token has Full Dropbox access scope.
-    </p>
-
-    <h1 id="faq-linked" style="margin-top:3rem;">FAQ — Linked Sources</h1>
-
-    <h3>Can I link more than two sources?</h3>
-    <p>Yes, you can link any number of sources to a single manga entry.</p>
-
-    <h3>Will linked sources affect my reading history?</h3>
-    <p>
-      History is recorded per chapter. Chapters read from a linked source show in your history
-      under that source's identity, but all appear in the single manga entry's chapter list.
-    </p>
-
-    <h3>Are linked source relationships backed up?</h3>
-    <p>Yes, they are included in sync and backup exports.</p>
-
-    <!-- Page nav -->
     <div class="page-nav">
-      <a href="index.html">
-        <span class="nav-dir">← Back</span>
-        <span class="nav-title">Home</span>
-      </a>
-      <a href="https://github.com/sjoygsh/Mohyeong/releases" target="_blank" rel="noopener" class="next">
-        <span class="nav-dir">Next →</span>
-        <span class="nav-title">Download latest release</span>
-      </a>
+      <a href="index.html"><span class="nav-dir">Back to</span><span class="nav-title">Home</span></a>
+      <a class="next" href="https://github.com/sjoygsh/Mohyeong/releases" target="_blank" rel="noopener"><span class="nav-dir">Get the app</span><span class="nav-title">Releases</span></a>
     </div>
 
   </main>
-
-  <!-- Right TOC -->
-  <aside class="toc">
-    <div class="toc-title">On this page</div>
-    <ul>
-      <li><a href="#installation">Installation</a></li>
-      <li><a href="#migrating">Migrate from Mihon</a></li>
-      <li><a href="#linked-sources">Linked Sources</a></li>
-      <li><a href="#sync-overview">Sync Overview</a></li>
-      <li><a href="#sync-syncyomi">SyncYomi</a></li>
-      <li><a href="#sync-webdav">WebDAV</a></li>
-      <li><a href="#sync-google-drive">Google Drive</a></li>
-      <li><a href="#sync-dropbox">Dropbox</a></li>
-      <li><a href="#conflict-resolution">Conflict Resolution</a></li>
-      <li><a href="#library">Library</a></li>
-      <li><a href="#tracking">Tracking</a></li>
-      <li><a href="#reader">Reader</a></li>
-      <li><a href="#faq-mihon">FAQ</a></li>
-    </ul>
-  </aside>
-
 </div>
-
-<footer>
-  <p>
-    Mohyeong — Apache 2.0 Licensed |
-    Fork of <a href="https://mihon.app" target="_blank" rel="noopener">Mihon</a> |
-    Built with <strong>Claude AI</strong> assistance |
-    <a href="https://github.com/sjoygsh/Mohyeong" target="_blank" rel="noopener">GitHub</a>
-  </p>
-</footer>
-
-<script>
-  const headings = Array.from(document.querySelectorAll('.content h1[id], .content h2[id]'));
-  const allNavLinks = Array.from(document.querySelectorAll('.sidebar a[href^="#"], .toc a[href^="#"]'));
-  let paused = false;
-
-  function setActive(id) {
-    allNavLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + id));
-  }
-
-  function update() {
-    if (paused) return;
-    const threshold = window.innerHeight * 0.4;
-    let active = headings[0]?.id;
-    for (const h of headings) {
-      if (h.getBoundingClientRect().top <= threshold) active = h.id;
-    }
-    setActive(active);
-  }
-
-  // On sidebar/TOC click: set active immediately, pause scroll spy until scroll settles
-  allNavLinks.forEach(a => {
-    a.addEventListener('click', () => {
-      const id = a.getAttribute('href').slice(1);
-      setActive(id);
-      paused = true;
-      clearTimeout(window._spyTimer);
-      window._spyTimer = setTimeout(() => { paused = false; update(); }, 800);
-    });
-  });
-
-  window.addEventListener('scroll', update, { passive: true });
-  update();
-</script>
 
 </body>
 </html>

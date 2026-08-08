@@ -24,7 +24,6 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/onboarding/onboarding_preferences.dart';
 import '../../data/source/local_source_preferences.dart';
@@ -32,11 +31,7 @@ import '../../data/source/saf.dart';
 import '../../data/system/app_permissions.dart';
 import '../backup/backup_screen.dart';
 import '../tide/tide.dart';
-
-const String _storageHelpUrl =
-    'https://sjoygsh.github.io/Mohyeong/help.html#storage';
-const String _gettingStartedUrl =
-    'https://sjoygsh.github.io/Mohyeong/help.html#getting-started';
+import '../util/open_link.dart';
 
 /// Wraps [child] behind the onboarding flow until it's been completed once.
 /// Reads the persisted flag directly on cold start (rather than via the
@@ -331,7 +326,7 @@ class _StorageStepState extends ConsumerState<_StorageStep> {
         const SizedBox(height: 12),
         TideButton(
           label: 'Storage guide',
-          onTap: () => _openUrl(_storageHelpUrl),
+          onTap: () => openLink(context, helpUrl('storage')),
         ),
       ],
     );
@@ -491,7 +486,7 @@ class _GuidesStep extends StatelessWidget {
           title: 'Getting started guide',
           subtitle: 'Opens in your browser',
           trailing: const TideChevron(),
-          onTap: () => _openUrl(_gettingStartedUrl),
+          onTap: () => openLink(context, helpUrl('getting-started')),
         ),
         const SizedBox(height: 26),
         Text('Coming back to Mohyeong?', style: TideText.body()),
@@ -510,9 +505,3 @@ class _GuidesStep extends StatelessWidget {
   }
 }
 
-Future<void> _openUrl(String url) async {
-  final uri = Uri.parse(url);
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-}

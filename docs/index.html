@@ -10,12 +10,12 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #0f0f11;
-      --surface:   #18181c;
-      --card:      #222228;
-      --border:    #2e2e38;
-      --accent:    #c0392b;
-      --accent-h:  #e74c3c;
+      --bg:        #000000;
+      --surface:   #0e0e13;
+      --card:      #16161d;
+      --border:    #262632;
+      --accent:    #b5abfc;
+      --accent-h:  #d2cefd;
       --text:      #e8e8ec;
       --muted:     #8888a0;
       --radius:    12px;
@@ -91,13 +91,13 @@
     .hero-icon {
       width: 120px; height: 120px; border-radius: 28px;
       margin-bottom: 2rem;
-      box-shadow: 0 0 60px rgba(192,57,43,.35);
+      box-shadow: 0 0 60px rgba(181,171,252,.35);
     }
     .hero h1 {
       font-size: clamp(2.2rem, 5vw, 3.2rem);
       font-weight: 800;
       letter-spacing: -.02em;
-      background: linear-gradient(135deg, #fff 40%, #c0392b);
+      background: linear-gradient(135deg, #fff 40%, #b5abfc);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -174,7 +174,7 @@
     .card p { font-size: .9rem; color: var(--muted); line-height: 1.6; }
     .card .tag {
       display: inline-block; margin-top: .9rem;
-      background: rgba(192,57,43,.15); color: var(--accent);
+      background: rgba(181,171,252,.15); color: var(--accent);
       border-radius: 4px; padding: .15rem .5rem;
       font-size: .75rem; font-weight: 600;
     }
@@ -243,14 +243,11 @@
 </head>
 <body>
 
-<!-- AI Disclosure Banner -->
 <div class="ai-banner">
-  <strong>Built with AI assistance</strong> — Mohyeong was developed with the help of
-  <strong><a href="https://claude.ai" target="_blank" rel="noopener">Claude (Anthropic)</a></strong>
-  to extend and improve upon the open-source Mihon project.
+  Built with AI assistance — Mohyeong is developed with
+  <a href="https://claude.com/claude-code" target="_blank" rel="noopener">Claude</a> (Anthropic).
 </div>
 
-<!-- Navigation -->
 <nav>
   <div class="nav-inner">
     <a class="nav-logo" href="index.html">
@@ -258,147 +255,149 @@
       Mohyeong
     </a>
     <ul class="nav-links">
-      <li><a href="help.html" class="hide-mobile">Docs</a></li>
-      <li><a href="https://github.com/sjoygsh/Mohyeong" target="_blank" rel="noopener" class="hide-mobile">GitHub</a></li>
+      <li><a href="help.html">Docs</a></li>
+      <li><a href="https://github.com/sjoygsh/Mohyeong" target="_blank" rel="noopener">GitHub</a></li>
       <li><a href="https://github.com/sjoygsh/Mohyeong/releases" target="_blank" rel="noopener" class="btn-dl btn">Download</a></li>
     </ul>
   </div>
 </nav>
 
-<!-- Hero -->
-<div class="hero">
-  <div class="version-badge">Based on Mihon <span>v0.19.9</span></div>
+<header class="hero">
   <img class="hero-icon" src="assets/icon.png" alt="Mohyeong" />
-  <h1>Mohyeong — Enhanced Manga Reader</h1>
-  <p>A powerful open-source manga reader for Android. Everything Mihon does, plus linked sources, multi-backend cloud sync, and smarter conflict resolution.</p>
+  <span class="version-badge">Android 8.0 and up</span>
+  <h1>Mohyeong</h1>
+  <p>A manga reader for Android, built around the question a reader actually has: what is next, and where was I.</p>
   <div class="hero-btns">
-    <a class="btn btn-primary" href="https://github.com/sjoygsh/Mohyeong/releases">
-      ↓ Download APK
-    </a>
-    <a class="btn btn-secondary" href="help.html">
-      Read the docs
-    </a>
+    <a class="btn btn-primary" href="https://github.com/sjoygsh/Mohyeong/releases" target="_blank" rel="noopener">Download APK</a>
+    <a class="btn btn-secondary" href="help.html">Read the docs</a>
   </div>
-</div>
+</header>
 
-<hr />
-
-<!-- Core features -->
-<section>
-  <div class="section-label">What's included</div>
-  <h2 class="section-title">Everything you need in a manga reader</h2>
-  <p class="section-sub">All the capabilities of Mihon, plus exclusive enhancements built specifically for Mohyeong.</p>
+<section class="new-section">
+  <div class="section-label">What it is</div>
+  <h2 class="section-title">Ordered by where you left off</h2>
+  <p class="section-sub">Most library apps answer "what do I own". Following ongoing series only ever raises one question, so the home screen is built around that instead of around a grid of everything.</p>
   <div class="cards">
+
     <div class="card">
-      <span class="card-icon">🔗</span>
-      <h3>Linked Sources</h3>
-      <p>Connect multiple sources to a single manga entry. Chapters from all linked sources appear in one unified list — no duplicates, no juggling.</p>
-      <span class="tag">Mohyeong exclusive</span>
+      <div class="card-icon">📖</div>
+      <h3>Continue</h3>
+      <p>What you are part way into, with the chapter and the position you stopped at, in front of everything else.</p>
     </div>
+
     <div class="card">
-      <span class="card-icon">☁️</span>
-      <h3>Multi-Backend Sync</h3>
-      <p>Sync your library across devices via SyncYomi, WebDAV, Google Drive, or Dropbox. Pick the backend that fits your setup.</p>
-      <span class="tag">Mohyeong exclusive</span>
+      <div class="card-icon">🌙</div>
+      <h3>Tonight</h3>
+      <p>Every chapter that has arrived, newest first. It is the updates surface, not a summary of one: refresh, filters, search and bulk actions all live here. There is no separate Updates tab.</p>
     </div>
+
     <div class="card">
-      <span class="card-icon">⚖️</span>
-      <h3>Smart Conflict Resolution</h3>
-      <p>Per-row timestamp-based merging means the most recently changed data always wins — not just the latest full snapshot.</p>
-      <span class="tag">Mohyeong exclusive</span>
+      <div class="card-icon">🗓️</div>
+      <h3>Upcoming</h3>
+      <p>A calendar of predicted releases, measured from how often each series has actually been updating.</p>
     </div>
+
     <div class="card">
-      <span class="card-icon">📚</span>
-      <h3>Tracking</h3>
-      <p>Automatically sync your reading progress with MyAnimeList, AniList, Kitsu, MangaUpdates, and more.</p>
+      <div class="card-icon">🧩</div>
+      <h3>Script extensions</h3>
+      <p>Sources are JavaScript the app runs itself, not APKs installed through Android. Adding one is a file, not an install prompt.</p>
+      <span class="tag">Different from Mihon</span>
     </div>
+
     <div class="card">
-      <span class="card-icon">🎨</span>
-      <h3>Customizable Reader</h3>
-      <p>Multiple reading modes (paged, webtoon, continuous), custom color filters, brightness, and layout controls.</p>
+      <div class="card-icon">🎴</div>
+      <h3>Sources you recognise</h3>
+      <p>Every browse row wears that website's own logo, fetched once from the site and cached. A list of thirty identical glyphs is a list you have to read line by line.</p>
     </div>
+
     <div class="card">
-      <span class="card-icon">🔌</span>
-      <h3>Extensions</h3>
-      <p>Bring your own content from hundreds of sources via the extension system. Full control over where you read from.</p>
+      <div class="card-icon">📕</div>
+      <h3>Five reading modes</h3>
+      <p>Left to right, right to left, vertical, webtoon and continuous vertical, set globally or per series, with crop borders, colour filter and an e ink flash mode.</p>
     </div>
+
   </div>
 </section>
 
-<hr />
+<section class="new-section">
+  <div class="section-label">Your data</div>
+  <h2 class="section-title">Yours, and portable</h2>
+  <p class="section-sub">One folder holds everything. Backups are a file you keep, sync is a conversation between installs, and the two are not the same thing.</p>
+  <div class="cards">
 
-<!-- Sync deep dive -->
-<div class="new-section">
-  <section>
-    <div class="section-label">Cloud Sync</div>
-    <h2 class="section-title">Your library, everywhere</h2>
-    <p class="section-sub">Mohyeong supports four sync backends. All use the same bidirectional merge engine with timestamp-based conflict resolution.</p>
-    <div class="cards">
-      <div class="card">
-        <span class="card-icon">🔄</span>
-        <h3>SyncYomi</h3>
-        <p>Self-hosted server sync. Snapshot local → POST to server → server merges → apply merged result.</p>
-      </div>
-      <div class="card">
-        <span class="card-icon">📁</span>
-        <h3>WebDAV</h3>
-        <p>Works with Nextcloud, Synology, or any WebDAV server you already run. HTTP Basic auth.</p>
-      </div>
-      <div class="card">
-        <span class="card-icon">🟡</span>
-        <h3>Google Drive</h3>
-        <p>Uses your personal Google Drive via OAuth access token (drive.file scope). One file, streamed upload.</p>
-      </div>
-      <div class="card">
-        <span class="card-icon">📦</span>
-        <h3>Dropbox</h3>
-        <p>Long-lived personal access token. Stores a single <code>.tachibk</code> file, overwritten on each sync.</p>
-      </div>
+    <div class="card">
+      <div class="card-icon">☁️</div>
+      <h3>Four sync backends</h3>
+      <p>SyncYomi, WebDAV, Google Drive or Dropbox. Choose what takes part: library, categories, chapters, history, tracking.</p>
     </div>
-  </section>
-</div>
 
-<hr />
+    <div class="card">
+      <div class="card-icon">⚖️</div>
+      <h3>Per row merging</h3>
+      <p>The most recently changed version of each entry wins, rather than the whole of whichever device synced last. Deleting is recorded as an act with its own time, so it does not come back.</p>
+    </div>
 
-<!-- Attribution -->
-<div class="attribution">
-  <section>
-    <div class="attribution-text">
-      <h2>Built on the shoulders of giants — with AI help</h2>
-      <p>
-        Mohyeong is a fork of <a href="https://mihon.app" target="_blank" rel="noopener">Mihon</a>,
-        which is itself a continuation of <a href="https://github.com/tachiyomiorg/tachiyomi" target="_blank" rel="noopener">Tachiyomi</a>.
-        Both are open-source under the Apache 2.0 license.
-      </p>
-      <p style="margin-top:.75rem;">
-        The additional features in Mohyeong — linked sources, expanded sync transports, conflict
-        resolution, reactive sync status — were designed and implemented with the direct assistance
-        of <strong>Claude (Anthropic)</strong>. No attempt is made to obscure this; AI collaboration
-        was an intentional and integral part of the development process.
-      </p>
+    <div class="card">
+      <div class="card-icon">💾</div>
+      <h3>Backups that restore</h3>
+      <p>Library, categories, history, chapter states, tracking links and source settings in one file. Restoring merges rather than replaces.</p>
     </div>
-    <div class="attribution-badge">
-      <span class="robot">🤖</span>
-      <p>Developed with</p>
-      <strong>Claude AI</strong>
-      <p style="margin-top:.4rem; font-size:.75rem;">by Anthropic</p>
-    </div>
-  </section>
-</div>
 
-<!-- Footer -->
-<footer>
-  <div class="footer-inner">
-    <div class="footer-logo">
-      <img src="assets/icon-round.png" alt="" />
-      <span>Mohyeong — Apache 2.0 Licensed</span>
+    <div class="card">
+      <div class="card-icon">🔗</div>
+      <h3>Tracking</h3>
+      <p>AniList, MyAnimeList, Kitsu, MangaUpdates, Shikimori, Bangumi, Komga and Suwayomi. Linked per series, so nothing leaves the device until you link one.</p>
     </div>
-    <div class="footer-links">
-      <a href="help.html">Docs</a>
-      <a href="https://github.com/sjoygsh/Mohyeong" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://mihon.app" target="_blank" rel="noopener">Upstream: Mihon</a>
+
+    <div class="card">
+      <div class="card-icon">📁</div>
+      <h3>Local source</h3>
+      <p>Point it at a folder of CBZ, ZIP, CBR, RAR or loose images and read what is already on the device.</p>
     </div>
+
+    <div class="card">
+      <div class="card-icon">🔒</div>
+      <h3>Locked and incognito</h3>
+      <p>Require the device lock to open, hide contents in the app switcher, and an incognito mode that says so while it is on.</p>
+    </div>
+
   </div>
+</section>
+
+<section class="new-section">
+  <div class="section-label">Honest about it</div>
+  <h2 class="section-title">What it does not do</h2>
+  <p class="section-sub">Worth knowing before you install rather than after.</p>
+  <div class="cards">
+
+    <div class="card">
+      <div class="card-icon">🚫</div>
+      <h3>Mihon extensions do not work</h3>
+      <p>Theirs are Android APKs; these are scripts. A Mihon backup restores your library and history, but you will need the matching Mohyeong extension for each source before those entries load.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">🌑</div>
+      <h3>Dark only</h3>
+      <p>No light theme and no follow the system. The interface is designed against a black ground, and rather than ship switches that move nothing, they are not there.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">🤝</div>
+      <h3>Not affiliated with Mihon</h3>
+      <p>An independent project that follows Mihon's behaviour closely. Please do not take problems here to them.</p>
+    </div>
+
+  </div>
+</section>
+
+<footer>
+  <p>
+    <a href="help.html">Docs</a> ·
+    <a href="https://github.com/sjoygsh/Mohyeong" target="_blank" rel="noopener">GitHub</a> ·
+    <a href="https://github.com/sjoygsh/Mohyeong/releases" target="_blank" rel="noopener">Releases</a>
+  </p>
+  <p class="hide-mobile">Mohyeong is free software. It hosts no content and provides none; it reads sites you point it at.</p>
 </footer>
 
 </body>

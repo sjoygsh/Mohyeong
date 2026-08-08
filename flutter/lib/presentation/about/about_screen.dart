@@ -23,8 +23,8 @@ import '../util/open_link.dart';
 class AboutScreen extends ConsumerWidget {
   const AboutScreen({super.key});
 
-  static const _websiteUrl = 'https://sjoygsh.github.io/Mohyeong/';
-  static const _helpUrl = 'https://sjoygsh.github.io/Mohyeong/help.html';
+  static const _websiteUrl = docsHome;
+  static const _helpUrl = '${docsHome}help.html';
   static const _githubUrl = 'https://github.com/sjoygsh/Mohyeong';
   static const _releaseUrl =
       'https://github.com/sjoygsh/Mohyeong/releases/latest';
