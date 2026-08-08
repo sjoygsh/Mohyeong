@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../../data/network/webview_http_client.dart';
 import '../../data/storage/app_cache.dart';
 import '../../data/source/local_archive.dart';
+import '../../data/source/page_fetch_queue.dart';
 import '../../data/source/saf.dart';
 import 'crop_borders_image.dart';
 
@@ -411,19 +412,31 @@ class _NetworkImageWithWebViewFallback
           unawaited(appImageCacheManager.putFile(key.url, bytes));
           fromDiskCache = true;
         } else {
-          file = await appImageCacheManager.getSingleFile(
+          // Reader pages queue behind the read position here; covers and
+          // everything else pass straight through. See [PageFetchQueue].
+          // Kept in its own local: the cache manager hands back the `file`
+          // package's File, not `dart:io`'s, so it can't go through [file].
+          final downloaded = await PageFetchQueue.run(
             key.url,
-            headers: key.headers ?? const {},
+            () => appImageCacheManager.getSingleFile(
+              key.url,
+              headers: key.headers ?? const {},
+            ),
           );
-          path = file.path;
+          path = downloaded.path;
         }
       } else {
         path = file.path;
         fromDiskCache = true;
       }
     } catch (_) {
-      final fallback = await WebViewHttpClient.instance
-          .fetchImageBytes(key.url, fullResolution: key.fullResolution);
+      // The WebView round trip is serialized host-side and slower still than a
+      // plain download, so it belongs in the queue for the same reason.
+      final fallback = await PageFetchQueue.run(
+        key.url,
+        () => WebViewHttpClient.instance
+            .fetchImageBytes(key.url, fullResolution: key.fullResolution),
+      );
       if (fallback == null || fallback.isEmpty) rethrow;
       bytes = fallback;
       path = null;

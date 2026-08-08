@@ -24,6 +24,7 @@ import '../../data/reader/reader_volume_keys.dart';
 import '../../data/security/secure_screen.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/incognito_preferences.dart';
+import '../../data/source/page_fetch_queue.dart';
 import '../../data/track/track_preferences.dart';
 import '../../data/track/track_updater.dart';
 import '../../domain/chapter/model/chapter.dart';
@@ -3855,7 +3856,28 @@ class _PagesViewState extends ConsumerState<_PagesView> {
       });
     }
     _lastReported = clamped;
+    _registerFetchOrder();
+    PageFetchQueue.focus(clamped);
     widget.zoomRegistry?.stepPage = _stepDisplayPage;
+  }
+
+  /// First page URL of [view], or null when it has no pages — the cheap
+  /// "is this still the same chapter" probe.
+  static String? _firstUrl(_PagesView view) =>
+      view.count > 0 ? view.pageUrlOf?.call(0) : null;
+
+  /// Hand the open chapter's pages to [PageFetchQueue] in reading order, so a
+  /// freed download slot goes to the page nearest the read position instead of
+  /// whichever one happened to be requested first.
+  void _registerFetchOrder() {
+    final urlOf = widget.pageUrlOf;
+    if (urlOf == null) {
+      PageFetchQueue.close();
+      return;
+    }
+    PageFetchQueue.openChapter([
+      for (var i = 0; i < widget.count; i++) urlOf(i),
+    ]);
   }
 
   /// Step the pager one DISPLAY slot (visits both halves of split spreads
@@ -3888,6 +3910,11 @@ class _PagesViewState extends ConsumerState<_PagesView> {
   @override
   void didUpdateWidget(covariant _PagesView old) {
     super.didUpdateWidget(old);
+    // A different chapter arrived in the same viewer element — the queue is
+    // still ordering the previous chapter's URLs, which now rank nothing.
+    if (widget.count != old.count || _firstUrl(widget) != _firstUrl(old)) {
+      _registerFetchOrder();
+    }
     // Reading mode switched between paged and continuous on a live viewer
     // (Kotlin recreates the whole viewer here): swap in the matching
     // controller, resuming at the last page we reported.
@@ -3957,6 +3984,9 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     _pageController?.dispose();
     _scrollController?.dispose();
     _webtoonZoom.dispose();
+    // Leaving the reader: nothing is a "page" any more, so covers and browse
+    // grids stop being ranked against a chapter that is no longer open.
+    PageFetchQueue.close();
     super.dispose();
   }
 
@@ -3965,6 +3995,10 @@ class _PagesViewState extends ConsumerState<_PagesView> {
   void _report(int page) {
     if (page == _lastReported) return;
     _lastReported = page;
+    // Re-point the download queue before anything else: a fling that crosses
+    // ten pages should strand the ten it flew past, not keep fetching them
+    // ahead of the one it landed on.
+    PageFetchQueue.focus(page);
     widget.onPageChanged(page);
   }
 
