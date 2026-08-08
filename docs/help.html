@@ -367,7 +367,7 @@
     <ul class="steps">
       <li><div><strong>Download the APK</strong>From the <a href="https://github.com/sjoygsh/Mohyeong/releases" target="_blank" rel="noopener">Releases page</a>.</div></li>
       <li><div><strong>Allow your browser to install apps</strong>Settings, Apps, Special app access, Install unknown apps. Enable it for whatever you downloaded with.</div></li>
-      <li><div><strong>Open the file and install</strong>Android 8.0 or newer.</div></li>
+      <li><div><strong>Open the file and install</strong>Android 7.0 or newer.</div></li>
     </ul>
     <div class="callout info"><strong>Both at once.</strong> Mohyeong does not use the same package name as Mihon, so having both installed side by side is fine. They keep entirely separate libraries.</div>
 
@@ -408,11 +408,12 @@
     <p>Tap the middle of the page to show or hide the controls. The edges turn pages, and which edge does what depends on the reading mode.</p>
     <table>
       <tr><th>Mode</th><th>Behaviour</th></tr>
-      <tr><td>Left to right</td><td>Paged, western order</td></tr>
-      <tr><td>Right to left</td><td>Paged, manga order</td></tr>
-      <tr><td>Vertical</td><td>Paged, top to bottom</td></tr>
-      <tr><td>Webtoon</td><td>Continuous scroll, no page gaps</td></tr>
-      <tr><td>Continuous vertical</td><td>Continuous scroll with gaps between pages</td></tr>
+      <tr><td>Paged (left to right)</td><td>Western order</td></tr>
+      <tr><td>Paged (right to left)</td><td>Manga order</td></tr>
+      <tr><td>Paged (vertical)</td><td>Top to bottom, one page at a time</td></tr>
+      <tr><td>Long strip</td><td>Continuous scroll, no gaps between pages</td></tr>
+      <tr><td>Long strip with gaps</td><td>Continuous scroll, pages separated</td></tr>
+      <tr><td>Default</td><td>Whatever the global setting says</td></tr>
     </table>
     <p>Mode can be set globally in <strong>Settings, Reader</strong> or per series from the reader's own settings sheet, which is where per series wins. That sheet also holds scale, rotation, background, crop borders, and the colour filter and brightness controls.</p>
     <p><strong>Settings, Reader</strong> additionally covers full screen, keeping the screen on, page number display, double tap zoom, tap zones and whether to invert them, and the flash on page change used to reduce ghosting on e ink.</p>
@@ -435,7 +436,6 @@
       <tr><td>Kitsu</td><td>Email and password</td></tr>
       <tr><td>MangaUpdates</td><td>Username and password</td></tr>
       <tr><td>Shikimori</td><td>Account authorisation in a browser</td></tr>
-      <tr><td>Bangumi</td><td>Account authorisation in a browser</td></tr>
       <tr><td>Komga, Suwayomi</td><td>Server address and credentials</td></tr>
     </table>
     <p>Linking is per series and nothing is sent until you link one. Progress is pushed as you read; you can also set status, score and dates by hand from the tracking sheet.</p>
@@ -447,7 +447,7 @@
     Chapter 1.cbz
     Chapter 2.cbz
     cover.jpg</code></pre>
-    <p>Each chapter is one <code>.cbz</code>, <code>.zip</code>, <code>.cbr</code> or <code>.rar</code>, or a folder of images. A file named <code>cover</code> beside the chapters is used as the series cover; otherwise the first image of the first chapter is.</p>
+    <p>Each chapter is one <code>.cbz</code> or <code>.zip</code> archive, or a folder of images. RAR and CBR are not supported. A file named <code>cover</code> beside the chapters is used as the series cover; otherwise the first image of the first chapter is.</p>
     <div class="callout info"><strong>Chapter order comes from the name.</strong> The app reads a number out of the filename, so <code>Chapter 2</code> sorts before <code>Chapter 10</code> even though the text does not.</div>
 
     <h2 id="source-migration">Migrating sources</h2>

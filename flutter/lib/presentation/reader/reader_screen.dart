@@ -1881,21 +1881,38 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
               ),
             ),
           ),
-          // Always-visible page indicator (Mihon's PageIndicatorText sits
-          // behind the menu, drawn in the reader-background contrast color).
+          // Page indicator, for when the chrome is DOWN.
+          //
+          // Mihon draws its PageIndicatorText behind the menu and lets the
+          // opaque, full-width bottom bar cover it. Tide's bottom chrome is a
+          // floating inset pill, so "behind the menu" left the number poking
+          // out from under a rounded corner, reading as a layout fault rather
+          // than as something deliberately hidden. It fades out with the
+          // chrome instead, and the copy inside the chrome column below takes
+          // over — which also means webtoon mode keeps a readout, where the
+          // navigator has no slider to show one.
           if (showPageNumber)
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
               child: IgnorePointer(
-                child: ValueListenableBuilder<int>(
-                  valueListenable: _currentPage,
-                  builder: (context, page, _) => _PageIndicator(
-                    // Clamped: the transition page isn't a numbered page.
-                    current: page.clamp(0, _totalPages > 0 ? _totalPages - 1 : 0),
-                    total: _totalPages,
-                    color: ink,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _chrome,
+                  builder: (context, chromeVisible, child) => AnimatedOpacity(
+                    duration: const Duration(milliseconds: 150),
+                    opacity: chromeVisible ? 0 : 1,
+                    child: child,
+                  ),
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _currentPage,
+                    builder: (context, page, _) => _PageIndicator(
+                      // Clamped: the transition page isn't a numbered page.
+                      current:
+                          page.clamp(0, _totalPages > 0 ? _totalPages - 1 : 0),
+                      total: _totalPages,
+                      color: ink,
+                    ),
                   ),
                 ),
               ),
@@ -1921,6 +1938,18 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Sits ABOVE the chrome rather than behind it — see the
+                    // standalone indicator above for why.
+                    if (showPageNumber)
+                      ValueListenableBuilder<int>(
+                        valueListenable: _currentPage,
+                        builder: (context, page, _) => _PageIndicator(
+                          current: page
+                              .clamp(0, _totalPages > 0 ? _totalPages - 1 : 0),
+                          total: _totalPages,
+                          color: ink,
+                        ),
+                      ),
                     ValueListenableBuilder<int>(
                       valueListenable: _currentPage,
                       builder: (context, page, _) => _ChapterNavigator(
