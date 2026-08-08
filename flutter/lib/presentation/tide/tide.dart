@@ -1926,7 +1926,28 @@ class TideCover extends ConsumerWidget {
       cacheWidth: cacheWidth,
       fit: fit,
       placeholder: (_) => fallback,
-      errorWidget: (_, _) => fallback,
+      // A cover that FAILED is not a cover that was never there. Both used to
+      // paint the same tinted gradient, so a dead URL was indistinguishable
+      // from a series the source publishes no art for — which is exactly the
+      // wrong thing to hide, because one of them is fixable and the other
+      // isn't. (Found the hard way: aquareader's og:image still pointed at a
+      // host that had stopped serving media, and the tile just sat there
+      // looking deliberate.) The mark is faint and sits on the same gradient,
+      // so a shelf of them still reads as a composition rather than a wall of
+      // broken-image glyphs.
+      errorWidget: (_, _) => Stack(
+        fit: StackFit.passthrough,
+        children: [
+          fallback,
+          Center(
+            child: Icon(
+              Icons.image_not_supported_outlined,
+              size: 22,
+              color: Colors.white.withValues(alpha: 0.28),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
