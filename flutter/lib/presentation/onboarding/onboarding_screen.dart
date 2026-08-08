@@ -6,10 +6,9 @@
 /// it becomes "Finish"), with the accept button enabled only when the
 /// current step's `isComplete` is true. Steps, in order:
 ///
-///   1. Theme       — always complete
-///   2. Storage     — complete once a storage location is chosen (gated)
-///   3. Permission  — always complete
-///   4. Guides      — always complete
+///   1. Storage     — complete once a storage location is chosen (gated)
+///   2. Permission  — always complete
+///   3. Guides      — always complete
 ///
 /// Back navigation walks to the previous step; on the first step it's a
 /// no-op (Mihon blocks leaving onboarding until it's finished). Finishing
@@ -17,9 +16,10 @@
 ///
 /// Functional adaptations from the Kotlin original: the Permission step omits
 /// the install-unknown-apps row (Mohyeong's extensions are JS, not APKs) and
-/// the telemetry switches (no analytics/crashlytics in Mohyeong); the Theme
-/// step omits the colour-palette picker (Mohyeong has no palette variants
-/// yet). Everything else mirrors Mihon.
+/// the telemetry switches (no analytics/crashlytics in Mohyeong). Mihon's
+/// Theme step is gone entirely — Mohyeong is built dark with no palette
+/// variants, so the step had nothing to set and only explained its own
+/// absence. Everything else mirrors Mihon.
 library;
 
 import 'package:flutter/material.dart';
@@ -101,15 +101,15 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
-  static const int _stepCount = 4;
+  static const int _stepCount = 3;
   int _current = 0;
 
   bool get _isLast => _current == _stepCount - 1;
 
   /// Mirrors `canAccept = steps[currentStep].isComplete`. Only the Storage
-  /// step (index 1) gates; the rest are always complete.
+  /// step (index 0) gates; the rest are always complete.
   bool _canAccept(WidgetRef ref) {
-    if (_current == 1) return ref.watch(storageDirProvider) != null;
+    if (_current == 0) return ref.watch(storageDirProvider) != null;
     return true;
   }
 
@@ -128,7 +128,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final canAccept = _canAccept(ref);
-    const titles = ['Appearance', 'Storage', 'Permissions', 'Guides'];
+    const titles = ['Storage', 'Permissions', 'Guides'];
     return PopScope(
       // Block leaving onboarding until finished; the in-flow back button
       // walks to the previous step instead.
@@ -248,10 +248,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   Widget _stepContent(int index) {
     switch (index) {
       case 0:
-        return const _ThemeStep();
-      case 1:
         return const _StorageStep();
-      case 2:
+      case 1:
         return const _PermissionStep();
       default:
         return const _GuidesStep();
@@ -260,31 +258,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// Step 1 — Theme
-// -----------------------------------------------------------------------------
-
-class _ThemeStep extends ConsumerWidget {
-  const _ThemeStep();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Mohyeong is built dark. The light and follow-system options are '
-          'gone rather than left as switches that do nothing — and so, for '
-          'now, is AMOLED black: nothing here reads the theme, so the switch '
-          'moved nothing.',
-          style: TideText.body(),
-        ),
-      ],
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Step 2 — Storage (SAF)
+// Step 1 — Storage (SAF)
 // -----------------------------------------------------------------------------
 
 class _StorageStep extends ConsumerStatefulWidget {
@@ -365,7 +339,7 @@ class _StorageStepState extends ConsumerState<_StorageStep> {
 }
 
 // -----------------------------------------------------------------------------
-// Step 3 — Permissions
+// Step 2 — Permissions
 // -----------------------------------------------------------------------------
 
 class _PermissionStep extends ConsumerStatefulWidget {
@@ -495,7 +469,7 @@ class _PermissionRow extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// Step 4 — Guides
+// Step 3 — Guides
 // -----------------------------------------------------------------------------
 
 class _GuidesStep extends StatelessWidget {
