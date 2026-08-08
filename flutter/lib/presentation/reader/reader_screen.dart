@@ -1843,14 +1843,19 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
             right: 0,
             child: ValueListenableBuilder<bool>(
               valueListenable: _chrome,
+              // Slide only — no cross-fade. An AnimatedOpacity between 0 and 1
+              // forces a saveLayer around everything under it, and what sits
+              // under this one is a BackdropFilter: a blur inside an offscreen
+              // layer, re-read and re-composited on every frame of the
+              // animation while the bar is also moving. That is what made the
+              // chrome visibly lag on show/hide. The bar travels a full 100%
+              // of its own height, so it is already gone once the slide ends
+              // and the fade bought nothing. Mihon slides its bars too
+              // (enter_from_top / exit_to_top) rather than fading them.
               builder: (context, chromeVisible, child) => AnimatedSlide(
                 duration: const Duration(milliseconds: 150),
                 offset: chromeVisible ? Offset.zero : const Offset(0, -1),
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 150),
-                  opacity: chromeVisible ? 1 : 0,
-                  child: child,
-                ),
+                child: child,
               ),
               // Built once per body build and handed to the builder untouched
               // — a toggle animates this subtree, it does not rebuild it.
@@ -1927,14 +1932,13 @@ class _ReaderBodyState extends ConsumerState<_ReaderBody> {
             bottom: 0,
             child: ValueListenableBuilder<bool>(
               valueListenable: _chrome,
+              // Slide only, for the reason spelled out on the top chrome: the
+              // fade wrapped this subtree's blur in a saveLayer for the whole
+              // 150ms.
               builder: (context, chromeVisible, child) => AnimatedSlide(
                 duration: const Duration(milliseconds: 150),
                 offset: chromeVisible ? Offset.zero : const Offset(0, 1),
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 150),
-                  opacity: chromeVisible ? 1 : 0,
-                  child: child,
-                ),
+                child: child,
               ),
               child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -4153,6 +4157,12 @@ class _PagesViewState extends ConsumerState<_PagesView> {
                 delegate: SliverChildBuilderDelegate(
                   (ctx, i) => _stripItem(ctx, _anchorIndex - 1 - i),
                   childCount: _anchorIndex,
+                  // A reader page must never be kept alive off-screen: the
+                  // whole point of the narrow cache extent is that pages
+                  // behind the read position let go of their decoded bitmap.
+                  // Nothing here requests keep-alive, so this only drops the
+                  // AutomaticKeepAlive wrapper each page was carrying.
+                  addAutomaticKeepAlives: false,
                 ),
               ),
             ),
@@ -4163,6 +4173,7 @@ class _PagesViewState extends ConsumerState<_PagesView> {
                 delegate: SliverChildBuilderDelegate(
                   (ctx, i) => _stripItem(ctx, _anchorIndex + i),
                   childCount: widget.itemCount - _anchorIndex,
+                  addAutomaticKeepAlives: false,
                 ),
               ),
             ),
