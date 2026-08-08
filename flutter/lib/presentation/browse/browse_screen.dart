@@ -333,10 +333,7 @@ class _SourcesView extends ConsumerWidget {
         if (extensions.isEmpty)
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-            child: _EmptyNote(
-              'No other sources installed. Install an extension on the '
-              'Extensions view to browse online manga.',
-            ),
+            child: _EmptyNote('No other sources installed.'),
           ),
         if (pinned.isNotEmpty) ...[
           const TideSectionHeader(
@@ -357,10 +354,7 @@ class _SourcesView extends ConsumerWidget {
         if (filtered)
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-            child: _EmptyNote(
-              'Some sources are hidden by your filter. Tap the funnel above '
-              'to adjust.',
-            ),
+            child: _EmptyNote('Some sources are hidden by your filter.'),
           ),
       ],
     );
@@ -552,10 +546,7 @@ class _ExtensionsViewState extends ConsumerState<_ExtensionsView> {
             if (extensions.isEmpty)
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-                child: _EmptyNote(
-                  'No extensions installed yet. Install one above to browse '
-                  'online manga.',
-                ),
+                child: _EmptyNote('No extensions installed yet.'),
               )
             else ...[
               if (pending.isNotEmpty) ...[

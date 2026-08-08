@@ -142,11 +142,7 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
         }
         final entries = snap.data?.entries ?? const <_MigrateSourceEntry>[];
         if (entries.isEmpty) {
-          return const _Note(
-            'You have no favourited manga to migrate. Add manga to your '
-            'library first, then come back here to move them to another '
-            'source.',
-          );
+          return const _Note('No favourited manga to migrate.');
         }
         final sorted = _sorted(entries);
         return Column(
