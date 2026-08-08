@@ -814,13 +814,35 @@ var mh = (function () {
         ? BASE + '/' + MPATH + '/?m_orderby=' + orderby
         : BASE + '/' + MPATH + '/page/' + page + '/?m_orderby=' + orderby;
     }
+    // Readiness predicates for the WebView retry. These matter ONLY when Dio
+    // hit a Cloudflare challenge and the browser took over: without one, the
+    // proxy snapshots as soon as the DOM node count stops growing, which on a
+    // walled Madara listing happens while the cards are still on their way.
+    // manhwatop proved it — a Dev page-source dump of ?m_orderby=views showed
+    // 15 page-item-detail blocks, while the source's own Popular tab showed
+    // "No results found" off a snapshot taken too early. Latest looked fine
+    // only because it comes back faster. A ceiling, not a floor: a page that
+    // is already there returns immediately.
+    var LIST_OPTS = {
+      webview_ready_js: "!!document.querySelector('.page-item-detail')",
+      webview_settle_ms: 12000,
+    };
+    // Search waits for the RESULT rows only. A Madara search page also carries
+    // a sidebar of page-item-detail cards, so accepting those as "ready" fires
+    // the predicate on furniture that is present from the first paint, while
+    // the results are still loading — a manhwatop dump of ?s=king showed 12
+    // c-tabs-item__content results next to sidebar page-item-detail cards.
+    var SEARCH_OPTS = {
+      webview_ready_js: "!!document.querySelector('.c-tabs-item__content')",
+      webview_settle_ms: 12000,
+    };
     function popular(page) {
-      return getHtml(listUrl('views', page)).then(function (html) {
+      return getHtml(listUrl('views', page), LIST_OPTS).then(function (html) {
         return { mangas: parseList(html), has_next_page: hasNext(html, page) };
       });
     }
     function latest(page) {
-      return getHtml(listUrl('latest', page)).then(function (html) {
+      return getHtml(listUrl('latest', page), LIST_OPTS).then(function (html) {
         return { mangas: parseList(html), has_next_page: hasNext(html, page) };
       });
     }
@@ -828,9 +850,16 @@ var mh = (function () {
       var q = encodeURIComponent(query || '');
       var url = (page <= 1 ? BASE + '/?s=' : BASE + '/page/' + page + '/?s=') +
         q + '&post_type=wp-manga';
-      return getHtml(url).then(function (html) {
+      return getHtml(url, SEARCH_OPTS).then(function (html) {
         var mangas = parseSearch(html);
-        if (mangas.length === 0) mangas = parseList(html);
+        // The listing fallback is for Madara clones whose search results come
+        // back as page-item-detail cards. On a site that DOES use c-tabs rows,
+        // an empty parse means the search genuinely matched nothing, and
+        // falling through would answer the query with the sidebar's cards —
+        // a wrong answer reads far worse than an honest empty one.
+        if (mangas.length === 0 && html.indexOf('c-tabs-item') < 0) {
+          mangas = parseList(html);
+        }
         return { mangas: mangas, has_next_page: hasNext(html, page) };
       });
     }
