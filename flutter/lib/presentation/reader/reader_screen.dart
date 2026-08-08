@@ -3752,6 +3752,10 @@ class _PagesViewState extends ConsumerState<_PagesView> {
   int _prefixCount = -1;
   double _prefixWidth = -1;
 
+  /// [_fallbackExtent] as of the last prefix-sum rebuild, so the slot builder
+  /// can reserve it without walking the page list per item.
+  double _memoFallback = 400;
+
   List<double> _prefixSums() {
     final w = _webtoonContentWidth();
     final cached = _prefix;
@@ -3762,6 +3766,7 @@ class _PagesViewState extends ConsumerState<_PagesView> {
       return cached;
     }
     final fallback = _fallbackExtent(w);
+    _memoFallback = fallback;
     final sums = List<double>.filled(widget.count + 1, 0);
     for (var i = 0; i < widget.count; i++) {
       sums[i + 1] = sums[i] + _estimatedHeight(i, w, fallback);
@@ -4002,10 +4007,14 @@ class _PagesViewState extends ConsumerState<_PagesView> {
   Widget _stripItem(BuildContext ctx, int i) {
     if (i >= widget.count) return widget.transition!;
     // Reserve the page's real extent once its aspect is known so later
-    // decodes don't shift content under the reader.
+    // decodes don't shift content under the reader — and, until it is known,
+    // reserve what this chapter's pages have actually been measuring rather
+    // than the 400px loading placeholder. Memoised; see [_memoFallback].
+    _prefixSums();
     return _WebtoonPageSlot(
       url: widget.pageUrlOf?.call(i),
       headers: widget.pageHeadersOf?.call(i),
+      fallbackExtent: _memoFallback,
       child: widget.itemBuilder(ctx, i),
     );
   }
@@ -4347,10 +4356,27 @@ class _WebtoonPageSlot extends StatefulWidget {
   const _WebtoonPageSlot({
     required this.url,
     this.headers,
+    this.fallbackExtent = 400,
     required this.child,
   });
 
   final String? url;
+
+  /// Height to hold open before this page's own aspect is known — the mean
+  /// extent of the pages in this chapter that HAVE decoded.
+  ///
+  /// It used to be whatever the loading placeholder happened to be, 400px, and
+  /// that is the reader's worst number. A long-strip page measures two to four
+  /// screens; reserving 400px for it meant a screenful of undecoded pages
+  /// occupied about a tenth of the scroll they were going to need. Two things
+  /// followed. One fling crossed a dozen "pages" that were really placeholders,
+  /// and when their bitmaps landed the strip grew by tens of thousands of
+  /// pixels underneath the reader — content lurching away mid-scroll, which
+  /// reads as stutter even though (measured) not one frame is being dropped.
+  /// And because a viewport of 400px slots is a dozen items, a dozen pages
+  /// were mounted, fetched and decoded at once instead of the two or three
+  /// actually on screen.
+  final double fallbackExtent;
 
   /// Forwarded to the aspect probe — a header-less probe on a
   /// Referer-requiring source could 403 and poison the shared cache entry.
@@ -4402,7 +4428,9 @@ class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
   @override
   Widget build(BuildContext context) {
     final aspect = _aspect;
-    if (aspect == null) return widget.child;
+    if (aspect == null) {
+      return SizedBox(height: widget.fallbackExtent, child: widget.child);
+    }
     return AspectRatio(aspectRatio: aspect, child: widget.child);
   }
 }

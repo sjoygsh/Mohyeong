@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'data/backup/backup_preferences.dart';
 import 'data/backup/backup_scheduler.dart';
 import 'data/cover/cover_cache.dart';
+import 'data/dev/frame_stats.dart';
 import 'data/library/library_update_preference.dart';
 import 'data/library/library_update_scheduler.dart';
 import 'data/network/app_http_client.dart';
@@ -41,6 +42,8 @@ Future<void> main() async {
   // app is sitting untouched. Installed here so the global pointer route
   // exists before the first frame. See [TideIdle].
   TideIdle.install();
+  // No-op unless built with --dart-define=FRAME_STATS=true.
+  FrameStats.install();
   // These five inits are independent platform-channel round trips — start
   // them all before awaiting any so cold start pays the slowest one, not
   // the sum (they were strictly serial before).
