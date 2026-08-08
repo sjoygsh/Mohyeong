@@ -1303,8 +1303,7 @@ class _ChaptersSectionState extends ConsumerState<_ChaptersSection> {
         if (sorted.isEmpty)
           const SliverToBoxAdapter(
             child: TideEmpty(
-              title: 'Nothing matches',
-              message: 'No chapters match the current filter.',
+              title: 'No chapters match the filter',
             ),
           )
         else
@@ -3447,8 +3446,6 @@ class _NoChapters extends StatelessWidget {
   Widget build(BuildContext context) {
     return const TideEmpty(
       title: 'No chapters yet',
-      message: 'Nothing has been published here, or the source is not '
-          'listing any.',
     );
   }
 }

@@ -205,11 +205,7 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
                     ),
                   Expanded(
                     child: items.isEmpty
-                        ? const TideEmpty(
-                            title: 'No downloads',
-                            message: 'Chapters you queue for offline reading '
-                                'appear here while they download.',
-                          )
+                        ? const TideEmpty(title: 'No downloads')
                         : _list(repo, items),
                   ),
                 ],

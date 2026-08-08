@@ -744,8 +744,6 @@ class _MangaGrid extends ConsumerWidget {
       if (sourceId == '0') {
         return TideEmpty(
           title: 'No results found',
-          message: 'Point the local source at a folder of comics and they '
-              'show up here.',
           actionLabel: 'Local source guide',
           onAction: () => launchUrl(
             Uri.parse(
@@ -757,7 +755,6 @@ class _MangaGrid extends ConsumerWidget {
       }
       return const TideEmpty(
         title: 'No results found',
-        message: 'Nothing in this catalogue matched.',
       );
     }
     // Kotlin sourceDisplayMode: compact grid (title over cover),

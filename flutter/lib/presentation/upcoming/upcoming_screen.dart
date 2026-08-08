@@ -184,8 +184,6 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
         if (manga.isEmpty) {
           return const TideEmpty(
             title: 'Nothing scheduled',
-            message: 'Library entries get a predicted next-update date '
-                'after a library update runs.',
           );
         }
         final row = rows[i - 1];

@@ -66,8 +66,6 @@ class CategoriesScreen extends ConsumerWidget {
                   if (categories.isEmpty) {
                     return const TideEmpty(
                       title: 'No categories yet',
-                      message: 'Add one to organise your library into '
-                          'shelves.',
                     );
                   }
                   final flattened = _flattenHierarchy(categories);

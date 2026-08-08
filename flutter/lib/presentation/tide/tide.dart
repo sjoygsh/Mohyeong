@@ -2858,19 +2858,23 @@ class _RingPainter extends CustomPainter {
 /// Type only, no illustration: Tide's ground and glass already carry the mood,
 /// and a spot drawing would be the only illustration in the app.
 ///
-/// [action] is for the empty states that can offer a way out — an empty
-/// library should point at Browse rather than just stating the obvious.
+/// The [title] says the whole thing. There used to be an explanatory line under
+/// it, and every one of them was restating the heading in more words — "No
+/// downloads" followed by "Nothing has been downloaded yet". Gone; what's left
+/// is the statement and, where there is one, the way out.
+///
+/// [actionLabel]/[onAction] are for the empty states that can offer that way
+/// out — an empty library should point at Browse rather than just stating the
+/// obvious.
 class TideEmpty extends StatelessWidget {
   const TideEmpty({
     super.key,
     required this.title,
-    required this.message,
     this.actionLabel,
     this.onAction,
   });
 
   final String title;
-  final String message;
   final String? actionLabel;
   final VoidCallback? onAction;
 
@@ -2889,12 +2893,6 @@ class TideEmpty extends StatelessWidget {
                 title,
                 textAlign: TextAlign.center,
                 style: TideText.display(22),
-              ),
-              const SizedBox(height: 9),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: TideText.body(),
               ),
               if (actionLabel != null && onAction != null) ...[
                 const SizedBox(height: 22),

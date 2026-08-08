@@ -2159,7 +2159,6 @@ class _EmptyLibrary extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const TideEmpty(
         title: 'Your library is empty',
-        message: 'Find something on Browse and add it, and it will live here.',
       );
 }
 
@@ -2171,11 +2170,7 @@ class _EmptyMatches extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TideEmpty(
-      title: query.isEmpty ? 'Nothing here' : 'No matches',
-      message: query.isEmpty
-          ? 'This category has no entries, or your filters have narrowed them '
-              'all away.'
-          : 'Nothing in your library matches "$query".',
+      title: query.isEmpty ? 'Nothing here' : 'No matches for "$query"',
     );
   }
 }
@@ -2187,9 +2182,10 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A failure, not an absence: the heading carries the actual reason, since
+    // TideEmpty no longer has a line under it to put it on.
     return TideEmpty(
-      title: 'Could not open the library',
-      message: userMessage(error, fallback: 'Couldn\'t load the library.'),
+      title: userMessage(error, fallback: 'Couldn\'t load the library.'),
     );
   }
 }

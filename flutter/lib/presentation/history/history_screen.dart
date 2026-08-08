@@ -203,16 +203,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 40, 16, tideBarInset),
                 child: entries.isEmpty
-                    ? const TideEmpty(
-                        title: 'Nothing read recently',
-                        message: 'Chapters you read show up here, newest '
-                            'first — with where each sitting started and how '
-                            'long it ran.',
-                      )
-                    : const TideEmpty(
-                        title: 'No results found',
-                        message: 'Nothing in your history matches that.',
-                      ),
+                    ? const TideEmpty(title: 'Nothing read recently')
+                    : const TideEmpty(title: 'No results found'),
               ),
             )
           else

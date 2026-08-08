@@ -1684,9 +1684,6 @@ class _EmptyLibraryCard extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: 16),
       child: TideEmpty(
         title: 'Nothing here yet',
-        message:
-            'Add an entry to your library and it will surface here — what '
-            'you are part-way through, and what arrived overnight.',
       ),
     );
   }

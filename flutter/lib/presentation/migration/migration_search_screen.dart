@@ -345,8 +345,6 @@ class _ResultsArea extends StatelessWidget {
         if (results.isEmpty) {
           return const TideEmpty(
             title: 'No matches',
-            message:
-                'This source has nothing that looks like the same entry.',
           );
         }
         return GridView.builder(
