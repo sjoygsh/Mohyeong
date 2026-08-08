@@ -728,6 +728,107 @@ var mh = (function () {
     return s ? s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() : s;
   }
 
+  // ---- Madara page-list extraction (mirrors Mihon's pageListParse) --------
+  // Mihon selects
+  //   div.page-break, li.blocks-gallery-item,
+  //   .reading-content .text-left:not(:has(.blocks-gallery-item)) img
+  // and takes the FIRST <img> of each match, so nothing outside the reader
+  // container can ever become a page. We instead scanned every <img> from the
+  // first mention of `reading-content` to the END OF THE DOCUMENT, filtered
+  // only by a blocklist of filename fragments — which swept up the
+  // related-manga rail, comment avatars, footer art, ad slots and tracker
+  // pixels and served them as pages. That is where the stray ad panels and
+  // thin black strips in the reader came from.
+  //
+  // Three tiers, each falling through to the next only when it finds nothing,
+  // so a re-skinned theme can never end up with fewer pages than before:
+  //   1. page-break / blocks-gallery-item wrappers (what Madara really emits)
+  //   2. images inside the reading container, CLIPPED at the first thing that
+  //      is plainly past it (related, comments, footer, chapter nav)
+  //   3. the old unclipped scan
+  var PAGE_JUNK = new RegExp(
+    '\\/themes\\/|logo|loading|dflazy|avatar|gravatar|placeholder|spinner' +
+    '|yandex|metrika|analytics|\\/watch\\/|counter|pixel|\\/ads?[\\/.]' +
+    '|doubleclick|googlesyndication|adservice|banner', 'i');
+
+  // Mihon's imageFromElement attribute order, plus its srcset handling.
+  function madaraImg(tag) {
+    var src = attr(tag, 'data-src') || attr(tag, 'data-lazy-src');
+    if (!src) {
+      var set = attr(tag, 'srcset');
+      if (set) src = bestSrcSet(set);
+    }
+    if (!src) src = attr(tag, 'data-cfsrc') || attr(tag, 'data-manga-src');
+    if (!src) src = attr(tag, 'src');
+    if (!src) return null;
+    src = src.replace(/^\s+|\s+$/g, '');
+    if (src.indexOf('//') === 0) src = 'https:' + src;
+    if (src.indexOf('http') !== 0) return null;
+    return src;
+  }
+
+  // Widest candidate in a srcset, matching Mihon's getSrcSetImage intent
+  // (best quality available) rather than just taking the first entry.
+  function bestSrcSet(set) {
+    var parts = set.split(',');
+    var best = null, bestW = -1;
+    for (var i = 0; i < parts.length; i++) {
+      var bits = parts[i].replace(/^\s+|\s+$/g, '').split(/\s+/);
+      if (!bits[0]) continue;
+      var w = bits[1] ? parseInt(bits[1], 10) : 0;
+      if (isNaN(w)) w = 0;
+      if (w > bestW) { bestW = w; best = bits[0]; }
+    }
+    return best;
+  }
+
+  function madaraPageUrls(html) {
+    var out = [], seen = {};
+    function push(src) {
+      if (!src || seen[src] || PAGE_JUNK.test(src)) return;
+      seen[src] = true;
+      out.push(src);
+    }
+
+    // 1. The real page wrappers. One image each, exactly like Mihon's
+    //    element.selectFirst("img").
+    var starts = [];
+    var wrapper = /<(?:div|li)\b[^>]*class\s*=\s*["'][^"']*\b(?:page-break|blocks-gallery-item)\b[^"']*["'][^>]*>/gi;
+    var w;
+    while ((w = wrapper.exec(html)) !== null) starts.push(w.index + w[0].length);
+    for (var i = 0; i < starts.length; i++) {
+      // Stop at the next wrapper so an empty one can't borrow its neighbour's
+      // image; the 4000-char ceiling bounds the last one.
+      var stop = i + 1 < starts.length
+        ? starts[i + 1]
+        : Math.min(html.length, starts[i] + 4000);
+      var im = /<img\b([^>]*)>/i.exec(html.substring(starts[i], stop));
+      if (im) push(madaraImg(im[1]));
+    }
+    if (out.length) return out;
+
+    // 2. Clipped reading container.
+    var start = html.indexOf('reading-content');
+    var region = start >= 0 ? html.substring(start) : html;
+    var tail = /class\s*=\s*["'][^"']*(?:related|c-blog|comment|entry-header|widget|footer|nav-links|select-pagination|chapter-nav)[^"']*["']|<footer\b|id\s*=\s*["']comments["']/i
+      .exec(region);
+    var clipped = tail && tail.index > 0
+      ? region.substring(0, tail.index)
+      : region;
+    scanImgs(clipped, push);
+    if (out.length) return out;
+
+    // 3. Whatever the unclipped scan finds — the old behaviour, kept purely so
+    //    a theme neither tier understands still renders something.
+    scanImgs(region, push);
+    return out;
+  }
+
+  function scanImgs(region, push) {
+    var re = /<img\b([^>]*)>/g, m;
+    while ((m = re.exec(region)) !== null) push(madaraImg(m[1]));
+  }
+
   // ---- Madara theme factory (mirrors Mihon's abstract Madara.kt) -----------
   // config: { base, id, name, lang, mangaPath?, cardPathRe?, ajaxChapters? }
   function Madara(config) {
@@ -996,23 +1097,11 @@ var mh = (function () {
     // ---- pages ----
     function pages(chapter) {
       return getHtml(abs(chapter.url)).then(function (html) {
-        var start = html.indexOf('reading-content');
-        var region = start >= 0 ? html.substring(start) : html;
+        var urls = madaraPageUrls(html);
         var out = [];
-        var seen = {};
-        var re = /<img\b([^>]*)>/g, m, idx = 0;
-        while ((m = re.exec(region)) !== null) {
-          var tag = m[1];
-          var src = attr(tag, 'data-src') || attr(tag, 'src');
-          if (!src) continue;
-          src = src.replace(/^\s+|\s+$/g, '');
-          if (src.indexOf('//') === 0) src = 'https:' + src;
-          if (src.indexOf('http') !== 0) continue;
-          if (/\/themes\/|logo|loading|dflazy|avatar|gravatar/i.test(src)) continue;
-          if (seen[src]) continue;
-          seen[src] = true;
+        for (var i = 0; i < urls.length; i++) {
           out.push({
-            index: idx++, url: src, image_url: src,
+            index: i, url: urls[i], image_url: urls[i],
             headers: { Referer: BASE + '/', 'User-Agent': UA },
           });
         }
@@ -1500,6 +1589,7 @@ var mh = (function () {
   }
 
   return { attr: attr, pickCover: pickCover, decode: decode, stripTags: stripTags,
+           madaraPageUrls: madaraPageUrls,
            themes: { Madara: Madara, MangaThemesia: MangaThemesia, Toon: Toon } };
 })();
 ''';
