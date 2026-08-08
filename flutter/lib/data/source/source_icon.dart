@@ -30,6 +30,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../network/app_http_client.dart';
 import '../network/network_preferences.dart';
+import '../network/webview_http_client.dart';
 
 /// What [SourceIconStore.resolve] needs to go and look, as one value so it can
 /// key a provider family.
@@ -42,6 +43,11 @@ typedef SourceIconRequest = ({String id, String baseUrl, String? userAgent});
 /// remembered for the same length of time.
 class _Reach {
   bool answered = false;
+
+  /// Whether an edge turned us away rather than the host answering — a
+  /// Cloudflare 403/429/503. This is the one failure the browser can still get
+  /// past, so it is what gates the WebView retry.
+  bool walled = false;
 }
 
 /// One remembered probe.
@@ -52,7 +58,7 @@ class _IconRecord {
     this.file,
     this.url,
     this.answered = true,
-    this.decoder = 0,
+    this.generation = 0,
   });
 
   /// The `base_url` the probe was made against. A source that moves domain
@@ -71,10 +77,10 @@ class _IconRecord {
   /// about the site; a miss where it didn't is a fact about the network.
   final bool answered;
 
-  /// Which decoder generation recorded this. A miss written by an older one
-  /// says nothing about what the current one can read — see
-  /// [SourceIconStore._decoderGeneration].
-  final int decoder;
+  /// Which probe generation recorded this. A miss written by an older one says
+  /// nothing about what the current one can reach or read — see
+  /// [SourceIconStore._probeGeneration].
+  final int generation;
 
   bool get found => file != null;
 
@@ -84,7 +90,7 @@ class _IconRecord {
         if (file != null) 'file': file,
         if (url != null) 'url': url,
         if (!answered) 'unreachable': true,
-        'decoder': decoder,
+        'gen': generation,
       };
 
   static _IconRecord? fromJson(Object? json) {
@@ -98,7 +104,9 @@ class _IconRecord {
       file: json['file'] as String?,
       url: json['url'] as String?,
       answered: json['unreachable'] != true,
-      decoder: json['decoder'] as int? ?? 0,
+      // 'decoder' is the key generation 2 wrote under; read it so an existing
+      // index doesn't read as generation 0 and re-probe every source at once.
+      generation: (json['gen'] ?? json['decoder']) as int? ?? 0,
     );
   }
 }
@@ -124,18 +132,23 @@ class SourceIconStore {
   /// phone is most likely to drop one.
   static const _retryAfterUnreachable = Duration(hours: 1);
 
-  /// Which generation of [sniffImage] is in the build. A remembered MISS is
-  /// only a fact about what the decoder of the day could read: WEBTOONS
-  /// publishes a single 32x32 32bpp BMP inside its .ico, which generation 1
-  /// could not decode and generation 2 can — and yet the row kept its letter,
-  /// because the miss recorded before the fix shipped was still inside its
-  /// 12-hour TTL and nothing about an app update could shorten it. Misses from
-  /// an older generation are re-probed at once. Bump this whenever
-  /// [sniffImage] learns a format.
+  /// What this build's probe is capable of. A remembered MISS is never a plain
+  /// fact about the site — it is a fact about what the app could reach and read
+  /// on the day it looked, and an app update can change both.
+  ///
+  /// WEBTOONS taught this the first time: it publishes a single 32x32 32bpp BMP
+  /// inside its .ico, which generation 1 could not decode and generation 2 can,
+  /// and yet the row kept its letter, because the miss recorded before the fix
+  /// shipped was still inside its 12-hour TTL and nothing about installing a
+  /// new build could shorten it. Reaching further counts for exactly the same
+  /// reason, so this covers the fetch as well as the decode. Misses from an
+  /// older generation are re-probed at once — bump it whenever [sniffImage]
+  /// learns a format or the probe learns a way through.
   ///
   ///   1 — PNG / JPEG / GIF / WebP / BMP, and PNG-inside-.ico
   ///   2 — plus BMP-inside-.ico (32bpp and 24bpp, BI_RGB)
-  static const _decoderGeneration = 2;
+  ///   3 — plus the WebView retry for fingerprint-walled hosts
+  static const _probeGeneration = 3;
 
   /// Anything bigger than this is not a favicon and we are not decoding it.
   static const _maxBytes = 512 * 1024;
@@ -198,7 +211,7 @@ class SourceIconStore {
         final file = File(p.join(dir.path, record.file!));
         if (file.existsSync()) return file.path;
         // The file was cleared out from under us — fall through and re-probe.
-      } else if (record.decoder >= _decoderGeneration &&
+      } else if (record.generation >= _probeGeneration &&
           DateTime.now().difference(record.attemptedAt) <
               (record.answered ? _retryAfterMiss : _retryAfterUnreachable)) {
         return null;
@@ -208,18 +221,35 @@ class SourceIconStore {
     String? storedName;
     String? sourceUrl;
     final reach = _Reach();
+    ({Uint8List bytes, String extension, String url})? found;
     await _acquire();
     try {
-      final found = await _probe(base, request.userAgent, reach);
-      if (found != null) {
-        storedName = '${_safeName(request.id)}.${found.extension}';
-        await File(p.join(dir.path, storedName)).writeAsBytes(found.bytes);
-        sourceUrl = found.url;
-      }
+      found = await _probe(base, request.userAgent, reach);
     } catch (_) {
       // Offline, blocked, timed out — recorded as a miss and retried later.
     } finally {
+      // Released BEFORE the browser retry below: that one is serialised on the
+      // single WebView and can take seconds, and holding a probe permit
+      // through it would stall the plain probes of unrelated sources.
       _release();
+    }
+
+    if (found == null && reach.walled) {
+      try {
+        found = await _probeViaWebView(base);
+        // Getting the bytes out of the browser IS the host answering; leaving
+        // this a miss-with-no-answer would re-drive a WebView navigation every
+        // hour for a source we have already resolved.
+        if (found != null) reach.answered = true;
+      } catch (_) {
+        // Same as above — a logo is decoration.
+      }
+    }
+
+    if (found != null) {
+      storedName = '${_safeName(request.id)}.${found.extension}';
+      await File(p.join(dir.path, storedName)).writeAsBytes(found.bytes);
+      sourceUrl = found.url;
     }
 
     await _writeRecord(
@@ -230,7 +260,7 @@ class SourceIconStore {
         file: storedName,
         url: sourceUrl,
         answered: reach.answered,
-        decoder: _decoderGeneration,
+        generation: _probeGeneration,
       ),
     );
     return storedName == null ? null : p.join(dir.path, storedName);
@@ -291,21 +321,71 @@ class SourceIconStore {
       'Referer': '${base.replaceAll(RegExp(r'/+$'), '')}/',
     };
 
-    final candidates = <Uri>[
-      ...await _declaredIcons(client.dio, origin, headers, reach),
-      // The conventional paths, tried after whatever the page declared: a
-      // site that names its icon means it, and these are the guesses.
-      origin.resolve('/apple-touch-icon.png'),
-      origin.resolve('/apple-touch-icon-precomposed.png'),
-      origin.resolve('/favicon.png'),
-      origin.resolve('/favicon.ico'),
-    ];
+    final candidates = _candidates(
+      origin,
+      await _declaredIcons(client.dio, origin, headers, reach),
+    );
 
     final seen = <String>{};
     for (final candidate in candidates) {
       final key = candidate.toString();
       if (!seen.add(key)) continue;
       final image = await _fetchImage(client.dio, candidate, headers, reach);
+      if (image != null) {
+        return (bytes: image.bytes, extension: image.extension, url: key);
+      }
+    }
+    return null;
+  }
+
+  /// Everything worth trying for [origin], best first: whatever the page
+  /// declared, then the conventional paths — a site that names its icon means
+  /// it, and these are the guesses.
+  static List<Uri> _candidates(Uri origin, List<Uri> declared) => [
+        ...declared,
+        origin.resolve('/apple-touch-icon.png'),
+        origin.resolve('/apple-touch-icon-precomposed.png'),
+        origin.resolve('/favicon.png'),
+        origin.resolve('/favicon.ico'),
+      ];
+
+  /// The same probe, run through the device's browser, for a host that turned
+  /// the plain client away at the edge.
+  ///
+  /// brainrotcomics, manhuaus and manhwatop answer 403 to `dart:io` TLS no
+  /// matter what headers it sends — Cloudflare is checking the *fingerprint*,
+  /// which is the whole reason [WebViewHttpClient] exists. Their extensions
+  /// have always fetched through it; only the icon probe was still knocking on
+  /// the front door with the wrong handshake, so those three rows kept their
+  /// letters however often we retried. Here the page is read from a real
+  /// navigation and the icon bytes come back over the same in-page fetch the
+  /// covers already use.
+  ///
+  /// Deliberately last, and deliberately gated on [_Reach.walled]: a browser
+  /// navigation costs seconds and the WebView serialises them, so this must
+  /// never be the first thing twenty sources do when Browse opens. A site that
+  /// simply has no icon, or a phone with no network, never gets here.
+  Future<({Uint8List bytes, String extension, String url})?> _probeViaWebView(
+    String base,
+  ) async {
+    final origin = Uri.tryParse(base);
+    if (origin == null || !origin.hasScheme) return null;
+    final web = WebViewHttpClient.instance;
+    if (!web.isAvailable) return null;
+
+    final page = await web.request(origin.toString());
+    if (page == null) return null;
+    final declared = iconLinksIn(page['body'] as String? ?? '', origin);
+
+    final seen = <String>{};
+    for (final candidate in _candidates(origin, declared)) {
+      final key = candidate.toString();
+      if (!seen.add(key)) continue;
+      // fullResolution: the icon's own bytes. The downscaling path re-encodes
+      // to JPEG, which would throw away a favicon's transparency.
+      final bytes = await web.fetchImageBytes(key, fullResolution: true);
+      if (bytes == null || bytes.isEmpty || bytes.length > _maxBytes) continue;
+      final image = sniffImage(bytes);
       if (image != null) {
         return (bytes: image.bytes, extension: image.extension, url: key);
       }
@@ -360,7 +440,11 @@ class SourceIconStore {
         return iconLinksIn(response.data ?? '', url);
       } on DioException catch (e) {
         // A wall is not an answer — see [isAnswerStatus]. A 404 on the apex is.
-        if (isAnswerStatus(e.response?.statusCode)) reach.answered = true;
+        if (isAnswerStatus(e.response?.statusCode)) {
+          reach.answered = true;
+        } else if (e.response != null) {
+          reach.walled = true;
+        }
         // The conventional paths are often served by the edge even when the
         // page itself is walled, so a failure here is not the end of the probe.
         return const [];
@@ -444,7 +528,11 @@ class SourceIconStore {
     } on DioException catch (e) {
       // A 404 for /favicon.ico is the host telling us it has none — that is an
       // answer, and it is why an unreachable host must be tracked separately.
-      if (isAnswerStatus(e.response?.statusCode)) reach.answered = true;
+      if (isAnswerStatus(e.response?.statusCode)) {
+        reach.answered = true;
+      } else if (e.response != null) {
+        reach.walled = true;
+      }
       return null;
     } catch (_) {
       return null;
