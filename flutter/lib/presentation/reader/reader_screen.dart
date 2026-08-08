@@ -3827,6 +3827,16 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     } else {
       _anchorIndex = clamped;
       _scrollController = ScrollController();
+      // Announce the position the strip OPENED at. Nothing else will: the
+      // anchor means resuming performs no scroll, so no notification fires
+      // and every consumer downstream of onPageChanged would sit on page 1 —
+      // the indicator read "1 / 18" over page 7's artwork. (The paged viewer
+      // reaches the same place through _seedInitialPosition.) Post-frame so
+      // the callback doesn't run mid-build of the tree that owns it.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.onPageChanged(clamped);
+      });
     }
     _lastReported = clamped;
     widget.zoomRegistry?.stepPage = _stepDisplayPage;
