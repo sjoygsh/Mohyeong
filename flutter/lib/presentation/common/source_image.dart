@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import '../../data/network/webview_http_client.dart';
 import '../../data/storage/app_cache.dart';
 import '../../data/source/local_archive.dart';
-import '../../data/network/page_downloader.dart';
 import '../../data/source/page_fetch_queue.dart';
 import '../../data/source/saf.dart';
 import 'crop_borders_image.dart';
@@ -401,37 +400,6 @@ class _NetworkImageWithWebViewFallback
     String? path;
     var fromDiskCache = false;
     try {
-      // Reader pages return from inside this branch, which also skips the
-      // poisoned-cache probe further down: that probe exists for entries the
-      // old WebView path wrote at 480px, and neither the page store nor a
-      // legacy entry big enough to be a real page can be one.
-      if (key.fullResolution) {
-        // Reader pages fetch on a background isolate; see [PageDownloader] for
-        // the measurement that put them there. Covers fall through to the
-        // shared cache manager unchanged.
-        final stored = await PageDownloader.cachedPath(key.url);
-        if (stored != null) {
-          path = stored;
-          fromDiskCache = true;
-        } else {
-          // Pages cached before this store existed still live in the cache
-          // manager. Use that file in place rather than re-downloading — a
-          // path lookup and a stat, no bytes onto the Dart heap.
-          final legacy =
-              (await appImageCacheManager.getFileFromCache(key.url))?.file;
-          if (legacy != null) {
-            path = legacy.path;
-            fromDiskCache = true;
-          } else {
-            path = await PageFetchQueue.run(
-              key.url,
-              () => PageDownloader.fetch(key.url, key.headers),
-            );
-          }
-        }
-        final buffer = await ui.ImmutableBuffer.fromFilePath(path!);
-        return decode(buffer);
-      }
       // Read-through to the legacy default store first on a miss: upgraded
       // installs have their whole cover library cached there, and without
       // this an offline relaunch after the upgrade rendered every cover as
