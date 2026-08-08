@@ -4033,6 +4033,17 @@ class _PagesViewState extends ConsumerState<_PagesView> {
       );
       if (crop) provider = CropBordersImageProvider(provider);
       unawaited(precacheImage(provider, context));
+      // Learn the page's REAL extent while it is still ahead of the read
+      // position. Read-ahead used to fetch and decode a page without ever
+      // recording its aspect, so the slot still mounted at the estimated
+      // fallback extent and only snapped to the true height once its own
+      // probe came back a frame or more later. Every page shifted everything
+      // below it by the difference — for a long-strip page that is one to two
+      // thousand pixels — a jolt per page, in rhythm with the scroll. That is
+      // the "rocky road", and it happened with no dropped frame at all.
+      // Warmed here, [_pageAspectCache] is already a hit when the slot mounts,
+      // so the slot is BORN the right height and nothing moves.
+      _resolvePageAspect(url, widget.pageHeadersOf?.call(i), cacheWidth, (_) {});
     }
   }
 
