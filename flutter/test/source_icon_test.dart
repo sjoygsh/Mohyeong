@@ -213,15 +213,30 @@ void main() {
       expect(tideSourceHost('not a url'), isNull);
     });
   });
+
+  group('a challenge is a wall whatever status it arrives with', () {
+    test('a Cloudflare interstitial body reads as walled', () {
+      expect(
+        SourceIconStore.looksWalledBody(
+          '<html><head><title>Just a moment...</title></head></html>',
+        ),
+        isTrue,
+      );
+      expect(
+        SourceIconStore.looksWalledBody('<script>window._cf_chl_opt={};'),
+        isTrue,
+      );
+    });
+
+    test('a real page is not walled', () {
+      expect(
+        SourceIconStore.looksWalledBody(
+          '<html><head><link rel="icon" href="/f.png"></head></html>',
+        ),
+        isFalse,
+      );
+      expect(SourceIconStore.looksWalledBody(null), isFalse);
+      expect(SourceIconStore.looksWalledBody(''), isFalse);
+    });
+  });
 }
-
-/// A wall is not an answer.
-///
-/// "The host told us it has no icon" and "an edge refused to let us ask" both
-/// end in no image, and the store already keeps them apart — a real miss is
-/// remembered for 12 hours, an unreachable host for 1. But a Cloudflare 403
-/// arrives WITH a response, and any response was being counted as the host
-/// answering. So exactly the sources that need the device's WebView to be
-/// reached at all — brainrotcomics, manhuaus, manhwatop — were parked on the
-/// long TTL and kept their letter tiles for half a day at a time.
-

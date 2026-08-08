@@ -23,6 +23,7 @@ class PrefSwitch extends ConsumerWidget {
     this.subtitle,
     required this.provider,
     this.enabled = true,
+    this.afterChange,
   });
 
   final String title;
@@ -30,9 +31,20 @@ class PrefSwitch extends ConsumerWidget {
   final NotifierProvider<BoolPrefNotifier, bool> provider;
   final bool enabled;
 
+  /// Run after the preference is written, for the few settings something has
+  /// to be TOLD about. Most prefs are read fresh at their point of use, so
+  /// they need nothing here; a queue already parked on a gate this pref
+  /// controls is the exception.
+  final void Function(bool value)? afterChange;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final value = ref.watch(provider);
+    void set(bool v) {
+      ref.read(provider.notifier).set(v);
+      afterChange?.call(v);
+    }
+
     final row = Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: TideRow(
@@ -40,11 +52,10 @@ class PrefSwitch extends ConsumerWidget {
         title: title,
         subtitle: subtitle,
         lit: enabled && value,
-        onTap: enabled ? () => ref.read(provider.notifier).set(!value) : null,
+        onTap: enabled ? () => set(!value) : null,
         trailing: TideSwitch(
           value: value,
-          onChanged:
-              enabled ? (v) => ref.read(provider.notifier).set(v) : (_) {},
+          onChanged: enabled ? set : (_) {},
         ),
       ),
     );

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -628,10 +629,33 @@ class DownloadRepository {
   /// keep its short-lived process alive until auto-downloads finish, since
   /// closing the DB/HTTP client mid-download would abort them. Polls rather
   /// than using a completer because the drain loop is fire-and-forget.
+  /// Stops on a queue that is going nowhere as well as on an empty one. A
+  /// drain that hits the network gate returns with the queue still FULL and
+  /// `_running` false, so waiting on "queue empty" alone never completes: the
+  /// background update isolate then span here until Android killed it at the
+  /// ten-minute worker cap, holding a database and an HTTP client open the
+  /// whole time, and the retry found the chapters already inserted — so those
+  /// auto-downloads were never picked up again.
   Future<void> awaitIdle() async {
     while (_running || _queue.isNotEmpty) {
+      if (!_running && (_paused || _networkBlocked)) return;
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
+  }
+
+  /// Re-evaluates the network gate and resumes the queue if it now passes.
+  ///
+  /// The drain re-checks the network itself, but only something has to ask it
+  /// to look. Connectivity changes do (see the constructor); the "only over
+  /// Wi-Fi" PREFERENCE did not, so turning it off in front of a queue parked
+  /// on "waiting for an allowed network" changed nothing and the screen had no
+  /// way out — its pause bar reads `isPaused`, which is false, so tapping it
+  /// paused the queue instead of resuming it. Mihon watches both signals
+  /// together (`DownloadJob` combines `networkStateFlow()` with
+  /// `downloadOnlyOverWifi.changes()`); this is the second one.
+  void kickDrain() {
+    if (_paused || _queue.isEmpty) return;
+    unawaited(_drain());
   }
 
   /// Every notification this repository posts goes through one chain, and the
@@ -895,6 +919,20 @@ class DownloadRepository {
             options: Options(headers: page.headers),
             cancelToken: job.cancelToken,
           );
+          // A 200 is not proof of an image. Cloudflare serves its JS
+          // interstitial under 200 to image requests too (the HTTP bridge
+          // says so in as many words), and an expired CDN link often answers
+          // with an HTML error page. Without this the download SUCCEEDS: no
+          // exception, so the retries never fire, the chapter is marked
+          // done, and the page is a permanent broken tile that a re-queue
+          // then SKIPS because the file exists. Mihon checks the same thing
+          // (`ImageUtil.findImageType`). Throwing instead lets the existing
+          // retry schedule have a go, and failing that the chapter reports
+          // an error rather than lying about being downloaded.
+          if (!await _looksLikeImage(part)) {
+            await part.delete().catchError((_) => part);
+            throw const FormatException('downloaded page is not an image');
+          }
           await part.rename(target.path);
         },
         isFatal: (error) =>
@@ -904,6 +942,51 @@ class DownloadRepository {
       );
     }
     return target;
+  }
+
+  /// Whether [file] starts with the magic bytes of a format the engine can
+  /// paint. Header-only: a page can be megabytes and the first 16 bytes
+  /// settle it.
+  static Future<bool> _looksLikeImage(File file) async {
+    final RandomAccessFile handle;
+    try {
+      handle = await file.open();
+    } catch (_) {
+      return false;
+    }
+    try {
+      final b = await handle.read(16);
+      return looksLikeImageHeader(b);
+    } catch (_) {
+      return false;
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /// Pure half of [_looksLikeImage], so the format table can be tested
+  /// without touching a filesystem.
+  @visibleForTesting
+  static bool looksLikeImageHeader(List<int> b) {
+    bool at(int i, List<int> sig) {
+      if (b.length < i + sig.length) return false;
+      for (var k = 0; k < sig.length; k++) {
+        if (b[i + k] != sig[k]) return false;
+      }
+      return true;
+    }
+
+    if (at(0, [0x89, 0x50, 0x4E, 0x47])) return true; // PNG
+    if (at(0, [0xFF, 0xD8, 0xFF])) return true; // JPEG
+    if (at(0, [0x47, 0x49, 0x46, 0x38])) return true; // GIF87a/89a
+    if (at(0, [0x42, 0x4D])) return true; // BMP
+    // RIFF....WEBP
+    if (at(0, [0x52, 0x49, 0x46, 0x46]) && at(8, [0x57, 0x45, 0x42, 0x50])) {
+      return true;
+    }
+    // ISO-BMFF brands: ....ftypavif / ftypheic — Mihon accepts AVIF pages.
+    if (at(4, [0x66, 0x74, 0x79, 0x70])) return true;
+    return false;
   }
 
   String _extForUrl(String url) {

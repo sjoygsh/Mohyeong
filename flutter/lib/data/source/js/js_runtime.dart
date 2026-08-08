@@ -832,8 +832,18 @@ var mh = (function () {
     // the predicate on furniture that is present from the first paint, while
     // the results are still loading — a manhwatop dump of ?s=king showed 12
     // c-tabs-item__content results next to sidebar page-item-detail cards.
+    // The predicate must be able to succeed on a search that legitimately
+    // matched NOTHING, or every empty search burns the whole ceiling and is
+    // then not cached (a not-ready snapshot is deliberately never stored), so
+    // a typo costs 12s, the correction costs 12s again, and a pull-to-refresh
+    // costs 12s more. Stock Madara renders an empty results tab plus a
+    // "No manga found" notice, so accept either the rows or that notice.
     var SEARCH_OPTS = {
-      webview_ready_js: "!!document.querySelector('.c-tabs-item__content')",
+      webview_ready_js:
+        "!!document.querySelector('.c-tabs-item__content') || " +
+        "/no manga found|not found any manga|no results/i.test(" +
+        "(document.querySelector('.tab-content-wrap, .c-tabs-item, .search-wrap')" +
+        "||document.body||{}).textContent||'')",
       webview_settle_ms: 12000,
     };
     function popular(page) {
@@ -851,15 +861,23 @@ var mh = (function () {
       var url = (page <= 1 ? BASE + '/?s=' : BASE + '/page/' + page + '/?s=') +
         q + '&post_type=wp-manga';
       return getHtml(url, SEARCH_OPTS).then(function (html) {
+        // No listing fallback here, deliberately. Stock Madara search pages
+        // carry a sidebar of page-item-detail cards, so falling back to the
+        // listing parse answers a query that matched nothing with furniture —
+        // a search for "king" came back as the popular list, which is worse
+        // than an empty result because it looks like an answer.
+        //
+        // Gating the fallback on the page lacking c-tabs markup was tried and
+        // is NOT a real guard: stock Madara emits an empty `c-tabs-item`
+        // wrapper even on a zero-result page, and its stylesheet names the
+        // class too, so the gate is always true and the branch never runs. A
+        // condition that can't fire is worse than no condition — it reads as
+        // a safety net that isn't there. The five factory sources all use
+        // c-tabs rows; parseSearch is their search parser, and if it finds
+        // nothing then nothing is the honest answer. The standalone clones
+        // (allporncomic, aquareader) keep their own fallback and are
+        // untouched by this.
         var mangas = parseSearch(html);
-        // The listing fallback is for Madara clones whose search results come
-        // back as page-item-detail cards. On a site that DOES use c-tabs rows,
-        // an empty parse means the search genuinely matched nothing, and
-        // falling through would answer the query with the sidebar's cards —
-        // a wrong answer reads far worse than an honest empty one.
-        if (mangas.length === 0 && html.indexOf('c-tabs-item') < 0) {
-          mangas = parseList(html);
-        }
         return { mangas: mangas, has_next_page: hasNext(html, page) };
       });
     }

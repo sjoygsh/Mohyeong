@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/download/download_preferences.dart';
+import '../../data/download/download_repository.dart';
 import 'category_filter_tile.dart';
 import 'pref_tiles.dart';
 
@@ -31,6 +32,11 @@ class DownloadSettingsScreen extends ConsumerWidget {
           PrefSwitch(
             title: 'Only on Wi-Fi',
             provider: downloadOnlyOverWifiProvider,
+            // Turning this OFF has to reach a queue already parked on the
+            // network gate — nothing else will ask it to look again until
+            // connectivity itself changes.
+            afterChange: (_) =>
+                ref.read(downloadRepositoryProvider).kickDrain(),
           ),
           PrefSwitch(
             title: 'Save as CBZ archive',

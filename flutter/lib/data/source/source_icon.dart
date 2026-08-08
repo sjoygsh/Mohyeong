@@ -104,8 +104,12 @@ class _IconRecord {
       file: json['file'] as String?,
       url: json['url'] as String?,
       answered: json['unreachable'] != true,
-      // 'decoder' is the key generation 2 wrote under; read it so an existing
-      // index doesn't read as generation 0 and re-probe every source at once.
+      // 'decoder' is the key generation 2 wrote under. Reading it does NOT
+      // spare an existing index the re-probe — 2 is still below the current
+      // generation, so every remembered miss re-probes once either way, which
+      // is the whole point of bumping. It is read so the stored value stays
+      // meaningful (a 2 reads back as 2, not as 0) rather than for any
+      // stampede guarantee; an earlier comment here claimed one it never gave.
       generation: (json['gen'] ?? json['decoder']) as int? ?? 0,
     );
   }
@@ -372,7 +376,31 @@ class SourceIconStore {
     if (origin == null || !origin.hasScheme) return null;
     final web = WebViewHttpClient.instance;
     if (!web.isAvailable) return null;
+    // One icon probe in the browser at a time, app-wide.
+    //
+    // The WebView is a single serialised FIFO shared with listings, chapter
+    // pages and covers. Without this gate, opening Browse with N walled
+    // sources appends N full navigations — each with up to four icon
+    // candidates behind it — and whatever the user taps next queues BEHIND
+    // all of it. Waiting here instead of enqueuing keeps our footprint in
+    // that shared queue at exactly one job, so the user's own fetch is never
+    // more than one navigation away, while every source still gets resolved
+    // rather than deferred for a whole TTL.
+    final slot = Completer<void>();
+    final ahead = _webviewGate;
+    _webviewGate = slot.future;
+    await ahead;
+    try {
+      return await _probeViaWebViewLocked(web, origin);
+    } finally {
+      slot.complete();
+    }
+  }
 
+  Future<void> _webviewGate = Future<void>.value();
+
+  Future<({Uint8List bytes, String extension, String url})?>
+      _probeViaWebViewLocked(WebViewHttpClient web, Uri origin) async {
     final page = await web.request(origin.toString());
     if (page == null) return null;
     final declared = iconLinksIn(page['body'] as String? ?? '', origin);
@@ -428,6 +456,12 @@ class SourceIconStore {
           ),
         );
         reach.answered = true;
+        // A challenge served under 200 is still a wall. Cloudflare does this
+        // to non-browser clients, and a status-only test misses it entirely —
+        // the page parses as "declares no icons", the record takes the long
+        // 12-hour miss TTL, and the browser retry that would have worked is
+        // never reached.
+        if (looksWalledBody(response.data)) reach.walled = true;
         final status = response.statusCode ?? 0;
         if (status >= 300) {
           final location = response.headers.value('location');
@@ -553,6 +587,20 @@ class SourceIconStore {
   static bool isAnswerStatus(int? status) {
     if (status == null) return false;
     return status != 403 && status != 429 && status != 503;
+  }
+
+  /// Whether [body] is a Cloudflare interstitial rather than the site.
+  ///
+  /// Mirrors the markers the HTTP bridge checks. A wall does not have to
+  /// arrive with a wall's status code, so [isAnswerStatus] alone is not
+  /// enough to decide whether the browser retry is worth trying.
+  @visibleForTesting
+  static bool looksWalledBody(Object? body) {
+    if (body is! String || body.isEmpty) return false;
+    return body.contains('<title>Just a moment') ||
+        body.contains('challenge-platform') ||
+        body.contains('_cf_chl_opt') ||
+        body.contains('window._cf_chl');
   }
 
   /// Identifies [bytes] by their magic number, and unwraps the one container
