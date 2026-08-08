@@ -28,6 +28,7 @@ class DownloadSettingsScreen extends ConsumerWidget {
     final downloadNew = ref.watch(downloadNewChaptersProvider);
     return PrefScaffold(
       title: 'Downloads',
+      actions: [const PrefHelp('downloads')],
       children: [
           PrefSwitch(
             title: 'Only on Wi-Fi',

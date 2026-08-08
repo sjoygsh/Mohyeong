@@ -36,6 +36,7 @@ class SecuritySettingsScreen extends ConsumerWidget {
     final secureMode = ref.watch(secureScreenModeProvider);
     return PrefScaffold(
       title: 'Security and privacy',
+      actions: [const PrefHelp('security')],
       children: [
           const PrefSectionHeader('Security'),
           PrefSwitch(

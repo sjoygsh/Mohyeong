@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../tide/tide.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/track/track_preferences.dart';
 import '../../data/track/tracker.dart';
@@ -10,6 +9,7 @@ import '../../data/track/tracker_registry.dart';
 import '../../domain/track/model/tracker.dart';
 import '../settings/pref_tiles.dart';
 import '../util/user_message.dart';
+import '../util/open_link.dart';
 
 /// Trackers settings page — lists every registered tracker and lets the
 /// user log in / out. Split into "Online" and "Advanced" sections matching
@@ -31,10 +31,7 @@ class TrackersSettingsScreen extends ConsumerWidget {
       actions: [
         TideIconButton(
           icon: Icons.help_outlined,
-          onTap: () => launchUrl(
-            Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html#tracking'),
-            mode: LaunchMode.externalApplication,
-          ),
+          onTap: () => openLink(context, helpUrl('tracking')),
         ),
       ],
       children: [

@@ -14,7 +14,6 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/base/base_preferences.dart';
 import '../../data/download/download_repository.dart';
@@ -28,6 +27,7 @@ import '../settings/data_storage_settings_screen.dart';
 import '../settings/settings_screen.dart';
 import '../stats/stats_screen.dart';
 import '../tide/tide.dart';
+import '../util/open_link.dart';
 
 /// "More" hub — equivalent to the Kotlin MoreScreen. Routes to Settings,
 /// Categories, Data and storage, About, etc, and hosts the two global mode
@@ -191,10 +191,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             size: 15,
                             color: TideColors.textAt(0.3),
                           ),
-                          onTap: () => launchUrl(
-                            Uri.parse(MoreScreen._urlHelp),
-                            mode: LaunchMode.externalApplication,
-                          ),
+                          onTap: () => openLink(context, MoreScreen._urlHelp),
                         ),
                       ],
                     ),

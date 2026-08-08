@@ -15,6 +15,7 @@ import '../../data/category/category_repository.dart';
 import '../../domain/category/model/category.dart';
 import '../tide/tide.dart';
 import '../util/user_message.dart';
+import '../util/open_link.dart';
 
 /// Manage the user-defined library categories. The implicit system
 /// category (id=0, "Uncategorized") is hidden -- the SQL trigger blocks
@@ -42,6 +43,11 @@ class CategoriesScreen extends ConsumerWidget {
             TideHeader(
               title: 'Categories',
               actions: [
+                TideIconButton(
+                  icon: Icons.help_outlined,
+                  onTap: () => openLink(context, helpUrl('categories')),
+                ),
+                const SizedBox(width: 9),
                 TideIconButton(
                   icon: Icons.add,
                   onTap: () => _promptCreate(context, repo),

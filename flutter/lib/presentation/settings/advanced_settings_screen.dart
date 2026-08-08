@@ -33,6 +33,7 @@ class AdvancedSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return PrefScaffold(
       title: 'Advanced',
+      actions: [const PrefHelp('troubleshooting')],
       children: [
           const PrefSectionHeader('Logging'),
           PrefSwitch(

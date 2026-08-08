@@ -18,6 +18,7 @@ class BrowseSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return PrefScaffold(
       title: 'Browse',
+      actions: [const PrefHelp('sources')],
       children: [
         const PrefSectionHeader('Sources'),
         PrefSwitch(

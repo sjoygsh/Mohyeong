@@ -15,6 +15,7 @@ import '../../data/sync/sync_preferences.dart';
 import '../../data/sync/sync_scheduler.dart';
 import '../../data/sync/sync_transport.dart';
 import '../util/user_message.dart';
+import '../util/open_link.dart';
 
 class SyncSettingsScreen extends ConsumerStatefulWidget {
   const SyncSettingsScreen({super.key});
@@ -121,7 +122,15 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const TideHeader(title: 'Sync'),
+            TideHeader(
+              title: 'Sync',
+              actions: [
+                TideIconButton(
+                  icon: Icons.help_outlined,
+                  onTap: () => openLink(context, helpUrl('sync-overview')),
+                ),
+              ],
+            ),
             Expanded(child: asyncPrefs.when(
         loading: () => const Center(
           child: SizedBox(

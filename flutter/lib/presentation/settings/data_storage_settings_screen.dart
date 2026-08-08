@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/library/library_update_preference.dart';
 import '../../data/manga/manga_repository.dart';
@@ -15,6 +14,7 @@ import '../backup/backup_screen.dart';
 import '../sync/sync_settings_screen.dart';
 import '../tide/tide.dart';
 import 'pref_tiles.dart';
+import '../util/open_link.dart';
 
 /// Data & storage sub-screen: storage location + backup/restore + sync.
 /// Mirrors the "Data and storage" section of Mihon's settings.
@@ -28,10 +28,7 @@ class DataStorageSettingsScreen extends StatelessWidget {
       actions: [
         TideIconButton(
           icon: Icons.help_outlined,
-          onTap: () => launchUrl(
-            Uri.parse('https://sjoygsh.github.io/Mohyeong/help.html#storage'),
-            mode: LaunchMode.externalApplication,
-          ),
+          onTap: () => openLink(context, helpUrl('storage')),
         ),
       ],
       children: [

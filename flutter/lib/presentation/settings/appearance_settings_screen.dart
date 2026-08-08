@@ -15,6 +15,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
     final datePattern = ref.watch(dateFormatProvider);
     return PrefScaffold(
       title: 'Appearance',
+      actions: [const PrefHelp('appearance')],
       children: [
           const PrefSectionHeader('Display'),
           _DateFormatTile(

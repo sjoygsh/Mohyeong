@@ -49,6 +49,7 @@ class ReaderSettingsScreen extends ConsumerWidget {
     final customBrightness = ref.watch(readerCustomBrightnessProvider);
     return PrefScaffold(
       title: 'Reader',
+      actions: [const PrefHelp('reader')],
       children: [
           PrefRow(
             title: 'Default reading mode',

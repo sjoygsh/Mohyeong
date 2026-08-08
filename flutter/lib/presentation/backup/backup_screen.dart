@@ -42,6 +42,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
   Widget build(BuildContext context) {
     return PrefScaffold(
       title: 'Backup & restore',
+      actions: [const PrefHelp('backup')],
       children: [
           PrefRow(
             icon: Icons.save_outlined,

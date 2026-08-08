@@ -10,7 +10,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/manga/manga_repository.dart';
 import '../../domain/manga/model/manga.dart';
@@ -18,6 +17,7 @@ import '../tide/tide.dart';
 import '../manga/manga_details_screen.dart';
 import '../util/timestamp_format.dart';
 import '../util/user_message.dart';
+import '../util/open_link.dart';
 
 /// Library manga whose next chapter is expected on/after today, soonest
 /// first. Mirrors Mihon's `GetUpcomingManga`.
@@ -99,12 +99,8 @@ class _UpcomingScreenState extends ConsumerState<UpcomingScreen> {
                     actions: [
                       TideIconButton(
                         icon: Icons.help_outlined,
-                        onTap: () => launchUrl(
-                          Uri.parse(
-                            'https://sjoygsh.github.io/Mohyeong/help.html',
-                          ),
-                          mode: LaunchMode.externalApplication,
-                        ),
+                        onTap: () =>
+                            openLink(context, helpUrl('upcoming')),
                       ),
                     ],
                   ),

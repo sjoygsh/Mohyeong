@@ -50,6 +50,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
     final showContinueReading = ref.watch(showContinueReadingButtonProvider);
     return PrefScaffold(
       title: 'Library',
+      actions: [const PrefHelp('library')],
       children: [
           // ── Categories ──────────────────────────────────────────────
           const PrefSectionHeader('Categories'),

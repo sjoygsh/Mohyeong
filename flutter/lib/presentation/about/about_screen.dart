@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/updater/app_update_checker.dart';
 import '../tide/tide.dart';
+import '../util/open_link.dart';
 
 /// About / version info. Mirrors the Kotlin `AboutScreen` content: the
 /// Mohyeong description + AI-collaboration note, the version /
@@ -262,10 +263,7 @@ class _LinkTile extends StatelessWidget {
       child: TideGlass(
         radius: TideRadius.pane,
         padding: const EdgeInsets.symmetric(vertical: 16),
-        onTap: () => launchUrl(
-          Uri.parse(url),
-          mode: LaunchMode.externalApplication,
-        ),
+        onTap: () => openLink(context, url),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

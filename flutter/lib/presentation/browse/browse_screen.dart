@@ -17,7 +17,6 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/source/extension_repository.dart';
 import '../../data/source/extension_updates.dart';
@@ -34,6 +33,7 @@ import 'source_browse_screen.dart';
 import 'source_preferences_screen.dart';
 import 'sources_filter_screen.dart';
 import '../util/user_message.dart';
+import '../util/open_link.dart';
 
 /// Browse hosts three views: Sources (installed sources you can browse),
 /// Extensions (install / uninstall management), and Migrate (moves favourites
@@ -188,10 +188,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
           if (_view == 2) ...[
             TideIconButton(
               icon: Icons.help_outlined,
-              onTap: () => launchUrl(
-                Uri.parse(BrowseScreen._migrationHelp),
-                mode: LaunchMode.externalApplication,
-              ),
+              onTap: () => openLink(context, BrowseScreen._migrationHelp),
             ),
             const SizedBox(width: 9),
           ],

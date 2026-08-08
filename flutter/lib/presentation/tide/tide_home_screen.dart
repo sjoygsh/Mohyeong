@@ -318,6 +318,10 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen>
         await setReadStatus.setRead(read: read, chapters: chapters);
       }
     }
+    // A bulk mark-read walks every touched series and can delete downloads on
+    // the way; the user is free to leave while it runs, and _clearSelection is
+    // a setState.
+    if (!mounted) return;
     _clearSelection();
   }
 
@@ -328,6 +332,7 @@ class _TideHomeScreenState extends ConsumerState<TideHomeScreen>
         .map((u) => u.chapterId)
         .toList(growable: false);
     await repo.setBookmarkForIds(ids, bookmark);
+    if (!mounted) return;
     _clearSelection();
   }
 

@@ -101,6 +101,8 @@ class _MigrationConfigScreenState extends ConsumerState<MigrationConfigScreen> {
     final showLanguage =
         sources.map((s) => s.lang).toSet().length > 1;
 
+    // Two awaits back: the screen can be gone before the source list lands.
+    if (!mounted) return;
     setState(() {
       _prefs = prefs;
       _sources = sorted;

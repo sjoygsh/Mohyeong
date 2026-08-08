@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/preferences/typed_preferences.dart';
 import '../tide/tide.dart';
+import '../util/open_link.dart';
 
 /// A toggle bound to a bool [BoolPrefNotifier] provider. Shared across the
 /// settings sub-screens so the long preference lists stay declarative.
@@ -101,6 +102,24 @@ class PrefRow extends StatelessWidget {
     );
     return onTap == null ? Opacity(opacity: 0.45, child: row) : row;
   }
+}
+
+/// The header's help button, pointed at a section of the docs.
+///
+/// Only two screens in the app used to carry one, out of ten settings pages,
+/// while the docs already had sections for most of them sitting unreferenced.
+/// A settings page nobody can get help from is a settings page you guess at.
+class PrefHelp extends StatelessWidget {
+  const PrefHelp(this.anchor, {super.key});
+
+  /// Section id in `docs/help.html`. See [helpUrl] for why it must exist.
+  final String anchor;
+
+  @override
+  Widget build(BuildContext context) => TideIconButton(
+        icon: Icons.help_outlined,
+        onTap: () => openLink(context, helpUrl(anchor)),
+      );
 }
 
 /// Explanatory copy under a preference — the small print Mihon puts beneath

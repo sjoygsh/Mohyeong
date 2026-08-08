@@ -432,6 +432,8 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen>
       [for (final c in _selectedChapters(all)) c.id],
       bookmark,
     );
+    // The write can outlive this screen; clearing selection is a setState.
+    if (!mounted) return;
     _clearSelection();
   }
 
@@ -441,6 +443,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen>
       // Each linked source stores its chapters under its own manga folder.
       await downloadRepo.enqueue(_mangaFor(c, manga), c);
     }
+    if (!mounted) return;
     _clearSelection();
   }
 
@@ -450,6 +453,7 @@ class _MangaDetailsScreenState extends ConsumerState<MangaDetailsScreen>
       final owner = _mangaFor(c, manga);
       await downloadRepo.deleteDownload(owner.source, owner.id, c.id);
     }
+    if (!mounted) return;
     _clearSelection();
   }
 
