@@ -195,7 +195,9 @@ class _DownloadQueueScreenState extends ConsumerState<DownloadQueueScreen> {
                       text: 'Queue paused — the running chapter will finish, '
                           'but no further jobs will start.',
                     )
-                  else if (repo.isWaitingForNetwork)
+                  // Only ever about a queue that exists — belt and braces
+                  // alongside the repository clearing the flag itself.
+                  else if (repo.isWaitingForNetwork && items.isNotEmpty)
                     const _QueueBanner(
                       icon: Icons.wifi_off_outlined,
                       text: 'Waiting for an allowed network — downloads only '

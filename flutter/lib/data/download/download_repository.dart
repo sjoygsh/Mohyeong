@@ -1131,6 +1131,14 @@ class DownloadRepository {
   int clearQueue() {
     final removed = List<_DownloadJob>.from(_queue);
     _queue.clear();
+    // The waiting-for-network state describes the QUEUE, and there isn't one
+    // any more. Only the drain used to clear this flag, so clearing a blocked
+    // queue left the screen showing "waiting for an allowed network" directly
+    // above "No downloads".
+    if (_networkBlocked) {
+      _networkBlocked = false;
+      _events.add(const DownloadEvent.queueResumed());
+    }
     for (final j in removed) {
       _byChapter.remove(j.chapter.id);
       _events.add(
