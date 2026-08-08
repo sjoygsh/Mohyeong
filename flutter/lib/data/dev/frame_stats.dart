@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'dart:ui' show FramePhase;
+
 import 'package:flutter/scheduler.dart';
 
 /// Per-frame build and raster timings, printed to logcat.
@@ -65,6 +67,30 @@ abstract final class FrameStats {
     String p(List<double> v, double q) =>
         v[(v.length * q).clamp(0, v.length - 1).toInt()].toStringAsFixed(1);
     final janky = total.where((t) => t > 16.7).length;
+    // CADENCE — the judder metric, and the one this file was missing.
+    //
+    // build/raster/janky all answer "was each frame cheap", and on this reader
+    // the answer has always been yes. None of them answer "did the frames
+    // arrive EVENLY", which is what the eye actually reads as smooth. A frame
+    // can cost 4ms and still be presented a whole vsync late because the UI
+    // thread was busy with something that is not widget work; the run then
+    // alternates 16.7 / 33.4 and looks exactly like frame-pacing stutter in a
+    // game, while janky% sits at 0. So: the gaps between consecutive frames'
+    // vsyncs, and a count of the ones that skipped a display refresh.
+    final gaps = <double>[];
+    for (var i = 1; i < _window.length; i++) {
+      final prev =
+          _window[i - 1].timestampInMicroseconds(FramePhase.vsyncStart);
+      final now = _window[i].timestampInMicroseconds(FramePhase.vsyncStart);
+      final d = (now - prev) / 1000;
+      // Ignore the idle gaps between separate bursts of activity — a pause
+      // with nothing on screen moving is not a dropped frame.
+      if (d > 0 && d < 200) gaps.add(d);
+    }
+    gaps.sort();
+    final skipped = gaps.where((g) => g > 25).length;
+    final elapsed = gaps.fold<double>(0, (a, b) => a + b);
+    final fps = elapsed > 0 ? 1000 * gaps.length / elapsed : 0.0;
     // `print`, not `developer.log`: the latter goes to the VM service, which
     // nothing is attached to in a release build, so it never reaches logcat.
     // ignore: avoid_print
@@ -78,6 +104,16 @@ abstract final class FrameStats {
       'vsync-wait p50=${p(wait, .5)} p90=${p(wait, .9)} '
       'max=${wait.last.toStringAsFixed(1)}',
     );
+    if (gaps.isNotEmpty) {
+      // ignore: avoid_print
+      print(
+        'FRAMECADENCE[$_label] frames=${gaps.length + 1} '
+        'fps=${fps.toStringAsFixed(1)} '
+        'skipped=$skipped (${(100 * skipped / gaps.length).toStringAsFixed(1)}%) '
+        '| gap p50=${p(gaps, .5)} p90=${p(gaps, .9)} p99=${p(gaps, .99)} '
+        'max=${gaps.last.toStringAsFixed(1)}',
+      );
+    }
     _window.clear();
   }
 }
