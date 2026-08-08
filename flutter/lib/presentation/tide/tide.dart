@@ -1771,11 +1771,30 @@ class TideCover extends ConsumerWidget {
 
 /// A source's own mark, on a tile of glass.
 ///
+/// Marks shipped with the app, by extension id, for the sites that publish
+/// none of their own.
+///
+/// The bar for adding one is that the site genuinely has nothing to fetch —
+/// not that a probe failed, which is a timing fact and heals itself. RizzFables
+/// is the case this exists for: no favicon (its `/favicon.ico` is a 200 with
+/// zero bytes), no declared `<link rel=icon>`, no web manifest, and the string
+/// "logo" nowhere in its markup. The bundled file is the one non-flag image the
+/// site actually serves — its default profile avatar. Genuinely theirs, though
+/// not a brand mark, which is a compromise the user chose knowingly over an
+/// invented logo.
+///
+/// A source listed here never probes: there is nothing out there to find, and
+/// an hourly retry for a site we have already answered is just network.
+const Map<String, String> bundledSourceIcons = {
+  'rizzfables': 'assets/source_icons/rizzfables.webp',
+};
+
 /// Sources are websites, and every website publishes a logo — so a browse row
 /// wears the real one rather than a generic glyph. The mark is resolved once
 /// per source and painted from a local file after that; until it lands (and
 /// forever, for a site that publishes nothing usable) the row falls back to
-/// [TideSigil], so a list is never a column of empty tiles.
+/// [bundledSourceIcons] and then [TideSigil], so a list is never a column of
+/// empty tiles.
 class TideSourceLogo extends ConsumerWidget {
   const TideSourceLogo({
     super.key,
@@ -1811,6 +1830,13 @@ class TideSourceLogo extends ConsumerWidget {
       size: size,
       radius: radius,
     );
+    final bundled = bundledSourceIcons[seed];
+    if (bundled != null) {
+      return _logoTile(
+        Image.asset(bundled, fit: BoxFit.contain, errorBuilder: (_, _, _) => fallback),
+      );
+    }
+
     final base = baseUrl;
     if (base == null || base.isEmpty) return fallback;
 
@@ -1823,6 +1849,28 @@ class TideSourceLogo extends ConsumerWidget {
         .valueOrNull;
     if (path == null || path.isEmpty) return fallback;
 
+    return _logoTile(
+      SourceImage(
+        url: path,
+        fit: BoxFit.contain,
+        placeholder: (_) => const SizedBox.shrink(),
+        errorWidget: (_, _) => Center(
+          child: Text(
+            _initialOf(label),
+            style: TextStyle(
+              fontSize: size * 0.42,
+              height: 1,
+              fontWeight: FontWeight.w500,
+              color: TideColors.brightAt(0.9),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The glass square a mark sits on, whatever painted it.
+  Widget _logoTile(Widget mark) {
     return Container(
       width: size,
       height: size,
@@ -1835,22 +1883,7 @@ class TideSourceLogo extends ConsumerWidget {
         // A favicon is drawn to its own edges; inset so it reads as a mark on
         // a tile rather than as a full-bleed square fighting the row's radius.
         padding: EdgeInsets.all(size * 0.16),
-        child: SourceImage(
-          url: path,
-          fit: BoxFit.contain,
-          placeholder: (_) => const SizedBox.shrink(),
-          errorWidget: (_, _) => Center(
-            child: Text(
-              _initialOf(label),
-              style: TextStyle(
-                fontSize: size * 0.42,
-                height: 1,
-                fontWeight: FontWeight.w500,
-                color: TideColors.brightAt(0.9),
-              ),
-            ),
-          ),
-        ),
+        child: mark,
       ),
     );
   }

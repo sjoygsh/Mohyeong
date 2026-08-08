@@ -114,5 +114,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # No Dart-side assets. Notification icons come from the Android drawable
-  # `@drawable/ic_mihon`, which is a different file under android/app/src.
+  # Notification icons are NOT here — they come from the Android drawable
+  # `@drawable/ic_mihon`, a different file under android/app/src.
+  assets:
+    # Marks for sources that publish none of their own, so the browse row has
+    # something better than a letter. See `bundledSourceIcons` in
+    # presentation/tide/tide.dart for the rule about what may live here.
+    - assets/source_icons/
