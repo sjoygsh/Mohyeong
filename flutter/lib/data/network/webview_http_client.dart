@@ -49,9 +49,28 @@ class WebViewHttpClient {
 
   /// Set once we've waited for a controller that never arrived (e.g. the
   /// headless WorkManager isolate, where no [OffscreenWebViewHost] is mounted).
-  /// Stops every subsequent request from eating the attach grace period. Reset
-  /// if a controller does later attach.
-  bool _giveUp = false;
+  /// Stops every subsequent request from eating the attach grace period.
+  ///
+  /// A DEADLINE, not a latch. As a permanent flag this could never clear on the
+  /// isolate that matters: the bail ran before [activate] was set, the host
+  /// only builds a controller when [activate] flips true, and the flag only
+  /// resets when a controller is built — so one slow attach silenced the
+  /// browser path for the rest of the process. That is not hypothetical on a
+  /// cold start: open Browse in the first seconds and the icon probes for every
+  /// fingerprint-walled source can lose the 6s race together, then each records
+  /// a miss that stands for its full 12-hour TTL. The headless isolate this
+  /// guard was written for is still covered — it just re-pays the grace period
+  /// once per window instead of once per process.
+  DateTime? _attachFailedUntil;
+  static const Duration _attachRetryAfter = Duration(seconds: 30);
+
+  bool get _giveUp {
+    final until = _attachFailedUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
+  void _noteAttachFailed() =>
+      _attachFailedUntil = DateTime.now().add(_attachRetryAfter);
 
   /// Origin host the WebView is currently navigating, used by the nav delegate
   /// to block cross-site ad redirects while allowing the site's own
@@ -177,7 +196,7 @@ class WebViewHttpClient {
         ),
       );
     _controller = c;
-    _giveUp = false; // a controller exists now; allow requests again
+    _attachFailedUntil = null; // a controller exists now; allow requests again
     if (!_ready.isCompleted) _ready.complete();
     return c;
   }
@@ -223,7 +242,7 @@ class WebViewHttpClient {
     if (_controller == null) {
       await _ready.future.timeout(const Duration(seconds: 6), onTimeout: () {});
       if (_controller == null) {
-        _giveUp = true;
+        _noteAttachFailed();
         return null;
       }
     }
@@ -339,7 +358,7 @@ class WebViewHttpClient {
     if (_controller == null) {
       await _ready.future.timeout(const Duration(seconds: 6), onTimeout: () {});
       if (_controller == null) {
-        _giveUp = true;
+        _noteAttachFailed();
         return null;
       }
     }

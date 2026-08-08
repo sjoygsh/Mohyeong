@@ -248,6 +248,13 @@ class SourceIconStore {
       } catch (_) {
         // Same as above — a logo is decoration.
       }
+      // Still nothing from a host that walled us: we never learned what this
+      // site publishes, so this is the "phone was on a train" fact, not the
+      // "site has no icon" one, and it must not take the 12-hour miss TTL. The
+      // browser retry is exactly the thing that loses a cold-start race, and
+      // remembering that race as settled is what keeps a letter on the row for
+      // the rest of the day.
+      if (found == null) reach.answered = false;
     }
 
     if (found != null) {
