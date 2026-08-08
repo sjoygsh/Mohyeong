@@ -4075,6 +4075,7 @@ class _PagesViewState extends ConsumerState<_PagesView> {
       url: widget.pageUrlOf?.call(i),
       headers: widget.pageHeadersOf?.call(i),
       fallbackExtent: _memoFallback,
+      loadingMark: TideSpinner(color: widget.ink),
       child: widget.itemBuilder(ctx, i),
     );
   }
@@ -4425,6 +4426,7 @@ class _WebtoonPageSlot extends StatefulWidget {
     this.headers,
     this.fallbackExtent = 400,
     required this.child,
+    this.loadingMark,
   });
 
   final String? url;
@@ -4449,6 +4451,10 @@ class _WebtoonPageSlot extends StatefulWidget {
   /// Referer-requiring source could 403 and poison the shared cache entry.
   final Map<String, String>? headers;
   final Widget child;
+
+  /// Repeated once per viewport down the reservation while this page is still
+  /// loading, so there is always one in sight — see [_WebtoonPageSlotState.build].
+  final Widget? loadingMark;
 
   @override
   State<_WebtoonPageSlot> createState() => _WebtoonPageSlotState();
@@ -4496,7 +4502,36 @@ class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
   Widget build(BuildContext context) {
     final aspect = _aspect;
     if (aspect == null) {
-      return SizedBox(height: widget.fallbackExtent, child: widget.child);
+      // The reservation is a whole page — several screens for a long strip —
+      // and the loading indicator inside [child] centres itself in whatever
+      // box it is handed, which put it a screen or two BELOW the viewport.
+      // Arriving at an undecoded page showed pure black with no sign that
+      // anything was happening. Mihon sizes its progress container to one
+      // viewport (WebtoonPageHolder.createProgressIndicator uses
+      // `parentHeight`) and offsets the indicator a quarter down it; this
+      // does the same — except that Mihon's placeholder IS one viewport, so
+      // you can never be parked inside a taller one, and ours is a whole page.
+      // Sizing the child's box to one viewport alone therefore only helps when
+      // you arrive at the page's top; flinging into its middle put the
+      // indicator back above the viewport. So the mark repeats once per
+      // viewport down the reservation and one is always within half a screen.
+      //
+      // The cells sum to exactly [fallbackExtent], so the reserved extent —
+      // which the offset<->index maths depends on — is unchanged.
+      final viewport = MediaQuery.sizeOf(context).height;
+      final total = widget.fallbackExtent;
+      final first = total < viewport ? total : viewport;
+      final cells = <Widget>[SizedBox(height: first, child: widget.child)];
+      final mark = widget.loadingMark;
+      var remaining = total - first;
+      // Bounded so a wild extent estimate can't spawn an unbounded column.
+      while (mark != null && remaining > 1 && cells.length < 8) {
+        final h = remaining < viewport ? remaining : viewport;
+        cells.add(SizedBox(height: h, child: Center(child: mark)));
+        remaining -= h;
+      }
+      if (remaining > 1) cells.add(SizedBox(height: remaining));
+      return Column(mainAxisSize: MainAxisSize.min, children: cells);
     }
     return AspectRatio(aspectRatio: aspect, child: widget.child);
   }
