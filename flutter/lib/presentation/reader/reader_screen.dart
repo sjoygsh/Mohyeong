@@ -3723,6 +3723,15 @@ class _PagesViewState extends ConsumerState<_PagesView> {
   /// mid-chapter — every page ABOVE the resume point stays undecoded, so the
   /// prefix sum runs short by the difference on each of them and the reported
   /// page ends up many pages behind the one actually on screen.
+  ///
+  /// With NOTHING decoded — a cold chapter, the instant it opens — the answer
+  /// is one viewport per page, not the 400px loading box. Measured: five fast
+  /// flings into a cold 19-page chapter landed on 19/19, because nineteen
+  /// undecoded pages held 7600px of scroll between them where the real chapter
+  /// was some 47,000px long. The chapter was effectively one screen deep until
+  /// its bitmaps arrived, and then it wasn't. A screenful each is both the
+  /// honest prior for a long-strip page and the shape of Mihon's own webtoon
+  /// holder, which is view-sized until it has an image to measure.
   double _fallbackExtent(double contentWidth) {
     var sum = 0.0;
     var known = 0;
@@ -3733,7 +3742,9 @@ class _PagesViewState extends ConsumerState<_PagesView> {
       sum += contentWidth / aspect;
       known++;
     }
-    return known == 0 ? 400.0 : sum / known;
+    if (known > 0) return sum / known;
+    final height = MediaQuery.sizeOf(context).height;
+    return height > 0 ? height : 400.0;
   }
 
   double _webtoonContentWidth() {

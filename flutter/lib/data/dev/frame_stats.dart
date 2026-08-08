@@ -46,14 +46,22 @@ abstract final class FrameStats {
     final build = <double>[];
     final raster = <double>[];
     final total = <double>[];
+    // buildStart - vsyncStart: how long the UI thread took to even BEGIN the
+    // frame. Big here with small build/raster means the thread was busy with
+    // something that is not widget work — platform-channel replies, image
+    // decode completions, GC — and no amount of optimising build or raster
+    // will move it.
+    final wait = <double>[];
     for (final t in _window) {
       build.add(t.buildDuration.inMicroseconds / 1000);
       raster.add(t.rasterDuration.inMicroseconds / 1000);
       total.add(t.totalSpan.inMicroseconds / 1000);
+      wait.add(t.vsyncOverhead.inMicroseconds / 1000);
     }
     build.sort();
     raster.sort();
     total.sort();
+    wait.sort();
     String p(List<double> v, double q) =>
         v[(v.length * q).clamp(0, v.length - 1).toInt()].toStringAsFixed(1);
     final janky = total.where((t) => t > 16.7).length;
@@ -66,7 +74,9 @@ abstract final class FrameStats {
       'build p50=${p(build, .5)} p90=${p(build, .9)} p99=${p(build, .99)} '
       'max=${build.last.toStringAsFixed(1)} | '
       'raster p50=${p(raster, .5)} p90=${p(raster, .9)} p99=${p(raster, .99)} '
-      'max=${raster.last.toStringAsFixed(1)}',
+      'max=${raster.last.toStringAsFixed(1)} | '
+      'vsync-wait p50=${p(wait, .5)} p90=${p(wait, .9)} '
+      'max=${wait.last.toStringAsFixed(1)}',
     );
     _window.clear();
   }
