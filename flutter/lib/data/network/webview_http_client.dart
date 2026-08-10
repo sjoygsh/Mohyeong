@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../dev/frame_stats.dart';
 import 'network_preferences.dart';
 import 'webview_cookie_sync.dart' show registrableDomain;
 
@@ -113,6 +114,10 @@ class WebViewHttpClient {
   void _teardownIfIdle() {
     _idleTimer = null;
     if (_pending > 0) return;
+    if (FrameStats.enabled) {
+      // ignore: avoid_print
+      print('PAGEPATH webview-teardown');
+    }
     _controller = null;
     _ready = Completer<void>();
     _navHost = null;
@@ -324,6 +329,10 @@ class WebViewHttpClient {
     if (inflight != null) return inflight; // share one fetch for duplicate URLs
     _noteBusy();
     activate.value = true;
+    if (FrameStats.enabled) {
+      // ignore: avoid_print
+      print('PAGEPATH webview-image full=$fullResolution $url');
+    }
     final completer = Completer<Uint8List?>();
     _imgInflight[cacheKey] = completer.future;
     _lock = _lock.then((_) async {

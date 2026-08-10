@@ -4,17 +4,26 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../network/image_file_service.dart';
+
 /// The app's image disk cache (covers + reader pages), read through by
 /// `_NetworkImageWithWebViewFallback` in source_image.dart. A dedicated
 /// store instead of [DefaultCacheManager] because the default caps at ~200
 /// objects — smaller than one screenful-history of a large library's
 /// covers, so grids permanently thrashed (evict + re-download on every full
 /// scroll). Sized for a big library; covers are small, pages are transient.
+///
+/// Downloads go through [SourceFileService] — the app's own HTTP client, with
+/// the WebView's cookie jar and browser User-Agent — rather than the package's
+/// anonymous default. Read that class before changing this: an image request
+/// that doesn't carry the session its own source established is what put every
+/// reader page through the offscreen WebView.
 final CacheManager appImageCacheManager = CacheManager(
   Config(
     'mohyeongImages',
     stalePeriod: const Duration(days: 30),
     maxNrOfCacheObjects: 2000,
+    fileService: SourceFileService(),
   ),
 );
 

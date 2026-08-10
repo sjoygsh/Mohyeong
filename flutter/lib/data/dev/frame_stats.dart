@@ -33,6 +33,33 @@ abstract final class FrameStats {
     if (!enabled) return;
     SchedulerBinding.instance.addTimingsCallback(_onTimings);
     Timer.periodic(_every, (_) => report());
+    _installLoopProbe();
+  }
+
+  /// How late a 4ms timer actually fires — i.e. how congested the UI thread's
+  /// message loop is.
+  ///
+  /// This is the fork the other numbers can't resolve. `vsync-wait` says the
+  /// frame STARTED late, and that has two completely different causes with the
+  /// same signature: either the UI thread was busy with work that isn't the
+  /// frame (Dart running long, platform messages, GC), or the engine chose not
+  /// to begin one because the previous frame is still in the pipeline —
+  /// backpressure from the raster thread and the GPU, which no amount of
+  /// optimising our Dart will touch. A timer rides the same message loop as
+  /// the frame callback, so it is late in the first case and punctual in the
+  /// second.
+  static final List<double> _late = <double>[];
+  static const int _probeMs = 4;
+
+  static void _installLoopProbe() {
+    var last = DateTime.now().microsecondsSinceEpoch;
+    Timer.periodic(const Duration(milliseconds: _probeMs), (_) {
+      final now = DateTime.now().microsecondsSinceEpoch;
+      final late = (now - last) / 1000 - _probeMs;
+      last = now;
+      if (late > 0 && late < 2000) _late.add(late);
+      if (_late.length > 8000) _late.removeRange(0, _late.length - 8000);
+    });
   }
 
   static void _onTimings(List<FrameTiming> timings) {
@@ -113,6 +140,17 @@ abstract final class FrameStats {
         '| gap p50=${p(gaps, .5)} p90=${p(gaps, .9)} p99=${p(gaps, .99)} '
         'max=${gaps.last.toStringAsFixed(1)}',
       );
+    }
+    if (_late.isNotEmpty) {
+      _late.sort();
+      // ignore: avoid_print
+      print(
+        'LOOPLATE[$_label] n=${_late.length} '
+        'p50=${p(_late, .5)} p90=${p(_late, .9)} p99=${p(_late, .99)} '
+        'max=${_late.last.toStringAsFixed(1)} '
+        'over16=${_late.where((l) => l > 16).length}',
+      );
+      _late.clear();
     }
     _window.clear();
   }

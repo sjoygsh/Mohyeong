@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter/material.dart';
 
+import '../../data/dev/frame_stats.dart';
 import '../../data/network/webview_http_client.dart';
 import '../../data/storage/app_cache.dart';
 import '../../data/source/local_archive.dart';
@@ -429,7 +430,11 @@ class _NetworkImageWithWebViewFallback
         path = file.path;
         fromDiskCache = true;
       }
-    } catch (_) {
+    } catch (e) {
+      if (FrameStats.enabled) {
+        // ignore: avoid_print
+        print('PAGEPATH http-failed ${key.url} $e');
+      }
       // The WebView round trip is serialized host-side and slower still than a
       // plain download, so it belongs in the queue for the same reason.
       final fallback = await PageFetchQueue.run(
