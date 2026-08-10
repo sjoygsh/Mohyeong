@@ -39,6 +39,7 @@ import '../common/crop_borders_image.dart';
 import '../common/source_image.dart';
 import '../common/webview_screen.dart';
 import '../tide/tide.dart';
+import 'page_mark.dart';
 import 'reader_settings_sheet.dart';
 import '../util/user_message.dart';
 
@@ -2701,6 +2702,7 @@ class _PageListState extends State<_PageList> {
           pageHeadersOf: (i) => pages[i].headers,
           zoomRegistry: widget.zoomRegistry,
           fit: widget.fit,
+          cropBorders: widget.cropBorders,
           itemBuilder: (ctx, i) {
             final page = pages[i];
             final imageUrl = page.imageUrl ?? page.url;
@@ -2717,18 +2719,16 @@ class _PageListState extends State<_PageList> {
               cropBorders: widget.cropBorders,
               rotateToFit: widget.rotateToFit,
               rotateInvert: widget.rotateInvert,
-              placeholder: (_) => SizedBox(
-                height: 400,
-                child: Center(child: TideSpinner(color: widget.ink)),
+              // One centred mark in the pager (its box is one viewport), tiled
+              // down the box in continuous mode; see [PageMark].
+              placeholder: (_) => PageMark(
+                mark: TideSpinner(color: widget.ink),
               ),
-              errorWidget: (_, error) => SizedBox(
-                height: 400,
-                child: Center(
-                  child: Text(
-                    userMessage(error,
-                        fallback: 'Page ${i + 1} didn\'t load.'),
-                    style: TextStyle(color: widget.ink.withValues(alpha: 0.7)),
-                  ),
+              errorWidget: (_, error) => PageMark(
+                mark: Text(
+                  userMessage(error, fallback: 'Page ${i + 1} didn\'t load.'),
+                  style: TextStyle(color: widget.ink.withValues(alpha: 0.7)),
+                  textAlign: TextAlign.center,
                 ),
               ),
             );
@@ -3180,18 +3180,15 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
       // opacity, exempt from the global cover fade.
       fadeIn: false,
       cropBorders: widget.cropBorders,
-      placeholder: (_) => SizedBox(
-        height: 400,
-        child: Center(child: TideSpinner(color: widget.textColor)),
-      ),
-      errorWidget: (_, error) => SizedBox(
-        height: 400,
-        child: Center(
-          child: Text(
-            userMessage(error,
-                fallback: 'Page ${item.pageIdx + 1} didn\'t load.'),
-            style: TextStyle(color: widget.textColor.withValues(alpha: 0.7)),
-          ),
+      // Tiled down the page's reserved box — a strip page is several screens
+      // tall and a single centred mark lands off-screen; see [PageMark].
+      placeholder: (_) => PageMark(mark: TideSpinner(color: widget.textColor)),
+      errorWidget: (_, error) => PageMark(
+        mark: Text(
+          userMessage(error,
+              fallback: 'Page ${item.pageIdx + 1} didn\'t load.'),
+          style: TextStyle(color: widget.textColor.withValues(alpha: 0.7)),
+          textAlign: TextAlign.center,
         ),
       ),
     );
@@ -3275,6 +3272,7 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
           // strip marks chapters read itself, per chapter rather than per
           // viewer session.
             fit: widget.fit,
+            cropBorders: widget.cropBorders,
             itemBuilder: _buildItem,
         ),
       ),
@@ -3412,6 +3410,7 @@ class _LocalPageList extends StatelessWidget {
       pageHeadersOf: (_) => null,
       zoomRegistry: zoomRegistry,
       fit: fit,
+      cropBorders: cropBorders,
       itemBuilder: (ctx, i) => SourceImage(
         url: paths[i],
         fit: fit,
@@ -3422,13 +3421,11 @@ class _LocalPageList extends StatelessWidget {
         cropBorders: cropBorders,
         rotateToFit: rotateToFit,
         rotateInvert: rotateInvert,
-        errorWidget: (_, error) => SizedBox(
-          height: 400,
-          child: Center(
-            child: Text(
-              userMessage(error, fallback: 'Page ${i + 1} didn\'t load.'),
-              style: TextStyle(color: ink.withValues(alpha: 0.7)),
-            ),
+        errorWidget: (_, error) => PageMark(
+          mark: Text(
+            userMessage(error, fallback: 'Page ${i + 1} didn\'t load.'),
+            style: TextStyle(color: ink.withValues(alpha: 0.7)),
+            textAlign: TextAlign.center,
           ),
         ),
       ),
@@ -3457,6 +3454,7 @@ class _PagesView extends ConsumerStatefulWidget {
     this.itemExtentOf,
     this.zoomRegistry,
     this.fit = BoxFit.contain,
+    this.cropBorders = false,
   });
 
   final int count;
@@ -3494,6 +3492,12 @@ class _PagesView extends ConsumerStatefulWidget {
 
   /// Scale-type fit, so split halves render like whole pages do.
   final BoxFit fit;
+
+  /// The viewer's "Crop borders" pref — the per-viewer one ([itemBuilder]
+  /// passes the same value to its [SourceImage]s). It changes the SHAPE of
+  /// every page, so the aspect measurements this view lays the strip out
+  /// from are taken under it; see [_aspectKey].
+  final bool cropBorders;
 
   /// Zoom handles keyed by SOURCE page index, owned by the reader body so
   /// tap-navigation can pan a zoomed page before turning it (Mihon
@@ -3575,17 +3579,37 @@ int _readerPageCacheWidth(BuildContext context, {bool webtoon = false}) {
 /// resume, and tells the paged viewer whether a page is a wide spread.
 /// Bounded (insertion-order eviction) so a long session doesn't grow it
 /// forever — same idea as the crop-rect LRU.
+///
+/// Keyed through [_aspectKey], NOT by the bare url: a cropped page is a
+/// different shape from the one the source served.
 final Map<String, double> _pageAspectCache = {};
 const int _pageAspectCacheCap = 2048;
+
+/// Cache key for [url]'s aspect as the viewer actually paints it.
+///
+/// With "Crop borders" on, the widget displays a [CropBordersImageProvider]
+/// frame with the uniform margins trimmed off — a shape the SOURCE image's
+/// ratio does not describe. The continuous viewer sizes each page's box from
+/// this cache and paints the image into it with [BoxFit.contain], so an
+/// uncropped ratio held open a box taller than the cropped page and the
+/// difference showed as a band of reader background above and below it —
+/// on exactly the pages whose margins were worth trimming, i.e. some pages
+/// and not others. Crop is part of the shape, so it is part of the key.
+String _aspectKey(String url, bool cropped) =>
+    cropped ? 'crop|$url' : url;
+
+/// [url]'s decoded aspect as painted under [cropped], or null if unmeasured.
+double? _cachedPageAspect(String? url, {required bool cropped}) =>
+    url == null ? null : _pageAspectCache[_aspectKey(url, cropped)];
 
 /// Bumped on every [_pageAspectCache] mutation. The continuous viewer keeps
 /// a prefix sum of page extents derived from that cache; this is how it
 /// knows the sum went stale without re-deriving it per frame.
 int _pageAspectVersion = 0;
 
-void _cachePageAspect(String url, double aspect) {
-  _pageAspectCache.remove(url);
-  _pageAspectCache[url] = aspect;
+void _cachePageAspect(String key, double aspect) {
+  _pageAspectCache.remove(key);
+  _pageAspectCache[key] = aspect;
   while (_pageAspectCache.length > _pageAspectCacheCap) {
     _pageAspectCache.remove(_pageAspectCache.keys.first);
   }
@@ -3597,28 +3621,37 @@ void _cachePageAspect(String url, double aspect) {
 /// the decode is shared with the displayed image, PROVIDED [cacheWidth]
 /// matches what the displaying widget passed (it's part of the cache key).
 /// The capped decode preserves aspect, so the ratio is unaffected.
+///
+/// [cropBorders] must match the viewer's own crop pref: it measures what the
+/// viewer will PAINT (see [_aspectKey]). The crop decorator resolves the same
+/// undecorated provider underneath, so measuring the cropped shape costs no
+/// second download and no second decode of the source bitmap.
 void _resolvePageAspect(
   String url,
   Map<String, String>? headers,
   int? cacheWidth,
-  void Function(double aspect) onReady,
-) {
-  final cached = _pageAspectCache[url];
+  void Function(double aspect) onReady, {
+  bool cropBorders = false,
+}) {
+  final key = _aspectKey(url, cropBorders);
+  final cached = _pageAspectCache[key];
   if (cached != null) {
     onReady(cached);
     return;
   }
-  final stream = SourceImage.providerFor(
+  ImageProvider provider = SourceImage.providerFor(
     url,
     headers: headers,
     cacheWidth: cacheWidth,
     fullResolution: true,
-  ).resolve(ImageConfiguration.empty);
+  );
+  if (cropBorders) provider = CropBordersImageProvider(provider);
+  final stream = provider.resolve(ImageConfiguration.empty);
   late final ImageStreamListener listener;
   listener = ImageStreamListener(
     (info, _) {
       final aspect = info.image.width / info.image.height;
-      _cachePageAspect(url, aspect);
+      _cachePageAspect(key, aspect);
       info.image.dispose();
       stream.removeListener(listener);
       onReady(aspect);
@@ -3684,7 +3717,10 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     final sig = StringBuffer();
     for (var i = 0; i < widget.count; i++) {
       final url = widget.pageUrlOf?.call(i);
-      final aspect = url == null ? null : _pageAspectCache[url];
+      // The RAW shape: a split half is built from the undecorated provider
+      // (crop/rotate decorators don't apply to halves), so what decides the
+      // split is the spread the source served, cropped or not.
+      final aspect = _cachedPageAspect(url, cropped: false);
       if (aspect != null && aspect > 1) {
         slots.add((src: i, half: 1));
         slots.add((src: i, half: 2));
@@ -3719,7 +3755,7 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     final fixed = widget.itemExtentOf?.call(i);
     if (fixed != null) return fixed;
     final url = widget.pageUrlOf?.call(i);
-    final aspect = url == null ? null : _pageAspectCache[url];
+    final aspect = _cachedPageAspect(url, cropped: widget.cropBorders);
     return aspect == null ? fallback : contentWidth / aspect;
   }
 
@@ -3742,7 +3778,7 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     var known = 0;
     for (var i = 0; i < widget.count; i++) {
       final url = widget.pageUrlOf?.call(i);
-      final aspect = url == null ? null : _pageAspectCache[url];
+      final aspect = _cachedPageAspect(url, cropped: widget.cropBorders);
       if (aspect == null || aspect <= 0) continue;
       sum += contentWidth / aspect;
       known++;
@@ -4023,7 +4059,13 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     _precacheAnchor = index;
     final urlOf = widget.pageUrlOf;
     if (urlOf == null) return;
-    final crop = ref.read(readerCropBordersProvider);
+    // The CONTINUOUS viewer's crop pref, which is a separate pref from the
+    // pager's (Kotlin keeps `crop_borders` and `crop_borders_webtoon`). Read
+    // straight off the paged one, this warmed a provider chain the strip
+    // never displays whenever the two disagreed: the page arrived with its
+    // crop still unrun, and the border scan then landed on the UI isolate at
+    // the moment the page scrolled in.
+    final crop = widget.cropBorders;
     final cacheWidth = _readerPageCacheWidth(context, webtoon: true);
     for (var i = index + 1; i <= index + 4 && i < widget.count; i++) {
       final url = urlOf(i);
@@ -4047,7 +4089,8 @@ class _PagesViewState extends ConsumerState<_PagesView> {
       // the "rocky road", and it happened with no dropped frame at all.
       // Warmed here, [_pageAspectCache] is already a hit when the slot mounts,
       // so the slot is BORN the right height and nothing moves.
-      _resolvePageAspect(url, widget.pageHeadersOf?.call(i), cacheWidth, (_) {});
+      _resolvePageAspect(url, widget.pageHeadersOf?.call(i), cacheWidth, (_) {},
+          cropBorders: crop);
     }
   }
 
@@ -4074,6 +4117,7 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     return _WebtoonPageSlot(
       url: widget.pageUrlOf?.call(i),
       headers: widget.pageHeadersOf?.call(i),
+      cropBorders: widget.cropBorders,
       fallbackExtent: _memoFallback,
       loadingMark: TideSpinner(color: widget.ink),
       child: widget.itemBuilder(ctx, i),
@@ -4424,12 +4468,18 @@ class _WebtoonPageSlot extends StatefulWidget {
   const _WebtoonPageSlot({
     required this.url,
     this.headers,
+    this.cropBorders = false,
     this.fallbackExtent = 400,
     required this.child,
     this.loadingMark,
   });
 
   final String? url;
+
+  /// The viewer's crop pref — part of the aspect measurement, because the
+  /// cropped page is a different shape from the one the source served. See
+  /// [_aspectKey].
+  final bool cropBorders;
 
   /// Height to hold open before this page's own aspect is known — the mean
   /// extent of the pages in this chapter that HAVE decoded.
@@ -4477,8 +4527,8 @@ class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
   @override
   void didUpdateWidget(covariant _WebtoonPageSlot old) {
     super.didUpdateWidget(old);
-    if (widget.url != old.url) {
-      _aspect = widget.url == null ? null : _pageAspectCache[widget.url!];
+    if (widget.url != old.url || widget.cropBorders != old.cropBorders) {
+      _aspect = _cachedPageAspect(widget.url, cropped: widget.cropBorders);
       _resolve();
     }
   }
@@ -4486,7 +4536,7 @@ class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
   void _resolve() {
     final url = widget.url;
     if (url == null) return;
-    final cached = _pageAspectCache[url];
+    final cached = _cachedPageAspect(url, cropped: widget.cropBorders);
     if (cached != null) {
       _aspect = cached;
       return;
@@ -4495,7 +4545,7 @@ class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
         url, widget.headers, _readerPageCacheWidth(context, webtoon: true),
         (aspect) {
       if (mounted && _aspect != aspect) setState(() => _aspect = aspect);
-    });
+    }, cropBorders: widget.cropBorders);
   }
 
   @override
@@ -4503,35 +4553,19 @@ class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
     final aspect = _aspect;
     if (aspect == null) {
       // The reservation is a whole page — several screens for a long strip —
-      // and the loading indicator inside [child] centres itself in whatever
-      // box it is handed, which put it a screen or two BELOW the viewport.
-      // Arriving at an undecoded page showed pure black with no sign that
-      // anything was happening. Mihon sizes its progress container to one
-      // viewport (WebtoonPageHolder.createProgressIndicator uses
-      // `parentHeight`) and offsets the indicator a quarter down it; this
-      // does the same — except that Mihon's placeholder IS one viewport, so
-      // you can never be parked inside a taller one, and ours is a whole page.
-      // Sizing the child's box to one viewport alone therefore only helps when
-      // you arrive at the page's top; flinging into its middle put the
-      // indicator back above the viewport. So the mark repeats once per
-      // viewport down the reservation and one is always within half a screen.
-      //
-      // The cells sum to exactly [fallbackExtent], so the reserved extent —
-      // which the offset<->index maths depends on — is unchanged.
-      final viewport = MediaQuery.sizeOf(context).height;
-      final total = widget.fallbackExtent;
-      final first = total < viewport ? total : viewport;
-      final cells = <Widget>[SizedBox(height: first, child: widget.child)];
-      final mark = widget.loadingMark;
-      var remaining = total - first;
-      // Bounded so a wild extent estimate can't spawn an unbounded column.
-      while (mark != null && remaining > 1 && cells.length < 8) {
-        final h = remaining < viewport ? remaining : viewport;
-        cells.add(SizedBox(height: h, child: Center(child: mark)));
-        remaining -= h;
-      }
-      if (remaining > 1) cells.add(SizedBox(height: remaining));
-      return Column(mainAxisSize: MainAxisSize.min, children: cells);
+      // so the child gets its own viewport-sized cell at the top and the mark
+      // repeats down the rest ([markedDownPage]). Mihon sizes its progress
+      // container to one viewport (WebtoonPageHolder.createProgressIndicator
+      // uses `parentHeight`) and offsets the indicator a quarter down it;
+      // this does the same — except that Mihon's placeholder IS one viewport,
+      // so you can never be parked inside a taller one, and ours is a whole
+      // page, which is why the mark repeats rather than sitting in one cell.
+      return markedDownPage(
+        total: widget.fallbackExtent,
+        viewport: MediaQuery.sizeOf(context).height,
+        leading: widget.child,
+        mark: widget.loadingMark,
+      );
     }
     return AspectRatio(aspectRatio: aspect, child: widget.child);
   }
