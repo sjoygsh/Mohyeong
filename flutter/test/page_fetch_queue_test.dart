@@ -133,6 +133,58 @@ void main() {
     await settle();
   });
 
+  test('reading backwards preloads backwards', () async {
+    final log = <String>[];
+    final gates = {
+      for (final url in ['p5', 'p3', 'p7']) url: Completer<void>(),
+    };
+
+    // Arrive at p5 having come DOWN from p8 — the reader is travelling up.
+    PageFetchQueue.focus(8);
+    PageFetchQueue.focus(5);
+
+    unawaited(start('p5', log, gates['p5']!));
+    await settle();
+    // p7 is as far from the read position as p3, but it is behind the
+    // direction of travel. Under the old fixed forward bias p7 won this.
+    unawaited(start('p7', log, gates['p7']!));
+    unawaited(start('p3', log, gates['p3']!));
+    await settle();
+    expect(log, ['p5'], reason: 'both are waiting on the single slot');
+
+    gates['p5']!.complete();
+    await settle();
+    expect(log.last, 'p3', reason: 'the page about to come on screen wins');
+
+    gates['p3']!.complete();
+    gates['p7']!.complete();
+    await settle();
+  });
+
+  test('scrolling forward is unaffected by the direction bias', () async {
+    final log = <String>[];
+    final gates = {
+      for (final url in ['p5', 'p3', 'p7']) url: Completer<void>(),
+    };
+
+    PageFetchQueue.focus(2);
+    PageFetchQueue.focus(5);
+
+    unawaited(start('p5', log, gates['p5']!));
+    await settle();
+    unawaited(start('p3', log, gates['p3']!));
+    unawaited(start('p7', log, gates['p7']!));
+    await settle();
+
+    gates['p5']!.complete();
+    await settle();
+    expect(log.last, 'p7');
+
+    gates['p3']!.complete();
+    gates['p7']!.complete();
+    await settle();
+  });
+
   test('opening another chapter re-bases the ordering', () async {
     PageFetchQueue.openChapter(const ['q0', 'q1', 'q2']);
     final log = <String>[];

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../dev/frame_stats.dart';
+
 /// Orders reader page downloads the way Mihon's `HttpPageLoader` does.
 ///
 /// Mihon runs **one** download at a time out of a `PriorityBlockingQueue`, and
@@ -55,6 +57,7 @@ abstract final class PageFetchQueue {
       i++;
     }
     _focus = 0;
+    _direction = 1;
   }
 
   /// Leaving the reader. In-flight fetches finish on their own; they just stop
@@ -64,8 +67,15 @@ abstract final class PageFetchQueue {
     _focus = 0;
   }
 
+  /// Which way the reader is travelling: +1 down the chapter, -1 back up it.
+  /// Preloading is biased this way rather than unconditionally forward.
+  static int _direction = 1;
+
   /// The page currently being read. Costs nothing to call per scroll update.
-  static void focus(int index) => _focus = index;
+  static void focus(int index) {
+    if (index != _focus) _direction = index > _focus ? 1 : -1;
+    _focus = index;
+  }
 
   /// Runs [body] under the reader's download slot when [url] is a page of the
   /// open chapter, and directly otherwise.
@@ -73,6 +83,7 @@ abstract final class PageFetchQueue {
     final index = _index[url];
     if (index == null) return body();
 
+    final queuedAt = DateTime.now().microsecondsSinceEpoch;
     if (_active < maxConcurrent) {
       _active++;
     } else {
@@ -81,6 +92,13 @@ abstract final class PageFetchQueue {
       // [_pump] counts the slot when it releases us, so we must not re-count.
       await waiter.gate.future;
     }
+    // Split the two halves of "this page took forever": time spent waiting
+    // for the single slot, and time spent actually fetching. Only the first
+    // is ours to fix.
+    final startedAt = DateTime.now().microsecondsSinceEpoch;
+    FrameStats.max('fetch-wait-ms', (startedAt - queuedAt) ~/ 1000);
+    FrameStats.count('fetch-wait-total-ms', (startedAt - queuedAt) ~/ 1000);
+    FrameStats.count('fetches');
 
     var released = false;
     void release() {
@@ -90,11 +108,16 @@ abstract final class PageFetchQueue {
       _pump();
     }
 
-    final watchdog = Timer(slotWatchdog, release);
+    final watchdog = Timer(slotWatchdog, () {
+      FrameStats.count('fetch-watchdog-fired');
+      release();
+    });
     try {
       return await body();
     } finally {
       watchdog.cancel();
+      FrameStats.max('fetch-body-ms',
+          (DateTime.now().microsecondsSinceEpoch - startedAt) ~/ 1000);
       release();
     }
   }
@@ -111,12 +134,22 @@ abstract final class PageFetchQueue {
     }
   }
 
-  /// Scheduling cost of a page: distance from the read position, biased
-  /// forward. Mihon only ever preloads pages *after* the current one, so a page
-  /// behind the reader yields to anything ahead of it — you are far more likely
-  /// to keep going down than to scroll back up.
+  /// Scheduling cost of a page: distance from the read position, biased the
+  /// way the reader is TRAVELLING. Mihon only ever preloads pages after the
+  /// current one, and so did this — a page behind the reader yielded to
+  /// anything ahead of it, unconditionally.
+  ///
+  /// That was right while the strip only grew forward. Now that it also pulls
+  /// in the previous chapter, back is a direction you can read in, and a fixed
+  /// forward bias serves it as badly as possible: scrolling up, the page about
+  /// to come on screen sat at cost 12 while four pages you were moving AWAY
+  /// from sat at 1 through 4, and won the single download slot every time.
+  /// Reading backwards fetched everything except what you were looking at.
+  ///
+  /// So the ×8 penalty now falls on going against the travel, whichever way
+  /// that is. Scrolling down behaves exactly as before.
   static int _cost(int index) {
-    final delta = index - _focus;
+    final delta = (index - _focus) * _direction;
     return delta >= 0 ? delta : -delta * 8 + 4;
   }
 
@@ -126,6 +159,7 @@ abstract final class PageFetchQueue {
     _waiting.clear();
     _active = 0;
     _focus = 0;
+    _direction = 1;
     slotWatchdog = const Duration(seconds: 20);
   }
 

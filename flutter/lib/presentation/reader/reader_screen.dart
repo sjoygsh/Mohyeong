@@ -2787,9 +2787,18 @@ class _StripPage {
 class _StripItem {
   const _StripItem.page(this.chapterIdx, this.pageIdx);
   const _StripItem.boundary(this.chapterIdx) : pageIdx = -1;
+
+  /// The block above the first loaded chapter: what scrolling up runs into
+  /// while the previous chapter is being pulled in, and what says so if that
+  /// fails. Without it a failed page-list fetch is silent — the strip simply
+  /// stops at the top with no way to ask again, which is indistinguishable
+  /// from there being no previous chapter at all.
+  const _StripItem.head() : chapterIdx = -1, pageIdx = -2;
+
   final int chapterIdx;
   final int pageIdx;
   bool get isBoundary => pageIdx < 0;
+  bool get isHead => pageIdx == -2;
 }
 
 /// What a boundary block occupies, so the strip can tell [_PagesView] the
@@ -2865,9 +2874,15 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
   final Set<int> _finished = <int>{};
   int _activeIdx = 0;
   bool _loadingNext = false;
+  bool _loadingPrev = false;
   bool _loadingInitial = true;
   Object? _initError;
   Object? _appendError;
+  Object? _prependError;
+
+  /// Running total of items inserted at the front by [_prependPrevious],
+  /// handed to the viewer so it can slide its indices along. Never reset.
+  int _prepended = 0;
 
   @override
   void initState() {
@@ -2934,6 +2949,62 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
     }
   }
 
+  /// The chapter BEFORE the first loaded one, in reading order — what
+  /// scrolling up off the top of the strip runs into.
+  Chapter? get _pendingPrevChapter {
+    if (_loaded.isEmpty) return null;
+    final siblings = widget.data.siblings;
+    final i = siblings.indexWhere((c) => c.id == _loaded.first.chapter.id);
+    if (i <= 0) return null;
+    return siblings[i - 1];
+  }
+
+  /// The strip grew downward only: [_appendNext] pulled the next chapter in
+  /// as you approached the bottom, and scrolling UP off the top of the
+  /// chapter you opened simply hit a wall. Forward was continuous and
+  /// backward was a dead end, which is exactly the dead end this viewer
+  /// exists to remove — Mihon's WebtoonViewer keeps the previous chapter
+  /// loaded alongside the current and the next.
+  ///
+  /// Inserting at the front moves every existing item's index, which is why
+  /// [_PagesView.prependedCount] exists: the viewer slides its anchor along
+  /// by the same amount, so the page being read stays at scroll offset 0 and
+  /// the arriving chapter grows upward into negative offsets. Nothing on
+  /// screen moves.
+  Future<void> _prependPrevious({bool retry = false}) async {
+    FrameStats.count('prepend-called');
+    if (_loadingPrev || _loadingInitial) return;
+    if (_prependError != null && !retry) return;
+    final prev = _pendingPrevChapter;
+    if (prev == null) {
+      FrameStats.count('prepend-no-previous');
+      return;
+    }
+    FrameStats.count('prepend-loading');
+    _loadingPrev = true;
+    if (_prependError != null) setState(() => _prependError = null);
+    try {
+      final loaded = await _load(prev);
+      if (!mounted) return;
+      setState(() {
+        final before = _items.length;
+        _loaded.insert(0, loaded);
+        _rebuildItems();
+        // Pages, plus the boundary row that now separates the arriving
+        // chapter from the one that used to be first.
+        _prepended += _items.length - before;
+        FrameStats.count('prepend-done-items', _items.length - before);
+        // [_activeIdx] indexes [_loaded], which just gained an entry at the
+        // front. ([_finished] is keyed by chapter id, so it costs nothing.)
+        _activeIdx++;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _prependError = e);
+    } finally {
+      _loadingPrev = false;
+    }
+  }
+
   /// The chapter that would come after the last loaded one, in reading order.
   Chapter? get _pendingChapter {
     if (_loaded.isEmpty) return null;
@@ -2968,6 +3039,8 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
 
   void _rebuildItems() {
     final items = <_StripItem>[];
+    // Head block only while there IS something above to reach.
+    if (_pendingPrevChapter != null) items.add(const _StripItem.head());
     for (var ci = 0; ci < _loaded.length; ci++) {
       if (_boundaryBefore(ci) != null) items.add(_StripItem.boundary(ci));
       for (var pi = 0; pi < _loaded[ci].pages.length; pi++) {
@@ -2997,12 +3070,16 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
     return _loaded[item.chapterIdx].pages[item.pageIdx];
   }
 
-  /// Resume point: the stored page of the chapter the reader was opened on,
-  /// which (having no boundary above it) is also its strip index.
+  /// Resume point, as a STRIP index: the stored page of the chapter the reader
+  /// was opened on, offset past the head block when there is one. The head is
+  /// the only thing that can sit above the opened chapter (a boundary needs a
+  /// chapter on each side of it), and forgetting it resumes one page early.
   int get _initialItem {
     if (_loaded.isEmpty || _loaded.first.pages.isEmpty) return 0;
-    return widget.data.chapter.lastPageRead
-        .clamp(0, _loaded.first.pages.length - 1);
+    final head = _items.isNotEmpty && _items.first.isHead ? 1 : 0;
+    return head +
+        widget.data.chapter.lastPageRead
+            .clamp(0, _loaded.first.pages.length - 1);
   }
 
   void _setActive(int idx) {
@@ -3061,6 +3138,69 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
     if (m.pixels >= m.maxScrollExtent - m.viewportDimension * 1.5) {
       unawaited(_appendNext());
     }
+    // Same rule at the top, so scrolling back is as continuous as scrolling
+    // on. Note the strip's scroll offsets are signed about the anchor, so
+    // minScrollExtent is normally negative; the arithmetic is the same.
+    FrameStats.max('metrics-min-extent', -m.minScrollExtent.round());
+    FrameStats.max('metrics-pixels-neg', -m.pixels.round());
+    if (m.pixels <= m.minScrollExtent + m.viewportDimension * 1.5) {
+      FrameStats.count('prepend-triggered');
+      unawaited(_prependPrevious());
+    }
+  }
+
+  /// Leading block above the first loaded chapter — the mirror of [_tail].
+  /// Names the chapter being pulled in, and on failure offers the same Retry,
+  /// because a page-list fetch that 403s at the top of the strip would
+  /// otherwise leave the reader looking at a dead end it can't argue with.
+  Widget _head(BuildContext context) {
+    final prev = _pendingPrevChapter;
+    if (prev == null) return const SizedBox.shrink();
+    final error = _prependError;
+    return SizedBox(
+      height: _stripBoundaryExtent,
+      child: _centered(
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              error == null ? 'LOADING' : 'COULDN\'T LOAD',
+              style: TideText.kicker(
+                color: widget.textColor.withValues(alpha: 0.34),
+              ).copyWith(letterSpacing: 2.64),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _title(prev),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: widget.textColor,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (error == null)
+              TideSpinner(color: widget.textColor)
+            else
+              TideGlass(
+                radius: TideRadius.pill,
+                blur: true,
+                tintTop: 0.12,
+                tintBottom: 0.04,
+                highlight: 0.22,
+                border: 0.34,
+                onTap: () => _prependPrevious(retry: true),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  child: Text('Retry'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _centered(Widget child) => Center(
@@ -3167,6 +3307,7 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
 
   Widget _buildItem(BuildContext ctx, int i) {
     final item = _items[i];
+    if (item.isHead) return _head(ctx);
     if (item.isBoundary) {
       final boundary = _boundaryBefore(item.chapterIdx);
       if (boundary == null) return const SizedBox.shrink();
@@ -3261,6 +3402,7 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
         },
         child: _PagesView(
           count: _items.length,
+          prependedCount: _prepended,
           mode: widget.mode,
           ink: widget.textColor,
           sidePaddingFraction: widget.sidePaddingFraction,
@@ -3463,6 +3605,7 @@ class _PagesView extends ConsumerStatefulWidget {
     this.zoomRegistry,
     this.fit = BoxFit.contain,
     this.cropBorders = false,
+    this.prependedCount = 0,
   });
 
   final int count;
@@ -3491,6 +3634,16 @@ class _PagesView extends ConsumerStatefulWidget {
   /// Per-page HTTP headers, needed when the dual-page splitter builds the
   /// half-page images itself (bypassing [itemBuilder]).
   final Map<String, String>? Function(int index)? pageHeadersOf;
+
+  /// Running total of items inserted BEFORE index 0 over this viewer's life
+  /// (the continuous strip prepending a previous chapter). Every index the
+  /// viewer holds — the anchor, the last reported page, the read-ahead
+  /// cursor — is an index into a list that just got longer at the front, so
+  /// they all shift by the increment. The anchor shifting is what makes the
+  /// insertion invisible: the same physical page stays at scroll offset 0 and
+  /// the new chapter grows upward into negative offsets, exactly as resuming
+  /// mid-chapter does. See [_PagesViewState._anchorIndex].
+  final int prependedCount;
 
   /// Known layout height for items that are not page images (the strip's
   /// chapter-boundary blocks). Returning null falls back to the aspect-ratio
@@ -3968,6 +4121,21 @@ class _PagesViewState extends ConsumerState<_PagesView> {
   @override
   void didUpdateWidget(covariant _PagesView old) {
     super.didUpdateWidget(old);
+    // Items were inserted at the FRONT (the strip pulled in the previous
+    // chapter). Every index this state holds counts from item 0, so slide
+    // them all along by the insertion — above all the anchor, which is how
+    // the new pages end up above the reader instead of shoving it down the
+    // strip. Done before anything else here reads them.
+    final shift = widget.prependedCount - old.prependedCount;
+    if (shift > 0) {
+      _anchorIndex += shift;
+      if (_lastReported >= 0) _lastReported += shift;
+      if (_precacheAnchor >= 0) _precacheAnchor += shift;
+      // The prefix sums are indexed from item 0 as well; nothing about them
+      // survives an insertion at the front.
+      _prefix = null;
+      _prefixCount = -1;
+    }
     // A different chapter arrived in the same viewer element — the queue is
     // still ordering the previous chapter's URLs, which now rank nothing.
     if (widget.count != old.count || _firstUrl(widget) != _firstUrl(old)) {
@@ -4078,6 +4246,11 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     if (!mounted) return;
     if (index == _precacheAnchor) return;
     FrameStats.count('precache-anchor-moved');
+    // Warm the way the reader is GOING. This walked i+1..i+4 unconditionally,
+    // which was right while the strip only ran forward; scrolling back up it
+    // warmed the four pages behind you and left every page you were about to
+    // see cold, so reading backwards hit a download on every single page.
+    final step = _precacheAnchor >= 0 && index < _precacheAnchor ? -1 : 1;
     _precacheAnchor = index;
     final urlOf = widget.pageUrlOf;
     if (urlOf == null) return;
@@ -4089,7 +4262,9 @@ class _PagesViewState extends ConsumerState<_PagesView> {
     // the moment the page scrolled in.
     final crop = widget.cropBorders;
     final cacheWidth = _readerPageCacheWidth(context, webtoon: true);
-    for (var i = index + 1; i <= index + 4 && i < widget.count; i++) {
+    for (var n = 1; n <= 4; n++) {
+      final i = index + n * step;
+      if (i < 0 || i >= widget.count) break;
       final url = urlOf(i);
       // Chapter boundaries have no image of their own.
       if (url == null) continue;
