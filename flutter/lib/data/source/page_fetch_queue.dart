@@ -27,6 +27,29 @@ abstract final class PageFetchQueue {
   /// eight crawling in together.
   static const int maxConcurrent = 1;
 
+  /// One further slot, reserved for the page at (or next to) the read
+  /// position — never usable by a preload.
+  ///
+  /// The single slot was right about bandwidth and wrong about latency. A
+  /// page on this device measures 1.5-2.7s to download, so a page arriving
+  /// at the queue behind an in-flight preload waits a whole download before
+  /// it starts: measured on device, the page ON SCREEN waited 4.7s for the
+  /// slot and then took 2.7s to fetch — seven seconds to show a page, and
+  /// two thirds of that was us, not the network. Preloads waiting ~7s is the
+  /// design working; the page under your eyes waiting that long is not.
+  ///
+  /// So the ordering stays exactly as it was — preloads still go one at a
+  /// time, nearest first — and the page being read gets a lane of its own.
+  /// This is not a walk back towards the ten-wide FIFO this replaced: that
+  /// had no ordering at all, so the page under your thumb queued behind
+  /// pages you had already scrolled past. Here at most one preload and one
+  /// on-screen page ever share the link.
+  static const int maxPriority = 1;
+
+  /// A page this close to [_focus] is one the reader is looking at or about
+  /// to, and may use the reserved slot.
+  static const int priorityWithin = 1;
+
   /// A slot is never held longer than this even if the fetch is still running.
   /// With one slot, one hung request would otherwise stall every remaining page
   /// in the chapter — worse than the unbounded fetching this replaces. The
@@ -40,6 +63,7 @@ abstract final class PageFetchQueue {
   static final List<_Waiter> _waiting = <_Waiter>[];
 
   static int _active = 0;
+  static int _priorityActive = 0;
 
   /// Index of the page being read; the ordering key for everything waiting.
   static int _focus = 0;
@@ -84,27 +108,47 @@ abstract final class PageFetchQueue {
     if (index == null) return body();
 
     final queuedAt = DateTime.now().microsecondsSinceEpoch;
-    if (_active < maxConcurrent) {
+    // True while this fetch holds the reserved on-screen slot rather than the
+    // general one; it has to be remembered, because by the time the fetch
+    // finishes the reader has usually moved and the test would no longer
+    // give the same answer — releasing the wrong counter would leak a slot.
+    var priority = false;
+    if (_isPriority(index) && _priorityActive < maxPriority) {
+      priority = true;
+      _priorityActive++;
+    } else if (_active < maxConcurrent) {
       _active++;
     } else {
       final waiter = _Waiter(index);
       _waiting.add(waiter);
       // [_pump] counts the slot when it releases us, so we must not re-count.
-      await waiter.gate.future;
+      priority = await waiter.gate.future;
     }
     // Split the two halves of "this page took forever": time spent waiting
     // for the single slot, and time spent actually fetching. Only the first
     // is ours to fix.
     final startedAt = DateTime.now().microsecondsSinceEpoch;
-    FrameStats.max('fetch-wait-ms', (startedAt - queuedAt) ~/ 1000);
-    FrameStats.count('fetch-wait-total-ms', (startedAt - queuedAt) ~/ 1000);
+    final waited = (startedAt - queuedAt) ~/ 1000;
+    // Bucketed by how close the page is to the read position AT DEQUEUE. A
+    // preload four pages out waiting several seconds is the design working;
+    // the page under your eyes waiting that long is the bug. One number for
+    // both cannot tell them apart.
+    if ((index - _focus).abs() <= 1) {
+      FrameStats.max('wait-onscreen-ms', waited);
+    } else {
+      FrameStats.max('wait-preload-ms', waited);
+    }
     FrameStats.count('fetches');
 
     var released = false;
     void release() {
       if (released) return;
       released = true;
-      _active--;
+      if (priority) {
+        _priorityActive--;
+      } else {
+        _active--;
+      }
       _pump();
     }
 
@@ -122,16 +166,40 @@ abstract final class PageFetchQueue {
     }
   }
 
+  /// Whether [index] is close enough to the read position to use the
+  /// reserved slot. Evaluated fresh at every acquire and at every pump, so a
+  /// page that has become the one being read while it waited can claim it.
+  static bool _isPriority(int index) =>
+      (index - _focus).abs() <= priorityWithin;
+
   static void _pump() {
-    while (_active < maxConcurrent && _waiting.isNotEmpty) {
-      var best = 0;
-      for (var i = 1; i < _waiting.length; i++) {
-        if (_cost(_waiting[i].index) < _cost(_waiting[best].index)) best = i;
-      }
+    // Reserved slot first, and only to a waiter that is on screen NOW.
+    while (_priorityActive < maxPriority) {
+      final best = _bestWaiter(onlyPriority: true);
+      if (best < 0) break;
+      final waiter = _waiting.removeAt(best);
+      _priorityActive++;
+      waiter.gate.complete(true);
+    }
+    while (_active < maxConcurrent) {
+      final best = _bestWaiter(onlyPriority: false);
+      if (best < 0) break;
       final waiter = _waiting.removeAt(best);
       _active++;
-      waiter.gate.complete();
+      waiter.gate.complete(false);
     }
+  }
+
+  /// Index into [_waiting] of the cheapest waiter, or -1 if none qualifies.
+  static int _bestWaiter({required bool onlyPriority}) {
+    var best = -1;
+    for (var i = 0; i < _waiting.length; i++) {
+      if (onlyPriority && !_isPriority(_waiting[i].index)) continue;
+      if (best < 0 || _cost(_waiting[i].index) < _cost(_waiting[best].index)) {
+        best = i;
+      }
+    }
+    return best;
   }
 
   /// Scheduling cost of a page: distance from the read position, biased the
@@ -158,12 +226,13 @@ abstract final class PageFetchQueue {
     _index.clear();
     _waiting.clear();
     _active = 0;
+    _priorityActive = 0;
     _focus = 0;
     _direction = 1;
     slotWatchdog = const Duration(seconds: 20);
   }
 
-  static int get activeForTest => _active;
+  static int get activeForTest => _active + _priorityActive;
 
   static int get waitingForTest => _waiting.length;
 }
@@ -172,5 +241,7 @@ class _Waiter {
   _Waiter(this.index);
 
   final int index;
-  final Completer<void> gate = Completer<void>();
+  /// Completes with whether the slot handed over is the reserved on-screen
+  /// one, so the waiter releases the counter it actually took.
+  final Completer<bool> gate = Completer<bool>();
 }

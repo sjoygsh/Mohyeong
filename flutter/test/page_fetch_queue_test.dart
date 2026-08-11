@@ -36,20 +36,24 @@ void main() {
       for (final url in ['p0', 'p2', 'p5', 'p8']) url: Completer<void>(),
     };
 
+    // p0 is the page being read, so it holds the RESERVED lane for the whole
+    // test and leaves the general lane — the one whose ordering this pins —
+    // behaving exactly as it did when there was only one.
     unawaited(start('p0', log, gates['p0']!));
     await settle();
-    // The one slot is taken, so these three queue up — deliberately not in
-    // reading order, the way a fling's mounts and read-aheads arrive.
+    // The general lane is taken by whichever of these arrives first, so these
+    // three queue up behind it — deliberately not in reading order, the way a
+    // fling's mounts and read-aheads arrive.
     unawaited(start('p8', log, gates['p8']!));
     unawaited(start('p2', log, gates['p2']!));
     unawaited(start('p5', log, gates['p5']!));
     await settle();
-    expect(log, ['p0'], reason: 'only one download runs at a time');
+    expect(log, ['p0', 'p8'], reason: 'one reserved lane, one general lane');
 
     // Reader has landed on page 2.
     PageFetchQueue.focus(2);
 
-    gates['p0']!.complete();
+    gates['p8']!.complete();
     await settle();
     expect(log.last, 'p2', reason: 'the page being read wins the free slot');
 
@@ -58,11 +62,9 @@ void main() {
     expect(log.last, 'p5', reason: 'then the nearest page ahead');
 
     gates['p5']!.complete();
+    gates['p0']!.complete();
     await settle();
-    expect(log, ['p0', 'p2', 'p5', 'p8']);
-
-    gates['p8']!.complete();
-    await settle();
+    expect(log, ['p0', 'p8', 'p2', 'p5']);
   });
 
   test('a page ahead of the reader outranks an equally close page behind it',
@@ -118,11 +120,14 @@ void main() {
     final hung = Completer<void>();
     final next = Completer<void>();
 
+    // Far from the read position, so both of these compete for the general
+    // lane rather than one of them taking the reserved one.
+    PageFetchQueue.focus(9);
     unawaited(start('p0', log, hung));
     await settle();
     unawaited(start('p1', log, next));
     await settle();
-    expect(log, ['p0'], reason: 'p1 is waiting on the single slot');
+    expect(log, ['p0'], reason: 'p1 is waiting on the general lane');
 
     // p0 never completes. The watchdog hands the slot on anyway.
     await Future<void>.delayed(const Duration(milliseconds: 60));
@@ -136,23 +141,25 @@ void main() {
   test('reading backwards preloads backwards', () async {
     final log = <String>[];
     final gates = {
-      for (final url in ['p5', 'p3', 'p7']) url: Completer<void>(),
+      for (final url in ['p9', 'p3', 'p7']) url: Completer<void>(),
     };
 
     // Arrive at p5 having come DOWN from p8 — the reader is travelling up.
     PageFetchQueue.focus(8);
     PageFetchQueue.focus(5);
 
-    unawaited(start('p5', log, gates['p5']!));
+    // Occupies the general lane; far enough away that nothing here is
+    // eligible for the reserved one, so this is purely about ordering.
+    unawaited(start('p9', log, gates['p9']!));
     await settle();
     // p7 is as far from the read position as p3, but it is behind the
     // direction of travel. Under the old fixed forward bias p7 won this.
     unawaited(start('p7', log, gates['p7']!));
     unawaited(start('p3', log, gates['p3']!));
     await settle();
-    expect(log, ['p5'], reason: 'both are waiting on the single slot');
+    expect(log, ['p9'], reason: 'both are waiting on the general lane');
 
-    gates['p5']!.complete();
+    gates['p9']!.complete();
     await settle();
     expect(log.last, 'p3', reason: 'the page about to come on screen wins');
 
@@ -164,24 +171,72 @@ void main() {
   test('scrolling forward is unaffected by the direction bias', () async {
     final log = <String>[];
     final gates = {
-      for (final url in ['p5', 'p3', 'p7']) url: Completer<void>(),
+      for (final url in ['p1', 'p3', 'p7']) url: Completer<void>(),
     };
 
     PageFetchQueue.focus(2);
     PageFetchQueue.focus(5);
 
-    unawaited(start('p5', log, gates['p5']!));
+    unawaited(start('p1', log, gates['p1']!));
     await settle();
     unawaited(start('p3', log, gates['p3']!));
     unawaited(start('p7', log, gates['p7']!));
     await settle();
 
-    gates['p5']!.complete();
+    gates['p1']!.complete();
     await settle();
     expect(log.last, 'p7');
 
     gates['p3']!.complete();
     gates['p7']!.complete();
+    await settle();
+  });
+
+  test('the page being read gets its own slot instead of queueing behind a '
+      'preload', () async {
+    final log = <String>[];
+    final gates = {
+      for (final url in ['p6', 'p1']) url: Completer<void>(),
+    };
+
+    // A preload four pages out takes the general slot first.
+    PageFetchQueue.focus(2);
+    unawaited(start('p6', log, gates['p6']!));
+    await settle();
+    expect(log, ['p6']);
+
+    // The page now under the reader must not wait for that download: a page
+    // measures seconds, and waiting one out is most of "why is this blank".
+    PageFetchQueue.focus(1);
+    unawaited(start('p1', log, gates['p1']!));
+    await settle();
+    expect(log, ['p6', 'p1'], reason: 'the reserved slot took it straight away');
+
+    gates['p6']!.complete();
+    gates['p1']!.complete();
+    await settle();
+    expect(PageFetchQueue.activeForTest, 0, reason: 'both slots released');
+  });
+
+  test('preloads never take the reserved slot', () async {
+    final log = <String>[];
+    final gates = {
+      for (final url in ['p0', 'p5', 'p6']) url: Completer<void>(),
+    };
+
+    PageFetchQueue.focus(0);
+    unawaited(start('p0', log, gates['p0']!));
+    await settle();
+    unawaited(start('p5', log, gates['p5']!));
+    unawaited(start('p6', log, gates['p6']!));
+    await settle();
+    // p0 holds the reserved slot, p5 the general one; p6 waits. If preloads
+    // could use the reserved lane this would be three at once.
+    expect(log, ['p0', 'p5']);
+
+    gates['p0']!.complete();
+    gates['p5']!.complete();
+    gates['p6']!.complete();
     await settle();
   });
 
