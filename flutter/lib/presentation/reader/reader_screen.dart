@@ -2972,15 +2972,10 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
   /// the arriving chapter grows upward into negative offsets. Nothing on
   /// screen moves.
   Future<void> _prependPrevious({bool retry = false}) async {
-    FrameStats.count('prepend-called');
     if (_loadingPrev || _loadingInitial) return;
     if (_prependError != null && !retry) return;
     final prev = _pendingPrevChapter;
-    if (prev == null) {
-      FrameStats.count('prepend-no-previous');
-      return;
-    }
-    FrameStats.count('prepend-loading');
+    if (prev == null) return;
     _loadingPrev = true;
     if (_prependError != null) setState(() => _prependError = null);
     try {
@@ -2993,7 +2988,6 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
         // Pages, plus the boundary row that now separates the arriving
         // chapter from the one that used to be first.
         _prepended += _items.length - before;
-        FrameStats.count('prepend-done-items', _items.length - before);
         // [_activeIdx] indexes [_loaded], which just gained an entry at the
         // front. ([_finished] is keyed by chapter id, so it costs nothing.)
         _activeIdx++;
@@ -3141,10 +3135,7 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
     // Same rule at the top, so scrolling back is as continuous as scrolling
     // on. Note the strip's scroll offsets are signed about the anchor, so
     // minScrollExtent is normally negative; the arithmetic is the same.
-    FrameStats.max('metrics-min-extent', -m.minScrollExtent.round());
-    FrameStats.max('metrics-pixels-neg', -m.pixels.round());
     if (m.pixels <= m.minScrollExtent + m.viewportDimension * 1.5) {
-      FrameStats.count('prepend-triggered');
       unawaited(_prependPrevious());
     }
   }
@@ -4347,13 +4338,7 @@ class _PagesViewState extends ConsumerState<_PagesView> {
               final idx =
                   _indexForOffset(pos.pixels + pos.viewportDimension / 2);
               if (FrameStats.enabled) {
-                // The page under the viewport centre going BACKWARD while the
-                // strip scrolls forward means the content moved under the
-                // reader — a slot above resized. Counted per scroll frame.
                 final d = notif.scrollDelta ?? 0;
-                if (d > 0 && idx < _precacheAnchor) {
-                  FrameStats.count('index-regressed');
-                }
                 // What the eye actually reads as smooth: is the strip moving
                 // by a similar amount each frame? A fling decays gently, so
                 // consecutive deltas differ by a few percent. A delta that
