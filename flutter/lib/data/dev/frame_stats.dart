@@ -62,6 +62,40 @@ abstract final class FrameStats {
     });
   }
 
+  /// Free-form tallies printed alongside the frame numbers, so a scripted
+  /// scroll can be attributed to the work it started rather than guessed at.
+  /// A frame instrument says the UI thread was busy; a counter says WITH WHAT.
+  static final Map<String, int> _counts = <String, int>{};
+  static final Map<String, double> _micros = <String, double>{};
+
+  static void count(String name, [int n = 1]) {
+    if (!enabled) return;
+    _counts[name] = (_counts[name] ?? 0) + n;
+  }
+
+  /// Largest value seen for [name] in the window, rather than a running total.
+  static final Map<String, int> _maxes = <String, int>{};
+
+  static void max(String name, int value) {
+    if (!enabled) return;
+    final seen = _maxes[name];
+    if (seen == null || value > seen) _maxes[name] = value;
+  }
+
+  /// Runs [body], tallying both its call count and the microseconds it spent
+  /// on the calling (UI) thread.
+  static T timed<T>(String name, T Function() body) {
+    if (!enabled) return body();
+    final start = DateTime.now().microsecondsSinceEpoch;
+    try {
+      return body();
+    } finally {
+      _counts[name] = (_counts[name] ?? 0) + 1;
+      _micros[name] = (_micros[name] ?? 0) +
+          (DateTime.now().microsecondsSinceEpoch - start);
+    }
+  }
+
   static void _onTimings(List<FrameTiming> timings) {
     _window.addAll(timings);
     // Cap so a long session can't grow this without bound.
@@ -151,6 +185,23 @@ abstract final class FrameStats {
         'over16=${_late.where((l) => l > 16).length}',
       );
       _late.clear();
+    }
+    if (_counts.isNotEmpty || _maxes.isNotEmpty) {
+      final parts = <String>[];
+      for (final name in _maxes.keys.toList()..sort()) {
+        parts.add('$name=${_maxes[name]}');
+      }
+      for (final name in _counts.keys.toList()..sort()) {
+        final us = _micros[name];
+        parts.add(us == null
+            ? '$name=${_counts[name]}'
+            : '$name=${_counts[name]}/${(us / 1000).toStringAsFixed(1)}ms');
+      }
+      // ignore: avoid_print
+      print('WORK[$_label] ${parts.join(' ')}');
+      _counts.clear();
+      _micros.clear();
+      _maxes.clear();
     }
     _window.clear();
   }

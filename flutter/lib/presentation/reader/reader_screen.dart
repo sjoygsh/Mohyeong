@@ -12,6 +12,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../data/base/base_preferences.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/cover/cover_cache.dart';
+import '../../data/dev/frame_stats.dart';
 import '../../data/download/download_preferences.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/history/history_repository.dart';
@@ -2795,6 +2796,13 @@ class _StripItem {
 /// real cost of a non-page row instead of letting it bill a whole page.
 const double _stripBoundaryExtent = 168;
 
+/// Per-frame scroll distance, as a fraction of the viewport, above which the
+/// continuous reader stops reading ahead: the strip is being flung past, not
+/// read. A sixteenth of a ~2400px viewport is ~150px/frame, i.e. 9000px/s —
+/// well above a fast but deliberate read (a screen or two per second) and well
+/// below the 15,000–25,000px/s a fling opens at.
+const double _readAheadCutoffFraction = 1 / 16;
+
 /// Kotlin preloads the next chapter "once we're within the last 5 pages of
 /// the current chapter" (WebtoonViewer.onPageSelected).
 const int _stripPreloadWithin = 5;
@@ -3646,10 +3654,16 @@ void _resolvePageAspect(
     fullResolution: true,
   );
   if (cropBorders) provider = CropBordersImageProvider(provider);
+  FrameStats.count('aspect-probe-started');
   final stream = provider.resolve(ImageConfiguration.empty);
   late final ImageStreamListener listener;
   listener = ImageStreamListener(
     (info, _) {
+      FrameStats.count('aspect-probe-landed');
+      // Decoded pixel budget: a long-strip page is one texture, and the raster
+      // thread uploads it whole on its first paint.
+      FrameStats.count('decoded-Mpx', (info.image.width * info.image.height) ~/ 1000000);
+      FrameStats.max('decoded-tallest-px', info.image.height);
       final aspect = info.image.width / info.image.height;
       _cachePageAspect(key, aspect);
       info.image.dispose();
@@ -3817,6 +3831,10 @@ class _PagesViewState extends ConsumerState<_PagesView> {
         _prefixWidth == w) {
       return cached;
     }
+    return FrameStats.timed('prefix-rebuild', () => _rebuildPrefixSums(w));
+  }
+
+  List<double> _rebuildPrefixSums(double w) {
     final fallback = _fallbackExtent(w);
     _memoFallback = fallback;
     final sums = List<double>.filled(widget.count + 1, 0);
@@ -4053,9 +4071,13 @@ class _PagesViewState extends ConsumerState<_PagesView> {
   /// one page doesn't re-resolve four providers on every frame.
   int _precacheAnchor = -1;
 
+  /// Instrument only: previous frame's scroll delta, for the step detector.
+  double _lastScrollDelta = 0;
+
   void _precacheStripAhead(int index) {
     if (!mounted) return;
     if (index == _precacheAnchor) return;
+    FrameStats.count('precache-anchor-moved');
     _precacheAnchor = index;
     final urlOf = widget.pageUrlOf;
     if (urlOf == null) return;
@@ -4078,6 +4100,7 @@ class _PagesViewState extends ConsumerState<_PagesView> {
         fullResolution: true,
       );
       if (crop) provider = CropBordersImageProvider(provider);
+      FrameStats.count('precache-image');
       unawaited(precacheImage(provider, context));
       // Learn the page's REAL extent while it is still ahead of the read
       // position. Read-ahead used to fetch and decode a page without ever
@@ -4108,6 +4131,7 @@ class _PagesViewState extends ConsumerState<_PagesView> {
   /// One row of the continuous strip, by ABSOLUTE item index (both slivers
   /// map their own child index onto this).
   Widget _stripItem(BuildContext ctx, int i) {
+    FrameStats.count('strip-item-built');
     if (i >= widget.count) return widget.transition!;
     // Reserve the page's real extent once its aspect is known so later
     // decodes don't shift content under the reader — and, until it is known,
@@ -4147,7 +4171,50 @@ class _PagesViewState extends ConsumerState<_PagesView> {
             if (pos.hasPixels && pos.hasViewportDimension) {
               final idx =
                   _indexForOffset(pos.pixels + pos.viewportDimension / 2);
-              _precacheStripAhead(idx);
+              if (FrameStats.enabled) {
+                // The page under the viewport centre going BACKWARD while the
+                // strip scrolls forward means the content moved under the
+                // reader — a slot above resized. Counted per scroll frame.
+                final d = notif.scrollDelta ?? 0;
+                if (d > 0 && idx < _precacheAnchor) {
+                  FrameStats.count('index-regressed');
+                }
+                // What the eye actually reads as smooth: is the strip moving
+                // by a similar amount each frame? A fling decays gently, so
+                // consecutive deltas differ by a few percent. A delta that
+                // doubles, halves or stalls between frames is the strip
+                // moving in steps — "blocky" — and it is invisible to every
+                // frame-timing metric, which only ever asked whether the
+                // frames were CHEAP and EVEN, not whether they moved evenly.
+                final prev = _lastScrollDelta;
+                if (prev > 1 && d > 0) {
+                  final ratio = d > prev ? d / prev : prev / d;
+                  FrameStats.count('scroll-steps');
+                  if (ratio > 2) FrameStats.count('scroll-step-2x');
+                  if (ratio > 4) FrameStats.count('scroll-step-4x');
+                }
+                if (prev > 1 && d == 0) FrameStats.count('scroll-stalled');
+                _lastScrollDelta = d;
+              }
+              // Read ahead while READING, not while flying past. A fling that
+              // crosses ten pages moves [_precacheAnchor] ten times, and each
+              // move warms four more pages: thirty-odd full-resolution
+              // long-strip decodes started in a couple of seconds, for pages
+              // that were on screen for one frame each. They cost twenty-odd
+              // megabytes apiece, they hold the single download slot, and the
+              // page you actually land on queues up BEHIND them — so the
+              // faster you scroll to somewhere, the longer that somewhere
+              // takes to appear. Above the cutoff the read-ahead is skipped
+              // entirely (the anchor is left where it is, so the settle
+              // re-runs it); [_report] still fires, so the download queue's
+              // focus keeps tracking you. Mihon preloads around the settled
+              // page for the same reason.
+              if ((notif.scrollDelta ?? 0).abs() <
+                  pos.viewportDimension * _readAheadCutoffFraction) {
+                _precacheStripAhead(idx);
+              } else {
+                FrameStats.count('read-ahead-skipped-flying');
+              }
               // Report DURING the scroll as well, not only when it settles.
               // Progress used to land on ScrollEndNotification alone, so
               // leaving the reader while a fling was still running — closing
@@ -4541,11 +4608,35 @@ class _WebtoonPageSlotState extends State<_WebtoonPageSlot> {
       _aspect = cached;
       return;
     }
+    FrameStats.count('slot-mounted-cold');
     _resolvePageAspect(
         url, widget.headers, _readerPageCacheWidth(context, webtoon: true),
         (aspect) {
-      if (mounted && _aspect != aspect) setState(() => _aspect = aspect);
+      if (mounted && _aspect != aspect) {
+        // A slot that learns its height AFTER mounting resizes under the
+        // reader — the "rocky road" signature. Counting these separates a
+        // read-ahead that is working from one that is always losing the race.
+        // The delta is what matters: a slot that grows while it sits ABOVE the
+        // viewport shoves everything below it, i.e. the page being read.
+        FrameStats.count('slot-resized-late');
+        if (FrameStats.enabled) _reportShove(aspect);
+        setState(() => _aspect = aspect);
+      }
     }, cropBorders: widget.cropBorders);
+  }
+
+  /// Instrument only: how far this late resize will move the content below it,
+  /// and whether that content includes what the reader is looking at.
+  void _reportShove(double aspect) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final was = box.size.height;
+    final now = box.size.width / aspect;
+    final top = box.localToGlobal(Offset.zero).dy;
+    FrameStats.count('shove-px', (now - was).abs().round());
+    // Above the viewport top: the reader is BELOW this slot, so the whole
+    // difference lands on the page being read.
+    if (top < 0) FrameStats.count('shove-above-px', (now - was).abs().round());
   }
 
   @override
