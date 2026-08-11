@@ -71,7 +71,22 @@ abstract final class PageFetchQueue {
   /// Registers the open chapter's pages in reading order. Later duplicates of
   /// the same URL keep the first (lowest) index — a repeated image should be
   /// scheduled by its earliest appearance.
-  static void openChapter(Iterable<String?> urls) {
+  ///
+  /// [focusIndex] is the item the reader is on NOW. The continuous strip
+  /// re-registers every time it grows — and when it grows at the FRONT every
+  /// index moves — so this is not only called when a chapter is first opened.
+  /// Resetting the read position to 0 here was therefore wrong in the one
+  /// direction it mattered: scrolling up, the strip pulled in the previous
+  /// chapter, re-registered, and the queue then believed you were on its first
+  /// page travelling forward. With a single download slot held 1.5-2.7s at a
+  /// time, that slot went to the START of the chapter you had just pulled in
+  /// while you were reading its END — the pages under your eyes lost every
+  /// race until the next scroll update happened to correct the focus.
+  ///
+  /// [_direction] is deliberately NOT reset: [focus] maintains it from actual
+  /// movement, and a re-registration is not movement. [close] resets it when
+  /// the reader is actually left.
+  static void openChapter(Iterable<String?> urls, {int focusIndex = 0}) {
     _index.clear();
     var i = 0;
     for (final url in urls) {
@@ -80,8 +95,7 @@ abstract final class PageFetchQueue {
       }
       i++;
     }
-    _focus = 0;
-    _direction = 1;
+    _focus = focusIndex;
   }
 
   /// Leaving the reader. In-flight fetches finish on their own; they just stop
@@ -89,6 +103,7 @@ abstract final class PageFetchQueue {
   static void close() {
     _index.clear();
     _focus = 0;
+    _direction = 1;
   }
 
   /// Which way the reader is travelling: +1 down the chapter, -1 back up it.

@@ -4085,9 +4085,15 @@ class _PagesViewState extends ConsumerState<_PagesView> {
       PageFetchQueue.close();
       return;
     }
-    PageFetchQueue.openChapter([
-      for (var i = 0; i < widget.count; i++) urlOf(i),
-    ]);
+    PageFetchQueue.openChapter(
+      [for (var i = 0; i < widget.count; i++) urlOf(i)],
+      // Where the reader actually is. [_lastReported] has already been slid
+      // along by any front insertion (see didUpdateWidget), so it survives the
+      // strip growing upward — which is exactly when this used to reset to 0.
+      focusIndex: _lastReported < 0
+          ? 0
+          : _lastReported.clamp(0, (widget.count - 1).clamp(0, widget.count)),
+    );
   }
 
   /// Step the pager one DISPLAY slot (visits both halves of split spreads

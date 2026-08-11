@@ -261,4 +261,42 @@ void main() {
     gates['q2']!.complete();
     await settle();
   });
+
+  test('re-registering a grown strip keeps the read position and direction',
+      () async {
+    // Reading BACKWARD, high up the strip — the state the continuous viewer is
+    // in when it pulls the previous chapter in above you.
+    PageFetchQueue.focus(8);
+    PageFetchQueue.focus(7);
+
+    // The strip grew at the front and re-registered itself. This used to reset
+    // the queue to page 0 travelling forward, so the slot went to the start of
+    // the chapter that had just arrived while the reader sat at its end.
+    PageFetchQueue.openChapter(pages, focusIndex: 7);
+
+    final log = <String>[];
+    final gates = {
+      for (final url in ['p9', 'p0', 'p4']) url: Completer<void>(),
+    };
+
+    // p9 holds the general lane. p0 and p4 both sit outside the reserved lane
+    // (more than one page from the reader), so this pins the GENERAL ordering:
+    // p4 is two pages away in the direction of travel, p0 is seven the other
+    // way. Under the reset, p0 scored 0 and won this every time.
+    unawaited(start('p9', log, gates['p9']!));
+    await settle();
+    unawaited(start('p0', log, gates['p0']!));
+    unawaited(start('p4', log, gates['p4']!));
+    await settle();
+    expect(log, ['p9'], reason: 'both are waiting on the general lane');
+
+    gates['p9']!.complete();
+    await settle();
+    expect(log.last, 'p4',
+        reason: 'the page being scrolled INTO wins, not the top of the strip');
+
+    gates['p0']!.complete();
+    gates['p4']!.complete();
+    await settle();
+  });
 }
