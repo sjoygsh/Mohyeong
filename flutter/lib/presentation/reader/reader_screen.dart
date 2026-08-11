@@ -2918,9 +2918,17 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
     }
     final source = widget.data.source;
     if (source == null) throw StateError('Source not installed');
-    final pages = await source.fetchPageList(
-      SourceChapter(url: chapter.url, name: chapter.name),
-    );
+    // Deadline, because nothing below this call has one. A JS `invoke` waits
+    // on its reply port forever (it races only against runtime disposal), so a
+    // source whose fetch never returns left the strip's head showing LOADING
+    // with no load in flight and no way to ask again — the exact dead end the
+    // Retry beside it exists for. An error is recoverable; a hang is not.
+    final pages = await source
+        .fetchPageList(SourceChapter(url: chapter.url, name: chapter.name))
+        .timeout(
+          const Duration(seconds: 90),
+          onTimeout: () => throw TimeoutException('Page list timed out'),
+        );
     if (pages.isEmpty) throw StateError('No pages');
     return _LoadedChapter(
       chapter,

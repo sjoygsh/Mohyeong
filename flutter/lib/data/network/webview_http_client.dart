@@ -83,8 +83,65 @@ class WebViewHttpClient {
   /// already on the cover's origin (e.g. right after the listing fetch).
   String? _currentOrigin;
 
-  /// One WebView ⇒ one in-flight navigation at a time.
-  Future<void> _lock = Future<void>.value();
+  /// One WebView ⇒ one in-flight navigation at a time, but the queue is NOT
+  /// FIFO. A document fetch ([request]) is what a screen is actually BLOCKED
+  /// on — a page list the reader cannot render without — while image fetches
+  /// ([fetchImageBytes]) are decoration that can be dozens deep during a
+  /// reader scroll. Under strict FIFO a page-list fetch sat behind every
+  /// queued page image, each bounded at ~40s, so the reader's previous-chapter
+  /// head spun "LOADING" for minutes on a fingerprint-walled source while the
+  /// browser worked through images nobody was waiting on yet. Documents jump
+  /// the queue; within a priority the order stays FIFO.
+  ///
+  /// This is the same reserved-lane rule the page download queue already
+  /// applies to the on-screen page: what someone is looking at outranks what
+  /// they might look at.
+  final List<_WebViewJob> _queue = [];
+  bool _draining = false;
+
+  static const int _prioDocument = 1;
+  static const int _prioImage = 0;
+
+  /// Queues [body] at [priority] and returns its result. Every job resolves —
+  /// a throw becomes null — so callers fall back to their non-browser path
+  /// instead of awaiting a future that can never complete.
+  Future<T?> _enqueue<T>(
+    int priority,
+    Future<T?> Function() body,
+    void Function(T? result, bool failed) settle,
+  ) {
+    final completer = Completer<T?>();
+    _queue.add(_WebViewJob(priority, () async {
+      try {
+        final res = await body();
+        settle(res, res == null);
+        completer.complete(res);
+      } catch (_) {
+        settle(null, true);
+        completer.complete(null);
+      } finally {
+        _noteDone();
+      }
+    }));
+    unawaited(_drain());
+    return completer.future;
+  }
+
+  Future<void> _drain() async {
+    if (_draining) return;
+    _draining = true;
+    try {
+      while (_queue.isNotEmpty) {
+        var best = 0;
+        for (var i = 1; i < _queue.length; i++) {
+          if (_queue[i].priority > _queue[best].priority) best = i;
+        }
+        await _queue.removeAt(best).run();
+      }
+    } finally {
+      _draining = false;
+    }
+  }
 
   /// Requests queued or in flight. While zero for [_idleTeardown], the WebView
   /// is torn down: an idle platform view isn't free — every app frame pays a
@@ -129,7 +186,7 @@ class WebViewHttpClient {
 
   /// Whether the last navigation's caller-supplied readiness predicate
   /// (`readyJs`) actually fired before the settle ceiling. Single-threaded
-  /// under [_lock]. Callers use it to mark a snapshot that MAY be missing
+  /// under the job queue. Callers use it to mark a snapshot that MAY be missing
   /// its content (cold WebView burned the window on a challenge) so the
   /// response cache can skip it — a cached not-ready snapshot turns one
   /// slow render into repeated "no content" parses for its whole TTL.
@@ -226,20 +283,17 @@ class WebViewHttpClient {
     // isolate without a host). _run then waits briefly for it to attach.
     _noteBusy();
     activate.value = true;
-    final completer = Completer<Map<String, dynamic>?>();
-    // Serialise + outer timeout so a stuck platform call can't wedge the queue.
-    _lock = _lock.then((_) async {
-      try {
-        final res = await _run(url, timeout, settle, readyJs)
-            .timeout(timeout + const Duration(seconds: 10), onTimeout: () => null);
-        completer.complete(res);
-      } catch (_) {
-        completer.complete(null);
-      } finally {
-        _noteDone();
-      }
-    });
-    return completer.future;
+    // Serialised + outer timeout so a stuck platform call can't wedge the
+    // queue, and at document priority so a reader scroll's image backlog
+    // can't bury the page list a screen is blocked on.
+    return _enqueue<Map<String, dynamic>>(
+      _prioDocument,
+      () => _run(url, timeout, settle, readyJs).timeout(
+        timeout + const Duration(seconds: 10),
+        onTimeout: () => null,
+      ),
+      (_, _) {},
+    );
   }
 
   Future<Map<String, dynamic>?> _run(
@@ -333,23 +387,21 @@ class WebViewHttpClient {
       // ignore: avoid_print
       print('PAGEPATH webview-image full=$fullResolution $url');
     }
-    final completer = Completer<Uint8List?>();
-    _imgInflight[cacheKey] = completer.future;
-    _lock = _lock.then((_) async {
-      try {
-        final bytes = await _runImg(url, timeout, fullResolution, cacheKey)
-            .timeout(timeout + const Duration(seconds: 10), onTimeout: () => null);
-        if (bytes == null) _noteImgFailure(url);
-        completer.complete(bytes);
-      } catch (_) {
-        _noteImgFailure(url);
-        completer.complete(null);
-      } finally {
-        _imgInflight.remove(cacheKey);
-        _noteDone();
-      }
-    });
-    return completer.future;
+    final future = _enqueue<Uint8List>(
+      _prioImage,
+      () => _runImg(url, timeout, fullResolution, cacheKey).timeout(
+        timeout + const Duration(seconds: 10),
+        onTimeout: () => null,
+      ),
+      (_, failed) {
+        if (failed) _noteImgFailure(url);
+      },
+    );
+    _imgInflight[cacheKey] = future;
+    // Registered AFTER the map is written, so the entry can never be removed
+    // before it is inserted however early the job settles.
+    unawaited(future.whenComplete(() => _imgInflight.remove(cacheKey)));
+    return future;
   }
 
   /// Record a failed cover so it isn't re-fetched for 2 minutes (bounded).
@@ -623,4 +675,13 @@ class _OffscreenWebViewHostState extends State<OffscreenWebViewHost> {
     // opaque app and non-interactive.
     return IgnorePointer(child: WebViewWidget(controller: c));
   }
+}
+
+/// One queued unit of WebView work. [priority] orders the queue (higher runs
+/// first); ties keep insertion order.
+class _WebViewJob {
+  _WebViewJob(this.priority, this.run);
+
+  final int priority;
+  final Future<void> Function() run;
 }
