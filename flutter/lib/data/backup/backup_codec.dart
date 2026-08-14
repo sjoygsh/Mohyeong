@@ -476,43 +476,126 @@ BackupSource _readBackupSource(_ProtoReader r) {
 
 // ─── BackupPreference & value union ────────────────────────────────────────
 //
-// Mihon stores the discriminator as a sealed-class subtype name in its
-// custom serializer. The wire encoding is: a single length-delimited
-// field whose tag identifies the variant:
-//   tag 1 → IntPreferenceValue (varint int32)
-//   tag 2 → LongPreferenceValue (varint int64)
-//   tag 3 → FloatPreferenceValue (fixed32)
-//   tag 4 → StringPreferenceValue (length-delim string)
-//   tag 5 → BooleanPreferenceValue (varint 0/1)
-//   tag 6 → StringSetPreferenceValue (length-delim message containing
-//           repeated string at tag 1)
+// `PreferenceValue` is a kotlinx.serialization *polymorphic* value, and
+// kotlinx's ProtoBuf format writes those as a two-field envelope, NOT as a
+// tag-per-variant union:
 //
-// These tag numbers match `PreferenceValueSerializer` in Mihon.
+//   field 1 (string) → fully-qualified Kotlin class name of the variant
+//   field 2 (bytes)  → the variant's own message, whose field 1 holds the
+//                      scalar (varint / fixed32 / string; repeated string
+//                      for the set variant)
+//
+// e.g. `custom_brightness_value` = 100 is
+//   1:"eu.kanade.tachiyomi.data.backup.models.IntPreferenceValue" 2:{1:100}
+//
+// This file used to assume the union encoding, which desynchronised the
+// reader on the very first Mihon preference and aborted every restore of a
+// real Mihon backup with "Unknown wire type 6". [_readPreferenceValue]
+// still accepts that old shape so backups this app wrote before the fix
+// keep restoring.
+
+const String _prefValuePackage = 'eu.kanade.tachiyomi.data.backup.models.';
+
+String _prefValueTypeName(BackupPreferenceValue v) => switch (v) {
+      IntPreferenceValue() => '${_prefValuePackage}IntPreferenceValue',
+      LongPreferenceValue() => '${_prefValuePackage}LongPreferenceValue',
+      FloatPreferenceValue() => '${_prefValuePackage}FloatPreferenceValue',
+      StringPreferenceValue() => '${_prefValuePackage}StringPreferenceValue',
+      BooleanPreferenceValue() => '${_prefValuePackage}BooleanPreferenceValue',
+      StringSetPreferenceValue() =>
+        '${_prefValuePackage}StringSetPreferenceValue',
+    };
 
 void _writePreferenceValue(_ProtoWriter w, BackupPreferenceValue v) {
-  switch (v) {
-    case IntPreferenceValue(:final value):
-      w.writeInt(1, value);
-    case LongPreferenceValue(:final value):
-      w.writeInt(2, value);
-    case FloatPreferenceValue(:final value):
-      w.writeFloat(3, value);
-    case StringPreferenceValue(:final value):
-      w.writeString(4, value);
-    case BooleanPreferenceValue(:final value):
-      w.writeBool(5, value);
-    case StringSetPreferenceValue(:final value):
-      w.writeMessage(6, (mw) {
+  w.writeString(1, _prefValueTypeName(v));
+  w.writeMessage(2, (mw) {
+    switch (v) {
+      case IntPreferenceValue(:final value):
+      case LongPreferenceValue(:final value):
+        mw.writeInt(1, value);
+      case FloatPreferenceValue(:final value):
+        mw.writeFloat(1, value);
+      case StringPreferenceValue(:final value):
+        mw.writeString(1, value);
+      case BooleanPreferenceValue(:final value):
+        mw.writeBool(1, value);
+      case StringSetPreferenceValue(:final value):
         for (final s in value) {
           mw.writeString(1, s);
         }
-      });
+    }
+  });
+}
+
+/// Decodes the variant body (envelope field 2) for a known [typeName].
+/// kotlinx omits a field carrying its type's default value, so a missing
+/// field 1 is the zero value, not an error — `false`, `0`, `""`, `{}`.
+BackupPreferenceValue _readPreferenceValueBody(
+  String typeName,
+  _ProtoReader r,
+) {
+  int intValue = 0;
+  double floatValue = 0;
+  String stringValue = '';
+  final set = <String>{};
+  while (!r.isAtEnd) {
+    final tag = r.readTag();
+    if (_tagField(tag) != 1) {
+      r.skipField(_tagWire(tag));
+      continue;
+    }
+    switch (_tagWire(tag)) {
+      case _wireVarint:
+        intValue = r.readVarint();
+      case _wireFixed32:
+        floatValue = r.readFloat();
+      case _wireLengthDelim:
+        stringValue = r.readString();
+        set.add(stringValue);
+      default:
+        r.skipField(_tagWire(tag));
+    }
   }
+  // Match on the simple name: the package is Mihon's, but a fork could
+  // relocate the classes and the variant is what actually matters.
+  final simple = typeName.split('.').last;
+  return switch (simple) {
+    'IntPreferenceValue' => IntPreferenceValue(intValue),
+    'LongPreferenceValue' => LongPreferenceValue(intValue),
+    'FloatPreferenceValue' => FloatPreferenceValue(floatValue),
+    'StringPreferenceValue' => StringPreferenceValue(stringValue),
+    'BooleanPreferenceValue' => BooleanPreferenceValue(intValue != 0),
+    'StringSetPreferenceValue' => StringSetPreferenceValue(set),
+    _ => throw FormatException('Unknown PreferenceValue type "$typeName"'),
+  };
 }
 
 BackupPreferenceValue _readPreferenceValue(_ProtoReader r) {
-  // Exactly one variant is present; read the first tag, decode, then
-  // tolerate any trailing fields by skipping them.
+  // Envelope (Mihon, and this app since the fix) vs. the old tag-per-variant
+  // union this app used to write. Only the envelope opens with a
+  // length-delimited field 1; every legacy variant put something else there.
+  final start = r.position;
+  if (!r.isAtEnd) {
+    final first = r.readTag();
+    if (_tagField(first) == 1 && _tagWire(first) == _wireLengthDelim) {
+      final typeName = r.readString();
+      BackupPreferenceValue? out;
+      while (!r.isAtEnd) {
+        final tag = r.readTag();
+        if (_tagField(tag) == 2) {
+          out = _readPreferenceValueBody(typeName, r.readSubMessage());
+        } else {
+          r.skipField(_tagWire(tag));
+        }
+      }
+      // A variant whose whole body was default gets no field 2 at all.
+      return out ?? _readPreferenceValueBody(typeName, _ProtoReader(_empty));
+    }
+    r.seek(start);
+  }
+
+  // Legacy union: exactly one variant is present; read the first tag,
+  // decode, then tolerate any trailing fields by skipping them.
   BackupPreferenceValue? out;
   while (!r.isAtEnd) {
     final tag = r.readTag();
@@ -548,6 +631,8 @@ BackupPreferenceValue _readPreferenceValue(_ProtoReader r) {
   }
   return out;
 }
+
+final Uint8List _empty = Uint8List(0);
 
 void _writeBackupPreference(_ProtoWriter w, BackupPreference p) {
   w.writeString(1, p.key);
