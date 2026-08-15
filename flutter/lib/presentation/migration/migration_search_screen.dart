@@ -7,7 +7,6 @@ import '../../data/manga/manga_repository.dart';
 import '../../data/migration/migration_service.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/installed_extension.dart';
-import '../../data/source/source_id.dart';
 import '../../domain/manga/model/manga.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../common/source_image.dart';
@@ -59,7 +58,7 @@ class _MigrationSearchScreenState
             // source is a no-op for the user's intent.
             all
                 .where((e) =>
-                    sourceNumericId(e.id) != widget.sourceManga.source)
+                    e.sourceId != widget.sourceManga.source)
                 .toList(growable: false))
         .then((filtered) {
       if (filtered.isNotEmpty && _selectedExt == null) {
@@ -219,7 +218,7 @@ class _MigrationSearchScreenState
     if (options == null) return;
     setState(() => _busy = true);
     try {
-      final sourceId = sourceNumericId(ext.id);
+      final sourceId = ext.sourceId;
       final mangaRepo = ref.read(mangaRepositoryProvider);
       // Find or create the target manga row.
       final target = await mangaRepo.insertFromSource(

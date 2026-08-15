@@ -14,10 +14,12 @@ import 'data/network/app_http_client.dart';
 import 'data/network/webview_http_client.dart';
 import 'data/notification/notification_service.dart';
 import 'data/shortcuts/shortcut_service.dart';
+import 'data/database/database_provider.dart';
 import 'data/source/extension_repository.dart';
 import 'data/source/incognito_preferences.dart';
 import 'data/source/installed_extension.dart';
 import 'data/source/local_source_preferences.dart';
+import 'data/source/source_id_migration.dart';
 import 'data/storage/app_cache.dart';
 import 'data/sync/sync_preferences.dart';
 import 'data/sync/sync_scheduler.dart';
@@ -120,6 +122,29 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
     ShortcutService.instance.init(
       (tabIndex) => ref.read(homeTabIndexProvider.notifier).set(tabIndex),
     );
+    // Move any library rows still on a slug-hashed source id onto the
+    // canonical Mihon id their extension declares, so they resolve to an
+    // installed source instead of showing as stubs.
+    unawaited(_remapSourceIds());
+  }
+
+  Future<void> _remapSourceIds() async {
+    try {
+      final result = await remapDeclaredSourceIds(
+        database: ref.read(databaseProvider),
+        installed: await ref.read(extensionRepositoryProvider).listInstalled(),
+      );
+      if (!result.isEmpty) {
+        debugPrint(
+          'source id remap: ${result.mangaRemapped} manga, '
+          '${result.sourcesRemapped} source rows, '
+          '${result.collisions} left (destination taken)',
+        );
+      }
+    } catch (e) {
+      // Never block startup on it; the next launch retries.
+      debugPrint('source id remap failed: $e');
+    }
   }
 
   /// Re-registers the periodic sync task from the saved auto-sync prefs and,

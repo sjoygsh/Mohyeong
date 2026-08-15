@@ -720,10 +720,12 @@ class _MangaGrid extends ConsumerWidget {
     final hideInLibrary = ref.watch(hideInLibraryItemsProvider);
     List<SourceManga> items = this.items;
     if (hideInLibrary) {
-      // Only needed for the favorites lookup below; computing it up front ran
-      // sourceNumericId (an MD5 for non-numeric slugs) on every rebuild even
-      // when the pref is off — the default.
-      final sourceIdInt = sourceNumericId(sourceId);
+      // Only needed for the favorites lookup below; computing it up front
+      // read the id map on every rebuild even when the pref is off — the
+      // default.
+      final sourceIdInt =
+          ref.watch(installedSourceIdsProvider).valueOrNull?[sourceId] ??
+              sourceNumericId(sourceId);
       final favoritedUrls = ref
           .watch(favoritedUrlsForSourceProvider(sourceIdInt))
           .valueOrNull;
@@ -821,7 +823,9 @@ class _MangaCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final url = manga.thumbnailUrl;
-    final sourceIdInt = sourceNumericId(sourceId);
+    final sourceIdInt =
+        ref.watch(installedSourceIdsProvider).valueOrNull?[sourceId] ??
+            sourceNumericId(sourceId);
     // Source's image-request headers (Referer/UA) so hotlink-protected cover
     // CDNs don't 403 into a blank tile.
     final imageHeaders = ref
@@ -977,7 +981,11 @@ class _MangaCard extends ConsumerWidget {
   }
 
   Future<void> _openManga(BuildContext context, WidgetRef ref) async {
-    final sourceIdInt = sourceNumericId(sourceId);
+    // Resolved, not looked up: this STAMPS mangas.source, and a fallback id
+    // written while the map was loading would orphan the row from its source.
+    final sourceIdInt =
+        await ref.read(extensionRepositoryProvider).numericIdFor(sourceId);
+    if (!context.mounted) return;
     final navigator = Navigator.of(context);
     final toast = TideToast.of(context);
     try {

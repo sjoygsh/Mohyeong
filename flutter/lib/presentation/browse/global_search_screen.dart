@@ -363,10 +363,12 @@ class _SourceSectionState extends ConsumerState<_SourceSection> {
               }
               var items = snap.data!.mangas;
               if (ref.watch(hideInLibraryItemsProvider)) {
-                // Only needed for the favorites lookup: keep the
-                // sourceNumericId (an MD5 for non-numeric slugs) out of the
-                // hot path when the pref is off.
-                final sourceIdInt = sourceNumericId(widget.sourceId);
+                // Only needed for the favorites lookup: keep the map
+                // read out of the hot path when the pref is off.
+                final sourceIdInt = ref
+                        .watch(installedSourceIdsProvider)
+                        .valueOrNull?[widget.sourceId] ??
+                    sourceNumericId(widget.sourceId);
                 final favoritedUrls = ref
                     .watch(favoritedUrlsForSourceProvider(sourceIdInt))
                     .valueOrNull;
@@ -448,7 +450,9 @@ class _ResultCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final url = manga.thumbnailUrl;
-    final sourceIdInt = sourceNumericId(sourceId);
+    final sourceIdInt =
+        ref.watch(installedSourceIdsProvider).valueOrNull?[sourceId] ??
+            sourceNumericId(sourceId);
     final favoritedUrls = ref
             .watch(favoritedUrlsForSourceProvider(sourceIdInt))
             .valueOrNull ??
@@ -529,7 +533,11 @@ class _ResultCard extends ConsumerWidget {
   }
 
   Future<void> _openManga(BuildContext context, WidgetRef ref) async {
-    final sourceIdInt = sourceNumericId(sourceId);
+    // Resolved, not looked up: this STAMPS mangas.source, and a fallback id
+    // written while the map was loading would orphan the row from its source.
+    final sourceIdInt =
+        await ref.read(extensionRepositoryProvider).numericIdFor(sourceId);
+    if (!context.mounted) return;
     final navigator = Navigator.of(context);
     final toast = TideToast.of(context);
     try {

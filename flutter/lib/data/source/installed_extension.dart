@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'source_id.dart';
+
 /// On-disk representation of an installed extension.
 ///
 /// Layout under `<appDocuments>/extensions/<id>/`:
@@ -25,6 +27,7 @@ class InstalledExtension {
     required this.sourcePath,
     required this.installUrl,
     this.userAgent,
+    this.declaredSourceId,
   });
 
   final String id;
@@ -47,6 +50,23 @@ class InstalledExtension {
   /// re-fetches this URL through [ExtensionRepository.installFromUrl].
   final String? installUrl;
 
+  /// Manifest `source_id`, when the extension declares one.
+  final int? declaredSourceId;
+
+  /// The 64-bit id `mangas.source` stores for this extension.
+  ///
+  /// Mihon derives it as a folded MD5 of `"name.lowercase()/lang/versionId"`,
+  /// which is what a Mihon backup's manga rows carry. Our extensions are keyed
+  /// on disk by a readable slug instead, so a slug-derived id could never
+  /// match one of those rows — every restored entry came out a stub. An
+  /// extension now declares Mihon's number as `source_id` and that is the
+  /// identity the app uses; the slug stays the on-disk/preferences key.
+  ///
+  /// Extensions that don't declare one fall back to the slug hash, which is
+  /// what they were before, so an older installed extension keeps working
+  /// until it's updated.
+  int get sourceId => declaredSourceId ?? sourceNumericId(id);
+
   factory InstalledExtension.fromManifest(
     Map<String, dynamic> manifest,
     String sourcePath,
@@ -64,6 +84,14 @@ class InstalledExtension {
       // manifest copy at install time. Not part of the JS-side manifest
       // contract — the underscore prefix is the marker.
       installUrl: manifest['__install_url'] as String?,
+      // Written by extensions as a decimal string (the values exceed what a
+      // JS number holds exactly), but tolerate a num for hand-written
+      // manifests.
+      declaredSourceId: switch (manifest['source_id']) {
+        final String s => int.tryParse(s),
+        final num n => n.toInt(),
+        _ => null,
+      },
     );
   }
 }

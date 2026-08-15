@@ -209,7 +209,7 @@ class ExtensionRepository {
       final numeric = int.tryParse(id);
       if (numeric != null) {
         for (final e in installed) {
-          if (sourceNumericId(e.id) == numeric) return e.id;
+          if (e.sourceId == numeric) return e.id;
         }
       }
       return id;
@@ -231,9 +231,21 @@ class ExtensionRepository {
   Future<String?> getExtensionPackage(int sourceId) async {
     final installed = await listInstalled();
     for (final e in installed) {
-      if (sourceNumericId(e.id) == sourceId) return e.id;
+      if (e.sourceId == sourceId) return e.id;
     }
     return null;
+  }
+
+  /// The numeric source id an installed extension's [slug] owns — the value
+  /// that belongs in `mangas.source`.
+  ///
+  /// Falls back to the slug hash when nothing is installed under [slug], which
+  /// is what the id was before extensions declared `source_id`.
+  Future<int> numericIdFor(String slug) async {
+    for (final e in await listInstalled()) {
+      if (e.id == slug) return e.sourceId;
+    }
+    return sourceNumericId(slug);
   }
 
   /// Installs from a local JS file. The file is validated by loading it
@@ -408,13 +420,26 @@ final extensionRepositoryProvider = Provider<ExtensionRepository>((ref) {
 /// LocalSource (`'0'`) is intentionally absent from the map: it has no
 /// meaningful language ('all'), so the language badge won't render on
 /// local-source cards.
+/// Map of extension slug → the numeric source id it owns. For UI that holds a
+/// slug (browse / global search) and needs the `mangas.source` value to look
+/// library state up by. Write paths resolve through
+/// [ExtensionRepository.numericIdFor] instead, so a row is never stamped with
+/// a fallback id while this map is still loading.
+final installedSourceIdsProvider =
+    StreamProvider<Map<String, int>>((ref) async* {
+  final repo = ref.watch(extensionRepositoryProvider);
+  await for (final list in repo.watchInstalled()) {
+    yield {for (final e in list) e.id: e.sourceId};
+  }
+});
+
 final installedSourceLangsProvider =
     StreamProvider<Map<int, String>>((ref) async* {
   final repo = ref.watch(extensionRepositoryProvider);
   await for (final list in repo.watchInstalled()) {
     final m = <int, String>{};
     for (final e in list) {
-      m[sourceNumericId(e.id)] = e.lang;
+      m[e.sourceId] = e.lang;
     }
     yield m;
   }
@@ -436,7 +461,7 @@ final installedSourceImageHeadersProvider =
     for (final e in list) {
       if (e.baseUrl.isEmpty) continue;
       final base = e.baseUrl.replaceAll(RegExp(r'/+$'), '');
-      m[sourceNumericId(e.id)] = {
+      m[e.sourceId] = {
         'Referer': '$base/',
         'User-Agent': e.userAgent ?? defaultUserAgent,
       };

@@ -7,7 +7,6 @@ import '../settings/pref_tiles.dart';
 
 import '../../data/source/extension_repository.dart';
 import '../../data/source/local_source.dart';
-import '../../data/source/source_id.dart';
 import '../../data/source/source_preferences.dart';
 import '../../domain/manga/model/manga.dart';
 import 'migration_list_screen.dart';
@@ -79,7 +78,7 @@ class _MigrationConfigScreenState extends ConsumerState<MigrationConfigScreen> {
         .where((e) => e.id != LocalSource.sourceId)
         .where((e) => languages.contains(e.lang))
         .map((e) {
-      final numericId = sourceNumericId(e.id);
+      final numericId = e.sourceId;
       final bool selected;
       if (included.isNotEmpty) {
         selected = included.contains(numericId);

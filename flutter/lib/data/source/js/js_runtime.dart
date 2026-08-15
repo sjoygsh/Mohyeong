@@ -1116,6 +1116,9 @@ var mh = (function () {
         base_url: BASE,
         version_code: config.versionCode || 1,
         supports_latest: config.supportsLatest !== false,
+        // Mihon's canonical 64-bit source id. Undefined stringifies away, so
+        // a stub that omits it keeps the derived-from-slug id.
+        source_id: config.sourceId,
       },
       popular: popular, latest: latest, search: search,
       details: details, chapters: chapters, pages: pages, chapterUrl: chapterUrl,
@@ -1349,6 +1352,9 @@ var mh = (function () {
         base_url: BASE,
         version_code: config.versionCode || 1,
         supports_latest: config.supportsLatest !== false,
+        // Mihon's canonical 64-bit source id. Undefined stringifies away, so
+        // a stub that omits it keeps the derived-from-slug id.
+        source_id: config.sourceId,
       },
       popular: popular, latest: latest, search: search,
       details: details, chapters: chapters, pages: pages, chapterUrl: chapterUrl,
@@ -1582,6 +1588,9 @@ var mh = (function () {
         base_url: BASE,
         version_code: config.versionCode || 1,
         supports_latest: config.supportsLatest !== false,
+        // Mihon's canonical 64-bit source id. Undefined stringifies away, so
+        // a stub that omits it keeps the derived-from-slug id.
+        source_id: config.sourceId,
       },
       popular: popular, latest: latest, search: search,
       details: details, chapters: chapters, pages: pages, chapterUrl: chapterUrl,
