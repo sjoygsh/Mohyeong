@@ -38,15 +38,12 @@ void main() {
 
     // The child is alive underneath from the very first frame — the veil hides
     // it, it does not replace it. That is what lets the app finish booting
-    // while the word is still being written.
+    // while the veil is still up.
     expect(_Probe.inits, 1);
     expect(find.byType(TideWordmark), findsOneWidget);
     expect(find.text('app body'), findsOneWidget);
 
-    // Explicit pumps, never pumpAndSettle: the aurora behind the wordmark is a
-    // continuous animation by design, so the frame queue never drains and
-    // pumpAndSettle would simply time out.
-    // Comfortably past write + hold + fade (~2.5s). Explicit pumps, never
+    // Comfortably past fade-in + hold + fade-out (~0.9s). Explicit pumps, never
     // pumpAndSettle: the aurora behind the wordmark is a continuous animation
     // by design, so the frame queue never drains and pumpAndSettle would
     // simply time out.
