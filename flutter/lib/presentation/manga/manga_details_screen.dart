@@ -2145,9 +2145,20 @@ class _CategorySelectorState extends State<_CategorySelector> {
 /// Source row lookup, cached per source id so header rebuilds (every
 /// selection tap / stream emission) don't re-issue the DB query the way the
 /// old inline-future FutureBuilder did.
+///
+/// [SourceMapper] stamps every row it reads as a stub, because the `sources`
+/// table is only a name/lang record and knows nothing about what's installed.
+/// Taken at face value that put the "source not installed" warning on EVERY
+/// entry, including ones whose extension was sitting right there — so the
+/// installed list decides, and the row supplies the name.
 final _sourceByIdProvider =
-    FutureProvider.autoDispose.family<Source?, int>((ref, id) {
-  return ref.watch(sourceRepositoryProvider).findById(id);
+    FutureProvider.autoDispose.family<Source?, int>((ref, id) async {
+  final row = await ref.watch(sourceRepositoryProvider).findById(id);
+  if (row == null) return null;
+  final installed = await ref.watch(extensionRepositoryProvider).listInstalled();
+  final owned = id == LocalSource.numericId ||
+      installed.any((e) => e.sourceId == id);
+  return row.copyWith(isStub: !owned);
 });
 
 class _MangaInfoBox extends ConsumerWidget {
