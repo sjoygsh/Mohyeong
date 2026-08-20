@@ -1281,7 +1281,11 @@ var mh = (function () {
         if (gM) {
           var gre = /<a[^>]*>([\s\S]*?)<\/a>/g, gm;
           while ((gm = gre.exec(gM[1])) !== null) {
-            var g = stripTags(gm[1]); if (g) genres.push(decode(g));
+            // Some clones repeat a genre inside the same .mgen block (a tag
+            // that is both a category link and a badge), and "Action, Action,
+            // Comedy" is not a genre list.
+            var g = decode(stripTags(gm[1]));
+            if (g && genres.indexOf(g) < 0) genres.push(g);
           }
         }
 
@@ -1305,6 +1309,26 @@ var mh = (function () {
         var dM = /itemprop="description"[^>]*>([\s\S]*?)<\/div>/.exec(html) ||
           /class="entry-content[^"]*"[^>]*>([\s\S]*?)<\/div>/.exec(html);
         if (dM) description = decode(stripTags(dM[1]));
+        // RizzFables ships an EMPTY `<div id="description-container">` and
+        // fills it from a `var description = "…"` in a following <script>, so
+        // scraping the container returned nothing and every series there had a
+        // blank synopsis. Fall back to the script's own string literal.
+        if (!description) {
+          var sM = /var\s+description\s*=\s*"((?:[^"\\]|\\.)*)"/.exec(html);
+          if (sM) {
+            description = decode(stripTags(sM[1]
+              .replace(/\\r/g, '')
+              .replace(/\\n/g, '\n')
+              .replace(/\\t/g, ' ')
+              .replace(/\\u([0-9a-fA-F]{4})/g, function (_, h) {
+                return String.fromCharCode(parseInt(h, 16));
+              })
+              .replace(/\\(.)/g, '$1')));
+          }
+        }
+        if (description !== null && !description.replace(/\s+/g, '')) {
+          description = null;
+        }
 
         return {
           url: manga.url,
