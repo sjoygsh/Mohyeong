@@ -19,6 +19,7 @@ import 'data/source/extension_repository.dart';
 import 'data/source/incognito_preferences.dart';
 import 'data/source/installed_extension.dart';
 import 'data/source/local_source_preferences.dart';
+import 'data/source/manga_url_migration.dart';
 import 'data/source/source_id_migration.dart';
 import 'data/storage/app_cache.dart';
 import 'data/sync/sync_preferences.dart';
@@ -130,15 +131,30 @@ class _MohyeongAppState extends ConsumerState<MohyeongApp> {
 
   Future<void> _remapSourceIds() async {
     try {
+      final database = ref.read(databaseProvider);
+      final installed =
+          await ref.read(extensionRepositoryProvider).listInstalled();
       final result = await remapDeclaredSourceIds(
-        database: ref.read(databaseProvider),
-        installed: await ref.read(extensionRepositoryProvider).listInstalled(),
+        database: database,
+        installed: installed,
       );
       if (!result.isEmpty) {
         debugPrint(
           'source id remap: ${result.mangaRemapped} manga, '
           '${result.sourcesRemapped} source rows, '
           '${result.collisions} left (destination taken)',
+        );
+      }
+      // Then the other half of the same identity: the URL those rows are
+      // keyed by, which Mihon stores relative to the source's domain.
+      final urls = await normalizeMangaUrls(
+        database: database,
+        installed: installed,
+      );
+      if (!urls.isEmpty) {
+        debugPrint(
+          'manga url normalize: ${urls.normalized} rows, '
+          '${urls.collisions} left (relative url taken)',
         );
       }
     } catch (e) {

@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../../../domain/source/model/manga_source.dart';
 import '../../../domain/source/model/source_chapter.dart';
 import '../../../domain/source/model/source_manga.dart';
+import '../source_url.dart';
 import 'js_runtime.dart';
 
 /// [MangaSource] implementation backed by a JS extension running inside a
@@ -53,7 +54,7 @@ class JsSource extends MangaSource {
   @override
   Future<MangasPage> fetchPopular(int page) async {
     final result = await runtime.invoke('popular', [page]);
-    return MangasPage.fromJson(result as Map<String, dynamic>);
+    return _domainless(MangasPage.fromJson(result as Map<String, dynamic>));
   }
 
   @override
@@ -62,7 +63,7 @@ class JsSource extends MangaSource {
       throw UnsupportedError('Source $id does not support latest feed');
     }
     final result = await runtime.invoke('latest', [page]);
-    return MangasPage.fromJson(result as Map<String, dynamic>);
+    return _domainless(MangasPage.fromJson(result as Map<String, dynamic>));
   }
 
   @override
@@ -78,7 +79,21 @@ class JsSource extends MangaSource {
       page,
       if (filters != null && filters.isNotEmpty) filters,
     ]);
-    return MangasPage.fromJson(result as Map<String, dynamic>);
+    return _domainless(MangasPage.fromJson(result as Map<String, dynamic>));
+  }
+
+  /// Rewrites every entry's URL into the domain-relative form Mihon stores,
+  /// so a series browsed here is the same `(source, url)` row as the one a
+  /// Mihon backup restored. See [relativeMangaUrl].
+  MangasPage _domainless(MangasPage page) {
+    if (baseUrl.isEmpty) return page;
+    return MangasPage(
+      mangas: [
+        for (final manga in page.mangas)
+          manga.copyWith(url: relativeMangaUrl(manga.url, baseUrl)),
+      ],
+      hasNextPage: page.hasNextPage,
+    );
   }
 
   @override
