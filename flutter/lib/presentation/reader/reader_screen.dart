@@ -38,6 +38,7 @@ import '../../domain/source/model/manga_source.dart';
 import '../../domain/source/model/source_chapter.dart';
 import '../common/crop_borders_image.dart';
 import '../common/source_image.dart';
+import '../../domain/reader/strip_tail_action.dart';
 import '../common/webview_screen.dart';
 import '../tide/tide.dart';
 import 'page_mark.dart';
@@ -2814,7 +2815,7 @@ const double _readAheadCutoffFraction = 1 / 16;
 
 /// Kotlin preloads the next chapter "once we're within the last 5 pages of
 /// the current chapter" (WebtoonViewer.onPageSelected).
-const int _stripPreloadWithin = 5;
+
 
 class _ContinuousStrip extends ConsumerStatefulWidget {
   const _ContinuousStrip({
@@ -3016,6 +3017,45 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
     return siblings[i + 1];
   }
 
+  /// The next chapter's page list, fetched ahead of the append that needs it.
+  ///
+  /// Read-ahead keeps a fixed four pages of lead, and inside a chapter that
+  /// lead is always warm. At a boundary it is not: nothing of the next chapter
+  /// can be fetched until its page list arrives, and that list is a network
+  /// round trip the reader never pays mid-chapter. Starting it a dozen pages
+  /// early turns the append into a local hand-off, so the first pages of the
+  /// new chapter are fetchable the moment the strip grows into it.
+  Future<_LoadedChapter>? _nextPrefetch;
+  int? _nextPrefetchFor;
+
+  /// A chapter whose speculative page-list load failed. Without this the
+  /// trigger fires again on every page turn inside the prefetch window and
+  /// hammers a source that is already failing; the real attempt, with the
+  /// error surfaced and a Retry, is [_appendNext]'s.
+  int? _nextPrefetchFailed;
+
+  Future<void> _prefetchNext() async {
+    if (_loadingNext || _loadingInitial || _appendError != null) return;
+    final next = _pendingChapter;
+    if (next == null) return;
+    if (_nextPrefetchFailed == next.id) return;
+    if (_nextPrefetchFor == next.id && _nextPrefetch != null) return;
+    _nextPrefetchFor = next.id;
+    // Failure is not surfaced here: _appendNext re-runs the load and owns the
+    // error path (and the Retry beside it). This only ever saves time.
+    final future = _load(next);
+    _nextPrefetch = future;
+    try {
+      await future;
+    } catch (_) {
+      if (identical(_nextPrefetch, future)) {
+        _nextPrefetch = null;
+        _nextPrefetchFor = null;
+        _nextPrefetchFailed = next.id;
+      }
+    }
+  }
+
   Future<void> _appendNext({bool retry = false}) async {
     if (_loadingNext || _loadingInitial) return;
     // A failed append waits for the tail's Retry instead of hammering the
@@ -3026,7 +3066,13 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
     _loadingNext = true;
     if (_appendError != null) setState(() => _appendError = null);
     try {
-      final loaded = await _load(next);
+      // Retry always re-fetches: the cached future is the failure it is
+      // retrying.
+      final prefetched =
+          !retry && _nextPrefetchFor == next.id ? _nextPrefetch : null;
+      _nextPrefetch = null;
+      _nextPrefetchFor = null;
+      final loaded = await (prefetched ?? _load(next));
       if (!mounted) return;
       setState(() {
         _loaded.add(loaded);
@@ -3119,9 +3165,16 @@ class _ContinuousStripState extends ConsumerState<_ContinuousStrip> {
     }
     widget.onPageChanged(pi);
     if (pi >= _loaded[ci].pages.length - 1) _markFinished(ci);
-    if (ci == _loaded.length - 1 &&
-        _loaded[ci].pages.length - pi <= _stripPreloadWithin) {
-      unawaited(_appendNext());
+    switch (stripTailAction(
+      pagesRemaining: _loaded[ci].pages.length - pi,
+      isLastLoadedChapter: ci == _loaded.length - 1,
+    )) {
+      case StripTailAction.appendNext:
+        unawaited(_appendNext());
+      case StripTailAction.prefetchNextPageList:
+        unawaited(_prefetchNext());
+      case StripTailAction.none:
+        break;
     }
   }
 
