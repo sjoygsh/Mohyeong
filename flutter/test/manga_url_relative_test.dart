@@ -36,6 +36,10 @@ void main() {
       expect(relativeMangaUrl('$base/manga/a%20b/', base), '/manga/a b/');
     });
 
+    test('escapes a raw space first, the way Mihon does', () {
+      expect(relativeMangaUrl('$base/manga/a b/', base), '/manga/a b/');
+    });
+
     test('ignores the host case and the scheme', () {
       expect(relativeMangaUrl('http://AquaReader.org/manga/x/', base),
           '/manga/x/');

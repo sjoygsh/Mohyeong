@@ -1064,9 +1064,23 @@ var mh = (function () {
           if (!isNaN(parsed)) date = parsed;
           else date = parseRelativeDate(t);
         }
-        out.push({ url: abs(url), name: decode(name) || url, date_upload: date, chapter_number: -1 });
+        out.push({ url: chapterHref(url), name: decode(name) || url, date_upload: date, chapter_number: -1 });
       }
       return out;
+    }
+    // Mihon's Madara.kt stores a chapter url ABSOLUTE (unlike the manga url)
+    // and normalises the view flag onto `?style=list` — a paged link is
+    // rewritten and a plain one gets the suffix appended. That exact string is
+    // what a Mihon backup holds, and chapter identity is the url, so emitting
+    // the bare href instead handed every restored series a second, duplicate
+    // chapter set on its first refresh. `?style=list` is also the list the
+    // page parser wants: it server-renders every image.
+    var CH_SUFFIX = config.chapterUrlSuffix === undefined ? '?style=list'
+      : config.chapterUrlSuffix;
+    function chapterHref(url) {
+      var u = abs(url).split('?style=paged')[0];
+      if (!CH_SUFFIX) return u;
+      return u.slice(-CH_SUFFIX.length) === CH_SUFFIX ? u : u + CH_SUFFIX;
     }
     // Three chapter-list strategies, picked by config.chapterMode:
     //   'inline'   (default) the series page ships the list in the HTML.
@@ -1147,6 +1161,18 @@ var mh = (function () {
       if (url.indexOf('http') === 0) return url;
       if (url.charAt(0) === '/') return BASE + url;
       return BASE + '/' + url;
+    }
+    // Mihon's MangaThemesia runs the CHAPTER url through setUrlWithoutDomain
+    // too (Madara is the odd one out in keeping chapters absolute), and a
+    // chapter's identity is its url — emitting the absolute form gave every
+    // series restored from a Mihon backup a second, duplicate chapter set on
+    // its first refresh. Only this site's own host is stripped; a link parked
+    // on another domain stays whole.
+    function rel(url) {
+      var u = abs(url);
+      var m = /^https?:\/\/([^\/]+)(\/[^\s]*)$/.exec(u);
+      var host = BASE.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      return m && m[1].toLowerCase() === host.toLowerCase() ? m[2] : u;
     }
     function getHtml(url) {
       return http.get(url, { headers: { Referer: BASE + '/' } }).then(function (r) {
@@ -1282,7 +1308,14 @@ var mh = (function () {
     function chapters(manga) {
       return getHtml(abs(manga.url)).then(function (html) {
         var start = html.indexOf('id="chapterlist"');
-        var region = start >= 0 ? html.substring(start) : html;
+        // Bound the region at the list's own </ul>. Running it to the end of
+        // the document swept up every later <li> on the page — the footer's
+        // /privacy_policy link came back as a chapter.
+        var region = html;
+        if (start >= 0) {
+          var end = html.indexOf('</ul>', start);
+          region = end > start ? html.substring(start, end) : html.substring(start);
+        }
         var out = [];
         var seen = {};
         var lis = region.split('<li');
@@ -1292,6 +1325,12 @@ var mh = (function () {
           if (!aM) continue;
           var url = aM[1];
           if (url.indexOf('{{') >= 0 || url.charAt(0) === '#' || !/^https?:|^\//.test(url)) continue;
+          // RizzFables ships an inline <script> that BUILDS a series href by
+          // string concatenation, and the href regex happily matched the
+          // template — every series picked up a chapter row pointing at
+          // `…/' + 'series/r2311170-' + encodedtitle + '`. A real link has no
+          // whitespace or quotes in it.
+          if (/[\s'"`<>]/.test(url) || url.indexOf('${') >= 0) continue;
           if (seen[url]) continue;
           seen[url] = true;
           var nM = /class="chapternum"[^>]*>([\s\S]*?)<\/span>/.exec(b);
@@ -1299,7 +1338,7 @@ var mh = (function () {
           var dM = /class="chapterdate"[^>]*>([\s\S]*?)<\/span>/.exec(b);
           var date = 0;
           if (dM) { var p = Date.parse(stripTags(dM[1])); if (!isNaN(p)) date = p; }
-          out.push({ url: abs(url), name: decode(name) || url, date_upload: date, chapter_number: -1 });
+          out.push({ url: rel(url), name: decode(name) || url, date_upload: date, chapter_number: -1 });
         }
         return out;
       });

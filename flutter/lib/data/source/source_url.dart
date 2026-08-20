@@ -25,7 +25,9 @@ library;
 /// wrong base. Relative input is returned unchanged, so this is idempotent.
 String relativeMangaUrl(String url, String baseUrl) {
   if (url.isEmpty || !url.startsWith('http')) return url;
-  final parsed = Uri.tryParse(url);
+  // Kotlin's URI() rejects a raw space, so Mihon pre-escapes one; match that
+  // rather than bailing out on the handful of hrefs that carry it.
+  final parsed = Uri.tryParse(url.replaceAll(' ', '%20'));
   final base = Uri.tryParse(baseUrl);
   if (parsed == null || base == null) return url;
   if (parsed.host.isEmpty || base.host.isEmpty) return url;
