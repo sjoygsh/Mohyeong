@@ -1162,6 +1162,23 @@ var mh = (function () {
       if (url.charAt(0) === '/') return BASE + url;
       return BASE + '/' + url;
     }
+    // `.chapterdate` is a bare `dd-MM-yyyy` on a good half of these clones,
+    // and Date.parse reads that as MM-dd-yyyy: ToonGod's 27-06-2026 came back
+    // NaN (dated 1970) while 12-06-2026 silently became 6 December, six
+    // months in the FUTURE. Measured on toongod.us: 65 of 113 chapters dated
+    // 1970 and 3 dated ahead of today. Parse the unambiguous numeric forms
+    // ourselves and keep Date.parse for the written-out ones.
+    function parseChapterDate(text) {
+      if (!text) return 0;
+      var t = String(text).replace(/^\s+|\s+$/g, '');
+      var m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
+      if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]);
+      m = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/.exec(t);
+      if (m) return Date.UTC(+m[3], +m[2] - 1, +m[1]);
+      var p = Date.parse(t);
+      return isNaN(p) ? 0 : p;
+    }
+
     // Mihon's MangaThemesia runs the CHAPTER url through setUrlWithoutDomain
     // too (Madara is the odd one out in keeping chapters absolute), and a
     // chapter's identity is its url — emitting the absolute form gave every
@@ -1336,8 +1353,7 @@ var mh = (function () {
           var nM = /class="chapternum"[^>]*>([\s\S]*?)<\/span>/.exec(b);
           var name = nM ? stripTags(nM[1]) : '';
           var dM = /class="chapterdate"[^>]*>([\s\S]*?)<\/span>/.exec(b);
-          var date = 0;
-          if (dM) { var p = Date.parse(stripTags(dM[1])); if (!isNaN(p)) date = p; }
+          var date = dM ? parseChapterDate(stripTags(dM[1])) : 0;
           out.push({ url: rel(url), name: decode(name) || url, date_upload: date, chapter_number: -1 });
         }
         return out;
