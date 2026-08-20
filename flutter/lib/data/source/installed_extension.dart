@@ -28,6 +28,7 @@ class InstalledExtension {
     required this.installUrl,
     this.userAgent,
     this.declaredSourceId,
+    this.altSourceIds = const <int>[],
   });
 
   final String id;
@@ -52,6 +53,28 @@ class InstalledExtension {
 
   /// Manifest `source_id`, when the extension declares one.
   final int? declaredSourceId;
+
+  /// Other Mihon source ids this same site is also known by, from manifest
+  /// `alt_source_ids`.
+  ///
+  /// Mihon ships one source PER LANGUAGE from a single extension, and each
+  /// language is its own 64-bit id: 3Hentai is `…7677` at `lang=en` and
+  /// `…2561` at `lang=all`, and a real library holds rows under both. One JS
+  /// extension here is one source, so without this the second id owned no
+  /// extension and its 193 restored entries stayed stubs next to the 78 that
+  /// resolved. These are read-only aliases — [sourceId] is still the id a
+  /// newly stamped row gets — so a backup round-trips with the user's own
+  /// per-language grouping intact.
+  final List<int> altSourceIds;
+
+  /// Every source id this extension answers for.
+  Iterable<int> get allSourceIds sync* {
+    yield sourceId;
+    yield* altSourceIds;
+  }
+
+  /// Whether this extension is the one that serves [id].
+  bool owns(int id) => id == sourceId || altSourceIds.contains(id);
 
   /// The 64-bit id `mangas.source` stores for this extension.
   ///
@@ -91,6 +114,19 @@ class InstalledExtension {
         final String s => int.tryParse(s),
         final num n => n.toInt(),
         _ => null,
+      },
+      altSourceIds: switch (manifest['alt_source_ids']) {
+        final List<dynamic> l => [
+            for (final e in l)
+              if (switch (e) {
+                final String s => int.tryParse(s),
+                final num n => n.toInt(),
+                _ => null,
+              }
+                  case final int id)
+                id,
+          ],
+        _ => const <int>[],
       },
     );
   }

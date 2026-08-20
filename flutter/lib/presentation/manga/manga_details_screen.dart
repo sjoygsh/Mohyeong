@@ -2157,7 +2157,7 @@ final _sourceByIdProvider =
   if (row == null) return null;
   final installed = await ref.watch(extensionRepositoryProvider).listInstalled();
   final owned = id == LocalSource.numericId ||
-      installed.any((e) => e.sourceId == id);
+      installed.any((e) => e.owns(id));
   return row.copyWith(isStub: !owned);
 });
 

@@ -77,7 +77,8 @@ class _MigrateSourceTabState extends ConsumerState<MigrateSourceTab> {
     final counts = results[0] as Map<int, int>;
     final exts = results[1] as List<InstalledExtension>;
     final extByInt = <int, InstalledExtension>{
-      for (final e in exts) e.sourceId: e,
+      for (final e in exts)
+        for (final id in e.allSourceIds) id: e,
     };
     final entries = counts.entries.map((entry) {
       final sourceId = entry.key;

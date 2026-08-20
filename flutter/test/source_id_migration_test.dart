@@ -49,6 +49,31 @@ void main() {
       expect(e.sourceId, 6247824327199706550);
     });
 
+    test('alt_source_ids are the other ids the same site answers for', () {
+      // Mihon ships one source per LANGUAGE, each with its own 64-bit id;
+      // 3Hentai is en=…7677 and all=…2561, and a real library holds both.
+      final e = InstalledExtension.fromManifest(const {
+        'id': '3hentai',
+        'name': '3Hentai',
+        'lang': 'en',
+        'source_id': '7819216870104067677',
+        'alt_source_ids': ['6915411826598362561'],
+      }, '/tmp/3hentai/source.js');
+      expect(e.sourceId, 7819216870104067677, reason: 'still what rows get');
+      expect(e.owns(7819216870104067677), isTrue);
+      expect(e.owns(6915411826598362561), isTrue);
+      expect(e.owns(1), isFalse);
+      expect(e.allSourceIds,
+          [7819216870104067677, 6915411826598362561]);
+    });
+
+    test('an extension declaring no aliases owns exactly one id', () {
+      final e = ext('asura', sourceId: 6247824327199706550);
+      expect(e.altSourceIds, isEmpty);
+      expect(e.allSourceIds, [6247824327199706550]);
+      expect(e.owns(6247824327199706550), isTrue);
+    });
+
     test('a manifest without source_id falls back, not crashes', () {
       final e = InstalledExtension.fromManifest(
         const {'id': 'asura', 'name': 'Asura Scans'},

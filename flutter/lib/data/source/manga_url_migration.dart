@@ -44,38 +44,42 @@ Future<MangaUrlNormalizeResult> normalizeMangaUrls({
 
   for (final ext in installed) {
     if (ext.baseUrl.isEmpty) continue;
-    final rows = await database
-        .customSelect(
-          "SELECT _id, url FROM mangas WHERE source = ?1 AND url LIKE 'http%'",
-          variables: [Variable.withInt(ext.sourceId)],
-        )
-        .get();
-
-    for (final row in rows) {
-      final id = row.data['_id'] as int;
-      final url = row.data['url'] as String;
-      final relative = relativeMangaUrl(url, ext.baseUrl);
-      if (relative == url) continue;
-
-      final taken = await database
+    // Alias ids too: a row stored under the source's other-language id is the
+    // same site and wants the same relative form.
+    for (final sourceId in ext.allSourceIds) {
+      final rows = await database
           .customSelect(
-            'SELECT COUNT(*) AS c FROM mangas WHERE source = ?1 AND url = ?2',
-            variables: [
-              Variable.withInt(ext.sourceId),
-              Variable.withString(relative),
-            ],
+            "SELECT _id, url FROM mangas WHERE source = ?1 AND url LIKE 'http%'",
+            variables: [Variable.withInt(sourceId)],
           )
-          .getSingle();
-      if ((taken.data['c'] as int? ?? 0) > 0) {
-        collisions++;
-        continue;
-      }
+          .get();
 
-      normalized += await database.customUpdate(
-        'UPDATE mangas SET url = ?2 WHERE _id = ?1',
-        variables: [Variable.withInt(id), Variable.withString(relative)],
-        updates: {database.mangas},
-      );
+      for (final row in rows) {
+        final id = row.data['_id'] as int;
+        final url = row.data['url'] as String;
+        final relative = relativeMangaUrl(url, ext.baseUrl);
+        if (relative == url) continue;
+
+        final taken = await database
+            .customSelect(
+              'SELECT COUNT(*) AS c FROM mangas WHERE source = ?1 AND url = ?2',
+              variables: [
+                Variable.withInt(sourceId),
+                Variable.withString(relative),
+              ],
+            )
+            .getSingle();
+        if ((taken.data['c'] as int? ?? 0) > 0) {
+          collisions++;
+          continue;
+        }
+
+        normalized += await database.customUpdate(
+          'UPDATE mangas SET url = ?2 WHERE _id = ?1',
+          variables: [Variable.withInt(id), Variable.withString(relative)],
+          updates: {database.mangas},
+        );
+      }
     }
   }
 

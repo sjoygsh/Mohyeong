@@ -209,7 +209,7 @@ class ExtensionRepository {
       final numeric = int.tryParse(id);
       if (numeric != null) {
         for (final e in installed) {
-          if (e.sourceId == numeric) return e.id;
+          if (e.owns(numeric)) return e.id;
         }
       }
       return id;
@@ -231,7 +231,7 @@ class ExtensionRepository {
   Future<String?> getExtensionPackage(int sourceId) async {
     final installed = await listInstalled();
     for (final e in installed) {
-      if (e.sourceId == sourceId) return e.id;
+      if (e.owns(sourceId)) return e.id;
     }
     return null;
   }
@@ -439,7 +439,11 @@ final installedSourceLangsProvider =
   await for (final list in repo.watchInstalled()) {
     final m = <int, String>{};
     for (final e in list) {
-      m[e.sourceId] = e.lang;
+      // Every id the extension answers for, so a row stored under a source's
+      // other-language id still finds its language badge.
+      for (final id in e.allSourceIds) {
+        m[id] = e.lang;
+      }
     }
     yield m;
   }
@@ -461,10 +465,13 @@ final installedSourceImageHeadersProvider =
     for (final e in list) {
       if (e.baseUrl.isEmpty) continue;
       final base = e.baseUrl.replaceAll(RegExp(r'/+$'), '');
-      m[e.sourceId] = {
+      final headers = {
         'Referer': '$base/',
         'User-Agent': e.userAgent ?? defaultUserAgent,
       };
+      for (final id in e.allSourceIds) {
+        m[id] = headers;
+      }
     }
     yield m;
   }
