@@ -380,17 +380,7 @@ class _ResultTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(TideRadius.row),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.42),
-                    blurRadius: 22,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
+            child: TideCardShadow(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(TideRadius.row),
                 child: Builder(

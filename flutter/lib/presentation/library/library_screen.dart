@@ -1684,17 +1684,7 @@ class _MangaCard extends ConsumerWidget {
     final lang =
         (sourceLangs != null && !isLocal) ? sourceLangs[manga.source] : null;
 
-    final cover = Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(TideRadius.row),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.42),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
+    final cover = TideCardShadow(
       // Set into glass rather than laid on the ground: the same top-lit bevel
       // every pane in the app has, so a cover belongs to the surface instead
       // of being a photograph dropped onto it.

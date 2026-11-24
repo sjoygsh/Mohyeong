@@ -248,6 +248,103 @@ class _GlassEdge extends CustomPainter {
       old.border != border;
 }
 
+/// The soft drop shadow under a cover card in a grid (library, Browse,
+/// global search, migration search), painted from a cached image.
+///
+/// As a `BoxShadow` this was a 22px Gaussian blur recomputed for every card
+/// on every frame. Every card in a grid is the same size, so the identical
+/// shadow is rendered ONCE per cell size, at device resolution, and each card
+/// draws that image. Checked on the device's own renderer against the live
+/// BoxShadow under an opaque card: worst channel difference 1 level.
+///
+/// Measured on the test phone at 120Hz, library scroll, interleaved A/B:
+/// 96-101fps with 19-25% of frames late -> 103-111fps with 8-16% late.
+/// Raster only fell ~10 -> ~9ms, though: with NO card shadow at all it is 3.0ms, and neither drawing
+/// only the visible ring nor a 1x texture moved it, so what remains is not
+/// the blur. Look there before trying to make this cheaper.
+class TideCardShadow extends StatelessWidget {
+  const TideCardShadow({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        painter: _CardShadowPainter(MediaQuery.devicePixelRatioOf(context)),
+        child: child,
+      );
+}
+
+class _CardShadowPainter extends CustomPainter {
+  _CardShadowPainter(this.dpr);
+
+  final double dpr;
+
+  static final BoxShadow _shadow = BoxShadow(
+    color: Colors.black.withValues(alpha: 0.42),
+    blurRadius: 22,
+    offset: const Offset(0, 10),
+  );
+
+  /// Margin the blur spreads past the card: 3 sigma holds all but a
+  /// rounding-error tail of a Gaussian.
+  static final double _pad = (_shadow.blurSigma * 3).ceilToDouble();
+
+  /// Rendered shadows by cell size in device pixels. A grid has one cell
+  /// size (two while a column-count change animates), so a handful covers
+  /// every screen; the oldest is dropped past the cap.
+  static final Map<(int, int), ui.Image> _cache = <(int, int), ui.Image>{};
+  static const int _cap = 6;
+
+  ui.Image _imageFor(Size size) {
+    final key = ((size.width * dpr).round(), (size.height * dpr).round());
+    final hit = _cache.remove(key);
+    if (hit != null) return _cache[key] = hit; // re-insert as most recent
+    final w = size.width + 2 * _pad;
+    final h = size.height + 2 * _pad;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder)..scale(dpr);
+    final box = Rect.fromLTWH(_pad, _pad, size.width, size.height);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(box, const Radius.circular(TideRadius.row)),
+      _shadow.toPaint(),
+    );
+    final image = recorder
+        .endRecording()
+        .toImageSync((w * dpr).ceil(), (h * dpr).ceil());
+    if (_cache.length >= _cap) {
+      _cache.remove(_cache.keys.first)?.dispose();
+    }
+    return _cache[key] = image;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final image = _imageFor(size);
+    final dst = Rect.fromLTWH(
+      _shadow.offset.dx - _pad,
+      _shadow.offset.dy - _pad,
+      size.width + 2 * _pad,
+      size.height + 2 * _pad,
+    );
+    final src = Rect.fromLTWH(
+      0,
+      0,
+      image.width.toDouble(),
+      image.height.toDouble(),
+    );
+    canvas.drawImageRect(
+      image,
+      src,
+      dst,
+      Paint()..filterQuality = FilterQuality.low,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_CardShadowPainter oldDelegate) => oldDelegate.dpr != dpr;
+}
+
 /// One shared backdrop per screen for the [TideGlass] panes on it.
 ///
 /// Installed around every page route by [TideBackdropTransitions], so the
