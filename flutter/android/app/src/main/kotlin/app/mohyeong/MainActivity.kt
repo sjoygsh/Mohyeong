@@ -457,6 +457,38 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    // Ask for the panel's fastest refresh rate (120Hz on the test phone).
+    // Without a preference Android leaves an app at 60Hz while the system UI
+    // and every other app scroll at 90/120, which made smooth scrolling here
+    // read as rough by comparison. Only modes at the CURRENT resolution are
+    // considered, so this never triggers a resolution switch. Re-applied on
+    // every resume because some OEM skins drop the preference when the
+    // window is recreated or comes back from the background.
+    override fun onResume() {
+        super.onResume()
+        requestHighestRefreshRate()
+    }
+
+    private fun requestHighestRefreshRate() {
+        val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay
+        } ?: return
+        val current = display.mode
+        val best = display.supportedModes
+            .filter {
+                it.physicalWidth == current.physicalWidth &&
+                    it.physicalHeight == current.physicalHeight
+            }
+            .maxByOrNull { it.refreshRate } ?: return
+        if (window.attributes.preferredDisplayModeId == best.modeId) return
+        window.attributes = window.attributes.apply {
+            preferredDisplayModeId = best.modeId
+        }
+    }
+
     // Intercept the hardware volume keys while the reader has enabled them.
     // Forward each key-down (ignoring auto-repeat) to Dart and consume both
     // the down and up events so the system volume overlay never appears.

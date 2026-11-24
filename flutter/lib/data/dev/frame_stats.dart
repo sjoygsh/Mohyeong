@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'dart:ui' show FramePhase;
+import 'dart:ui' show FramePhase, PlatformDispatcher;
 
 import 'package:flutter/scheduler.dart';
 
@@ -127,7 +127,12 @@ abstract final class FrameStats {
     wait.sort();
     String p(List<double> v, double q) =>
         v[(v.length * q).clamp(0, v.length - 1).toInt()].toStringAsFixed(1);
-    final janky = total.where((t) => t > 16.7).length;
+    // One display refresh, from the panel's CURRENT rate: the app asks for
+    // 120Hz, and a 60Hz budget would hide every frame that missed by 8ms.
+    final displays = PlatformDispatcher.instance.displays;
+    final hz = displays.isEmpty ? 60.0 : displays.first.refreshRate;
+    final period = 1000 / (hz > 0 ? hz : 60.0);
+    final janky = total.where((t) => t > period).length;
     // CADENCE — the judder metric, and the one this file was missing.
     //
     // build/raster/janky all answer "was each frame cheap", and on this reader
@@ -149,7 +154,7 @@ abstract final class FrameStats {
       if (d > 0 && d < 200) gaps.add(d);
     }
     gaps.sort();
-    final skipped = gaps.where((g) => g > 25).length;
+    final skipped = gaps.where((g) => g > period * 1.5).length;
     final elapsed = gaps.fold<double>(0, (a, b) => a + b);
     final fps = elapsed > 0 ? 1000 * gaps.length / elapsed : 0.0;
     // `print`, not `developer.log`: the latter goes to the VM service, which
@@ -168,7 +173,7 @@ abstract final class FrameStats {
     if (gaps.isNotEmpty) {
       // ignore: avoid_print
       print(
-        'FRAMECADENCE[$_label] frames=${gaps.length + 1} '
+        'FRAMECADENCE[$_label] hz=${hz.round()} frames=${gaps.length + 1} '
         'fps=${fps.toStringAsFixed(1)} '
         'skipped=$skipped (${(100 * skipped / gaps.length).toStringAsFixed(1)}%) '
         '| gap p50=${p(gaps, .5)} p90=${p(gaps, .9)} p99=${p(gaps, .99)} '
