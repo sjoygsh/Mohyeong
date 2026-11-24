@@ -98,4 +98,48 @@ void main() {
     expect(covers.customCoverFile(7).existsSync(), isTrue);
     expect(covers.coverUrlFor(1, url), url);
   });
+
+  group('grid-sized copies', () {
+    void touch(String path) => File(path)
+      ..parent.createSync(recursive: true)
+      ..writeAsBytesSync([1]);
+
+    test('kept per cover AND per width, only for library web covers', () {
+      final at300 = covers.libraryThumbPath(1, url, 300, favorite: true)!;
+      expect(p.basename(at300), endsWith('_300.png'));
+      expect(covers.libraryThumbPath(1, url, 420, favorite: true),
+          isNot(at300));
+      expect(covers.libraryThumbPath(1, '$url?2', 300, favorite: true),
+          isNot(at300));
+      expect(covers.libraryThumbPath(1, url, 300, favorite: false), isNull);
+      expect(covers.libraryThumbPath(1, '/local/c.jpg', 300, favorite: true),
+          isNull);
+    });
+
+    test('none for a series with a custom cover', () async {
+      await covers.setCustomCover(7, Uint8List.fromList([2]));
+      expect(covers.libraryThumbPath(7, url, 300, favorite: true), isNull);
+    });
+
+    test('go with their cover when it is dropped, and only theirs', () async {
+      final mine = covers.libraryThumbPath(1, url, 300, favorite: true)!;
+      final mineWide = covers.libraryThumbPath(1, url, 420, favorite: true)!;
+      final other =
+          covers.libraryThumbPath(2, '$url?b', 300, favorite: true)!;
+      for (final f in [mine, mineWide, other]) {
+        touch(f);
+      }
+      await covers.removeCovers(1, url);
+      expect(File(mine).existsSync(), isFalse);
+      expect(File(mineWide).existsSync(), isFalse);
+      expect(File(other).existsSync(), isTrue);
+    });
+
+    test('cleared with the library covers', () async {
+      final mine = covers.libraryThumbPath(1, url, 300, favorite: true)!;
+      touch(mine);
+      await covers.clearLibraryCovers();
+      expect(File(mine).existsSync(), isFalse);
+    });
+  });
 }

@@ -2089,6 +2089,12 @@ class TideCover extends ConsumerWidget {
         manga.thumbnailUrl,
         favorite: manga.favorite,
       ),
+      thumbPath: covers.libraryThumbPath(
+        manga.id,
+        manga.thumbnailUrl,
+        cacheWidth,
+        favorite: manga.favorite,
+      ),
       fit: fit,
       placeholder: (_) => fallback,
       // A cover that FAILED is not a cover that was never there. Both used to

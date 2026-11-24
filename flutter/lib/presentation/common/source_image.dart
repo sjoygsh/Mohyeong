@@ -46,6 +46,7 @@ class SourceImage extends StatelessWidget {
     this.opacity,
     this.fullResolution = false,
     this.persistTo,
+    this.thumbPath,
   });
 
   final String url;
@@ -54,6 +55,12 @@ class SourceImage extends StatelessWidget {
   /// Where to save this image once it loads from the web: a library cover
   /// path from [CoverCache.libraryCoverTarget]. Null for everything else.
   final String? persistTo;
+
+  /// Where a copy of this image decoded at [cacheWidth] is kept on disk: a
+  /// library cover path from [CoverCache.libraryThumbPath]. When set (and
+  /// [cacheWidth] is), the copy is drawn instead of decoding the original,
+  /// and written once the original has been decoded.
+  final String? thumbPath;
 
   /// Paint-time opacity forwarded to the underlying [Image] — applied while
   /// rasterising the bitmap, so unlike an [Opacity] wrapper it costs no
@@ -169,7 +176,10 @@ class SourceImage extends StatelessWidget {
   ImageProvider _displayProvider() {
     final backend = _backendProvider();
     final cw = cacheWidth;
-    return cw == null ? backend : _ValueResizeImage(backend, width: cw);
+    if (cw == null) return backend;
+    final sized = _ValueResizeImage(backend, width: cw);
+    final thumb = thumbPath;
+    return thumb == null ? sized : _CoverThumbImage(thumb, sized);
   }
 
   @override
@@ -191,7 +201,10 @@ class SourceImage extends StatelessWidget {
     final ph = placeholder;
     if (!fadeIn && ph == null) return null;
     return (ctx, child, frame, wasSync) {
-      if (wasSync) return child;
+      if (wasSync) {
+        FrameStats.count('synchit');
+        return child;
+      }
       if (!fadeIn) {
         return frame == null ? ph!(ctx) : child;
       }
@@ -257,6 +270,92 @@ class _ValueResizeImage extends ResizeImage {
 
   @override
   int get hashCode => Object.hash(imageProvider, width);
+}
+
+/// A library cover drawn from its grid-sized copy on disk when there is one
+/// (see [CoverCache.libraryThumbPath]), otherwise from [full], whose result
+/// is then queued to become that copy.
+class _CoverThumbImage extends ImageProvider<_CoverThumbImage> {
+  const _CoverThumbImage(this.thumbPath, this.full);
+
+  final String thumbPath;
+
+  /// The original, capped to the same width the copy is stored at.
+  final ImageProvider full;
+
+  @override
+  Future<_CoverThumbImage> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<_CoverThumbImage>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _CoverThumbImage key,
+    ImageDecoderCallback decode,
+  ) {
+    return OneFrameImageStreamCompleter(
+      _load(decode),
+      informationCollector: () => [DiagnosticsProperty('thumb', thumbPath)],
+    );
+  }
+
+  Future<ImageInfo> _load(ImageDecoderCallback decode) async {
+    final thumb = File(thumbPath);
+    if (await thumb.exists()) {
+      try {
+        final codec =
+            await decode(await ui.ImmutableBuffer.fromFilePath(thumbPath));
+        final frame = await codec.getNextFrame();
+        codec.dispose();
+        FrameStats.count('thumbhit');
+        return ImageInfo(image: frame.image, debugLabel: thumbPath);
+      } catch (_) {
+        // Unreadable: rebuild it from the original.
+        try {
+          await thumb.delete();
+        } catch (_) {}
+      }
+    }
+    FrameStats.count('thumbmiss');
+    final info = await _decodeFull(decode);
+    queueCoverThumb(thumbPath, info.image.clone());
+    return info;
+  }
+
+  /// Run [full] straight through its own loader — not [ImageProvider.resolve],
+  /// which would also file the same picture in the [ImageCache] under the
+  /// original's key and count its bytes twice.
+  Future<ImageInfo> _decodeFull(ImageDecoderCallback decode) async {
+    final key = await full.obtainKey(ImageConfiguration.empty);
+    // ignore: invalid_use_of_protected_member
+    final completer = full.loadImage(key, decode);
+    final done = Completer<ImageInfo>();
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        completer.removeListener(listener);
+        if (done.isCompleted) {
+          info.dispose();
+        } else {
+          done.complete(info);
+        }
+      },
+      onError: (error, stack) {
+        completer.removeListener(listener);
+        if (!done.isCompleted) done.completeError(error, stack);
+      },
+    );
+    completer.addListener(listener);
+    return done.future;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _CoverThumbImage &&
+      other.thumbPath == thumbPath &&
+      other.full == full;
+
+  @override
+  int get hashCode => Object.hash(thumbPath, full);
 }
 
 /// [ImageProvider] that loads its bytes from a SAF `content://` document URI
@@ -698,9 +797,15 @@ class _CrossfadeFrame extends StatefulWidget {
 class _CrossfadeFrameState extends State<_CrossfadeFrame> {
   bool _hadFrame = false;
   bool _settled = false;
+  // FRAME_STATS only: how long this slot showed the placeholder.
+  final Stopwatch? _waited = FrameStats.enabled ? (Stopwatch()..start()) : null;
 
   @override
   Widget build(BuildContext context) {
+    if (!_hadFrame && widget.frame != null && _waited != null) {
+      FrameStats.count('popin');
+      FrameStats.max('popinMs', _waited.elapsedMilliseconds);
+    }
     _hadFrame = _hadFrame || widget.frame != null;
     final image = AnimatedOpacity(
       // Coil's CrossfadeDrawable: linear alpha over 300ms (App.kt crossfade).

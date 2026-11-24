@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/painting.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -31,17 +32,22 @@ import 'package:path_provider/path_provider.dart';
 /// startup ([create]); custom covers are enumerated then, and library covers
 /// are checked once per URL and remembered.
 class CoverCache {
-  CoverCache._(this._customDirPath, this._libraryDirPath, this._haveCustom);
+  CoverCache._(this._customDirPath, this._libraryDirPath, this._haveCustom)
+      : _thumbDirPath = p.join(_libraryDirPath, 'thumbs');
 
   /// For tests: both stores rooted at [root], nothing enumerated.
   @visibleForTesting
   CoverCache.forTesting(String root)
       : _customDirPath = p.join(root, 'custom'),
         _libraryDirPath = root,
+        _thumbDirPath = p.join(root, 'thumbs'),
         _haveCustom = <int>{};
 
   final String _customDirPath;
   final String _libraryDirPath;
+
+  /// Grid-sized copies of library covers (see [libraryThumbPath]).
+  final String _thumbDirPath;
   final Set<int> _haveCustom;
 
   /// Library-cover presence by thumbnail URL, so a grid rebuild never stats
@@ -61,6 +67,8 @@ class CoverCache {
     final library = Directory(p.join(support.path, 'covers'));
     final dir = Directory(p.join(library.path, 'custom'));
     if (!await dir.exists()) await dir.create(recursive: true);
+    final thumbs = Directory(p.join(library.path, 'thumbs'));
+    if (!await thumbs.exists()) await thumbs.create(recursive: true);
     final have = <int>{};
     await for (final entry in dir.list()) {
       if (entry is File) {
@@ -124,10 +132,41 @@ class CoverCache {
     return libraryCoverPath(thumbnailUrl);
   }
 
-  /// Drop the stored library cover for [thumbnailUrl], if any.
+  /// Where the grid-sized copy of a library series' cover lives, decoded at
+  /// [width] device pixels, or null when the cover is not one the library
+  /// store keeps (the same rule as [libraryCoverTarget], minus "already
+  /// stored").
+  ///
+  /// Why it exists: sources serve covers far larger than any grid shows them.
+  /// Aqua's are 2000x2900, often PNG, a couple of megabytes each, and the
+  /// grid draws them about 300px wide. Every cover a scroll brought into
+  /// view was decoded at full size and only then shrunk, on the same few CPU
+  /// cores the frames are drawn with: a fresh library scroll ran at 75fps
+  /// instead of 120 and each cover sat blank for up to a quarter-second
+  /// before fading in. Mihon never pays that, because Android's decoder
+  /// subsamples while it decodes (Coil's inSampleSize). Here the full decode
+  /// happens once per cover per size, and every later appearance decodes a
+  /// file already the size it is drawn at.
+  String? libraryThumbPath(
+    int mangaId,
+    String? thumbnailUrl,
+    int width, {
+    required bool favorite,
+  }) {
+    if (!favorite || _haveCustom.contains(mangaId)) return null;
+    if (thumbnailUrl == null || !thumbnailUrl.startsWith('http')) return null;
+    return p.join(
+      _thumbDirPath,
+      '${md5.convert(utf8.encode(thumbnailUrl))}_$width.png',
+    );
+  }
+
+  /// Drop the stored library cover for [thumbnailUrl], if any, and its
+  /// grid-sized copies.
   Future<bool> deleteLibraryCover(String? thumbnailUrl) async {
     if (thumbnailUrl == null || !thumbnailUrl.startsWith('http')) return false;
     _haveLibrary[thumbnailUrl] = false;
+    await _deleteThumbs('${md5.convert(utf8.encode(thumbnailUrl))}_');
     final file = File(libraryCoverPath(thumbnailUrl));
     if (!await file.exists()) return false;
     await file.delete();
@@ -151,8 +190,25 @@ class CoverCache {
         deleted++;
       } catch (_) {}
     }
+    await _deleteThumbs('');
     PaintingBinding.instance.imageCache.clear();
     return deleted;
+  }
+
+  /// Delete the grid-sized copies whose names start with [prefix] (all of
+  /// them for an empty prefix).
+  Future<void> _deleteThumbs(String prefix) async {
+    final dir = Directory(_thumbDirPath);
+    try {
+      if (!await dir.exists()) return;
+      await for (final entry in dir.list(followLinks: false)) {
+        if (entry is File && p.basename(entry.path).startsWith(prefix)) {
+          try {
+            await entry.delete();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
   }
 
   /// Mihon's `Manga.removeCovers`, run when a series leaves the library: its
@@ -205,6 +261,58 @@ Future<void> storeLibraryCover(
       if (await tmp.exists()) await tmp.delete();
     } catch (_) {}
   }
+}
+
+/// Grid-sized covers waiting to be written to disk, oldest first.
+final List<(String, ui.Image)> _pendingThumbs = <(String, ui.Image)>[];
+bool _thumbsPumping = false;
+
+/// Write [image] (already decoded at grid size) to [path] as a PNG, once the
+/// app is idle. Takes ownership of [image].
+///
+/// Encoding reads the image back from the GPU and compresses it on the CPU,
+/// the same resources a scroll is drawn with, so it waits until nothing is
+/// moving: a cover's first appearance is mid-scroll by definition. Whatever
+/// is dropped past the cap is written the next time it loads.
+void queueCoverThumb(String path, ui.Image image) {
+  if (_pendingThumbs.length >= 48 ||
+      _pendingThumbs.any((e) => e.$1 == path)) {
+    image.dispose();
+    return;
+  }
+  _pendingThumbs.add((path, image));
+  if (_thumbsPumping) return;
+  _thumbsPumping = true;
+  Timer(const Duration(milliseconds: 600), _pumpThumbs);
+}
+
+Future<void> _pumpThumbs() async {
+  final scheduler = SchedulerBinding.instance;
+  if (scheduler.hasScheduledFrame ||
+      scheduler.schedulerPhase != SchedulerPhase.idle) {
+    Timer(const Duration(milliseconds: 400), _pumpThumbs);
+    return;
+  }
+  final (path, image) = _pendingThumbs.removeAt(0);
+  final tmp = File('$path.part');
+  try {
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (data != null) {
+      await tmp.writeAsBytes(data.buffer.asUint8List(), flush: true);
+      await tmp.rename(path);
+    }
+  } catch (_) {
+    try {
+      if (await tmp.exists()) await tmp.delete();
+    } catch (_) {}
+  } finally {
+    image.dispose();
+  }
+  if (_pendingThumbs.isEmpty) {
+    _thumbsPumping = false;
+    return;
+  }
+  Timer(const Duration(milliseconds: 30), _pumpThumbs);
 }
 
 /// Resolve [provider] to a single decoded frame and re-encode it as PNG.
