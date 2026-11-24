@@ -31,8 +31,11 @@ class AppTheme {
   /// scales both routes.
   static const _pageTransitions = PageTransitionsTheme(
     builders: {
-      TargetPlatform.android: SharedAxisPageTransitionsBuilder(
-        transitionType: SharedAxisTransitionType.horizontal,
+      // Each route in its own shared glass backdrop — see TideBackdropScope.
+      TargetPlatform.android: TideBackdropTransitions(
+        SharedAxisPageTransitionsBuilder(
+          transitionType: SharedAxisTransitionType.horizontal,
+        ),
       ),
     },
   );
