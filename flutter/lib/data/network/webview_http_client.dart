@@ -131,15 +131,60 @@ class WebViewHttpClient {
     if (_draining) return;
     _draining = true;
     try {
-      while (_queue.isNotEmpty) {
-        var best = 0;
-        for (var i = 1; i < _queue.length; i++) {
-          if (_queue[i].priority > _queue[best].priority) best = i;
+      while (true) {
+        while (_queue.isNotEmpty) {
+          var best = 0;
+          for (var i = 1; i < _queue.length; i++) {
+            if (_queue[i].priority > _queue[best].priority) best = i;
+          }
+          await _queue.removeAt(best).run();
         }
-        await _queue.removeAt(best).run();
+        // A short grace first, so covers trickling in from one site a second
+        // apart reuse the page instead of reloading it for each.
+        await Future<void>.delayed(_parkAfter);
+        if (_queue.isNotEmpty) continue;
+        await _park();
+        // Work that arrived while parking runs on, and parks again after.
+        if (_queue.isEmpty) break;
       }
     } finally {
       _draining = false;
+    }
+  }
+
+  static const Duration _parkAfter = Duration(milliseconds: 2500);
+
+  /// Leave the page once there is nothing more to fetch from it.
+  ///
+  /// The WebView used to stay on whatever it last loaded until the idle
+  /// teardown, a minute and a half later, and what it last loaded is a
+  /// source's real page: its ad scripts, its trackers, and on some sites an
+  /// autoplaying video (Android's H.264 decoder was seen starting under a
+  /// library scroll). All of that kept running, and a WebView's work runs on
+  /// the app's main thread, which on this Flutter is also the thread every
+  /// frame is built on: a library update that went through this WebView took
+  /// the library scroll from 75-85fps to 33-48, with frames starting up to
+  /// 180ms late. Mihon destroys its WebView the moment a job is done; a blank
+  /// document stops the page just as dead and keeps the browser warm for the
+  /// next burst.
+  /// Whether a site has been loaded since the last [_park] — successfully or
+  /// not: a navigation that timed out still left its page running.
+  bool _onPage = false;
+
+  Future<void> _park() async {
+    final c = _controller;
+    if (c == null || !_onPage) return;
+    _onPage = false;
+    _currentOrigin = null;
+    _navHost = null;
+    try {
+      await c
+          .loadHtmlString('<!doctype html><title></title>')
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {}
+    if (FrameStats.enabled) {
+      // ignore: avoid_print
+      print('PAGEPATH webview-parked');
     }
   }
 
@@ -176,6 +221,7 @@ class WebViewHttpClient {
       print('PAGEPATH webview-teardown');
     }
     _controller = null;
+    _onPage = false;
     _ready = Completer<void>();
     _navHost = null;
     _currentOrigin = null;
@@ -279,6 +325,10 @@ class WebViewHttpClient {
     String? readyJs,
   }) {
     if (!isAvailable || _giveUp) return Future.value(null);
+    if (FrameStats.enabled) {
+      // ignore: avoid_print
+      print('PAGEPATH webview-doc $url');
+    }
     // Ask the host to create the WebView now (no-op if already up / on an
     // isolate without a host). _run then waits briefly for it to attach.
     _noteBusy();
@@ -522,6 +572,7 @@ class WebViewHttpClient {
   /// interstitial and the real page has rendered. Returns false on timeout.
   Future<bool> _navigate(WebViewController c, String url, Duration timeout,
       [Duration settle = const Duration(milliseconds: 1800), String? readyJs]) async {
+    _onPage = true;
     try {
       await c.loadRequest(Uri.parse(url)).timeout(const Duration(seconds: 15));
     } catch (_) {
