@@ -833,6 +833,7 @@ class _HistoryCover extends ConsumerWidget {
         .watch(installedSourceImageHeadersProvider)
         .valueOrNull?[entry.source];
     return SourceImage(
+      key: ValueKey(url), // see TideCover: no stale cover in a reused slot
       url: url,
       headers: headers,
       cacheWidth: 180,

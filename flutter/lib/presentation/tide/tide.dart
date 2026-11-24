@@ -2075,6 +2075,12 @@ class TideCover extends ConsumerWidget {
         .watch(installedSourceImageHeadersProvider)
         .valueOrNull?[manga.source];
     return SourceImage(
+      // Keyed by what it shows. Unkeyed, a grid slot that changed series
+      // (search filtering, a list reordering) kept the same Image state, and
+      // gaplessPlayback held the PREVIOUS series' cover on screen until the
+      // new one decoded. A new key starts the slot over: placeholder, then
+      // the 300ms fade-in, as Mihon's Coil crossfade does.
+      key: ValueKey(url),
       url: url,
       headers: headers,
       cacheWidth: cacheWidth,

@@ -1438,6 +1438,7 @@ class _UpdateCover extends ConsumerWidget {
         .watch(installedSourceImageHeadersProvider)
         .valueOrNull?[update.source];
     return SourceImage(
+      key: ValueKey(url), // see TideCover: no stale cover in a reused slot
       url: url,
       headers: headers,
       cacheWidth: 180,

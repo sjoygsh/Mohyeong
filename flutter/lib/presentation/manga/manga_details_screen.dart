@@ -2270,6 +2270,7 @@ class _CoverImage extends ConsumerWidget {
         .watch(installedSourceImageHeadersProvider)
         .valueOrNull?[sourceId];
     return SourceImage(
+      key: ValueKey(resolved), // see TideCover: no stale cover in a reused slot
       cacheWidth: 480,
       url: resolved,
       headers: headers,
