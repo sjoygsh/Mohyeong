@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart' show DioException;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter/material.dart';
 
@@ -338,6 +339,30 @@ class _ArchiveImageProvider extends ImageProvider<_ArchiveImageProvider> {
   int get hashCode => url.hashCode;
 }
 
+/// Whether the offscreen WebView has any chance where the plain download
+/// failed. It exists for fingerprint walls: a 401/403/429/503 answer, or a
+/// connection the CDN reset before any answer. A 404, a 522/525 (Cloudflare
+/// cannot reach the origin) or a host that does not resolve fail the same
+/// way in a browser, and every WebView round trip runs on the main thread
+/// that Flutter's frames run on, so trying anyway stalled whatever screen
+/// was scrolling, once per dead cover per pass.
+@visibleForTesting
+bool browserCouldFetchImage(Object error) {
+  bool walled(int status) =>
+      status == 401 || status == 403 || status == 429 || status == 503;
+  if (error is HttpExceptionWithStatus) return walled(error.statusCode);
+  if (error is DioException) {
+    final status = error.response?.statusCode;
+    if (status != null) return walled(status);
+    final cause = error.error;
+    if (cause is SocketException &&
+        cause.message.contains('Failed host lookup')) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /// The ONE network [ImageProvider] behind both the [SourceImage] widget and
 /// every provider-based consumer ([SourceImage.providerFor], the crop /
 /// rotate / dual-page reader pipelines, precache, aspect probes) — a single
@@ -435,6 +460,7 @@ class _NetworkImageWithWebViewFallback
         // ignore: avoid_print
         print('PAGEPATH http-failed ${key.url} $e');
       }
+      if (!browserCouldFetchImage(e)) rethrow;
       // The WebView round trip is serialized host-side and slower still than a
       // plain download, so it belongs in the queue for the same reason.
       final fallback = await PageFetchQueue.run(

@@ -84,7 +84,21 @@ class DioFileServiceResponse implements FileServiceResponse {
   final Response<ResponseBody> _response;
   final DateTime _received = DateTime.now();
 
-  String? _header(String name) => _response.headers.value(name);
+  /// NOT `headers.value(name)`: Dio's `value` THROWS when a field arrives more
+  /// than once, and that is legal HTTP. aquareader.org sends two
+  /// `Cache-Control` lines on every image, so every Aqua cover and reader page
+  /// "failed" here after its bytes had already arrived, and went through the
+  /// offscreen WebView instead, whose work runs on the same main thread as
+  /// Flutter's frames. A list-valued field repeated is the same field
+  /// comma-joined (RFC 9110 §5.3); for single-valued ones the first wins.
+  String? _header(String name) {
+    final values = _response.headers[name];
+    if (values == null || values.isEmpty) return null;
+    if (values.length == 1) return values.first;
+    return name == HttpHeaders.cacheControlHeader
+        ? values.join(', ')
+        : values.first;
+  }
 
   @override
   Stream<List<int>> get content =>

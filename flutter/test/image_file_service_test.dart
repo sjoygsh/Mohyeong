@@ -111,4 +111,19 @@ void main() {
       '"abc123"',
     );
   });
+
+  test('a header sent twice is read, not thrown on', () {
+    // aquareader.org sends two Cache-Control lines on every image. Dio's
+    // headers.value() throws on that, so each Aqua cover and page "failed"
+    // after downloading and was refetched through the offscreen WebView.
+    final r = response(headers: {
+      'cache-control': ['public', 'max-age=600'],
+      'content-type': ['image/webp', 'image/webp'],
+      'content-length': ['42', '42'],
+    });
+    final held = r.validTill.difference(DateTime.now());
+    expect(held.inSeconds, inInclusiveRange(590, 600));
+    expect(r.fileExtension, '.webp');
+    expect(r.contentLength, 42);
+  });
 }
