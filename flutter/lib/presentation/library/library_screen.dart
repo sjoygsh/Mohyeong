@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/base/base_preferences.dart';
 import '../../data/category/category_repository.dart';
+import '../../data/cover/cover_cache.dart';
 import '../../data/chapter/chapter_repository.dart';
 import '../../data/download/download_repository.dart';
 import '../../data/library/library_display_prefs.dart';
@@ -371,6 +372,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       await mangaRepo.setFavoriteForIds(ids, false);
       // Clear category memberships so re-adding starts clean.
       await categoryRepo.clearCategoriesForManga(ids);
+      // Mihon's LibraryScreenModel.removeMangas: their covers go too.
+      final covers = ref.read(coverCacheProvider);
+      for (final manga in mangas) {
+        await covers.removeCovers(manga.id, manga.thumbnailUrl);
+      }
     }
     if (downloadRepo != null) {
       // Deleting downloads is filesystem work, not DB work — still per manga.

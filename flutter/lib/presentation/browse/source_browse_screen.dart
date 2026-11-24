@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/manga/manga_repository.dart';
+import '../../data/cover/cover_cache.dart';
 import '../../data/source/browse_preferences.dart';
 import '../../data/source/extension_repository.dart';
 import '../../data/source/source_id.dart';
@@ -1016,6 +1017,10 @@ class _MangaCard extends ConsumerWidget {
       final row =
           await repo.insertFromSource(candidate: manga, sourceId: sourceIdInt);
       await repo.setFavorite(row.id, !inLibrary);
+      if (inLibrary) {
+        // Mihon's BrowseSourceScreenModel.changeMangaFavorite: removeCovers.
+        await ref.read(coverCacheProvider).removeCovers(row.id, row.thumbnailUrl);
+      }
       ref.invalidate(favoritedUrlsForSourceProvider(sourceIdInt));
       toast.show(inLibrary ? 'Removed from library' : 'Added to library');
     } catch (e) {

@@ -5,6 +5,7 @@ import 'package:drift/drift.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/manga/model/manga.dart';
+import '../cover/cover_cache.dart';
 import '../../domain/manga/model/update_strategy.dart';
 import '../../domain/source/model/source_manga.dart';
 import '../database/app_database.dart' as db;
@@ -229,6 +230,10 @@ class MangaRepository {
         lastModifiedAt: Value(nowMs),
       ),
     );
+    if (coverChanged) {
+      // Mihon's UpdateManga: the stored library cover belongs to the old URL.
+      await CoverCache.instance?.deleteLibraryCover(existing.thumbnailUrl);
+    }
   }
 
   /// Stamp `cover_last_modified` with the current time so every cover

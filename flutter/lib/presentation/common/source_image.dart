@@ -7,6 +7,7 @@ import 'package:dio/dio.dart' show DioException;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter/material.dart';
 
+import '../../data/cover/cover_cache.dart';
 import '../../data/dev/frame_stats.dart';
 import '../../data/network/webview_http_client.dart';
 import '../../data/storage/app_cache.dart';
@@ -44,10 +45,15 @@ class SourceImage extends StatelessWidget {
     this.fadeIn = true,
     this.opacity,
     this.fullResolution = false,
+    this.persistTo,
   });
 
   final String url;
   final BoxFit fit;
+
+  /// Where to save this image once it loads from the web: a library cover
+  /// path from [CoverCache.libraryCoverTarget]. Null for everything else.
+  final String? persistTo;
 
   /// Paint-time opacity forwarded to the underlying [Image] — applied while
   /// rasterising the bitmap, so unlike an [Opacity] wrapper it costs no
@@ -146,7 +152,12 @@ class SourceImage extends StatelessWidget {
     if (_isArchive) return _ArchiveImageProvider(url);
     if (_isContent) return _SafImageProvider(url);
     if (_isLocal) return FileImage(File(_localPath));
-    return _NetworkImageWithWebViewFallback(url, headers, fullResolution);
+    return _NetworkImageWithWebViewFallback(
+      url,
+      headers,
+      fullResolution,
+      persistTo,
+    );
   }
 
   /// [_backendProvider] with the [cacheWidth] decode cap applied — the ONE
@@ -377,7 +388,13 @@ class _NetworkImageWithWebViewFallback
     this.url,
     this.headers, [
     this.fullResolution = false,
+    this.persistTo,
   ]);
+
+  /// Library-cover path to save a successful load to, or null. Part of the
+  /// cache key, so a series added to the library is saved on its next load
+  /// rather than served from a decode that never wrote the file.
+  final String? persistTo;
 
   final String url;
   final Map<String, String>? headers;
@@ -509,6 +526,12 @@ class _NetworkImageWithWebViewFallback
         }
       }
     }
+    final target = key.persistTo;
+    if (target != null) {
+      // A library series' cover: keep it in the library store, which reading
+      // and cache expiry never touch (see CoverCache).
+      unawaited(storeLibraryCover(target, fromPath: path, bytes: bytes));
+    }
     final buffer = bytes != null
         ? await ui.ImmutableBuffer.fromUint8List(bytes)
         : await ui.ImmutableBuffer.fromFilePath(path!);
@@ -559,10 +582,11 @@ class _NetworkImageWithWebViewFallback
       other is _NetworkImageWithWebViewFallback &&
       other.url == url &&
       other.fullResolution == fullResolution &&
+      other.persistTo == persistTo &&
       mapEquals(other.headers, headers);
 
   @override
-  int get hashCode => Object.hash(url, fullResolution);
+  int get hashCode => Object.hash(url, fullResolution, persistTo);
 }
 
 /// Rotates [child] a quarter turn when [provider]'s image is wider than it

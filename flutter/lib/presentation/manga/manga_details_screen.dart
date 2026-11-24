@@ -2013,6 +2013,8 @@ Future<void> _toggleFavorite(
   await mangaRepo.setFavorite(manga.id, false);
   final categoryRepo = ref.read(categoryRepositoryProvider);
   await categoryRepo.setCategoriesForManga(manga.id, const <int>{});
+  // Mihon's MangaScreenModel.toggleFavorite: removeCovers.
+  await ref.read(coverCacheProvider).removeCovers(manga.id, manga.thumbnailUrl);
 }
 
 Future<void> _editCategories(

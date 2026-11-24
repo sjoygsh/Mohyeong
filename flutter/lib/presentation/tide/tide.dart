@@ -2068,8 +2068,8 @@ class TideCover extends ConsumerWidget {
     final fallback = DecoratedBox(
       decoration: BoxDecoration(gradient: fallbackGradient(manga.id)),
     );
-    final url =
-        ref.watch(coverCacheProvider).coverUrlFor(manga.id, manga.thumbnailUrl);
+    final covers = ref.watch(coverCacheProvider);
+    final url = covers.coverUrlFor(manga.id, manga.thumbnailUrl);
     if (url == null || url.isEmpty) return fallback;
     final headers = ref
         .watch(installedSourceImageHeadersProvider)
@@ -2078,6 +2078,11 @@ class TideCover extends ConsumerWidget {
       url: url,
       headers: headers,
       cacheWidth: cacheWidth,
+      persistTo: covers.libraryCoverTarget(
+        manga.id,
+        manga.thumbnailUrl,
+        favorite: manga.favorite,
+      ),
       fit: fit,
       placeholder: (_) => fallback,
       // A cover that FAILED is not a cover that was never there. Both used to

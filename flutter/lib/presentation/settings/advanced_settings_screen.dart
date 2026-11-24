@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../data/cover/cover_cache.dart';
 import '../../data/manga/manga_repository.dart';
 import '../../data/network/app_http_client.dart';
 import '../../data/network/network_preferences.dart';
@@ -62,7 +63,7 @@ class AdvancedSettingsScreen extends ConsumerWidget {
             icon: Icons.image_not_supported_outlined,
             title: 'Clear cover cache',
             subtitle: 'Thumbnails are re-fetched on demand',
-            onTap: () => _clearCoverCache(context),
+            onTap: () => _clearCoverCache(context, ref),
           ),
           PrefRow(
             icon: Icons.delete_sweep_outlined,
@@ -109,10 +110,12 @@ class AdvancedSettingsScreen extends ConsumerWidget {
   }
 
   /// Clear the cover/image disk cache ([appImageCacheManager], plus the
-  /// legacy default store older installs may still carry).
-  Future<void> _clearCoverCache(BuildContext context) async {
+  /// legacy default store older installs may still carry) and the stored
+  /// library covers, so every thumbnail really is fetched again.
+  Future<void> _clearCoverCache(BuildContext context, WidgetRef ref) async {
     await appImageCacheManager.emptyCache();
     await DefaultCacheManager().emptyCache();
+    await ref.read(coverCacheProvider).clearLibraryCovers();
     if (context.mounted) {
       TideToast.of(context).show('Cover cache cleared.');
     }
