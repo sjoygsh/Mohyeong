@@ -18,6 +18,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/base/base_preferences.dart';
@@ -1514,6 +1515,7 @@ class _LibraryGrid extends StatelessWidget {
     if (displayMode == LibraryDisplayMode.list) {
       return ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 2, 16, 108),
+        scrollCacheExtent: _coverLead,
         itemCount: items.length,
         itemBuilder: (context, i) => Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -1552,6 +1554,7 @@ class _LibraryGrid extends StatelessWidget {
       builder: (context, constraints) {
         return GridView.builder(
           padding: const EdgeInsets.fromLTRB(16, 2, 16, 108),
+          scrollCacheExtent: _coverLead,
           gridDelegate: gridDelegate,
           itemCount: items.length,
           itemBuilder: (context, i) => _MangaCard(
@@ -1566,6 +1569,12 @@ class _LibraryGrid extends StatelessWidget {
       },
     );
   }
+
+  /// How far past the screen edge cards are built, so their covers start
+  /// decoding before they scroll into view. The default is 250px, about one
+  /// row: on a fresh launch nearly every cover a fling brought on screen
+  /// arrived as a blank slot and faded in up to a quarter-second later.
+  static const _coverLead = ScrollCacheExtent.viewport(1.0);
 
   /// What a cover in this grid should actually be decoded at, in device
   /// pixels. A fixed decode cap can't be right for a grid whose column count
